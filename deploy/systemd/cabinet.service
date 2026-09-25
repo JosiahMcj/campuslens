@@ -1,0 +1,50 @@
+# deploy/systemd/cabinet.service — keep the Cabinet running across reboots
+# on Linux.
+#
+# Install (as the operator, once the paths below match the machine):
+#   sudo useradd --system --home /opt/golden-eagle-cabinet cabinet
+#   sudo cp deploy/systemd/cabinet.service /etc/systemd/system/
+#   sudo install -m 0600 -o cabinet /dev/null /etc/golden-eagle/cabinet.env
+#     # then write CABINET_SECRET_KEY=... and the CABINET_LLM_* lines into it
+#   sudo systemctl daemon-reload && sudo systemctl enable --now cabinet
+#
+# Validate before loading: systemd-analyze verify cabinet.service
+# (run on the target Linux host; macOS has no systemd-analyze).
+#
+# Secrets live only in the EnvironmentFile (0600, root:cabinet), never here.
+# Logs: stdout is JSON access lines (cabinet.accesslog); both streams go to
+# the journal — `journalctl -u cabinet -f`.
+
+[Unit]
+Description=Golden Eagle AI Cabinet (FastAPI, production)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cabinet
+Group=cabinet
+WorkingDirectory=/opt/golden-eagle-cabinet
+Environment=CABINET_ENV=production
+Environment=CABINET_BIND=127.0.0.1:8910
+Environment=CABINET_TRUSTED_PROXY=127.0.0.1
+EnvironmentFile=-/etc/golden-eagle/cabinet.env
+ExecStart=/opt/golden-eagle-cabinet/deploy/run-production.sh
+Restart=always
+RestartSec=3
+
+# Hardening: read-only system except var/ (database, datasets, backups,
+# logs), no privilege escalation, private /tmp, no access to home dirs.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/golden-eagle-cabinet/var
+ProtectHome=true
+PrivateTmp=true
+
+# uvicorn handles SIGTERM gracefully (finishes in-flight requests for up to
+# --timeout-graceful-shutdown seconds in run-production.sh).
+TimeoutStopSec=15
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

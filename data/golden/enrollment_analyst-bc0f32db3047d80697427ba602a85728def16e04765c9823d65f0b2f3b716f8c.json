@@ -1,0 +1,8 @@
+{
+  "provider": "chat",
+  "model_label": "live model",
+  "role": "enrollment_analyst",
+  "findings_sha256": "bc0f32db3047d80697427ba602a85728def16e04765c9823d65f0b2f3b716f8c",
+  "recorded_at": "2026-09-25T02:26:14.874040+00:00",
+  "text": "Spring registration among continuing students is running 4.8% below the same point last year, when 125 continuing students had registered as of 2025-11-20 [M1]. Registered credit hours are down 2.7% compared with the prior year's 1872 hours [M7]. There are 42 continuing students who have not yet registered, and each is a person we can still reach with advising and support before the term begins [M2]."
+}

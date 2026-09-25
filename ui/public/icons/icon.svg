@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#1F3A5F"/>
+  <text x="256" y="296" text-anchor="middle" font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif" font-size="196" font-weight="600" fill="#F7F6F2">GE</text>
+  <rect x="156" y="336" width="200" height="10" fill="#8A6D1F"/>
+</svg>

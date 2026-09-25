@@ -1,0 +1,23 @@
+# deploy/systemd/cabinet-backup.service — one backup run, started by
+# cabinet-backup.timer. Install both into /etc/systemd/system/,
+# `systemctl daemon-reload`, `systemctl enable --now cabinet-backup.timer`.
+# Validate on the target host: systemd-analyze verify cabinet-backup.service
+
+[Unit]
+Description=Golden Eagle AI Cabinet backup (snapshot + rotation)
+
+[Service]
+Type=oneshot
+User=cabinet
+Group=cabinet
+WorkingDirectory=/opt/golden-eagle-cabinet
+# The same env file as cabinet.service: the backup must see the same
+# CABINET_DB (and friends), or it snapshots the wrong path.
+EnvironmentFile=-/etc/golden-eagle/cabinet.env
+ExecStart=/opt/golden-eagle-cabinet/deploy/backup.sh
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/golden-eagle-cabinet/var
+ProtectHome=true
+PrivateTmp=true

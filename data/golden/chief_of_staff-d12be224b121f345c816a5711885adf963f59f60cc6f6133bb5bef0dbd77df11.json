@@ -1,0 +1,8 @@
+{
+  "provider": "chat",
+  "model_label": "live model",
+  "role": "chief_of_staff",
+  "findings_sha256": "d12be224b121f345c816a5711885adf963f59f60cc6f6133bb5bef0dbd77df11",
+  "recorded_at": "2026-09-25T16:57:55.618163+00:00",
+  "text": "{\"executive_summary\": \"42 continuing students have not yet registered for the coming term [M2]. Unresolved holds are concentrated in the Bursar's office, which accounts for 24 of 28 unresolved holds [M5]. The remaining unresolved holds sit with the Registrar (2), the Library (1), and Student Life (1) [M5]. 18 students have an unresolved financial hold under $1,000 standing between them and enrollment [M3]. Registration closes in 28 days, so outreach to the Bursar's low-balance cases could clear the largest share of these barriers quickly [M3, M5, M6].\", \"limitations\": \"The findings do not break down the 42 unregistered continuing students by hold type, so we cannot confirm which specific holds are driving non-registration [M2]. The 28 unresolved holds in M5 cover all current-term students, which may not align exactly with the 42 unregistered continuing students in M2 [M2, M5]. All records are fictional demonstration data [M2, M3, M5, M6]. The 28-day countdown reflects the as-of date from the data rather than today's date [M6].\"}"
+}

@@ -1,0 +1,37 @@
+# deploy/Caddyfile — Golden Eagle AI Cabinet, public HTTPS front.
+#
+# The hostname comes from the environment, never from this file:
+#
+#   CABINET_DOMAIN=cabinet.example.edu caddy run --config deploy/Caddyfile --adapter caddyfile
+#
+# Caddy obtains and renews the certificate automatically (Let's Encrypt) as
+# long as DNS points at this machine and ports 80/443 reach it. Validate
+# before loading:
+#
+#   CABINET_DOMAIN=cabinet.example.edu caddy validate --config deploy/Caddyfile --adapter caddyfile
+
+{$CABINET_DOMAIN} {
+	encode zstd gzip
+
+	# One MB above the app's own 20 MB dataset-upload cap, so a legal upload
+	# reaches the app and an oversized one gets the app's clear 413 rather
+	# than a truncated proxy error.
+	request_body {
+		max_size 21MB
+	}
+
+	reverse_proxy {$CABINET_BIND:127.0.0.1:8910}
+
+	# HSTS at the edge; the app sets it too (production mode), so a proxy
+	# change can never strip it.
+	header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+
+	# Rate limiting is not part of stock Caddy. The app already limits
+	# in-process — 60 requests/min per client IP and per session, 5/min on
+	# POST /ask (docs/SECURITY.md) — and sees the real client IP because
+	# CABINET_TRUSTED_PROXY lets uvicorn believe this proxy's
+	# X-Forwarded-For. To also limit at the edge, build Caddy with the
+	# ratelimit plugin and add a directive here:
+	#   xcaddy build --with github.com/mholt/caddy-ratelimit
+	#   rate_limit { zone cabinet { key {remote_host} } events 60 window 1m }
+}

@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Golden Eagle AI Cabinet · Backup Demo Deck</title>
+<style>
+  :root {
+    --ink: #1c2733;
+    --paper: #f7f3ec;
+    --card: #ffffff;
+    --accent: #1f3a5f;
+    --amber: #9a5b00;
+    --amber-bg: #fff3d6;
+    --line: #d8cfbf;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 20px;
+    line-height: 1.45;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 18px;
+    padding: 14px 28px;
+    background: var(--accent);
+    color: #fff;
+  }
+  header .beat-name { font-size: 26px; font-weight: bold; }
+  header .window { font-size: 20px; opacity: 0.9; }
+  header .spacer { flex: 1; }
+  .timer {
+    font-family: "Courier New", monospace;
+    font-size: 20px;
+    background: rgba(255,255,255,0.14);
+    border-radius: 8px;
+    padding: 6px 14px;
+    white-space: nowrap;
+  }
+  .timer.over {
+    background: var(--amber-bg);
+    color: var(--amber);
+    font-weight: bold;
+  }
+  main { flex: 1; display: flex; }
+  section.slide {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 40px 16px;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  section.slide.active { display: flex; }
+  figure { margin: 0 0 18px; text-align: center; }
+  figure img {
+    max-width: 100%;
+    max-height: 44vh;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 4px 18px rgba(28,39,51,0.18);
+    background: #fff;
+  }
+  figcaption { font-size: 18px; color: #55606c; margin-top: 8px; }
+  .say {
+    background: var(--card);
+    border-left: 8px solid var(--accent);
+    border-radius: 8px;
+    padding: 18px 26px;
+    font-size: 26px;
+    max-width: 1200px;
+    box-shadow: 0 2px 10px rgba(28,39,51,0.10);
+  }
+  .say .label {
+    display: block;
+    font-size: 18px;
+    font-weight: bold;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+  .cue {
+    font-size: 18px;
+    color: #55606c;
+    max-width: 1200px;
+    margin: 0 0 14px;
+    font-style: italic;
+  }
+  nav.controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 28px 20px;
+    justify-content: center;
+  }
+  button {
+    font-family: inherit;
+    font-size: 22px;
+    padding: 12px 30px;
+    border-radius: 10px;
+    border: 2px solid var(--accent);
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    min-width: 150px;
+  }
+  button.secondary { background: #fff; color: var(--accent); }
+  button:focus-visible { outline: 4px solid var(--amber); outline-offset: 2px; }
+  button[disabled] { opacity: 0.4; cursor: default; }
+  .position { font-size: 20px; min-width: 170px; text-align: center; }
+  .title-card { text-align: center; max-width: 1100px; margin: auto; }
+  .title-card h1 { font-size: 46px; margin: 0 0 8px; color: var(--accent); }
+  .title-card h2 { font-size: 26px; font-weight: normal; margin: 0 0 26px; }
+  .title-card p { font-size: 22px; text-align: left; }
+  .title-card ul { font-size: 20px; text-align: left; }
+  .title-card .howto {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 26px;
+    margin-top: 22px;
+    text-align: left;
+  }
+  kbd {
+    font-family: "Courier New", monospace;
+    font-size: 20px;
+    background: #eee7da;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 2px 10px;
+  }
+  section.slide { transition: opacity 160ms ease-in-out; }
+  @media (prefers-reduced-motion: reduce) {
+    section.slide { transition: none; }
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <span class="beat-name" id="beatName">Backup demo deck</span>
+  <span class="window" id="beatWindow"></span>
+  <span class="spacer"></span>
+  <span class="timer" id="timer" role="timer">Timer starts on the first advance</span>
+</header>
+
+<main>
+  <section class="slide active" id="slide-title">
+    <div class="title-card">
+      <h1>Golden Eagle AI Cabinet</h1>
+      <h2>Backup deck for the four-minute live demo</h2>
+      <p>This file is the fallback for two failures: the demo app will not start, or the
+      room has no network. It needs nothing but this file and the
+      <code>screenshots/</code> folder beside it. Every image was captured from the real
+      running app, and every spoken line is the frozen demo script, word for word.</p>
+      <div class="howto">
+        <p><strong>How to present with it</strong></p>
+        <ul>
+          <li>Press <kbd>→</kbd> or click <strong>Start</strong> to begin. The timer starts on that first advance.</li>
+          <li>Read the quoted line on each slide out loud, then advance with <kbd>→</kbd> or <kbd>←</kbd>.</li>
+          <li>The header shows the time spent on the current beat against its window. It turns amber when the window is exceeded. If a beat runs long, skip the details, keep the sentence, and never drop Beat 6.</li>
+          <li>The full run is four minutes across six beats, 0:00 to 4:00.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide" data-beat="1" data-window="30"
+      data-name="Beat 1 · The question" data-span="0:00 to 0:30">
+    <p class="cue">On screen: The sign-in screen, then the briefing shell. The masthead names the signed-in president, and a single question field sits beside the approved-question buttons.</p>
+    <figure>
+      <img src="screenshots/deck-beat1.png" alt="Briefing shell with the approved question typed in the question field, the approved-question buttons beside it, and the masthead naming the signed-in president">
+      <figcaption>Signed in as the president (the masthead names the account). The question field holds the approved question.</figcaption>
+    </figure>
+    <blockquote class="say"><span class="label">Say</span>
+      “Every fall, a president asks a simple question. What should I know about spring
+      registration? Today the answer lives in six spreadsheets and three inboxes. This is the
+      Golden Eagle AI Cabinet, governed AI employees that turn student-system data into one
+      briefing a leader can act on. Watch what happens when I ask.”
+    </blockquote>
+  </section>
+
+  <section class="slide" data-beat="2" data-window="40"
+      data-name="Beat 2 · The cabinet goes to work, visibly scoped" data-span="0:30 to 1:10">
+    <p class="cue">On screen: The Chief of Staff accepts the question and dispatches two tasks, one to the Enrollment Analyst, one to the Student Success Analyst. Each task card shows the exact fields that analyst is allowed to see. An audit event appears for each grant.</p>
+    <figure>
+      <img src="screenshots/deck-beat2.png" alt="Dispatch panel with one card per AI employee, each listing the fields it is allowed to see">
+      <figcaption>Each task card lists the exact fields granted to that analyst.</figcaption>
+    </figure>
+    <blockquote class="say"><span class="label">Say</span>
+      “The Chief of Staff does not answer itself. It assigns the work. The Enrollment Analyst
+      gets enrollment numbers, and nothing else. The Student Success Analyst gets holds and
+      advising, and nothing else. Every field granted is logged, and as you will see in a
+      minute, every field refused is logged too. These are employees with job descriptions, not
+      a chatbot with the database password.”
+    </blockquote>
+  </section>
+
+  <section class="slide" data-beat="3" data-window="70"
+      data-name="Beat 3 · The briefing" data-span="1:10 to 2:20">
+    <p class="cue">On screen: The executive briefing renders, seven sections in the proposal's order. 1. executive summary, 2. current measure and historical comparison, 3. student groups most affected, 4. evidence and source fields, 5. operational actions, 6. leadership decisions, 7. known limitations, missing data, or conflicting definitions. The operational actions and the leadership decisions are visually separated.</p>
+    <figure>
+      <img src="screenshots/deck-beat3.png" alt="The executive briefing, sections 1 to 3: executive summary, current measure, and student groups most affected">
+      <figcaption>Sections 1 to 3 of the briefing: summary, measure, affected students.</figcaption>
+    </figure>
+    <blockquote class="say"><span class="label">Say</span>
+      “Here is the briefing. Spring registration is down <strong>4.8 percent</strong> versus the same
+      date last year. <strong>Forty-two</strong> continuing students have not registered. These are not
+      risk scores. They are forty-two people who may need support. Of the forty-two,
+      <strong>eighteen</strong> have a financial hold under a thousand dollars, the kind a small grant
+      or a payment plan often clears, and <strong>twelve</strong> have not met with an advisor this
+      term. Below, the cabinet separates the operational actions, Student Success reviews the
+      students with no advising contact, Financial Aid reviews the small-balance cases, from the
+      one decision that belongs to leadership. Every number on this page traces to a row in the
+      data, and I will prove that next.”
+    </blockquote>
+  </section>
+
+  <section class="slide" data-beat="4" data-window="50"
+      data-name="Beat 4 · Open one claim" data-span="2:20 to 3:10">
+    <p class="cue">On screen: The presenter opens the evidence drawer on the 4.8 % claim. The drawer shows the source fields, the formula, and the rows behind the number.</p>
+    <figure>
+      <img src="screenshots/deck-beat4.png" alt="Evidence drawer for the M1 headline claim showing the value, the formula, source fields, and the numerator row list">
+      <figcaption>The evidence drawer: formula, source fields, and the rows behind the number.</figcaption>
+    </figure>
+    <blockquote class="say"><span class="label">Say</span>
+      “Pick any number. I will take the headline. Here is the formula, the exact fields it read,
+      and the one hundred nineteen students behind the numerator and the one hundred twenty-five
+      behind the denominator. Anyone can count these by hand from the raw data, and
+      <code>data/VERIFY.md</code> lists them. The AI explains the numbers. It is never allowed to
+      invent one. A test extracts every numeral in this briefing and fails the build if it is not
+      in the data.”
+    </blockquote>
+  </section>
+
+  <section class="slide" data-beat="5" data-window="30"
+      data-name="Beat 5 · The human decides" data-span="3:10 to 3:40">
+    <p class="cue">On screen: The decision panel. The leadership decision, whether to authorize a focused emergency-aid eligibility review for students below a defined balance threshold, stated separately from the operational actions, with an Approve button.</p>
+    <figure>
+      <img src="screenshots/deck-beat5.png" alt="Leadership decisions panel after approval, showing the simulated follow-up task to Financial Aid">
+      <figcaption>Approved: one simulated follow-up task, recorded. Nothing is sent.</figcaption>
+    </figure>
+    <blockquote class="say"><span class="label">Say</span>
+      “The cabinet advises. The president decides. Approving authorizes the eligibility review,
+      not an aid decision, which stays out of scope, and sends it to Financial Aid as a
+      follow-up task, simulated, because nothing here ever emails a student or touches a record.
+      The approval itself becomes part of the record.”
+    </blockquote>
+  </section>
+
+  <section class="slide" data-beat="6" data-window="20"
+      data-name="Beat 6 · The audit log and the refusal" data-span="3:40 to 4:00">
+    <p class="cue">On screen: The audit log view. The full event list, <code>question.asked</code>, <code>task.assigned</code>, <code>data.granted</code>, <code>finding.produced</code>, <code>briefing.produced</code>, <code>decision.approved</code>, <code>task.created</code>, and two <code>data.refused</code> events. First, the Enrollment Analyst's task requested <code>hold.amount</code> and was denied before any model call. Second, the out-of-scope question.</p>
+    <figure>
+      <img src="screenshots/deck-beat6.png" alt="Audit log after the denied data request, with the data.refused event highlighted and its refused field listed">
+      <figcaption>The refusal, recorded in the append-only audit log.</figcaption>
+    </figure>
+    <blockquote class="say"><span class="label">Say</span>
+      “Finally, the part I built first. One of the analysts asked for a field outside its role,
+      hold amounts, and was refused before any model was called. And when I ask something
+      outside the approved use case, which students are in counseling, the cabinet refuses in
+      plain words, and the refusal is recorded. The counseling fields exist in this fictional
+      data precisely so that refusal is real. Governed AI is not a promise. Here, it is the
+      architecture. Thank you.”
+    </blockquote>
+  </section>
+</main>
+
+<nav class="controls" aria-label="Deck controls">
+  <button type="button" class="secondary" id="prevBtn">← Back</button>
+  <span class="position" id="position">Title</span>
+  <button type="button" id="nextBtn">Start →</button>
+</nav>
+
+<script>
+(function () {
+  "use strict";
+  var slides = Array.prototype.slice.call(document.querySelectorAll("section.slide"));
+  var beatSlides = slides.filter(function (s) { return s.hasAttribute("data-beat"); });
+  var current = 0;
+  var startedAt = null;
+  var beatAccum = {};
+  var beatEnteredAt = null;
+  var tickHandle = null;
+
+  var beatNameEl = document.getElementById("beatName");
+  var beatWindowEl = document.getElementById("beatWindow");
+  var timerEl = document.getElementById("timer");
+  var positionEl = document.getElementById("position");
+  var prevBtn = document.getElementById("prevBtn");
+  var nextBtn = document.getElementById("nextBtn");
+
+  function fmt(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    var m = Math.floor(sec / 60);
+    var s = sec % 60;
+    return m + ":" + (s < 10 ? "0" : "") + s;
+  }
+
+  function nowSec() { return Date.now() / 1000; }
+
+  function accountBeatTime() {
+    if (beatEnteredAt === null) { return; }
+    var slide = slides[current];
+    var beat = slide.getAttribute("data-beat");
+    if (beat) {
+      beatAccum[beat] = (beatAccum[beat] || 0) + (nowSec() - beatEnteredAt);
+    }
+    beatEnteredAt = nowSec();
+  }
+
+  function currentBeatElapsed() {
+    var slide = slides[current];
+    var beat = slide.getAttribute("data-beat");
+    if (!beat || startedAt === null) { return 0; }
+    var total = beatAccum[beat] || 0;
+    if (beatEnteredAt !== null) { total += nowSec() - beatEnteredAt; }
+    return total;
+  }
+
+  function renderTimer() {
+    if (startedAt === null) {
+      timerEl.textContent = "Timer starts on the first advance";
+      timerEl.classList.remove("over");
+      return;
+    }
+    var slide = slides[current];
+    var beat = slide.getAttribute("data-beat");
+    var total = nowSec() - startedAt;
+    if (!beat) {
+      timerEl.textContent = "Total " + fmt(total) + " / 4:00";
+      timerEl.classList.toggle("over", total > 240);
+      return;
+    }
+    var win = parseInt(slide.getAttribute("data-window"), 10);
+    var elapsed = currentBeatElapsed();
+    timerEl.textContent = "This beat " + fmt(elapsed) + " / " + fmt(win) +
+      " window  ·  Total " + fmt(total) + " / 4:00";
+    timerEl.classList.toggle("over", elapsed > win || total > 240);
+  }
+
+  function show(index) {
+    accountBeatTime();
+    if (startedAt === null && index > 0) {
+      startedAt = nowSec();
+      tickHandle = window.setInterval(renderTimer, 500);
+    }
+    slides[current].classList.remove("active");
+    current = Math.max(0, Math.min(slides.length - 1, index));
+    slides[current].classList.add("active");
+    beatEnteredAt = nowSec();
+
+    var slide = slides[current];
+    var beat = slide.getAttribute("data-beat");
+    if (beat) {
+      beatNameEl.textContent = slide.getAttribute("data-name");
+      beatWindowEl.textContent = "Demo clock " + slide.getAttribute("data-span") +
+        "  ·  window " + fmt(parseInt(slide.getAttribute("data-window"), 10));
+      positionEl.textContent = "Beat " + beat + " of " + beatSlides.length;
+    } else {
+      beatNameEl.textContent = "Backup demo deck";
+      beatWindowEl.textContent = "";
+      positionEl.textContent = "Title";
+    }
+    prevBtn.disabled = current === 0;
+    nextBtn.textContent = current === 0 ? "Start \u2192" :
+      (current === slides.length - 1 ? "Last beat" : "Next \u2192");
+    nextBtn.disabled = current === slides.length - 1;
+    renderTimer();
+    window.scrollTo(0, 0);
+  }
+
+  function next() { if (current < slides.length - 1) { show(current + 1); } }
+  function prev() { if (current > 0) { show(current - 1); } }
+
+  nextBtn.addEventListener("click", next);
+  prevBtn.addEventListener("click", prev);
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "ArrowRight" || ev.key === "PageDown") { ev.preventDefault(); next(); }
+    else if (ev.key === "ArrowLeft" || ev.key === "PageUp") { ev.preventDefault(); prev(); }
+    else if (ev.key === "Home") { ev.preventDefault(); show(0); }
+    else if (ev.key === "End") { ev.preventDefault(); show(slides.length - 1); }
+  });
+
+  show(0);
+  if (tickHandle === null) { renderTimer(); }
+})();
+</script>
+</body>
+</html>

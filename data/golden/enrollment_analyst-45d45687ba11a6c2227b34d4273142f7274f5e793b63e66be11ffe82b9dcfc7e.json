@@ -1,0 +1,8 @@
+{
+  "provider": "chat",
+  "model_label": "live model",
+  "role": "enrollment_analyst",
+  "findings_sha256": "45d45687ba11a6c2227b34d4273142f7274f5e793b63e66be11ffe82b9dcfc7e",
+  "recorded_at": "2026-09-25T16:57:46.871345+00:00",
+  "text": "42 continuing students have not yet registered for the coming term [M2]. These students' enrollment is unresolved, and each may need outreach or support to complete registration [M2]. The findings do not break this count down by hold type, so we cannot yet say which specific holds are driving it [M2]."
+}

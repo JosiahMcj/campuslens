@@ -1,0 +1,420 @@
+"""Versioned schema migrations for ``var/cabinet.db``, stdlib only.
+
+    .venv/bin/python -m cabinet.migrations [--db PATH]
+
+The runner keeps a ``schema_migrations(version, name, applied_at)`` table.
+On open, :func:`migrate` applies every known migration that is not yet
+recorded, in order, each in its own transaction. Every statement is a plain
+``execute()`` inside that transaction (never ``executescript``, which issues
+an implicit COMMIT and would leave a half-applied migration behind a crash):
+a migration that fails midway rolls back whole, records nothing in
+``schema_migrations``, and is retried cleanly on the next start. A database
+whose recorded
+version is not in this build's migration list — a newer deployment's
+database, or a hand-edited one — raises :class:`SchemaVersionError`; the
+API turns that into a one-line startup refusal, never a traceback and never
+a half-upgraded schema.
+
+Migration 1 is the baseline. It also upgrades a pre-migration database in
+place: such a database is recognized by a ``users`` table with no
+``schema_migrations`` table; its users are moved into the rebuilt
+``users`` table (``institution_id NOT NULL``) under a newly created
+bootstrap institution.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sqlite3
+import sys
+from collections.abc import Callable
+from datetime import UTC, datetime
+
+# Audit scope for events that happen before a user is known (failed logins,
+# anonymous refusals). Not a real institution row; the per-institution id
+# sequence and hash chain treat it as their own scope.
+PLATFORM_INSTITUTION_ID = 0
+
+BOOTSTRAP_SLUG = "bootstrap"
+BOOTSTRAP_NAME = "Bootstrap Institution"
+
+SCHEMA_VERSION = 4
+
+
+class SchemaVersionError(RuntimeError):
+    """The database records a schema version this build does not know."""
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _table_names(conn: sqlite3.Connection) -> set[str]:
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"
+    ).fetchall()
+    return {str(row[0]) for row in rows}
+
+
+def _migration_1(conn: sqlite3.Connection) -> None:
+    """Baseline: tenancy, datasets, DB audit log, briefings, decisions,
+    recordings — plus the in-place upgrade of a pre-migration users table."""
+    tables = _table_names(conn)
+    upgrading_h1 = "users" in tables
+
+    # Plain execute() statements only: executescript() commits implicitly,
+    # which would leave a half-applied migration behind a crash.
+    for statement in (
+        """
+        CREATE TABLE IF NOT EXISTS institutions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            slug TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            last_seen TEXT NOT NULL,
+            csrf_token TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS datasets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            institution_id INTEGER NOT NULL REFERENCES institutions(id),
+            name TEXT NOT NULL,
+            uploaded_by TEXT NOT NULL,
+            uploaded_at TEXT NOT NULL,
+            sha256 TEXT NOT NULL,
+            row_counts TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 0,
+            deleted_at TEXT
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS audit_events (
+            institution_id INTEGER NOT NULL,
+            id INTEGER NOT NULL,
+            ts TEXT NOT NULL,
+            type TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            prev_hash TEXT NOT NULL,
+            hash TEXT NOT NULL,
+            PRIMARY KEY (institution_id, id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS briefings (
+            institution_id INTEGER NOT NULL REFERENCES institutions(id),
+            question_id TEXT NOT NULL,
+            produced_at TEXT NOT NULL,
+            sections TEXT NOT NULL,
+            PRIMARY KEY (institution_id, question_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS decisions (
+            institution_id INTEGER NOT NULL REFERENCES institutions(id),
+            decision_id TEXT NOT NULL,
+            approved_by TEXT NOT NULL,
+            at TEXT NOT NULL,
+            task TEXT NOT NULL,
+            PRIMARY KEY (institution_id, decision_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS recordings (
+            institution_id INTEGER NOT NULL REFERENCES institutions(id),
+            role TEXT NOT NULL,
+            key TEXT NOT NULL,
+            json TEXT NOT NULL,
+            PRIMARY KEY (institution_id, role, key)
+        )
+        """,
+    ):
+        conn.execute(statement)
+
+    if upgrading_h1:
+        # The old users.institution_id was a nullable free-text column. Every
+        # existing user joins the bootstrap institution; the table is
+        # rebuilt because SQLite cannot tighten a column to NOT NULL.
+        conn.execute(
+            "INSERT OR IGNORE INTO institutions (name, slug, created_at)"
+            " VALUES (?, ?, ?)",
+            (BOOTSTRAP_NAME, BOOTSTRAP_SLUG, _now()),
+        )
+        bootstrap_id = int(
+            conn.execute(
+                "SELECT id FROM institutions WHERE slug = ?", (BOOTSTRAP_SLUG,)
+            ).fetchone()[0]
+        )
+        # users_h2 is a temporary build table: a database left over from a
+        # crash in the pre-transactional runner may still carry it.
+        conn.execute("DROP TABLE IF EXISTS users_h2")
+        conn.execute(
+            """
+            CREATE TABLE users_h2 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL,
+                institution_id INTEGER NOT NULL REFERENCES institutions(id),
+                created_at TEXT NOT NULL,
+                disabled INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO users_h2 (id, email, password_hash, role,"
+            " institution_id, created_at, disabled)"
+            " SELECT id, email, password_hash, role, ?, created_at, disabled"
+            " FROM users",
+            (bootstrap_id,),
+        )
+        conn.execute("DROP TABLE users")
+        conn.execute("ALTER TABLE users_h2 RENAME TO users")
+    else:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL,
+                institution_id INTEGER NOT NULL REFERENCES institutions(id),
+                created_at TEXT NOT NULL,
+                disabled INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+
+
+def _migration_2(conn: sqlite3.Connection) -> None:
+    """Review fixes: pin briefings and approvals to the dataset they were
+    computed from (activating a new dataset must invalidate both), and index
+    the audit log for the per-type latest-event lookups."""
+    for table in ("briefings", "decisions"):
+        columns = {
+            str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")
+        }
+        if "dataset_id" not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN dataset_id INTEGER")
+        if "dataset_sha256" not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN dataset_sha256 TEXT")
+        # Rows written before this migration belong to whatever dataset was
+        # active when they were produced — the institution's active dataset.
+        conn.execute(
+            f"UPDATE {table} SET"
+            " dataset_id = ("
+            "   SELECT d.id FROM datasets d"
+            f"   WHERE d.institution_id = {table}.institution_id"
+            "     AND d.is_active = 1 AND d.deleted_at IS NULL"
+            "   ORDER BY d.id DESC LIMIT 1),"
+            " dataset_sha256 = ("
+            "   SELECT d.sha256 FROM datasets d"
+            f"   WHERE d.institution_id = {table}.institution_id"
+            "     AND d.is_active = 1 AND d.deleted_at IS NULL"
+            "   ORDER BY d.id DESC LIMIT 1)"
+            " WHERE dataset_id IS NULL"
+        )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_audit_events_institution_type_id"
+        " ON audit_events (institution_id, type, id)"
+    )
+
+
+def _migration_3(conn: sqlite3.Connection) -> None:
+    """The decisions primary key gains ``dataset_id``.
+
+    Migration 2 pinned approvals to their dataset as data, but the primary
+    key stayed ``(institution_id, decision_id)`` — so after a dataset
+    switch the re-approval's INSERT OR IGNORE hit the old row, inserted
+    nothing, and the API answered ``created: False`` with no events. SQLite
+    cannot alter a primary key in place, so the table is rebuilt (the same
+    pattern migration 1 used for the old users table): create, copy, drop,
+    rename — inside this migration's transaction. ``dataset_id`` stays
+    nullable in the new key (a pre-migration-2 row whose institution had no
+    active dataset to backfill from keeps its NULL; SQLite treats NULLs as
+    distinct, which is harmless because new approvals always carry a real
+    dataset id).
+    """
+    # decisions_v3 is a temporary build table: drop a leftover from a crash
+    # in a pre-transactional runner before recreating it.
+    conn.execute("DROP TABLE IF EXISTS decisions_v3")
+    conn.execute(
+        """
+        CREATE TABLE decisions_v3 (
+            institution_id INTEGER NOT NULL REFERENCES institutions(id),
+            decision_id TEXT NOT NULL,
+            approved_by TEXT NOT NULL,
+            at TEXT NOT NULL,
+            task TEXT NOT NULL,
+            dataset_id INTEGER,
+            dataset_sha256 TEXT,
+            PRIMARY KEY (institution_id, decision_id, dataset_id)
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO decisions_v3 (institution_id, decision_id, approved_by,"
+        " at, task, dataset_id, dataset_sha256)"
+        " SELECT institution_id, decision_id, approved_by, at, task,"
+        " dataset_id, dataset_sha256 FROM decisions"
+    )
+    conn.execute("DROP TABLE decisions")
+    conn.execute("ALTER TABLE decisions_v3 RENAME TO decisions")
+
+
+def _migration_4(conn: sqlite3.Connection) -> None:
+    """The briefings primary key gains ``dataset_id``.
+
+    Migration 2 pinned briefings to their dataset as data, but the primary
+    key stayed ``(institution_id, question_id)`` — so a re-ask after a
+    dataset switch was an INSERT OR REPLACE that DESTROYED the previous
+    dataset's briefing row, and re-activating that dataset found its
+    briefing gone (404 until asked again). Briefings are meant to be keyed
+    per dataset, like decisions since migration 3, and SQLite cannot alter
+    a primary key in place — same rebuild pattern: create, copy, drop,
+    rename, inside this migration's transaction. ``dataset_id`` stays
+    nullable in the new key for the same reason as in migration 3 (a row
+    with no active dataset to backfill from keeps its NULL; new briefings
+    always carry a real dataset id).
+    """
+    # briefings_v4 is a temporary build table: drop a leftover from a crash
+    # in a pre-transactional runner before recreating it.
+    conn.execute("DROP TABLE IF EXISTS briefings_v4")
+    conn.execute(
+        """
+        CREATE TABLE briefings_v4 (
+            institution_id INTEGER NOT NULL REFERENCES institutions(id),
+            dataset_id INTEGER,
+            question_id TEXT NOT NULL,
+            produced_at TEXT NOT NULL,
+            sections TEXT NOT NULL,
+            dataset_sha256 TEXT,
+            PRIMARY KEY (institution_id, dataset_id, question_id)
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO briefings_v4 (institution_id, dataset_id, question_id,"
+        " produced_at, sections, dataset_sha256)"
+        " SELECT institution_id, dataset_id, question_id, produced_at,"
+        " sections, dataset_sha256 FROM briefings"
+    )
+    conn.execute("DROP TABLE briefings")
+    conn.execute("ALTER TABLE briefings_v4 RENAME TO briefings")
+
+
+MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
+    (1, "h2 tenancy baseline", _migration_1),
+    (2, "r3 dataset pinning and audit index", _migration_2),
+    (3, "r3b decisions keyed per dataset", _migration_3),
+    (SCHEMA_VERSION, "r4 briefings keyed per dataset", _migration_4),
+]
+
+
+def recorded_versions(conn: sqlite3.Connection) -> list[int]:
+    """Versions in ``schema_migrations`` (empty when the table is absent)."""
+    if "schema_migrations" not in _table_names(conn):
+        return []
+    return sorted(
+        int(row[0]) for row in conn.execute("SELECT version FROM schema_migrations")
+    )
+
+
+def migrate(conn: sqlite3.Connection) -> list[int]:
+    """Apply pending migrations; return the versions applied this call.
+
+    Raises :class:`SchemaVersionError` when the database records a version
+    this build does not know — the caller must refuse to start.
+    """
+    known = {version for version, _, _ in MIGRATIONS}
+    recorded = recorded_versions(conn)
+    unknown = [version for version in recorded if version not in known]
+    if unknown:
+        raise SchemaVersionError(
+            f"the database records schema version(s) {unknown} that this "
+            f"build does not know (this build knows {sorted(known)}); the "
+            "database was written by a newer or different build — refusing "
+            "to start rather than guess"
+        )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS schema_migrations ("
+        " version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)"
+    )
+    applied: list[int] = []
+    for version, name, migration in MIGRATIONS:
+        if version in recorded:
+            continue
+        # Explicit BEGIN: Python's legacy isolation only opens implicit
+        # transactions around DML, so `with conn:` alone would let DDL
+        # (CREATE/ALTER/DROP) auto-commit and leave a half-applied migration
+        # behind a crash. Inside an explicit transaction every statement,
+        # DDL included, rolls back together.
+        conn.execute("BEGIN")
+        try:
+            migration(conn)
+            conn.execute(
+                "INSERT INTO schema_migrations (version, name, applied_at)"
+                " VALUES (?, ?, ?)",
+                (version, name, _now()),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        applied.append(version)
+    return applied
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="python -m cabinet.migrations")
+    parser.add_argument(
+        "--db",
+        default=None,
+        help="database path (default: CABINET_DB or var/cabinet.db)",
+    )
+    args = parser.parse_args(argv)
+    if args.db:
+        db_path = args.db
+    else:
+        from cabinet.auth import db_path_from_env
+
+        try:
+            db_path = str(db_path_from_env())
+        except RuntimeError as exc:
+            print(f"migrate: {exc}", file=sys.stderr)
+            return 1
+    conn = sqlite3.connect(db_path)
+    try:
+        before = recorded_versions(conn)
+        applied = migrate(conn)
+        after = recorded_versions(conn)
+    except SchemaVersionError as exc:
+        print(f"migrate: {exc}", file=sys.stderr)
+        return 1
+    except sqlite3.Error as exc:
+        print(
+            f"migrate: {db_path}: the migration failed ({exc}); nothing was "
+            "recorded — fix the database and re-run",
+            file=sys.stderr,
+        )
+        return 1
+    finally:
+        conn.close()
+    if applied:
+        print(f"{db_path}: applied migration(s) {applied}; now at version {after}")
+    else:
+        print(f"{db_path}: already at version {after or before or 'none'}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

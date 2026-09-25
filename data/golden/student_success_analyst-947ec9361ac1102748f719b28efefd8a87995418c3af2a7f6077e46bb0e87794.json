@@ -1,0 +1,8 @@
+{
+  "provider": "chat",
+  "model_label": "live model",
+  "role": "student_success_analyst",
+  "findings_sha256": "947ec9361ac1102748f719b28efefd8a87995418c3af2a7f6077e46bb0e87794",
+  "recorded_at": "2026-09-25T16:57:52.268270+00:00",
+  "text": "Unresolved holds are concentrated in the Bursar's office, which accounts for 24 of 28 unresolved holds [M5]. The remaining holds sit with the Registrar (2), the Library (1), and Student Life (1) [M5]. Notably, 18 students have an unresolved financial hold under $1,000—a small balance standing between them and enrollment [M3]. Outreach focused on the Bursar's low-balance cases could clear the largest share of these barriers quickly [M3][M5]."
+}

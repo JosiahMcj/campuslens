@@ -1,0 +1,1508 @@
+/* Golden Eagle AI Cabinet dashboard. Visual authority: DESIGN.md —
+   a printed briefing (document serif) with an instrument rail (system sans). */
+
+:root {
+  --paper: #f7f6f2;
+  --rail: #eef0f3;
+  --ink: #1b2230;
+  --ink-soft: #4e5566;
+  --rule: #d8dbe1;
+  --navy: #1f3a5f;
+  --gold: #8a6d1f;
+  --gold-wash: #fbf7ea;
+  --alert: #8c2b1d;
+
+  --document: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  --instrument: system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  font-family: var(--instrument);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--paper);
+  caret-color: var(--navy);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  interpolate-size: allow-keywords;
+}
+
+/* Room scale: projected at 1400 px from three metres, every rem scales up. */
+@media (min-width: 1200px) {
+  :root {
+    font-size: 18px;
+  }
+}
+
+::selection {
+  background: color-mix(in srgb, var(--navy) 20%, var(--paper));
+}
+
+body {
+  margin: 0;
+}
+
+/* One focus ring — 2px navy, 2px offset — on every control. */
+:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+}
+
+[id] {
+  scroll-margin-top: 24px;
+}
+
+a {
+  color: var(--navy);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.85em;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+  transition:
+    background-color 150ms ease-out,
+    border-color 150ms ease-out,
+    color 150ms ease-out;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+p {
+  margin: 12px 0 0;
+}
+
+/* Weights 400 and 600 only, <strong> included. */
+strong,
+b {
+  font-weight: 600;
+}
+
+/* Headings are the document's; h4 lives only on instrument surfaces. */
+h1,
+h2,
+h3 {
+  font-family: var(--document);
+  color: var(--navy);
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: 1.8rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+h2 {
+  font-size: 1.42rem;
+  font-weight: 600;
+  margin: 0 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+}
+
+h3 {
+  font-size: 1.27rem;
+  font-weight: 600;
+  margin: 16px 0 8px;
+}
+
+h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+section {
+  margin-top: 32px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Page layout: one column below 1200 px, document + sticky rail above ---*/
+
+.page {
+  max-width: 68ch;
+  margin-inline: auto;
+  padding: 24px 16px 48px;
+}
+
+/* On one column the rail wrappers vanish and their children flow in DOM
+   order: the cabinet's task cards, the figures row, the section list. */
+.rail,
+.rail-inner {
+  display: contents;
+}
+
+@media (min-width: 1200px) {
+  .page {
+    max-width: none;
+    display: grid;
+    grid-template-columns: minmax(0, 68ch) minmax(0, 19rem);
+    grid-template-areas:
+      'header header'
+      'question question'
+      'doc rail';
+    column-gap: 48px;
+    justify-content: center;
+    padding: 32px 24px 48px;
+  }
+
+  .page-header {
+    grid-area: header;
+  }
+
+  .question-bar {
+    grid-area: question;
+  }
+
+  .doc {
+    grid-area: doc;
+  }
+
+  .rail {
+    display: block;
+    grid-area: rail;
+    margin-top: 32px;
+    background: var(--rail);
+    border-radius: 8px;
+    padding: 16px;
+  }
+
+  .rail-inner {
+    position: sticky;
+    top: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  /* The rail shows the figures first; the DOM keeps the task cards ahead. */
+  .rail-inner .stat-row {
+    order: -1;
+  }
+
+  .rail-inner .rail-masthead {
+    order: -2;
+    margin: 0;
+  }
+}
+
+/* The product name lives at the top of the rail, not above the h1. */
+.rail-masthead {
+  font-size: 0.89rem;
+  color: var(--ink-soft);
+  margin: 24px 0 0;
+}
+
+/* --- Header --------------------------------------------------------------*/
+
+.page-header .lede {
+  font-family: var(--document);
+  color: var(--ink-soft);
+  max-width: 68ch;
+  margin: 8px 0 0;
+  text-wrap: pretty;
+}
+
+/* --- Question bar ---------------------------------------------------------*/
+
+.question-bar form label {
+  display: block;
+  font-size: 0.89rem;
+  color: var(--ink-soft);
+  margin-bottom: 8px;
+}
+
+.question-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.question-row input {
+  flex: 1 1 22rem;
+  font: inherit;
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--rail);
+  color: var(--ink);
+}
+
+.question-row input:focus {
+  border-color: var(--navy);
+}
+
+.question-row input::placeholder {
+  color: var(--ink-soft);
+}
+
+.question-row button[type='submit'] {
+  background: var(--navy);
+  color: var(--paper);
+  border: 1px solid var(--navy);
+  padding: 8px 16px;
+  font-weight: 600;
+}
+
+.question-row button[type='submit']:hover {
+  background: color-mix(in srgb, var(--navy), black 15%);
+}
+
+.question-row button[type='submit']:active {
+  background: color-mix(in srgb, var(--navy), black 25%);
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--navy);
+  border: 1px solid var(--navy);
+  padding: 8px 16px;
+}
+
+button.secondary:hover {
+  background: color-mix(in srgb, var(--navy) 8%, transparent);
+}
+
+button.secondary:active {
+  background: color-mix(in srgb, var(--navy) 14%, transparent);
+}
+
+.hint {
+  color: var(--ink-soft);
+  font-size: 0.89rem;
+  font-family: var(--instrument);
+}
+
+.status-line {
+  color: var(--ink-soft);
+  font-style: italic;
+  font-family: var(--instrument);
+}
+
+.error-line {
+  color: var(--alert);
+  font-family: var(--instrument);
+}
+
+/* Refusals and the unavailable state share the alert rule, never gold. */
+.refusal-card,
+.model-unavailable {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--paper);
+  border: 1px solid var(--alert);
+  border-radius: 8px;
+  font-family: var(--instrument);
+}
+
+.refusal-card h3,
+.model-unavailable h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  color: var(--alert);
+}
+
+.technical-detail {
+  margin-top: 8px;
+  color: var(--ink-soft);
+}
+
+/* --- Disclosure widgets: drawn chevron, 200 ms ease-out open --------------*/
+
+summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--navy);
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
+summary::marker {
+  content: none;
+}
+
+.chevron {
+  flex: none;
+  width: 0.75em;
+  height: 0.75em;
+}
+
+details[open] > summary .chevron {
+  transform: rotate(90deg);
+}
+
+details::details-content {
+  block-size: 0;
+  overflow: clip;
+}
+
+details[open]::details-content {
+  block-size: auto;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  summary .chevron {
+    transition: transform 200ms ease-out;
+  }
+
+  details::details-content {
+    transition:
+      block-size 200ms ease-out,
+      content-visibility 200ms ease-out allow-discrete;
+  }
+}
+
+/* --- Task cards (the cabinet's dispatch) -----------------------------------*/
+
+.dispatch {
+  margin-top: 24px;
+  font-family: var(--instrument);
+}
+
+.dispatch h3 {
+  margin: 0 0 12px;
+}
+
+.task-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 12px;
+}
+
+@media (min-width: 1200px) {
+  .rail .task-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The one boxed element: three parallel entities with state. */
+.task-card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 0.89rem;
+}
+
+.task-card h4 {
+  margin: 0 0 4px;
+}
+
+.task-card .task-id {
+  color: var(--ink-soft);
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-card ul {
+  margin: 4px 0 8px;
+  padding-inline-start: 16px;
+}
+
+.task-card details {
+  margin: 4px 0 8px;
+}
+
+.task-card details ul {
+  margin-bottom: 0;
+}
+
+.task-card .task-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 0 0;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.task-card[data-status='done'] {
+  border-color: var(--navy);
+}
+
+.task-card[data-status='done'] .task-status {
+  color: var(--navy);
+}
+
+.task-card[data-status='unavailable'] .task-status {
+  color: var(--alert);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .task-card {
+    transition: border-color 200ms ease-out;
+  }
+
+  .task-card .task-status {
+    transition: color 200ms ease-out;
+  }
+}
+
+/* --- The four figures: typographic, on a ruled row, no boxes ----------------*/
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  column-gap: 16px;
+  border-block: 1px solid var(--rule);
+  margin-top: 24px;
+  font-family: var(--document);
+}
+
+.stat-row .stat-figure {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 4px 12px 0;
+  border: none;
+  border-top: 1px solid var(--rule);
+  border-radius: 0;
+  background: none;
+  text-align: start;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.stat-figure:nth-child(-n + 2) {
+  border-top: none;
+}
+
+.stat-display {
+  font-size: 2.4rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--navy);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+.stat-figure:hover .stat-display {
+  color: color-mix(in srgb, var(--navy), black 20%);
+  text-decoration-thickness: 2px;
+}
+
+.stat-display.missing {
+  font-style: italic;
+}
+
+.stat-title {
+  font-family: var(--instrument);
+  font-size: 0.89rem;
+  color: var(--ink-soft);
+}
+
+@media (min-width: 1200px) {
+  .rail .stat-row {
+    grid-template-columns: 1fr;
+    column-gap: 0;
+    border-block: none;
+    margin-top: 0;
+  }
+
+  .rail .stat-figure:nth-child(-n + 2) {
+    border-top: 1px solid var(--rule);
+  }
+
+  .rail .stat-figure:first-child {
+    border-top: none;
+  }
+}
+
+/* --- Section list -----------------------------------------------------------*/
+
+.section-nav {
+  margin-top: 24px;
+  font-size: 0.89rem;
+}
+
+.section-nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.section-nav li {
+  border-bottom: 1px solid var(--rule);
+}
+
+.section-nav a {
+  display: block;
+  padding: 8px 4px;
+  color: var(--navy);
+  text-decoration: none;
+}
+
+.section-nav a:hover,
+.section-nav a:focus-visible {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+.section-nav a[aria-current='location'] {
+  font-weight: 600;
+}
+
+/* --- The briefing document ---------------------------------------------------*/
+
+.doc {
+  font-family: var(--document);
+}
+
+.doc .audit-log,
+.doc .finding-list,
+.doc .office-table,
+.doc .analyst-source,
+.doc .simulated-task,
+.doc .model-unavailable,
+.doc .refusal-card,
+.doc .state-panel,
+.doc .hint,
+.doc .status-line,
+.doc .error-line,
+.doc .technical-detail,
+.doc .filter-bar,
+.doc .event-list {
+  font-family: var(--instrument);
+}
+
+.briefing .headline-text {
+  font-size: 1.27rem;
+}
+
+/* Every number in prose is a finding link and looks like one. */
+.finding-link {
+  background: none;
+  border: none;
+  padding: 0 0.1em;
+  font: inherit;
+  color: var(--navy);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+  border-radius: 2px;
+}
+
+.finding-link:hover {
+  color: color-mix(in srgb, var(--navy), black 20%);
+  background: color-mix(in srgb, var(--navy) 8%, transparent);
+}
+
+.num {
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.num.missing {
+  font-weight: 400;
+  font-style: italic;
+}
+
+/* The findings list rows ride on hairlines, not cards. */
+.finding-list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+  font-size: 0.89rem;
+}
+
+.finding-row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  width: 100%;
+  text-align: start;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 8px 4px;
+  color: var(--ink);
+}
+
+.finding-row:hover {
+  background: color-mix(in srgb, var(--navy) 5%, transparent);
+}
+
+.finding-row-id {
+  font-weight: 600;
+  color: var(--navy);
+  min-width: 2rem;
+}
+
+.finding-row-title {
+  flex: 1;
+}
+
+.finding-row-display {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.finding-row-fields {
+  flex-basis: 100%;
+  color: var(--ink-soft);
+}
+
+.office-table {
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 0.89rem;
+}
+
+.office-table caption {
+  text-align: start;
+  color: var(--ink-soft);
+  margin-bottom: 8px;
+}
+
+.office-table th,
+.office-table td {
+  border: 1px solid var(--rule);
+  padding: 8px 12px;
+  text-align: start;
+}
+
+.office-table th {
+  background: var(--rail);
+  font-weight: 600;
+}
+
+.office-table td {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The operational-actions panel is the rail's ground; it needs no approval. */
+.staff-plan {
+  background: var(--rail);
+  border-radius: 8px;
+  padding: 16px 24px 24px;
+}
+
+.action-list {
+  margin: 12px 0 0;
+  padding-inline-start: 24px;
+}
+
+.action-list li {
+  margin-bottom: 8px;
+}
+
+.limitations-list li {
+  margin-bottom: 8px;
+}
+
+.analyst-source {
+  font-size: 0.89rem;
+  color: var(--ink-soft);
+  margin: 0 0 8px;
+}
+
+.stub-tag {
+  display: inline-block;
+  background: var(--rail);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+/* --- The leadership decision: the one gold element ----------------------------*/
+
+.decision-panel {
+  background: var(--gold-wash);
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  padding: 16px 24px 24px;
+}
+
+.decision-panel h2 {
+  border-bottom-color: var(--gold);
+}
+
+.panel-note {
+  color: var(--ink-soft);
+}
+
+.decision-card h3 {
+  margin-bottom: 8px;
+}
+
+.follow-up {
+  color: var(--ink-soft);
+}
+
+.approve-button {
+  background: var(--paper);
+  color: var(--gold);
+  border: 1px solid var(--gold);
+  font-weight: 600;
+  padding: 8px 16px;
+  margin-top: 12px;
+}
+
+.approve-button:hover {
+  background: color-mix(in srgb, var(--gold) 12%, var(--paper));
+  color: color-mix(in srgb, var(--gold), black 15%);
+}
+
+.approve-button:active {
+  background: color-mix(in srgb, var(--gold) 20%, var(--paper));
+  color: color-mix(in srgb, var(--gold), black 15%);
+}
+
+.simulated-task {
+  margin-top: 16px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.simulated-task h4 {
+  margin: 0 0 8px;
+}
+
+.simulated-task dl {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.simulated-task dt {
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.simulated-task dd {
+  margin: 0;
+}
+
+/* --- Loading, error, empty -----------------------------------------------------*/
+
+.state-panel {
+  margin-top: 32px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 16px 24px 24px;
+}
+
+.error-panel {
+  border-color: var(--alert);
+}
+
+.error-panel h2 {
+  border-bottom: none;
+  color: var(--alert);
+}
+
+.error-panel button {
+  background: var(--alert);
+  color: var(--paper);
+  border: 1px solid var(--alert);
+  font-weight: 600;
+  padding: 8px 16px;
+  margin-top: 16px;
+}
+
+.error-panel button:hover {
+  background: color-mix(in srgb, var(--alert), black 15%);
+}
+
+.error-panel button:active {
+  background: color-mix(in srgb, var(--alert), black 25%);
+}
+
+/* The loading state is a skeleton of the figures row and the section
+   headings, not a spinner. */
+.skeleton {
+  height: 1rem;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--rail) 25%,
+    color-mix(in srgb, var(--rail), white 55%) 50%,
+    var(--rail) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  margin-bottom: 8px;
+}
+
+.skeleton.short {
+  width: 55%;
+}
+
+.skeleton-heading {
+  height: 1.42rem;
+  width: 40%;
+  margin-top: 32px;
+}
+
+.doc-skeleton .hint {
+  margin-top: 24px;
+}
+
+.skeleton-figure {
+  padding: 12px 4px 12px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.skeleton-figure:nth-child(-n + 2) {
+  border-top: none;
+}
+
+.skeleton-figure-value {
+  height: 2.4rem;
+  width: 60%;
+}
+
+.skeleton-figure-label {
+  height: 0.89rem;
+  width: 80%;
+  margin-bottom: 0;
+}
+
+@media (min-width: 1200px) {
+  .rail .skeleton-figure:nth-child(-n + 2) {
+    border-top: 1px solid var(--rule);
+  }
+
+  .rail .skeleton-figure:first-child {
+    border-top: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* --- Evidence drawer ----------------------------------------------------------*/
+
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 10;
+}
+
+.drawer {
+  background: var(--paper);
+  width: min(36rem, 94vw);
+  height: 100%;
+  overflow-y: auto;
+  padding: 24px 32px 48px;
+  box-shadow: -8px 0 24px color-mix(in srgb, var(--ink) 25%, transparent);
+  scrollbar-color: var(--ink-soft) var(--rail);
+  font-family: var(--instrument);
+}
+
+.drawer:focus,
+.drawer:focus-visible {
+  outline: none;
+}
+
+.drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.drawer-header h2 {
+  border-bottom: none;
+  margin: 0;
+}
+
+/* The drawer's finding id is a small instrument tag, not part of the title. */
+.id-badge {
+  display: inline-block;
+  font-family: var(--instrument);
+  font-size: 0.89rem;
+  font-weight: 600;
+  color: var(--navy);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin-inline-end: 8px;
+}
+
+.close-button {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
+.close-button:hover {
+  border-color: var(--navy);
+  color: var(--navy);
+}
+
+.drawer-facts dt {
+  font-weight: 600;
+  color: var(--navy);
+  margin-top: 24px;
+}
+
+.drawer-facts dd {
+  margin: 8px 0 0;
+}
+
+.drawer-value {
+  font-family: var(--document);
+  font-size: 2.4rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.drawer-value.missing {
+  font-style: italic;
+}
+
+.formula {
+  display: block;
+  background: var(--rail);
+  border-radius: 6px;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
+.field-list {
+  margin: 0;
+  padding-inline-start: 16px;
+}
+
+.row-list-block h3 {
+  font-size: 1rem;
+  margin: 16px 0 8px;
+}
+
+.row-list {
+  list-style: none;
+  margin: 0;
+  padding: 12px;
+  background: var(--rail);
+  border-radius: 6px;
+  columns: 3;
+  font-size: 0.89rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .drawer-overlay {
+    animation: overlay-in 200ms ease-out;
+  }
+
+  .drawer {
+    animation: drawer-in 200ms ease-out;
+  }
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(32px);
+  }
+}
+
+/* --- Audit log -----------------------------------------------------------------*/
+
+.audit-log {
+  font-family: var(--instrument);
+}
+
+.denied-demo {
+  margin: 12px 0 16px;
+}
+
+.denied-demo .hint {
+  margin: 8px 0 0;
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+
+.filter-bar .filter {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  padding: 4px 12px;
+  font-size: 0.89rem;
+  border-radius: 999px;
+}
+
+.filter-bar .filter:hover {
+  border-color: var(--navy);
+}
+
+.filter-bar .filter.active {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: var(--paper);
+}
+
+.filter-bar .refresh {
+  margin-inline-start: auto;
+}
+
+.event-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.event {
+  border-bottom: 1px solid var(--rule);
+  padding: 12px 4px;
+}
+
+.event.highlighted {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+}
+
+.event-data-refused .event-type {
+  color: var(--alert);
+}
+
+.event-line {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.event-id {
+  color: var(--ink-soft);
+  font-size: 0.89rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.event-ts {
+  color: var(--ink-soft);
+  font-size: 0.89rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.event-type {
+  color: var(--navy);
+}
+
+.event-actor {
+  color: var(--ink-soft);
+}
+
+.event-badge {
+  font-size: 0.89rem;
+  font-weight: 600;
+  color: var(--alert);
+  border: 1px solid var(--alert);
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+
+.event-summary {
+  margin: 8px 0 0;
+  font-size: 0.89rem;
+}
+
+.event-summary.refusal {
+  color: var(--alert);
+}
+
+.event details {
+  margin-top: 8px;
+}
+
+.event summary {
+  font-size: 0.89rem;
+}
+
+.event pre {
+  background: var(--rail);
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+  /* The one exception to the 0.89rem floor: the raw JSON payload is scrolled,
+     not read. */
+  font-size: 0.85rem;
+}
+
+/* --- Shared primary and danger buttons -------------------------------------*/
+
+.primary-button {
+  background: var(--navy);
+  color: var(--paper);
+  border: 1px solid var(--navy);
+  padding: 8px 16px;
+  font-weight: 600;
+}
+
+.primary-button:hover {
+  background: color-mix(in srgb, var(--navy), black 15%);
+}
+
+.primary-button:active {
+  background: color-mix(in srgb, var(--navy), black 25%);
+}
+
+.danger-button {
+  background: var(--alert);
+  color: var(--paper);
+  border: 1px solid var(--alert);
+  padding: 8px 16px;
+  font-weight: 600;
+}
+
+.danger-button:hover {
+  background: color-mix(in srgb, var(--alert), black 15%);
+}
+
+.danger-button:active {
+  background: color-mix(in srgb, var(--alert), black 25%);
+}
+
+/* --- The sign-in screen ------------------------------------------------------*/
+
+.auth-check {
+  padding-top: 48px;
+}
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 16px;
+}
+
+.login-panel {
+  width: min(24rem, 100%);
+  margin-top: 8vh;
+}
+
+.login-panel h1 {
+  font-size: 1.42rem;
+}
+
+.login-lede {
+  font-family: var(--document);
+  color: var(--ink-soft);
+  margin: 8px 0 24px;
+  text-wrap: pretty;
+}
+
+.login-notice {
+  color: var(--navy);
+  border: 1px solid var(--navy);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 0 0 16px;
+}
+
+.login-panel form label {
+  display: block;
+  font-size: 0.89rem;
+  color: var(--ink-soft);
+  margin: 12px 0 4px;
+}
+
+.login-panel form input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--rail);
+  color: var(--ink);
+}
+
+.login-panel form input:focus {
+  border-color: var(--navy);
+}
+
+.login-panel form .primary-button {
+  width: 100%;
+  margin-top: 16px;
+}
+
+.login-panel .error-line {
+  margin-top: 12px;
+}
+
+/* --- The rail masthead (identity, provenance, sign out) ----------------------*/
+
+.masthead {
+  margin: 24px 0 0;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.masthead p {
+  margin: 4px 0 0;
+}
+
+.masthead-product {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.masthead-institution {
+  color: var(--ink-soft);
+}
+
+.masthead-dataset,
+.masthead-user {
+  font-size: 0.89rem;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.masthead-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.masthead-actions a {
+  font-size: 0.89rem;
+}
+
+.masthead-actions button {
+  padding: 4px 12px;
+  font-size: 0.89rem;
+  margin-inline-start: auto;
+}
+
+/* A small note under the figures while the data is the demonstration set. */
+.demo-note {
+  font-size: 0.89rem;
+  color: var(--ink-soft);
+  margin: 8px 0 0;
+}
+
+/* --- The Institution area (instrument surface, admin only) --------------------*/
+
+.institution-doc {
+  font-family: var(--instrument);
+}
+
+.dataset-table td {
+  vertical-align: top;
+}
+
+.dataset-flag {
+  display: block;
+  font-size: 0.89rem;
+  color: var(--ink-soft);
+}
+
+.dataset-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.dataset-actions button {
+  padding: 4px 12px;
+  font-size: 0.89rem;
+}
+
+/* Inline confirmations: part of the page flow, never a modal. */
+.confirm-inline {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--rail);
+  border: 1px solid var(--navy);
+  border-radius: 8px;
+}
+
+.confirm-inline p {
+  margin: 0 0 12px;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.upload-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.upload-row input[type='file'] {
+  font: inherit;
+  font-size: 0.89rem;
+  color: var(--ink-soft);
+  max-width: 100%;
+}
+
+.upload-result {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--navy);
+  border-radius: 8px;
+}
+
+.upload-result p {
+  margin: 0;
+}
+
+.upload-result .hint {
+  margin: 8px 0 0;
+}
+
+.upload-errors {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--alert);
+  border-radius: 8px;
+}
+
+.upload-errors p {
+  margin: 0 0 8px;
+  color: var(--alert);
+  font-weight: 600;
+}
+
+.upload-errors ul {
+  margin: 0;
+  padding-inline-start: 24px;
+}
+
+.upload-errors li {
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+
+/* --- The Users section (list, add form, one-time password callout) ----------*/
+
+.user-table select,
+.add-user-row select,
+.add-user-row input {
+  font: inherit;
+  font-size: 0.89rem;
+  padding: 4px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.user-table select:focus,
+.add-user-row select:focus,
+.add-user-row input:focus {
+  border-color: var(--navy);
+}
+
+.add-user {
+  margin-top: 24px;
+}
+
+.add-user h3 {
+  margin: 0 0 8px;
+}
+
+.add-user-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.add-user-row label {
+  font-size: 0.89rem;
+  color: var(--ink-soft);
+}
+
+.add-user-row input {
+  flex: 1 1 16rem;
+}
+
+.password-callout {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--gold-wash);
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+}
+
+.password-callout p {
+  margin: 0 0 12px;
+}
+
+.password-callout .password-value code {
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.password-callout .hint {
+  margin: 12px 0 0;
+}
