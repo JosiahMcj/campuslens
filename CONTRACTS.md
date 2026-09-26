@@ -1,11 +1,11 @@
 # Metric Contracts
 
-I expanded ROADMAP §4 into this document so a reviewer can break the metrics on paper
+We expanded ROADMAP §4 into this document so a reviewer can break the metrics on paper
 without opening any code. Every metric below is recomputable by hand from
 `data/fixture.json`, the row-ID lists behind every planted number are in
-`data/VERIFY.md`, and `data/check_fixture.py` recomputes them independently. I froze
+`data/VERIFY.md`, and `data/check_fixture.py` recomputes them independently. We froze
 the numbers before any UI existed, so the code can never drift to fit the demo. If
-my code and this document disagree, the code is wrong until this document is
+our code and this document disagree, the code is wrong until this document is
 amended.
 
 Field paths use the nested groups in the fixture (`SCHEMA.md`), and they are
@@ -49,7 +49,7 @@ never read by any metric.
 
 ## 0.1 Example records used in the worked calculations
 
-I chose these **real rows** from `data/fixture.json` (seed `20260924`) out of the ID
+We chose these **real rows** from `data/fixture.json` (seed `20260924`) out of the ID
 lists in `data/VERIFY.md`.
 
 ```jsonc
@@ -75,7 +75,7 @@ PRI-0126: continuing=true, registered, registration_date in 2025-11-21…2025-12
 PRI-0132: continuing=true, never registered                          // registration_date=null
 ```
 
-I planted these counts, fixed by the seed and checked by `check_fixture.py`, giving
+We planted these counts, fixed by the seed and checked by `check_fixture.py`, giving
 M1 numerator 119 (STU-0001…STU-0119), M1 denominator 125 (PRI-0001…PRI-0125), M2 = 42
 (STU-0120…STU-0161), M3 = 18 (STU-0120…STU-0137), and M4 = 12.
 
@@ -110,14 +110,14 @@ M1 numerator 119 (STU-0001…STU-0119), M1 denominator 125 (PRI-0001…PRI-0125)
 | PRI-0126 | - | no | registered after 2025-11-20 (decoy) |
 | PRI-0132 | - | no | never registered |
 
-My hand count over the full fixture gives numerator = **119** (STU-0001…STU-0119) and
+Our hand count over the full fixture gives numerator = **119** (STU-0001…STU-0119) and
 denominator = **125** (PRI-0001…PRI-0125).
 
 ```
 119 / 125 − 1 = 0.952 − 1 = −0.048 = −4.8 %   (exactly −6/125, report to one decimal)
 ```
 
-I keep one break test for the reviewer here, and it is that an empty
+We keep one break test for the reviewer here, and it is that an empty
 `prior_year_students` must render `--` while `0.0 %` or `−100.0 %` breaks the
 contract.
 
@@ -137,7 +137,7 @@ contract.
 | STU-0176 | no | not continuing (new student, also unregistered, decoy) |
 | STU-0001 | no | registered |
 
-My hand count over the full fixture gives **42** rows, STU-0120…STU-0161, and these
+Our hand count over the full fixture gives **42** rows, STU-0120…STU-0161, and these
 42 IDs are the M2 population that M3 and M4 filter and what the evidence drawer
 lists. STU-0176…STU-0185 are new and unregistered, excluded by the `continuing`
 filter.
@@ -163,7 +163,7 @@ filter.
 | STU-0138 | no | the financial hold is `resolved: true` (planted decoy D1) |
 | STU-0145 | no | hold category is `academic`, not `financial` (planted decoy D3) |
 
-My hand count over the full fixture gives **18** of the 42 (STU-0120…STU-0137). For
+Our hand count over the full fixture gives **18** of the 42 (STU-0120…STU-0137). For
 a break test, flip STU-0142's amount to 999.99 and M3 must rise by one, and at
 1000.00 it must not.
 
@@ -195,7 +195,7 @@ a break test, flip STU-0142's amount to 999.99 and M3 must rise by one, and at
 | STU-0138 | yes | last completed appointment in spring 2026 < 2026-08-24 |
 | STU-0142 | no | appointment on 2026-08-24, the first day of the term, counts as this term (decoy D5) |
 
-My hand count over the full fixture gives **12** of the 42 (STU-0120…STU-0127 with
+Our hand count over the full fixture gives **12** of the 42 (STU-0120…STU-0127 with
 null or pre-term appointments, plus STU-0138…STU-0141 with spring-2026
 appointments).
 
@@ -215,7 +215,7 @@ appointments).
 - The fixture-defined value is `Bursar 24, Registrar 2, Library 1, Student Life 1`,
   28 unresolved hold records in total.
 
-I work the calculation on real rows.
+We work the calculation on real rows.
 
 | Hold | Office tally | Why |
 |---|---|---|
@@ -224,7 +224,7 @@ I work the calculation on real rows.
 | STU-0138 financial hold resolved | +0 | `resolved: true` |
 | STU-0145 academic unresolved | Registrar +1 | unresolved |
 
-In my arithmetic over the full fixture, the 18 M3 holds (Bursar), the 3 D2
+In our arithmetic over the full fixture, the 18 M3 holds (Bursar), the 3 D2
 over-boundary financial holds (STU-0142…0144, Bursar), and the 3 D4 holds on
 registered students (STU-0007, STU-0034, STU-0088, Bursar) make 24 Bursar. Add
 STU-0145 and STU-0148 (Registrar), STU-0146 (Library), and STU-0147 (Student Life).
@@ -247,7 +247,7 @@ number that matches between them is coincidence, not a check.
   finding carries `closed: true`, never a negative number. The UI says
   "registration has closed" in that case. The fixture-defined value is **28 days**.
 
-I work the calculation at term grain across three scenarios.
+We work the calculation at term grain across three scenarios.
 
 | Scenario | Computation | Renders |
 |---|---|---|
@@ -267,7 +267,7 @@ I work the calculation at term grain across three scenarios.
   term-code string such as `"202620"`) only names the baseline term, and the metric
   computes from rows, never from it. The fixture-defined value is **−2.7 %**.
 
-I work the calculation on real rows.
+We work the calculation on real rows.
 
 | Row | Contribution | Why |
 |---|---|---|
@@ -276,7 +276,7 @@ I work the calculation on real rows.
 | STU-0176 | excluded | not continuing, outside M1's population |
 | PRI-0001 | +16 h to prior-year sum | in the M1 denominator population |
 
-In my arithmetic over the full fixture, the 119 registered continuing students carry
+In our arithmetic over the full fixture, the 119 registered continuing students carry
 **1,821** hours, and the 125 prior-year students carry **1,872**.
 
 ```
@@ -287,7 +287,7 @@ In my arithmetic over the full fixture, the 119 registered continuing students c
 
 ## How to break these contracts on paper
 
-I hand-counted every planted number before any UI existed, and I expect the reviewer
+We hand-counted every planted number before any UI existed, and we expect the reviewer
 to redo that count on paper.
 
 1. Open `data/VERIFY.md`, which lists the row IDs behind each planted number.

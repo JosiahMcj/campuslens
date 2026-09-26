@@ -4,7 +4,7 @@
 
 Draft date 2026-09-25.
 
-These terms are between me, the operator of the service, and you, the institution. They
+These terms are between us, the operators of the service, and you, the institution. They
 state what the service does, what each side agrees to, and how the agreement ends. [A
 lawyer must review this draft before any institution signs it.]
 
@@ -33,33 +33,33 @@ You agree to the following.
 - Never present a briefing, finding, or recording as an automated decision about an
   individual student.
 
-## What I agree to
+## What we agree to
 
-I agree to the following.
+We agree to the following.
 
-- I run the service on a best effort basis, and I make no promise of continuous
+- We run the service on a best effort basis, and we make no promise of continuous
   availability.
-- I never sell your data, and I never share it. The only transfer is the aggregate
+- We never sell your data, and we never share it. The only transfer is the aggregate
   findings and validated analyst texts that go to the configured model endpoint, as
   described in the privacy posture.
-- I notify you without undue delay if I learn of an incident that touches your data.
-- I delete your data on request, as described in the privacy posture.
+- We notify you without undue delay if we learn of an incident that touches your data.
+- We delete your data on request, as described in the privacy posture.
 
 ## Limits of liability
 
-In plain words, my liability is limited. If the service fails, produces a wrong briefing,
-or loses data, my responsibility is limited to repairing the problem or ending the
-agreement and returning or deleting your data. I am not liable for decisions your
+In plain words, our liability is limited. If the service fails, produces a wrong briefing,
+or loses data, our responsibility is limited to repairing the problem or ending the
+agreement and returning or deleting your data. We are not liable for decisions your
 institution makes from a briefing. [A lawyer must set the actual liability clauses, the
 caps, and the governing law. This paragraph is a placeholder for those clauses, not the
 clauses themselves.]
 
 ## Fees
 
-Fees are to be agreed between you and me in writing before any paid use begins.
+Fees are to be agreed between you and us in writing before any paid use begins.
 
 ## Termination and data return
 
-Either side may end the agreement at any time. When it ends, I stop serving your
-institution. You may ask for a copy of your uploaded datasets. I then delete your data as
+Either side may end the agreement at any time. When it ends, we stop serving your
+institution. You may ask for a copy of your uploaded datasets. We then delete your data as
 described in the privacy posture, and the audit log retains the fact of deletion.

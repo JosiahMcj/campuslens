@@ -2,7 +2,7 @@
 
 *Governed AI employees helping university leaders turn SIS data into human-centered action.*
 
-Written for the Gloo AI Hackathon (Boulder, Oct 6-8, 2026). This is my build plan for
+Written for the Gloo AI Hackathon (Boulder, Oct 6-8, 2026). This is our build plan for
 the two-week prototype in the proposal, the **President Weekly Student Success
 Briefing**, which answers one question. *"What should I know about spring
 registration?"*
@@ -15,7 +15,7 @@ it counts.
 
 ## 0. The calendar, corrected
 
-The proposal plans 14 days with "days 12-14" for rehearsal, but counting from today I
+The proposal plans 14 days with "days 12-14" for rehearsal, but counting from today we
 have **11 build days before the event**, and the last two of them must be rehearsal,
 not building.
 
@@ -56,7 +56,7 @@ executive question.
 
 ### Beyond the hackathon
 
-I also built what running this for real takes, past the demo. Accounts carry users,
+We also built what running this for real takes, past the demo. Accounts carry users,
 roles, and sign-in. Institution tenancy scopes every dataset, and a newly activated
 dataset starts with no briefing and no approvals. Deployment is done, with production
 serving, proxy samples, service units, and backup rotation.
@@ -77,7 +77,7 @@ not is out of scope until the demo runs end to end.
 | 5 | 3:10-3:40 | Executive approves the leadership decision. A follow-up task is created (simulated) | S7 decision panel |
 | 6 | 3:40-4:00 | The audit log. One denied data request, refused and recorded | S3 audit + refusal |
 
-I fixed the demo values in the fixture, not in the model. Registration is **4.8
+We fixed the demo values in the fixture, not in the model. Registration is **4.8
 percent** below the prior year at the same date, and **42** continuing students are
 not registered. Of the 42, **18** have a financial hold under **$1,000**, and **12**
 have no advising appointment this term.
@@ -86,7 +86,7 @@ have no advising appointment this term.
 
 ## 3. Architecture in one page
 
-I count seven layers, in the order data flows, and the model never touches a number
+We count seven layers, in the order data flows, and the model never touches a number
 it did not receive.
 
 1. The **fixture** holds 100 to 200 fictional Ellucian-style student records in JSON,
@@ -117,7 +117,7 @@ it did not receive.
    `data.granted`, `data.refused`, `finding.produced`, `briefing.produced`,
    `decision.approved`, `task.created`, visible in the UI as a filterable list.
 
-**Model provider.** I put one interface (`explain(findings, role) → text`) in front of
+**Model provider.** We put one interface (`explain(findings, role) → text`) in front of
 the provider, configured locally and never named in the code, so swapping the
 provider is a configuration change. A replay mode serves recorded responses, so the
 demo runs identically with the network down.
@@ -145,7 +145,7 @@ clock, so the demo never drifts.
 | M6 | Days until registration closes | `term.registration_close_date − as_of` | `term.registration_close_date` | term | as-of | `--` if no close date | fixture-defined |
 | M7 *(optional)* | Registered credit hours vs. prior year | `sum(registered_credit_hours) / prior_year_sum − 1` | `enrollment.registered_credit_hours` | term | as-of, prior-year equivalent | `--` when prior sum is 0 | fixture-defined |
 
-I hold three contract rules everywhere. A zero denominator renders `--`, never
+We hold three contract rules everywhere. A zero denominator renders `--`, never
 `0 %`, windows anchor to data timestamps, and the current in-progress bucket is
 never aggregated.
 
@@ -165,7 +165,7 @@ model call and logged as `data.refused`.
 | Comparison | `prior_year_equivalent_date`, `prior_term_status`, `baseline` | aggregate only | read | read |
 | Counseling / spiritual care | `counseling_notes`, `chaplain_contact` (present in the fixture *only* so the refusal is real) | **refused** | **refused** | **refused** |
 
-**The two refusals I built for the demo.** First, the Enrollment Analyst's task
+**The two refusals we built for the demo.** First, the Enrollment Analyst's task
 requests `hold.amount` and the permission layer denies it, logged. Second, the
 executive types a question outside the approved use case ("Which students are in
 counseling?") and the Chief of Staff refuses with a sentence, logged. Both are
@@ -175,7 +175,7 @@ automated tests run every day, not features added on Day 11.
 
 ## 6. Schedule
 
-One slice per day, and I call a slice done when its check passes on the real path
+One slice per day, and we call a slice done when its check passes on the real path
 (the app running the way the demo runs it), not when its tests pass. Fixes go into
 the next day's list, not into a longer day.
 
@@ -195,7 +195,7 @@ the next day's list, not into a longer day.
 | - | Oct 6-8 | **Event.** If Gloo wants an on-site build item, a fourth question template wired to the *same* pipeline, prepared but not merged before the event. | Whole team | Demo delivered. |
 
 The reserve is Day 9. If a slice slips a day, Day 9's polish goes first, then M7,
-then the second refusal (keep the first). I never cut the numeral test, the audit
+then the second refusal (keep the first). We never cut the numeral test, the audit
 log, or the approval.
 
 ---
@@ -204,7 +204,7 @@ log, or the approval.
 
 | Person | Role | Owns |
 |---|---|---|
-| Product lead (me) | Product lead | Use case, metric definitions, Christian design principles, scope, pitch, decisions |
+| Product lead | Product lead | Use case, metric definitions, Christian design principles, scope, pitch, decisions |
 | Reviewer (named on Day 1) | The human gate on every merge | Line-by-line review of each pull request, hand-verification of §4 on Day 2, the Day-8 review |
 | Data/logic builder (the proposal's "Computer Science Student") | Backend | Fixture, metrics, findings, permissions, audit log, provider interface, tests |
 | Interface builder (the proposal's "Vibe Coding Developer") | Frontend | Dashboard, briefing, evidence drawer, decision panel, audit view, the three states |
@@ -226,8 +226,8 @@ contracts on paper.
 
 ## 8. Definition of done
 
-The proposal's definition, plus my own bar. The prototype runs correctly and
-harmlessly the first time, with no fixing by me.
+The proposal's definition, plus our own bar. The prototype runs correctly and
+harmlessly the first time, with no fixing by us.
 
 **From the proposal**
 
@@ -249,7 +249,7 @@ harmlessly the first time, with no fixing by me.
 | Refusal | Both §5 refusal tests, plus a hand-typed out-of-scope question | Refused with a sentence. `data.refused` event visible in the audit view |
 | Restart | Kill the API mid-briefing, restart | Audit log intact. The briefing can be regenerated. No duplicate `task.created` on re-approve |
 
-**My bar**
+**Our bar**
 
 - [ ] Launched the way the demo launches, logs checked for errors and warnings.
 - [ ] Nothing sends email, text, or case records. Nothing writes outside the project. No real student data anywhere.
@@ -274,11 +274,22 @@ harmlessly the first time, with no fixing by me.
 
 ---
 
-## 10. Explicitly out of scope
+## 10. Currently out of scope
 
 Production Ellucian access or real student data · automatic changes to student
 records · automatic email, text, or case creation · an unrestricted executive chatbot
 · predictive retention modeling · financial-aid eligibility decisions · tutor,
 international-student, or spiritual-care agents · a mobile application · a fourth AI
-employee or a second executive question before the full briefing, evidence, approval,
-and audit workflow runs reliably.
+employee.
+
+The second executive question is in. Next in line, now that the full briefing, evidence,
+approval, and audit workflow runs reliably, is the Ellucian connector. One of us holds the
+university's Ellucian data and access, so we are building the Ethos connector now,
+pseudonymised at the university's edge, reading only the fields SCHEMA.md names and never
+counseling or spiritual-care records. Real records enter only after the Registrar or data
+steward authorizes it in writing and IT issues Ethos credentials. The other items return in
+governed form. Approved tasks are sent by a named person, never unattended. Support
+indicators are explainable rules that list their factors, never an opaque score. Financial
+aid gets a review queue, and the determination stays in the aid office. Counseling stays
+aggregate only, with the counseling director's authorization.
+

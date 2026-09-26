@@ -1,7 +1,7 @@
 # Runbook for the Golden Eagle AI Cabinet
 
 This runbook covers setup, run, stop, restart, replay, reset, backup, and
-production, and I run everything on `127.0.0.1` only until the production
+production, and we run everything on `127.0.0.1` only until the production
 section. Nothing in development sends anything anywhere, `README.md` covers
 the architecture, and `DEMO-SCRIPT.md` covers the demo itself.
 
@@ -16,9 +16,9 @@ make check   # lint + typecheck + tests, both stacks, must be green
 
 ## Run
 
-Before the first start I create the demo accounts once, and the full reference
+Before the first start we create the demo accounts once, and the full reference
 is "Users, institutions, and login" below. Each command prints its generated
-password exactly once and never logs it, so I save it the moment it prints.
+password exactly once and never logs it, so we save it the moment it prints.
 
 ```bash
 make bootstrap-admin EMAIL=admin@demo.test          # bootstrap institution + first admin (once)
@@ -63,7 +63,7 @@ make user EMAIL=exec@example.edu ROLE=executive  # INSTITUTION defaults to boots
 
 Admins manage their own institution's users from the Institution screen or the
 API under the same rules as the CLI. The one-time password is shown exactly
-once in the creation response, and I never store or log it. An admin cannot
+once in the creation response, and we never store or log it. An admin cannot
 disable their own account, and the institution's last enabled admin can be
 neither disabled nor demoted. Every change is one `admin.changed` audit event.
 
@@ -107,12 +107,12 @@ bare email is never hard-blocked, and it pays a progressive delay of 1, 2, 4,
 and 8 seconds, capped at 30. The full threat model and control list is
 `docs/SECURITY.md`.
 
-I derive tenancy from the session. Every route resolves the institution from
+We derive tenancy from the session. Every route resolves the institution from
 the session's user, and no route accepts an institution id from the client. A
 dataset id belonging to another institution is a 404, never a 403, so
 existence does not leak.
 
-I cap request bodies at 256 KB, and the dataset upload route allows 20 MB. I
+We cap request bodies at 256 KB, and the dataset upload route allows 20 MB. We
 enforce the cap on bytes actually read, and on admin routes it applies only
 after authentication.
 
@@ -124,7 +124,7 @@ make stop
 
 This stops only the processes this project started (pid files in `var/`, plus their
 children), and before killing it checks the pid's command line is what this project
-starts (`uvicorn cabinet.app:app` / `vite`). I built it this way so a stale, reused
+starts (`uvicorn cabinet.app:app` / `vite`). We built it this way so a stale, reused
 pid is reported and its pid file removed, never killed. Anything else holding 8910
 or 5200 is reported with its pid and command, never killed.
 
@@ -134,7 +134,7 @@ or 5200 is reported with its pid and command, never killed.
 make stop && make api && make ui
 ```
 
-Everything survives restarts because I keep the durable state in
+Everything survives restarts because we keep the durable state in
 `var/cabinet.db`. It holds the audit chains, produced briefings, decisions,
 users, and the dataset registry, and the dataset documents stay under
 `var/data/`.
@@ -158,7 +158,7 @@ curl -b /tmp/cookies -X POST http://127.0.0.1:8910/admin/datasets \
 # or 422 {"detail": ..., "errors": [...every problem, with JSON paths...]}
 ```
 
-I validate before anything is stored. No field outside the `SCHEMA.md`
+We validate before anything is stored. No field outside the `SCHEMA.md`
 shape is accepted, and obvious PII columns such as `email`, `phone`, `ssn`,
 `dob`, or `name` anywhere in a student record are rejected with a clear error.
 Student ids must be pseudonymous, `STU-` or `PRI-` style or another opaque
@@ -191,7 +191,7 @@ make api
 
 `make backup` snapshots the database with the SQLite backup API, never a file
 copy of the live database, plus every dataset file, and it writes a
-`manifest.json` with sha256 hashes. I verify the copy against the manifest
+`manifest.json` with sha256 hashes. We verify the copy against the manifest
 before the command reports success. `make restore FROM=...` refuses while the
 servers are running, verifies the backup's hashes first, moves any existing
 `var/cabinet.db` and `var/data/` aside as `*.pre-restore-<timestamp>`, copies
@@ -212,7 +212,7 @@ make migrate
 
 ## Operating in production
 
-I serve everything from one process, the API and the built UI in the same
+We serve everything from one process, the API and the built UI in the same
 uvicorn, with a reverse proxy in front for HTTPS.
 
 ```bash
@@ -224,7 +224,7 @@ CABINET_SECRET_KEY=$(python3 -c "import secrets;print(secrets.token_hex(32))") \
 ```
 
 `make serve` backgrounds `deploy/run-production.sh`, the same command the
-launchd plist and the systemd unit exec, so I keep the production flags in
+launchd plist and the systemd unit exec, so we keep the production flags in
 exactly one place.
 
 - `CABINET_ENV=production` fails closed. Without a `CABINET_SECRET_KEY` of 32+
@@ -236,9 +236,9 @@ exactly one place.
   `CABINET_*` variables are set, values redacted.
 - One process, on purpose. The rate limiters, the login lockout, and the
   briefing caches are in-process (see `docs/SECURITY.md`), and a second
-  process would split them. To scale, I put more at the proxy or raise the
+  process would split them. To scale, we put more at the proxy or raise the
   in-process limits, never a second process.
-- I trust proxy headers (`X-Forwarded-For`) only from
+- We trust proxy headers (`X-Forwarded-For`) only from
   `CABINET_TRUSTED_PROXY`, which defaults to `127.0.0.1`, the proxy on the
   same host. The per-IP limits and the access log see the real client, and a
   spoofed header from anywhere else is ignored.
@@ -251,11 +251,11 @@ exactly one place.
 `/ready` is readiness, and it checks that the database opens, the schema
 version is one this build knows, a secret is configured, `ui/dist` is present,
 and the golden replay run is readable. On any failure it answers 503 and names
-the reasons. I point the proxy's health check at `/ready` and a load balancer's
+the reasons. We point the proxy's health check at `/ready` and a load balancer's
 liveness at `/health`.
 
 The UI shell (`/`, the hashed assets, and the SPA fallback routes) is public.
-I serve the same bytes to everyone with no data in them, and every data route
+We serve the same bytes to everyone with no data in them, and every data route
 still requires a session under a strict content security policy.
 
 ### Reverse proxy and HTTPS
@@ -285,13 +285,13 @@ The service definitions are validated but never installed by this repo, and
 - macOS runs `deploy/launchd/com.goldeneagle.cabinet.plist` with `RunAtLoad`,
   `KeepAlive`, the working directory, `CABINET_LOCAL_ENV` pointing at the env
   file (secrets are not in the plist), stdout and stderr log paths, and
-  `AbandonProcessGroup`, and I lint it with `plutil -lint`.
+  `AbandonProcessGroup`, and we lint it with `plutil -lint`.
 - Linux runs `deploy/systemd/cabinet.service` with an `EnvironmentFile` for
   the secrets, `Restart=always`, and hardening (`NoNewPrivileges`,
-  `ProtectSystem=strict` with `ReadWritePaths` limited to `var/`), and I
+  `ProtectSystem=strict` with `ReadWritePaths` limited to `var/`), and we
   verify it on the target host with `systemd-analyze verify`.
 
-Both `cd` to the deploy directory and exec `deploy/run-production.sh`, and I
+Both `cd` to the deploy directory and exec `deploy/run-production.sh`, and we
 edit the `/opt/golden-eagle-cabinet` paths to the real location. The env file
 (0600, service user) carries `CABINET_SECRET_KEY` and the `CABINET_LLM_*`
 settings. `CABINET_LOCAL_ENV` makes the app read it from anywhere, with the
@@ -301,7 +301,7 @@ real environment still winning.
 
 `deploy/backup.sh` runs `make backup` and rotates `var/backups/` to the newest
 14 snapshots. Only timestamp-shaped directories are rotated, and the
-`*.pre-restore-*` asides are never touched. I schedule it with
+`*.pre-restore-*` asides are never touched. We schedule it with
 `deploy/launchd/com.goldeneagle.cabinet-backup.plist` (daily at `03:17` local)
 or `deploy/systemd/cabinet-backup.timer` (same schedule, `Persistent=true` so
 a missed run catches up). The restore drill and the rotation of the model key
@@ -310,7 +310,7 @@ are in `deploy/checklist.md`, the full first-deploy walkthrough.
 ## The three providers
 
 - **`chat`** (default) is the configured model endpoint, any service that speaks the
-  chat-completions API, and I choose the provider by environment, never by code
+  chat-completions API, and we choose the provider by environment, never by code
   change. Configure it with environment variables or a gitignored
   `cabinet.local.env` at the repo root (copy `cabinet.local.env.example`), and the
   real environment wins.
@@ -340,8 +340,8 @@ are in `deploy/checklist.md`, the full first-deploy walkthrough.
 ## Replay and the golden run
 
 The golden run is a committed, reviewable recording in `data/golden/` that REPLAY
-mode falls back to. The demo works with no key and no network, and I keep it
-independent of the network this way. I record it once the live model is configured.
+mode falls back to. The demo works with no key and no network, and we keep it
+independent of the network this way. We record it once the live model is configured.
 
 ```bash
 make record-golden
@@ -356,7 +356,7 @@ unless `CABINET_RECORD=overwrite`. The golden write never reads `var/replay/`, s
 stale recording there cannot leak into the golden run. `make record-golden` refuses
 to run while the API is up, because both hold the same `var/cabinet.db`. Stop it
 first with `make stop`, otherwise the target exits 2 with the reason.
-I commit the new files in `data/golden/`.
+We commit the new files in `data/golden/`.
 
 To record extra runs into `var/replay/` instead, run this.
 
@@ -388,15 +388,15 @@ curl http://127.0.0.1:8910/briefing/enrollment
 
 ## Resetting an institution's audit chain safely
 
-I never delete the database, because it is the record. To start an institution
-over, I back up first with `make backup`, then delete and recreate the
+We never delete the database, because it is the record. To start an institution
+over, we back up first with `make backup`, then delete and recreate the
 institution's data through the admin routes or by restoring an older backup.
 The exported JSONL from `python -m cabinet.audit export` is the archival
-format for a chain I am retiring.
+format for a chain we are retiring.
 
 ## Fixture
 
-`data/fixture.json` is the fictional dataset I seeded. Regenerate it byte-identically
+`data/fixture.json` is the fictional dataset we seeded. Regenerate it byte-identically
 with `python3 data/generate_fixture.py`, and verify the planted values with
 `data/check_fixture.py` against `data/VERIFY.md`. It seeds every new
 institution's "Demonstration (fictional)" dataset. Point the seed at another

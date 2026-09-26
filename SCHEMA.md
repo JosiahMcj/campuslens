@@ -1,6 +1,6 @@
 # Fixture Schema
 
-This is the shape of `data/fixture.json`, which I generate with
+This is the shape of `data/fixture.json`, which we generate with
 `data/generate_fixture.py`, deterministic with seed `20260924`, no wall-clock
 values, two byte-identical runs. Every field is fictional and there is no path from
 this schema to a real student, and `data/VERIFY.md` lists the row IDs behind every
@@ -54,7 +54,7 @@ separate list, 320 records in total.
 | `as_of_rule` | string | the as-of derivation rule | the prior-year window rule | "this term" rule for M4 |
 | `timezone` | string | `"America/Chicago"` | same | same |
 
-I anchor the metrics (CONTRACTS.md §0) this way, with the as-of date as the max
+We anchor the metrics (CONTRACTS.md §0) this way, with the as-of date as the max
 `registration_date` over `students`, which is **2026-11-20**. The M1/M7 denominator
 window ends at `terms.prior_year.prior_year_equivalent_date`, M4 anchors on
 `terms.in_session.start_date`, and M6 uses `terms.current.registration_close_date`.
@@ -124,7 +124,7 @@ current-term students, and every `prior_year_students` record has `holds: []`.
 
 ### `counseling`, **present only to be refused**
 
-I put these two fields in the fixture **solely so the permission layer has something
+We put these two fields in the fixture **solely so the permission layer has something
 real to refuse** (ROADMAP §5, §9). They are granted to no role, no metric, finding,
 analyst, or UI element may read them, and every request is refused before any model
 call and logged as `data.refused`.
@@ -195,7 +195,7 @@ See CONTRACTS.md §0.1 for the worked metric calculations on this row.
 4. Exactly 12 of the M2 records have no appointment on or after 2026-08-24, giving
    M4, and an appointment exactly on 2026-08-24 (STU-0142, STU-0143) counts as this
    term (decoy D5).
-5. Exactly five records carry non-null `counseling.counseling_notes`, which I planted
+5. Exactly five records carry non-null `counseling.counseling_notes`, which we planted
    for the refusal demo only, and the deterministic generator uses seed `20260924`,
    so two runs are byte-identical.
 
@@ -204,8 +204,8 @@ See CONTRACTS.md §0.1 for the worked metric calculations on this row.
 ## Storage schema and dataset upload
 
 The document shape above is also the upload shape. `POST /admin/datasets`
-accepts a JSON body in exactly this shape, up to 20 MB, and I validate it
-before anything is stored. I run the fixture loader's type checks plus these
+accepts a JSON body in exactly this shape, up to 20 MB, and we validate it
+before anything is stored. We run the fixture loader's type checks plus these
 upload-only rules.
 
 - Every key at every level must be one this schema names. Extra keys are
@@ -218,12 +218,12 @@ upload-only rules.
   token with no spaces and no `@`.
 - Counseling fields are allowed, and the response flags them as "present,
   will always be refused".
-- I report row counts for both student lists. All problems are collected and
+- We report row counts for both student lists. All problems are collected and
   reported together, and nothing is stored until the document is clean.
 
-I keep durable state in `var/cabinet.db`. The `cabinet.migrations` module
+We keep durable state in `var/cabinet.db`. The `cabinet.migrations` module
 versions the schema, and the app refuses a version it does not know. Dataset
-documents live as files next to the database. I scope every row by
+documents live as files next to the database. We scope every row by
 institution, and the client never sends an institution id.
 
 ```sql
@@ -250,7 +250,7 @@ Notes on the tables.
   dataset "Demonstration (fictional)".
 - A dataset's document is the file
   `var/data/<institution slug>/<dataset id>.json`, mode 0600, with
-  institution directories at 0700. I compute the row's `sha256` from the
+  institution directories at 0700. We compute the row's `sha256` from the
   stored bytes and verify it on every load, so a file changed on disk fails
   loudly.
 - `row_counts` is JSON of the form `{"students": N, "prior_year_students": M}`.

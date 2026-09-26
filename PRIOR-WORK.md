@@ -1,15 +1,15 @@
 # Prior Work
 
-Gloo permits prior work if it is itemized. This file is my itemization. Anything not
+Gloo permits prior work if it is itemized. This file is our itemization. Anything not
 listed under "Built before" was built inside the window.
 
 ## Built before the hackathon window
 
 - The project proposal, `PROPOSAL.md`. It scopes the two-week prototype, the President
   Weekly Student Success Briefing.
-- The planning documents. I wrote `ROADMAP.md`, `CONTRACTS.md`, `SCHEMA.md`,
+- The planning documents. We wrote `ROADMAP.md`, `CONTRACTS.md`, `SCHEMA.md`,
   `DEMO-SCRIPT.md`, and this file before any product code existed.
-- Design conventions from my earlier work informed the design. Event-log field names,
+- Design conventions from our earlier work informed the design. Event-log field names,
   permission and action classes, and the refusal-card pattern. No earlier code,
   dependency, or data is imported.
 

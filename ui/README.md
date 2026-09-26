@@ -1,15 +1,15 @@
 # ui
 
-React + TypeScript UI for the Golden Eagle AI Cabinet. I document the commands
+React + TypeScript UI for the Golden Eagle AI Cabinet. We document the commands
 and run instructions in the top-level `README.md` (`make setup`, `make ui`),
 and the dev server runs on `http://127.0.0.1:5200` while proxying `/api/*` to
 the API on 8910 (`vite.config.ts`). Setting `CABINET_API_TARGET` points the
-proxy at an API on another port, which I use when two checkouts run side by
+proxy at an API on another port, which we use when two checkouts run side by
 side on one host.
 
-I keep the UI free of arithmetic on metrics, so it renders the `display`
-strings and row-ID lists from `GET /api/findings` exactly. I interpolate every
-number in the placeholder briefing text from those `display` strings, and I
+We keep the UI free of arithmetic on metrics, so it renders the `display`
+strings and row-ID lists from `GET /api/findings` exactly. We interpolate every
+number in the placeholder briefing text from those `display` strings, and we
 link each one to its finding's evidence drawer.
 
 ## Sign-in, sessions, and roles
@@ -27,7 +27,7 @@ instead of a lock. Sign out lives in the rail's masthead, next to the
 signed-in email and role.
 
 The role from `GET /api/auth/me` shapes the page. The API enforces the same
-table, and I render any refusal it still returns inline, never as a crash.
+table, and we render any refusal it still returns inline, never as a crash.
 
 - **executive** sees Ask and Approve, and reads the audit log.
 - **staff** sees the briefing without Ask or Approve, and the decision panel
@@ -42,7 +42,7 @@ table, and I render any refusal it still returns inline, never as a crash.
   errors listed line by line and the counseling flag shown as information.
   Activate and soft delete sit behind inline confirmations too. A newly
   activated dataset starts with no briefing and no approvals, because
-  approvals stay pinned to the dataset they were computed from. I keep backups
+  approvals stay pinned to the dataset they were computed from. We keep backups
   out of the UI because they remain an operator task.
 
 The masthead names the institution and the active dataset the briefing is
@@ -52,7 +52,7 @@ the lede keeps the word "fictional" and a note under the figures says so.
 ## The question chooser
 
 The Ask box offers one button per approved question from `GET /questions`, the
-registry, and the field accepts only those approved questions. I submit
+registry, and the field accepts only those approved questions. We submit
 anything else anyway so the API logs the refusal as a `data.refused` audit
 event.
 
@@ -79,11 +79,11 @@ ink on paper 14.73 · ink-soft on paper 6.90 · ink-soft on rail 6.53 ·
 navy on paper 10.62 · navy on rail 10.06 · paper on navy 10.62 ·
 alert on paper 7.84 · paper on alert 7.84 · gold on paper 4.53 ·
 ink on gold-wash 14.87 · ink-soft on gold-wash 6.96 · ink on rail 13.95.
-I measured every pair, and each sits at or above 4.5 to 1.
+We measured every pair, and each sits at or above 4.5 to 1.
 
 ## UI states
 
-I can induce three states on demand with combinable query switches, and two
+We can induce three states on demand with combinable query switches, and two
 more switches help demos and screenshots.
 
 - `?slow=1` shows the **loading** state. It adds a 3 s client-side delay to

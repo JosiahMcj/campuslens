@@ -1,20 +1,20 @@
 # Golden Eagle AI Cabinet
 
 *Governed AI employees helping university leaders turn SIS data into human-centered action.*
-I built this for the Gloo AI Hackathon (Boulder, Oct 6-8, 2026), and `ROADMAP.md` is the
+We built this for the Gloo AI Hackathon (Boulder, Oct 6-8, 2026), and `ROADMAP.md` is the
 plan. In one sentence, Golden Eagle AI Cabinet transforms Ellucian SIS data into an
 executive briefing by coordinating permission-limited AI employees across enrollment and
 student success. It helps university leaders see what matters, understand why, and direct
 timely human action.
 
-I put all logic in a Python backend (FastAPI on `127.0.0.1:8910`, pytest, ruff, mypy, in
+We put all logic in a Python backend (FastAPI on `127.0.0.1:8910`, pytest, ruff, mypy, in
 `.venv/`), and the React + TypeScript UI (Vite on `127.0.0.1:5200` with `strictPort`,
 Vitest, eslint, `tsc`) is the thin interface layer. Everything binds to `127.0.0.1` only.
 
 What runs today is the fixture dataset (`data/fixture.json`, fictional and seeded)
 and the metric functions M1-M7 (`backend/src/cabinet/metrics.py`, contracts in
 `CONTRACTS.md`). So are the permission gate, the append-only audit log, the
-governance API, and the dashboard. I built all three AI employees with output
+governance API, and the dashboard. We built all three AI employees with output
 validation. The Enrollment Analyst covers M1, M2 and M7. The Student Success
 Analyst covers M3, M4 and M5. The Chief of Staff dispatches the tasks and merges
 the seven-section briefing. The golden replay runs for both approved questions and
@@ -24,9 +24,9 @@ records it, and the audit log shows every grant and every refusal, including bot
 refusal demos. Above the briefing, four stat tiles show M1 to M4, and each tile
 opens its own evidence drawer. Every analyst-written section carries an honest
 source label, "Written by the role (recorded live run)" on replay and "(live
-model)" live. I verified the whole system on the real path against the Day-8
+model)" live. We verified the whole system on the real path against the Day-8
 matrix in `docs/VERIFICATION.md`, and all eight rows pass. The six-beat demo timed
-at 204.9 seconds against the four-minute limit. I documented how to run, stop,
+at 204.9 seconds against the four-minute limit. We documented how to run, stop,
 replay, and reset any of it in `RUNBOOK.md`.
 
 What is left is rehearsal. The demo script and the offline deck in
@@ -54,10 +54,10 @@ Each check runs both stacks, and the `-python` and `-ui` variants run one.
 
 ## Run
 
-Before the first start I create the demo accounts once. The bootstrap admin owns
+Before the first start we create the demo accounts once. The bootstrap admin owns
 the first institution, and the president account is the executive the demo signs
 in as. Each command prints its generated password exactly once and never logs it,
-so I save it the moment it prints.
+so we save it the moment it prints.
 
 ```bash
 make bootstrap-admin EMAIL=admin@demo.test          # bootstrap institution + first admin (once)
@@ -90,7 +90,7 @@ Both servers run in the background, logs are in `var/api.log` and `var/ui.log`, 
 `var/` is gitignored.
 
 For production, `make build` compiles the UI into `ui/dist`, and `make serve`
-runs one process that serves the built UI and the API together. I made the
+runs one process that serves the built UI and the API together. We made the
 production configuration fail closed. The API refuses to start without a
 `CABINET_SECRET_KEY` of 32 bytes or more and an explicit `CABINET_BIND`.
 `RUNBOOK.md` covers the rest under "Operating in production".
@@ -100,13 +100,13 @@ production configuration fail closed. The API refuses to start without a
 Every user belongs to an institution, and each institution's findings come from
 its active dataset. A new institution starts with the seeded fictional
 demonstration dataset. An admin uploads the institution's own data as one JSON
-document in the `SCHEMA.md` shape, up to 20 MB. I validate the upload before
+document in the `SCHEMA.md` shape, up to 20 MB. We validate the upload before
 anything is stored. A document carrying personal identifiers (email, phone,
 social security number, date of birth, a name on a student record) is rejected
 with every problem listed. The admin then activates or
 deletes datasets from the Institution screen.
 
-I pin approvals to the dataset they were computed from. A newly activated
+We pin approvals to the dataset they were computed from. A newly activated
 dataset starts with no briefing and no approvals.
 
 ## UI states
@@ -127,7 +127,7 @@ The dashboard's three states can be induced on demand with query switches on
 `?evidence=M2` deep-links to the evidence drawer for a finding (M1-M7), and `#audit-log`
 deep-links to the audit log.
 
-The UI is also an installable web app, and it installs to a home screen. I
+The UI is also an installable web app, and it installs to a home screen. We
 cache only the application shell for offline use, never an API response.
 Offline, the shell opens and every number on it still needs the API.
 
@@ -148,7 +148,7 @@ terms used.
 
 The AI employees sit behind one provider interface,
 `explain(findings, role) -> Explanation` (`backend/src/cabinet/provider.py`). The code
-names no vendor or model, and I select and configure the provider by environment,
+names no vendor or model, and we select and configure the provider by environment,
 never by code changes.
 
 | Variable | Values | Default |
@@ -181,7 +181,7 @@ the session's CSRF token. Sign-in throttling hard-locks an IP, or an IP and
 email pair, after 5 failures in 15 minutes, answering 429 with a `Retry-After`
 header. The bare email is never hard-blocked and instead pays a progressive
 delay of 1, 2, 4, and 8 seconds, capped at 30. Request bodies are capped at
-256 KB (20 MB on the dataset upload route). I enforce the cap on the bytes
+256 KB (20 MB on the dataset upload route). We enforce the cap on the bytes
 actually read, and on admin routes it applies only after authentication. The
 audit log is a verifiable hash chain in the `audit_events` table
 (`python -m cabinet.audit verify var/cabinet.db`). Admins manage their institution's users from the
@@ -202,7 +202,7 @@ findings it receives.
 down. A cache miss is `ProviderUnavailable`, never a network call. Search order is
 `CABINET_REPLAY_DIR` if set, then `var/replay/`, then the committed golden run in
 `data/golden/`. Only validated output is ever recorded, and an existing recording is
-never overwritten unless `CABINET_RECORD=overwrite`. I recorded the golden run once with
+never overwritten unless `CABINET_RECORD=overwrite`. We recorded the golden run once with
 `make record-golden` (see `RUNBOOK.md`), and afterwards this works.
 
 ```bash
@@ -219,7 +219,7 @@ To add a provider, implement the `Provider` protocol and add one entry to `_PROV
 in `backend/src/cabinet/provider.py`, and the analysts, validator, API, and
 record/replay path are provider-agnostic.
 
-I validate every analyst output before it is shown. Each claim must carry a finding ID
+We validate every analyst output before it is shown. Each claim must carry a finding ID
 the role received (`[M2]` style), and every numeral in the text must equal a value,
 `display`, or comparison number in the received findings
 (`backend/src/cabinet/analysts.py`). The model never receives row IDs, and the
@@ -230,7 +230,7 @@ unavailable, never rendered.
 (`backend/src/cabinet/questions.py`) holds two of them. The first asks what the
 president should know about spring registration, and the second asks where
 unresolved holds are affecting continued enrollment. Each question carries its
-own dispatch, decisions, and actions, and I refuse any other question.
+own dispatch, decisions, and actions, and we refuse any other question.
 
 The endpoint `GET /briefing/enrollment` runs the Enrollment Analyst once and caches
 the validated result in-process, keyed by provider, model, and a hash of the received
@@ -243,7 +243,7 @@ forces a fresh run. Failures are never cached.
 ## CI
 
 `.github/workflows/ci.yml` runs on every push and pull request with two jobs, `python`
-and `ui`, executing the same `make` lint, typecheck, and test commands as above. I want
+and `ui`, executing the same `make` lint, typecheck, and test commands as above. We want
 `main` to require one approving review and both CI jobs. On a private repository that
 needs a paid GitHub plan, so until then the reviewer's approval is the rule, not an
 enforced gate.
@@ -264,7 +264,7 @@ RUNBOOK.md          setup, run, stop, restart, replay, record, reset
 
 ## Contributing
 
-I take one pull request per slice, and the template in
+We take one pull request per slice, and the template in
 `.github/pull_request_template.md` asks for two lines, `Done when` and `Verified on
-the real path by`. Keep CI green, and if you review my pull request, hand-check the
+the real path by`. Keep CI green, and if you review our pull request, hand-check the
 numbers against `data/VERIFY.md` before anything else.

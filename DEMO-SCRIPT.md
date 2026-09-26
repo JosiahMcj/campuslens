@@ -1,7 +1,7 @@
 # Demo Script, four minutes
 
-The demo is the scope (ROADMAP §2), and I wrote this script word for word with the
-timings as targets from the six beats. I tune the pauses in rehearsals on Oct 4-5,
+The demo is the scope (ROADMAP §2), and we wrote this script word for word with the
+timings as targets from the six beats. We tune the pauses in rehearsals on Oct 4-5,
 never the numbers. All numbers come from the fixture, not the model. They are
 **−4.8 %, 42, 18, 12**.
 
@@ -44,8 +44,8 @@ make ui
 `make api` starts FastAPI on `http://127.0.0.1:8910`, and `make ui` starts Vite on
 `http://127.0.0.1:5200` (`strictPort`, dev proxy `/api` to 8910).
 
-I open `http://127.0.0.1:5200`. It opens on the sign-in screen, and the demo signs in
-as `president@demo.test`. When the demo is over, I run this.
+We open `http://127.0.0.1:5200`. It opens on the sign-in screen, and the demo signs in
+as `president@demo.test`. When the demo is over, we run this.
 
 ```bash
 make stop   # stops both via pid files in var/
@@ -53,17 +53,17 @@ make stop   # stops both via pid files in var/
 
 **Replay mode.** `make api REPLAY=1` starts the API with `CABINET_PROVIDER=replay`,
 serving recorded responses from `var/replay/` or the committed golden run in
-`data/golden/`, so the demo runs identically with the network down. I recorded the
+`data/golden/`, so the demo runs identically with the network down. We recorded the
 golden run once with `make record-golden`, all three roles, and committed it in
 `data/golden/` (the live model must be configured, see RUNBOOK.md). Whether the
 model runs live or from replay, the numbers are the fixture's. The model only
 explains them.
 
 **Preflight (60 seconds before).** The two demo accounts exist (above), and the room
-gets a fresh record. I run `make stop`, move `var/` aside with
+gets a fresh record. We run `make stop`, move `var/` aside with
 `mv var var.before-demo-<time>`, and delete nothing in it. Then `make bootstrap-admin`
 and `make user` again for the fresh database, then `make api REPLAY=1` and `make ui`
-up (I check `var/api.log` and `var/ui.log` for errors). The audit log is empty, and it
+up (we check `var/api.log` and `var/ui.log` for errors). The audit log is empty, and it
 stays empty with the browser on the sign-in screen, because the page runs nothing
 before the question is asked. The offline deck (`docs/backup-demo.html`) sits open on
 the second device.
@@ -88,7 +88,7 @@ Enter.
 > "Every fall, a president asks a simple question. What should I know about spring
 > registration? Today the answer lives in six spreadsheets and three inboxes. This is
 > the Golden Eagle AI Cabinet, governed AI employees that turn student-system data into
-> one briefing a leader can act on. Watch what happens when I ask."
+> one briefing a leader can act on. Watch what happens when we ask."
 
 ## Beat 2, 0:30 to 1:10 · The cabinet goes to work, visibly scoped
 
@@ -124,7 +124,7 @@ groups most affected section.
 > this term. Below, the cabinet separates the operational actions from the one
 > decision that belongs to leadership. Student Success reviews the students with no
 > advising contact, and Financial Aid reviews the small-balance cases. Every number
-> on this page traces to a row in the data, and I will prove that next."
+> on this page traces to a row in the data, and we will prove that next."
 
 ## Beat 4, 2:20 to 3:10 · Open one claim
 
@@ -138,7 +138,7 @@ drawer slides open showing the formula `119 / 125 − 1 = −4.8 %`, the source 
 behind 119 and 125. Scroll the row list briefly.
 
 **Said.**
-> "Pick any number. I will take the headline. Here is the formula, the exact fields it
+> "Pick any number. We will take the headline. Here is the formula, the exact fields it
 > read, and the one hundred nineteen students behind the numerator and the one hundred
 > twenty-five behind the denominator. Anyone can count these by hand from the raw
 > data, and `data/VERIFY.md` lists them. The AI explains the numbers. It is never allowed to
@@ -157,7 +157,7 @@ audit log. Nothing is sent anywhere.
 
 **Said.**
 > "The cabinet advises. The president decides. Approving authorizes the eligibility
-> review, not an aid decision, which stays out of scope. It sends the review to
+> review, not an aid decision, which is currently out of scope. It sends the review to
 > Financial Aid as a follow-up task, simulated, because nothing here ever emails a
 > student or touches a record. The approval itself becomes part of the record."
 
@@ -178,8 +178,8 @@ The Chief of Staff refuses with a sentence, and a second `data.refused` event
 appears.
 
 **Said.**
-> "Finally, the part I built first. One of the analysts asked for a field outside its
-> role, hold amounts, and was refused before any model was called. And when I ask
+> "Finally, the part we built first. One of the analysts asked for a field outside its
+> role, hold amounts, and was refused before any model was called. And when we ask
 > something outside the approved use case, which students are in counseling, the
 > cabinet refuses in plain words, and the refusal is recorded. The counseling fields
 > exist in this fictional data precisely so that refusal is real. Governed AI is not a
@@ -202,7 +202,7 @@ The sign-in adds no seconds. It rides inside Beat 1's window, typed while the op
 line is spoken, so the pauses, the table above, and the four-minute total stand.
 
 If a beat runs long, the recovery is always the same. Skip the scroll, keep the
-sentence, never drop Beat 6. The refusal is the thesis. I timed the six beats end
+sentence, never drop Beat 6. The refusal is the thesis. We timed the six beats end
 to end at 204.9 seconds on the replay path, and every beat sat inside its window.
 
 ## Failure fallbacks
@@ -215,5 +215,5 @@ to end at 204.9 seconds on the replay path, and every beat sat inside its window
   screenshots and this script's spoken lines, word for word. After the Day-10
   rehearsal, the backup video recorded from the replay path joins it on the second
   device.
-- **Numbers questioned.** I open `data/VERIFY.md`, where the row IDs behind 119, 125,
+- **Numbers questioned.** We open `data/VERIFY.md`, where the row IDs behind 119, 125,
   42, 18, 12 are listed for hand counting.

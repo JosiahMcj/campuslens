@@ -12,15 +12,15 @@ University leaders have extensive student data, but answering one important ques
 still require several departments and multiple reports. Golden Eagle AI Cabinet gives each
 analytical function a permission-limited AI employee. An AI Chief of Staff coordinates
 their work, verifies the evidence, and produces one executive briefing that separates staff
-actions from leadership decisions. My first workflow answers a practical question. What
+actions from leadership decisions. Our first workflow answers a practical question. What
 should the president know about spring registration? The result is faster institutional
 understanding while people remain responsible for every consequential decision.
 
 ## What is built
 
-I built the working prototype this pitch describes, a Python API that carries all of the
+We built the working prototype this pitch describes, a Python API that carries all of the
 logic with a thin web interface over it. Both run locally and bind to the loopback address
-only. I chose a small scope on purpose. One question, one briefing, one dataset.
+only. We chose a small scope on purpose. One question, one briefing, one dataset.
 
 The dataset is fictional and seeded, holding 185 current-term student records and 135
 prior-year records, and every metric is computed deterministically in code. The configured
@@ -39,8 +39,8 @@ fields, and the row identifiers behind the number. Operational actions and the l
 decision stay visually separate throughout the briefing. Approving the decision records one
 simulated follow-up task to Financial Aid. Nothing is sent anywhere.
 
-I also built the failure path, a replay mode that serves recorded responses so the entire
-demonstration runs with the network down. I verified the application on the real path
+We also built the failure path, a replay mode that serves recorded responses so the entire
+demonstration runs with the network down. We verified the application on the real path
 rather than only in tests, covering empty input, an unavailable model endpoint, and a
 restart mid-run. Two replay runs came back byte-identical. The full six-beat demonstration
 takes 204.9 seconds, comfortably under the four-minute limit.
@@ -69,9 +69,9 @@ fails on any disagreement. A judge can recount each one. The fixture generator u
 fixed seed and no wall-clock
 values, and the as-of date is derived from the data rather than the clock.
 
-## Explicitly out of scope
+## Currently out of scope
 
-I kept a deliberate list of exclusions, and I name them plainly here. The prototype has no
+We kept a deliberate list of exclusions, and we name them plainly here. The prototype has no
 production SIS access and uses no real student data. It makes no automatic changes to
 student records, and it performs no automatic email, text message, or case creation. It is
 not an unrestricted executive chatbot, and it does no predictive retention modeling or
@@ -80,5 +80,5 @@ or spiritual-care agents, and it is not a complete mobile application.
 
 ## Format and deadline
 
-The submission format and the deadline are still to be confirmed on the hackathon page. I
+The submission format and the deadline are still to be confirmed on the hackathon page. We
 will complete this section when the page states them.

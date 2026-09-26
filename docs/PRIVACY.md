@@ -4,15 +4,15 @@
 
 Draft date 2026-09-25.
 
-I operate this service for institutions that want executive briefings built from student
-information system data. This page states, in my own words as the operator, what the
+We operate this service for institutions that want executive briefings built from student
+information system data. This page states, in our own words as the operators, what the
 service holds and what it never holds. It also covers where the data lives, who can see
-it, and what happens when you ask me to delete it. It describes only what the software
+it, and what happens when you ask us to delete it. It describes only what the software
 does or is designed to do.
 
 ## What the service holds
 
-For each institution I hold the following.
+For each institution we hold the following.
 
 - The institution's name.
 - The email addresses and roles of the institution's users, with password hashes.
@@ -30,7 +30,7 @@ labelled fictional in every response and contains no real students.
 
 ## What the service never holds
 
-I never hold student names. I never hold contact details. I never hold counseling
+We never hold student names. We never hold contact details. We never hold counseling
 content.
 
 The upload validator checks each dataset against [SCHEMA.md](../SCHEMA.md) before the
@@ -42,7 +42,7 @@ call, with the refusal recorded in the audit log.
 
 ## Where the data lives
 
-All of it lives on my server, where each institution is a separate tenant. Storage and
+All of it lives on our server, where each institution is a separate tenant. Storage and
 every route isolate one institution's data, audit events, briefings, decisions, and
 recordings from every other institution, so a user in one institution cannot read another
 institution's data.
@@ -53,7 +53,7 @@ The institution's own users see the service by role. Administrators manage users
 datasets, and executives ask questions and approve decisions. Staff read briefings and
 findings. Reviewers read everything, including the audit log, and change nothing.
 
-I can see the data myself for maintenance and backups. That is the full list.
+We can see the data ourselves for maintenance and backups. That is the full list.
 
 ## What leaves the server
 
@@ -61,14 +61,14 @@ Only two things leave the server for the configured model endpoint, namely the a
 findings computed in code from the active dataset and the analysts' validated texts.
 Student rows never leave. The counseling group never leaves.
 
-The endpoint's own retention terms apply to what it receives, and I name the endpoint to
-each institution on request. The key for the endpoint is mine as operator, never per
+The endpoint's own retention terms apply to what it receives, and we name the endpoint to
+each institution on request. The key for the endpoint is ours as operators, never per
 user, and it never appears in logs, responses, recordings, or the repository.
 
 ## Retention and deletion
 
-Deleting a dataset is a soft delete, and the data is purged after 30 days. Backups are made with the database's own backup API and rotate on my
-schedule. You may ask me for full deletion of your institution's data at any time, and
+Deleting a dataset is a soft delete, and the data is purged after 30 days. Backups are made with the database's own backup API and rotate on our
+schedule. You may ask us for full deletion of your institution's data at any time, and
 the audit log then retains only the fact of deletion.
 
 ## FERPA posture
@@ -76,7 +76,7 @@ the audit log then retains only the fact of deletion.
 The institution remains the owner of its education records and decides what it uploads.
 The service is designed for pseudonymous exports, and the validator refuses obvious
 identifiers. Any school official agreement under FERPA is the institution's
-responsibility to arrange, and I will sign a data processing agreement on request.
+responsibility to arrange, and we will sign a data processing agreement on request.
 
 ## Security
 
@@ -85,6 +85,6 @@ The threat model, the controls in place, and what is not covered yet are documen
 
 ## Contact
 
-Email me at contact@example.edu, a placeholder mailbox that will be replaced with my real
+Email us at contact@example.edu, a placeholder mailbox that will be replaced with our real
 mailbox before the service goes live. For security reports, use the address given in
 [SECURITY.md](SECURITY.md).

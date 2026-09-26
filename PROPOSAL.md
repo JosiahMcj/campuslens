@@ -175,7 +175,7 @@ connections, but not the private content of those conversations.
 9. An audit log showing tasks, data access, results, approval, and refusal.
 10. One demonstration of an AI employee refusing access outside its role.
 
-### Explicitly Out of Scope
+### Currently Out of Scope
 
 - Production Ellucian access or real student data
 - Automatic changes to student records
@@ -188,7 +188,7 @@ connections, but not the private content of those conversations.
 
 ### Definition of Done
 
-The prototype is complete when the team can run the full demonstration in four minutes,
+The prototype is complete when we can run the full demonstration in four minutes,
 every reported metric matches the fictional source data, every major statement exposes its
 evidence, the AI Cabinet produces one coherent briefing, a human approves the leadership
 follow-up, and one unauthorized request is visibly refused and recorded.
@@ -255,7 +255,7 @@ follow-up, and one unauthorized request is visibly refused and recorded.
 | AI employees receive excessive access | Assign fields by role and record each access; demonstrate a refusal. |
 | The system takes action without authorization | Create only a proposed task and require executive approval. |
 | Christian framing becomes surveillance or judgment | Use whole-person care principles without inferring faith, character, or private spiritual condition. |
-| The team exceeds its two-week capacity | Keep three AI employees, one dataset, one question, and one four-minute workflow. |
+| We exceed our two-week capacity | Keep three AI employees, one dataset, one question, and one four-minute workflow. |
 
 ## Measures of Success
 
@@ -279,8 +279,8 @@ human action.
 important question can still require several departments and multiple reports. Golden
 Eagle AI Cabinet gives each analytical function a permission-limited AI employee. An AI
 Chief of Staff coordinates their work, verifies the evidence, and produces one executive
-briefing that separates staff actions from leadership decisions. My first workflow answers
-a practical question: What should the president know about spring registration? The result
+briefing that separates staff actions from leadership decisions. Our first workflow answers
+the practical question of what the president should know about spring registration. The result
 is faster institutional understanding while people remain responsible for every
 consequential decision.
 
@@ -296,6 +296,6 @@ consequential decision.
 ## Approval Requested
 
 Approve Golden Eagle AI Cabinet as the project name and approve the President Weekly
-Student Success Briefing as the two-week prototype. The team should not add another AI
+Student Success Briefing as the two-week prototype. We should not add another AI
 employee or another executive question until the complete briefing, evidence, approval, and
 audit workflow operates reliably.

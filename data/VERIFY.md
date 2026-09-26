@@ -1,7 +1,7 @@
 # Fixture verification by hand count
 
-I generated `data/fixture.json` with `data/generate_fixture.py` (seed `20260924`,
-deterministic, no wall-clock values). I wrote this file so a reviewer can recount
+We generated `data/fixture.json` with `data/generate_fixture.py` (seed `20260924`,
+deterministic, no wall-clock values). We wrote this file so a reviewer can recount
 every planted demo value (M1 = −4.8 %, M2 = 42, M3 = 18, M4 = 12) straight from the
 JSON. The script `data/check_fixture.py` recomputes the same numbers and the same
 ID lists, and it exits non-zero if anything here disagrees.
@@ -48,7 +48,7 @@ list, 135 records, 320 rows total.
 
 ## Fixed dates used below
 
-I derived the fixed dates below from the data, never the wall clock.
+We derived the fixed dates below from the data, never the wall clock.
 
 | Name | Value | Where it lives |
 |---|---|---|
@@ -79,9 +79,9 @@ STU-0001 STU-0002 STU-0003 STU-0004 STU-0005 STU-0006 STU-0007 STU-0008 STU-0009
 <!-- ids:M1_DEN -->
 PRI-0001 PRI-0002 PRI-0003 PRI-0004 PRI-0005 PRI-0006 PRI-0007 PRI-0008 PRI-0009 PRI-0010 PRI-0011 PRI-0012 PRI-0013 PRI-0014 PRI-0015 PRI-0016 PRI-0017 PRI-0018 PRI-0019 PRI-0020 PRI-0021 PRI-0022 PRI-0023 PRI-0024 PRI-0025 PRI-0026 PRI-0027 PRI-0028 PRI-0029 PRI-0030 PRI-0031 PRI-0032 PRI-0033 PRI-0034 PRI-0035 PRI-0036 PRI-0037 PRI-0038 PRI-0039 PRI-0040 PRI-0041 PRI-0042 PRI-0043 PRI-0044 PRI-0045 PRI-0046 PRI-0047 PRI-0048 PRI-0049 PRI-0050 PRI-0051 PRI-0052 PRI-0053 PRI-0054 PRI-0055 PRI-0056 PRI-0057 PRI-0058 PRI-0059 PRI-0060 PRI-0061 PRI-0062 PRI-0063 PRI-0064 PRI-0065 PRI-0066 PRI-0067 PRI-0068 PRI-0069 PRI-0070 PRI-0071 PRI-0072 PRI-0073 PRI-0074 PRI-0075 PRI-0076 PRI-0077 PRI-0078 PRI-0079 PRI-0080 PRI-0081 PRI-0082 PRI-0083 PRI-0084 PRI-0085 PRI-0086 PRI-0087 PRI-0088 PRI-0089 PRI-0090 PRI-0091 PRI-0092 PRI-0093 PRI-0094 PRI-0095 PRI-0096 PRI-0097 PRI-0098 PRI-0099 PRI-0100 PRI-0101 PRI-0102 PRI-0103 PRI-0104 PRI-0105 PRI-0106 PRI-0107 PRI-0108 PRI-0109 PRI-0110 PRI-0111 PRI-0112 PRI-0113 PRI-0114 PRI-0115 PRI-0116 PRI-0117 PRI-0118 PRI-0119 PRI-0120 PRI-0121 PRI-0122 PRI-0123 PRI-0124 PRI-0125
 
-My hand count gives 119 / 125 − 1 = −0.048 = **−4.8 %** exactly.
+Our hand count gives 119 / 125 − 1 = −0.048 = **−4.8 %** exactly.
 
-I planted prior-year decoys, excluded from the denominator. PRI-0126 … PRI-0131
+We planted prior-year decoys, excluded from the denominator. PRI-0126 … PRI-0131
 registered *after* the equivalent date (registration_date between 2025-11-21
 and 2025-12-19), and PRI-0132 … PRI-0135 never registered at all.
 
@@ -93,7 +93,7 @@ Count rows in `students` where `profile.continuing` is `true` and
 <!-- ids:M2 -->
 STU-0120 STU-0121 STU-0122 STU-0123 STU-0124 STU-0125 STU-0126 STU-0127 STU-0128 STU-0129 STU-0130 STU-0131 STU-0132 STU-0133 STU-0134 STU-0135 STU-0136 STU-0137 STU-0138 STU-0139 STU-0140 STU-0141 STU-0142 STU-0143 STU-0144 STU-0145 STU-0146 STU-0147 STU-0148 STU-0149 STU-0150 STU-0151 STU-0152 STU-0153 STU-0154 STU-0155 STU-0156 STU-0157 STU-0158 STU-0159 STU-0160 STU-0161
 
-I planted decoys here too, excluded by the `continuing` filter. STU-0176 …
+We planted decoys here too, excluded by the `continuing` filter. STU-0176 …
 STU-0185 are new students (`profile.continuing` is `false`) who are also not
 registered, and they do not count toward M2. (STU-0162 … STU-0175 are new and
 registered.)
@@ -106,7 +106,7 @@ Of the 42 M2 rows, count those with a hold where `category` = `"financial"`,
 <!-- ids:M3 -->
 STU-0120 STU-0121 STU-0122 STU-0123 STU-0124 STU-0125 STU-0126 STU-0127 STU-0128 STU-0129 STU-0130 STU-0131 STU-0132 STU-0133 STU-0134 STU-0135 STU-0136 STU-0137
 
-I planted M3 decoys. Each is in M2 unless noted, and each fails exactly one
+We planted M3 decoys. Each is in M2 unless noted, and each fails exactly one
 clause.
 
 <!-- ids:D1 -->
@@ -153,7 +153,7 @@ STU-0120 STU-0121 STU-0122 STU-0123 STU-0124 STU-0125 STU-0126 STU-0127 STU-0138
 have completed appointments in spring 2026. An old appointment still counts
 as "no appointment this term", which is exactly what M4 is meant to surface.)
 
-My M4 decoy.
+Our M4 decoy.
 
 <!-- ids:D5 -->
 STU-0142 STU-0143
@@ -169,5 +169,5 @@ STU-0142 STU-0143
 Five rows carry gentle, fictional `counseling.counseling_notes` (STU-0026,
 STU-0071, STU-0126, STU-0147, STU-0177), with `chaplain_contact: true`. These
 fields exist only so the permission layer's refusal is real (ROADMAP.md §5).
-No metric reads them. Students are people, not risk scores. I wrote the notes
+No metric reads them. Students are people, not risk scores. We wrote the notes
 accordingly.

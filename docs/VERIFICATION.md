@@ -1,21 +1,21 @@
 # Verification of the ROADMAP §8 matrix, run on the real path
 
-*I induced every row below on the running app, the real FastAPI on
+*We induced every row below on the running app, the real FastAPI on
 127.0.0.1:8910 and the real Vite UI on 127.0.0.1:5200, driven through headless
 Chrome over CDP. Nothing here is inferred from tests. The model side ran in
 replay mode (`make api REPLAY=1`), because that is how the demo runs, and the
-rows that need the deterministic stub say so. I made no live model call and read
+rows that need the deterministic stub say so. We made no live model call and read
 no key.*
 
-My CDP driver and scratch files lived in `var/verify/` (gitignored). The evidence
+Our CDP driver and scratch files lived in `var/verify/` (gitignored). The evidence
 worth keeping is in `docs/screenshots/day8-*.png` and `docs/verification/logs/`.
 The exact commands are quoted per row.
 
 ## Row 1. Real path (replay standing in for live). PASS
 
-I started from a fresh `var/`, and I moved the audit log aside first, since it
+We started from a fresh `var/`, and we moved the audit log aside first, since it
 held six events a browser tab wrote at startup (see Open). Then `make api
-REPLAY=1` and `make ui`, and through CDP I typed
+REPLAY=1` and `make ui`, and through CDP we typed
 *"What should I know about spring registration?"* into the question field and
 clicked Ask.
 
@@ -34,7 +34,7 @@ Evidence. `docs/screenshots/day8-row1-question.png`,
 
 ## Row 2. Empty data. PASS
 
-I served an empty-but-valid fixture (the real fixture's `terms` with both student
+We served an empty-but-valid fixture (the real fixture's `terms` with both student
 lists empty) with the **fake provider**. Replay has no recording keyed to an
 empty findings hash, so the stub is what renders the briefing here.
 `CABINET_FIXTURE=$PWD/var/verify/empty-fixture.json CABINET_AUDIT_PATH=… CABINET_PROVIDER=fake make api`.
@@ -53,7 +53,7 @@ by `backend/tests/test_fixture_config.py::test_empty_fixture_renders_dash_dash_p
 
 ## Row 3. Provider down. PASS
 
-I configured `CABINET_PROVIDER=chat CABINET_LLM_BASE_URL=http://127.0.0.1:9` with
+We configured `CABINET_PROVIDER=chat CABINET_LLM_BASE_URL=http://127.0.0.1:9` with
 a dummy key. Nothing listens there, and the call is refused before any request
 leaves the process.
 
@@ -71,7 +71,7 @@ Evidence. `docs/verification/logs/row3-provider-down.txt`,
 
 ## Row 4. Replay determinism. PASS
 
-I ran twice from a clean `var/`, moving the audit log aside between runs. Each
+We ran twice from a clean `var/`, moving the audit log aside between runs. Each
 run was `make api REPLAY=1`, then `POST /ask`, saving the response.
 
 | Check | Command | Observed | Result |
@@ -97,7 +97,7 @@ Evidence. `docs/verification/logs/row5-refusals.txt`,
 
 ## Row 6. Restart. PASS
 
-With `CABINET_PROVIDER=fake make api` running, I started `POST /ask` and sent
+With `CABINET_PROVIDER=fake make api` running, we started `POST /ask` and sent
 `kill -9` to this project's own pid (from `var/api.pid`, verified by `ps`) 0.3 s
 in, then restarted.
 
@@ -111,7 +111,7 @@ in, then restarted.
 
 A note on the torn line. The fake provider answers in milliseconds, so the
 killed `/ask` had already completed and fsynced, and the log ended clean. To
-exercise the recovery path the row asks about, I appended a 39-byte partial JSON
+exercise the recovery path the row asks about, we appended a 39-byte partial JSON
 line (the prefix of the next event) to `var/audit/events.jsonl` while the API was
 down. Those are exactly the bytes a kill mid-append leaves. The expected warning,
 quoted for row 8, is this.
@@ -126,7 +126,7 @@ Evidence. `docs/verification/logs/row6-restart.txt`.
 
 ## Row 7. Timing. PASS
 
-I scripted the six beats through CDP on the replay path (`node
+We scripted the six beats through CDP on the replay path (`node
 var/verify/row7.mjs`), with the DEMO-SCRIPT pauses added as sleeps.
 
 | Beat | Action | Action time | With pause | Demo window |
@@ -145,7 +145,7 @@ the spoken script. Evidence. `docs/verification/logs/row7-timing.txt`,
 
 ## Row 8. Logs. PASS
 
-After all of the above, I read both logs.
+After all of the above, we read both logs.
 
 - `var/api.log` (the row-7 replay process) held INFO lines only, startup, and
   200s with the expected 404s from `GET /briefing` before the first Ask. No
@@ -154,9 +154,9 @@ After all of the above, I read both logs.
   `make api` start truncates `var/api.log`. It is preserved in
   `docs/verification/logs/row6-restart.txt`, and its `.torn-*` sibling file is
   still in `var/audit/`.
-- `var/ui.log` was clean, with one caveat I handled honestly. My verifying shell
+- `var/ui.log` was clean, with one caveat we handled honestly. Our verifying shell
   exports both `NO_COLOR` and `FORCE_COLOR`, which makes Node print
-  `Warning: The 'NO_COLOR' env is ignored…` on any node launch. That is my
+  `Warning: The 'NO_COLOR' env is ignored…` on any node launch. That is our
   environment, not the app. Relaunching with `env -u FORCE_COLOR -u NO_COLOR
   make ui` produces a spotless log (three lines, Vite ready plus the Local URL).
 
@@ -170,7 +170,7 @@ All three items are resolved.
 - **Opening the page wrote six audit events before any question was asked.**
   The UI's initial load fetched `GET /briefing/enrollment` and
   `GET /briefing/student-success`, and each cache miss ran the analyst, logging
-  `task.assigned` + `data.granted` + `finding.produced`. I confirmed this is
+  `task.assigned` + `data.granted` + `finding.produced`. We confirmed this is
   where the six pre-row-1 events came from. Their provider and label are the
   golden recording's, which pytest cannot produce (`conftest.py` points tests at
   an empty golden dir). Their timestamp matches the first `make api` and
@@ -201,8 +201,8 @@ All three items are resolved.
 
 ## House bar
 
-- I launched it the way the demo launches (`make api REPLAY=1` + `make ui`), and
-  I checked the logs, row 8.
+- We launched it the way the demo launches (`make api REPLAY=1` + `make ui`), and
+  we checked the logs, row 8.
 - Nothing was sent anywhere. The only outbound attempt was row 3's deliberate
   connection to 127.0.0.1:9, refused. All data fictional, all writes inside the
   project.
@@ -211,10 +211,10 @@ All three items are resolved.
 
 ## User management on the real path. PASS
 
-*I ran this on the real API on `127.0.0.1:8920` and the real Vite UI on
+*We ran this on the real API on `127.0.0.1:8920` and the real Vite UI on
 `127.0.0.1:5210`, started with `CABINET_DB=$PWD/var/h5-demo.db
 CABINET_BIND=127.0.0.1:8920 make api REPLAY=1` (replay mode, no live model
-call). I drove both through headless Chrome over CDP. The browser had its own
+call). We drove both through headless Chrome over CDP. The browser had its own
 pid file and debug port 9443, and an isolated context held the second user's
 session.*
 
@@ -231,5 +231,5 @@ session.*
 | Password hygiene | `grep` both one-time passwords against the exported audit log and `var/api.log` | zero occurrences | PASS |
 
 After the run, `make check` was green (282 pytest + 102 vitest, ruff, mypy,
-eslint, tsc). I stopped all three demo processes (api, vite, Chrome) through
+eslint, tsc). We stopped all three demo processes (api, vite, Chrome) through
 their own pid files.

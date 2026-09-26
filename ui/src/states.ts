@@ -625,7 +625,7 @@ export function filterEvents(
 }
 
 // The API records every event in UTC; the reader is a person in one place
-// (a president in Tulsa), so the log shows the viewer's own zone, named,
+// (a president in one time zone), so the log shows the viewer's own zone, named,
 // rather than making them convert. `timeZone` is a test seam — production
 // leaves it undefined and takes the browser's zone.
 export function formatTimestamp(ts: string, timeZone?: string): string {
