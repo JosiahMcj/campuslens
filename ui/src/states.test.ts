@@ -281,10 +281,23 @@ describe('audit log helpers', () => {
     expect(taskFromEvents(events, 'D-2')).toBeUndefined()
   })
 
-  it('formats timestamps compactly', () => {
-    expect(formatTimestamp('2026-09-24T22:24:46.535823+00:00')).toBe(
-      '2026-09-24 22:24:46 UTC',
+  it('formats timestamps in the viewer\'s zone, named', () => {
+    const recorded = '2026-09-24T22:24:46.535823+00:00'
+    expect(formatTimestamp(recorded, 'America/Chicago')).toBe(
+      '2026-09-24 17:24:46 CDT',
     )
+    expect(formatTimestamp('2026-12-24T22:24:46+00:00', 'America/Chicago')).toBe(
+      '2026-12-24 16:24:46 CST',
+    )
+    expect(formatTimestamp(recorded, 'UTC')).toBe('2026-09-24 22:24:46 UTC')
+    // Midnight stays 00, never 24.
+    expect(formatTimestamp('2026-09-25T05:00:00+00:00', 'America/Chicago')).toBe(
+      '2026-09-25 00:00:00 CDT',
+    )
+  })
+
+  it('leaves an unparseable timestamp as it came', () => {
+    expect(formatTimestamp('not a time')).toBe('not a time')
   })
 })
 

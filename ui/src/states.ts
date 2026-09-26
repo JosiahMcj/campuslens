@@ -624,8 +624,31 @@ export function filterEvents(
   return events.filter((event) => event.type === eventType)
 }
 
-export function formatTimestamp(ts: string): string {
-  return ts.replace('T', ' ').slice(0, 19) + ' UTC'
+// The API records every event in UTC; the reader is a person in one place
+// (a president in Tulsa), so the log shows the viewer's own zone, named,
+// rather than making them convert. `timeZone` is a test seam — production
+// leaves it undefined and takes the browser's zone.
+export function formatTimestamp(ts: string, timeZone?: string): string {
+  const date = new Date(ts)
+  if (Number.isNaN(date.getTime())) return ts
+  const part: Record<string, string> = {}
+  for (const { type, value } of new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+    timeZoneName: 'short',
+  }).formatToParts(date)) {
+    part[type] = value
+  }
+  return (
+    `${part.year}-${part.month}-${part.day} ` +
+    `${part.hour}:${part.minute}:${part.second} ${part.timeZoneName}`
+  )
 }
 
 export interface TaskRecord {
