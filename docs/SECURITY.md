@@ -129,7 +129,16 @@ log in, and its existing session is rejected on the next request.
 
 **Secrets and configuration.** `CABINET_SECRET_KEY`, at least 32 bytes, signs
 sessions. We keep the model key in the environment or `cabinet.local.env`, which
-is gitignored, and it is never logged, recorded, or returned. With
+is gitignored, and it is never logged, recorded, or returned. The Ethos import
+(`make import-ethos`) adds two more secrets, both read from files named by
+environment variables and never from env values, so they cannot leak through a
+process listing or a dumped environment. `CABINET_ETHOS_API_KEY_FILE` holds the
+institution's Ethos Integration API key, used only for the `/auth` token
+exchange and redacted from every error. `CABINET_PSEUDONYM_KEY_FILE` holds the
+keyed hash key that pseudonymises student and advisor ids at the institution's
+edge. It is never stored, never printed, never sent anywhere, and no reverse
+mapping table is written. Losing or rotating the pseudonym key makes re-imports
+unlinkable to earlier ones, which is the point. With
 `CABINET_ENV=production` the app fails closed, so we refuse to start without
 `CABINET_SECRET_KEY`, and we refuse to bind without an explicit `CABINET_BIND`.
 The default bind is 127.0.0.1, and anything else must be chosen on purpose,

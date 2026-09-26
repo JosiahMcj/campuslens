@@ -12,7 +12,7 @@ PYBIN := $(VENV)/bin
 	lint lint-python lint-ui \
 	typecheck typecheck-python typecheck-ui \
 	test test-python test-ui \
-	check audit check-config bootstrap-admin institution user api ui stop record-golden \
+	check audit check-config bootstrap-admin institution user import-ethos api ui stop record-golden \
 	migrate backup restore purge-deleted build serve
 
 setup: setup-python setup-ui
@@ -84,6 +84,20 @@ user:
 	else \
 		$(PYBIN)/python -m cabinet.users add --email "$(EMAIL)" --role "$(ROLE)"; \
 	fi
+
+# Import one term from the institution's Ellucian Ethos Integration API
+# (docs/ELLUCIAN.md): fetch the mapped resources at the institution's edge,
+# pseudonymise student and advisor ids with the keyed hash, write the export
+# to var/exports/<slug>-<term>-<timestamp>-<suffix>.json (0600), validate it
+# exactly like the admin UI upload, and store it inactive until an admin
+# activates it; the export copy is then removed (kept only on DRY_RUN=1).
+# Requires CABINET_ETHOS_BASE_URL, CABINET_ETHOS_API_KEY_FILE, and
+# CABINET_PSEUDONYM_KEY_FILE (environment or cabinet.local.env).
+# Example: make import-ethos INSTITUTION=bootstrap TERM=202720
+#          make import-ethos INSTITUTION=bootstrap TERM=202720 DRY_RUN=1
+import-ethos:
+	@if [ -z "$(INSTITUTION)" ] || [ -z "$(TERM)" ]; then echo "usage: make import-ethos INSTITUTION=<slug> TERM=<code> [DRY_RUN=1]" >&2; exit 2; fi
+	$(PYBIN)/python -m cabinet.ellucian import --institution "$(INSTITUTION)" --term "$(TERM)" $(if $(DRY_RUN),--dry-run,)
 
 # Apply pending schema migrations to var/cabinet.db (the app also applies
 # known pending migrations at startup and refuses a version it does not

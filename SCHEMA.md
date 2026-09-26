@@ -38,6 +38,7 @@ separate list, 320 records in total.
 | `meta.generator` | string | `"data/generate_fixture.py"` |
 | `meta.timezone` | string | `"America/Chicago"` |
 | `meta.date_format` | string | `"YYYY-MM-DD"` |
+| `meta.source` | object, optional | absent in this fixture; present on real Ethos exports: `{system, host, term, resource_versions, extracted_at, row_counts}` |
 | `meta.planted_metrics` | object `{M1: number, M2: int, M3: int, M4: int}` | `{M1: -0.048, M2: 42, M3: 18, M4: 12}` |
 
 ## `terms`, three objects

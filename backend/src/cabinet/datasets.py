@@ -45,6 +45,9 @@ ALLOWED_META = frozenset(
         "timezone",
         "date_format",
         "planted_metrics",
+        # Optional provenance block on real Ethos exports (host, resource
+        # versions, extraction time, row counts) — SCHEMA.md meta table.
+        "source",
     }
 )
 ALLOWED_TERM = frozenset(

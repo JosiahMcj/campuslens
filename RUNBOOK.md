@@ -180,6 +180,38 @@ file stay for a 30-day retention window before `make purge-deleted` removes
 them for good. The active dataset cannot be deleted, so activate another
 first.
 
+## Importing from Ellucian Ethos
+
+The institution's real student information system (Ellucian Banner through the
+Ethos Integration API) feeds the same upload path, pseudonymised at the
+institution's edge, so no identifiable student record ever reaches the
+cabinet. The full mapping and the per-tenant settings are in `docs/ELLUCIAN.md`.
+The request we send to the registrar is `docs/DATA-ACCESS.md`.
+
+```bash
+# one time, outside the repo, mode 0600:
+#   echo "<ethos api key>"  > /secure/path/ethos-api-key
+#   openssl rand -hex 32    > /secure/path/pseudonym-key
+export CABINET_ETHOS_BASE_URL=https://ethos.example.edu
+export CABINET_ETHOS_API_KEY_FILE=/secure/path/ethos-api-key
+export CABINET_PSEUDONYM_KEY_FILE=/secure/path/pseudonym-key
+
+make import-ethos INSTITUTION=two-rivers TERM=202720 DRY_RUN=1   # export and validation report only
+make import-ethos INSTITUTION=two-rivers TERM=202720             # also stores it, inactive
+```
+
+The export lands in `var/exports/<slug>-<term>-<timestamp>-<suffix>.json`
+(mode 0600) and is validated by the same `validate_upload` as the admin screen
+before anything is stored. A real import is stored with
+`uploaded_by=ethos-import`, stays inactive until an admin activates it, is
+audited as `dataset.uploaded` with `importer: "ethos"`, and then the export copy
+is removed. The stored dataset is the retained copy (purged 30 days after
+deletion), and exports are kept only on `DRY_RUN=1`. A missing, unreadable, or
+group or world readable key file is a one line refusal before any network
+access, with nothing written. The pseudonym key never leaves the institution.
+Without it the export's `S-` and `A-` ids cannot be reversed, and no reverse
+table exists.
+
 ## Backup and restore
 
 ```bash

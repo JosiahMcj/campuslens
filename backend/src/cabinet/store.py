@@ -529,6 +529,67 @@ class CabinetStore:
         assert dataset is not None  # just committed
         return dataset
 
+    def add_dataset_with_audit(
+        self,
+        institution_id: int,
+        *,
+        name: str,
+        raw: bytes,
+        uploaded_by: str,
+        audit_actor: str,
+        audit_extra: dict[str, Any],
+        row_counts: dict[str, int] | None = None,
+    ) -> dict[str, Any]:
+        """``add_dataset`` plus its ``dataset.uploaded`` event as ONE unit.
+
+        The dataset INSERT and the event INSERT commit together
+        (``_audit_append_locked``'s commit covers both), so an audit failure
+        rolls the dataset row and file back too: the store never holds a
+        dataset whose upload was not audited, and a caller's "nothing was
+        stored" message is true. The event payload is built here from the
+        new row's ids plus ``audit_extra``.
+        """
+        name = name.strip()
+        if not name:
+            raise ValueError("dataset name must not be empty")
+        counts = row_counts if row_counts is not None else self.row_counts_of(raw)
+        sha256 = hashlib.sha256(raw).hexdigest()
+        staged = self._stage_dataset_file(self._dataset_dir(institution_id), raw)
+        written: Path | None = None
+        try:
+            with self._lock:
+                dataset_id, written = self._add_dataset_locked(
+                    institution_id,
+                    name=name,
+                    sha256=sha256,
+                    staged=staged,
+                    uploaded_by=uploaded_by,
+                    row_counts=counts,
+                    activate=False,
+                )
+                self._audit_append_locked(
+                    institution_id,
+                    "dataset.uploaded",
+                    actor=audit_actor,
+                    payload={
+                        "dataset_id": dataset_id,
+                        "name": name,
+                        "sha256": sha256,
+                        "row_counts": counts,
+                        **audit_extra,
+                    },
+                )  # its commit covers the dataset row and the event
+        except Exception:
+            self._conn.rollback()
+            if written is not None:
+                with contextlib.suppress(FileNotFoundError):
+                    written.unlink()
+            self._discard_staged(staged, staged.parent)
+            raise
+        dataset = self.dataset_row(institution_id, dataset_id)
+        assert dataset is not None  # just committed
+        return dataset
+
     def seed_demo_dataset(self, institution_id: int) -> dict[str, Any]:
         """Seed the fictional demonstration dataset for a new institution.
 
