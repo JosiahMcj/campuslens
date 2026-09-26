@@ -1,7 +1,7 @@
 """Tests for the Student Success Analyst (ROADMAP §3 layer 4).
 
 Mirrors the Enrollment Analyst tests: the analyst receives only its permitted
-findings (M3, M4, M5) and every call logs ``data.granted`` listing exactly
+findings (M3, M4, M5, M8) and every call logs ``data.granted`` listing exactly
 those fields; the fake provider's output (including M5's per-office counts)
 passes the numeral test; invented or misattributed numbers are rejected and
 never shown; a cache hit writes no events; replay is byte-identical with the
@@ -100,27 +100,31 @@ class CountingProvider(FakeProvider):
 # --- scoping and audit --------------------------------------------------------
 
 
-def test_analyst_receives_only_m3_m4_m5(
+def test_analyst_receives_only_its_role_findings(
     findings_obj: dict[str, Any], log: AuditLog
 ) -> None:
     provider = StubProvider("18 students carry a small financial hold [M3].")
     result = run_analyst(STUDENT_SUCCESS_ANALYST, findings_obj, provider, log)
     assert result.available is True
     assert provider.received is not None
-    assert sorted(provider.received) == ["M3", "M4", "M5"]
+    assert sorted(provider.received) == ["M3", "M4", "M5", "M8"]
 
 
 def test_analyst_receives_no_row_ids(
     findings_obj: dict[str, Any], log: AuditLog
 ) -> None:
-    """The model never sees a row ID; the evidence drawer reads them from
-    /findings, not from the analyst's scoped findings."""
+    """The model never sees a row ID, including M8's per-student rule map.
+    The evidence drawer reads those from /findings, not from the analyst's
+    scoped findings."""
     provider = StubProvider("12 students have not met with an advisor [M4].")
     result = run_analyst(STUDENT_SUCCESS_ANALYST, findings_obj, provider, log)
     assert result.available is True, result.reason
+    assert provider.received is not None
+    assert "M8" in provider.received
     dumped = json.dumps(provider.received)
     assert "row_ids" not in dumped
     assert "hold_row_ids" not in dumped
+    assert "row_rules" not in dumped
     assert "STU-" not in dumped
     assert "PRI-" not in dumped
 
@@ -149,7 +153,7 @@ def test_every_call_logs_data_granted_with_exact_fields(
 
     produced = log.events("finding.produced")
     assert len(produced) == 2
-    assert produced[0]["payload"]["findings"] == ["M3", "M4", "M5"]
+    assert produced[0]["payload"]["findings"] == ["M3", "M4", "M5", "M8"]
 
 
 # --- the numeral test ----------------------------------------------------------
@@ -167,7 +171,7 @@ def test_numeral_test_passes_on_fake_provider_output(
     assert "Bursar 24" in result.text
     assert "Registrar 2" in result.text
     claims = validate_explanation(result.text, received)
-    assert {fid for c in claims for fid in c.finding_ids} <= {"M3", "M4", "M5"}
+    assert {fid for c in claims for fid in c.finding_ids} <= {"M3", "M4", "M5", "M8"}
 
 
 def test_numeral_test_rejects_an_invented_number(
@@ -248,14 +252,14 @@ def test_briefing_student_success_with_fake_provider(
     for claim in body["claims"]:
         assert claim["text"]
         assert claim["finding_ids"]
-        assert set(claim["finding_ids"]) <= {"M3", "M4", "M5"}
+        assert set(claim["finding_ids"]) <= {"M3", "M4", "M5", "M8"}
 
     granted = client.get("/events", params={"type": "data.granted"}).json()["events"]
     assert granted[-1]["payload"]["granted_fields"] == SUCCESS_FIELDS
     produced = client.get("/events", params={"type": "finding.produced"}).json()[
         "events"
     ]
-    assert produced[-1]["payload"]["findings"] == ["M3", "M4", "M5"]
+    assert produced[-1]["payload"]["findings"] == ["M3", "M4", "M5", "M8"]
     # With no prior question, the briefing assigned its own task first.
     assert produced[-1]["payload"]["task_id"] == "briefing-student_success_analyst"
 

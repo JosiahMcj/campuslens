@@ -2,9 +2,11 @@
 """Independent checker for data/fixture.json.
 
 Recomputes M1-M4 straight from the fixture by the ROADMAP.md section 4
-formulas, prints the values and the row-ID lists, and exits non-zero if any
-value differs from the planted value or from the ID lists in data/VERIFY.md.
-This is independent evidence for the reviewer, not the product metric code.
+formulas, plus the M8 support indicators (CONTRACTS.md M8: the named rules
+I1-I4, unioned with no weighting or ordering), prints the values and the
+row-ID lists, and exits non-zero if any value differs from the planted value
+or from the ID lists in data/VERIFY.md. This is independent evidence for the
+reviewer, not the product metric code.
 
 Stdlib only; Python 3.9. Run:
 
@@ -14,6 +16,7 @@ Stdlib only; Python 3.9. Run:
 import json
 import re
 import sys
+from datetime import date
 from fractions import Fraction
 from pathlib import Path
 
@@ -26,7 +29,15 @@ EXPECTED = {
     "M2": 42,
     "M3": 18,
     "M4": 12,
+    "I1": 18,
+    "I2": 12,
+    "I3": 0,
+    "I4": 0,
+    "M8": 22,
 }
+
+# I4's window: registration closing this many days out (or fewer) counts.
+CLOSING_SOON_DAYS = 14
 
 
 def sid(record):
@@ -99,6 +110,22 @@ def compute(fixture):
         if (s["advising"]["last_appointment_date"] is None)
         != (s["advising"]["appointment_status"] == "none"))
 
+    # M8 support indicators (CONTRACTS.md M8): named rules over one student
+    # record, unioned with no weighting or ordering. I1's population is M3's,
+    # I2's is M4's; I3 and I4 are computed here from the raw rows.
+    i1 = m3
+    i2 = m4
+    i3 = sorted(sid(s) for s in students
+                if len({h["responsible_office"] for h in s["holds"]
+                        if not h["resolved"]}) >= 2)
+    days_to_close = (
+        date.fromisoformat(current_term["registration_close_date"])
+        - date.fromisoformat(as_of)
+    ).days
+    i4 = sorted(sid(s) for s in students
+                if sid(s) in m2_set and 0 <= days_to_close <= CLOSING_SOON_DAYS)
+    m8 = sorted(set(i1) | set(i2) | set(i3) | set(i4))
+
     return {
         "as_of": as_of,
         "equiv": equiv,
@@ -110,6 +137,12 @@ def compute(fixture):
         "M2": m2,
         "M3": m3,
         "M4": m4,
+        "I1": i1,
+        "I2": i2,
+        "I3": i3,
+        "I4": i4,
+        "M8": m8,
+        "days_to_close": days_to_close,
         "future_advising": future_advising,
         "bad_status": bad_status,
     }
@@ -162,7 +195,20 @@ def main():
     check("M4 planted 12", len(result["M4"]), EXPECTED["M4"])
     print()
 
-    for key in ("M1_NUM", "M1_DEN", "M2", "M3", "M4"):
+    # M8 support indicators: per-rule counts, then the union (no weighting).
+    print("registration closes in %d days (I4 window: %d)"
+          % (result["days_to_close"], CLOSING_SOON_DAYS))
+    for rule in ("I1", "I2", "I3", "I4"):
+        print("%s = %d" % (rule, len(result[rule])))
+        check("%s planted %d" % (rule, EXPECTED[rule]),
+              len(result[rule]), EXPECTED[rule])
+    print("M8 = %d (union of I1-I4)" % len(result["M8"]))
+    check("M8 planted 22", len(result["M8"]), EXPECTED["M8"])
+    check("I1 population is M3's", result["I1"], result["M3"])
+    check("I2 population is M4's", result["I2"], result["M4"])
+    print()
+
+    for key in ("M1_NUM", "M1_DEN", "M2", "M3", "M4", "M8"):
         computed = result[key]
         print("%s (%d rows): %s%s" % (
             key, len(computed), " ".join(computed[:8]),

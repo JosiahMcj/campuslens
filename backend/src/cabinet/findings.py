@@ -1,4 +1,4 @@
-"""CLI: print the ROADMAP §3 findings object (metrics M1-M7) as JSON.
+"""CLI: print the ROADMAP §3 findings object (metrics M1-M8) as JSON.
 
     .venv/bin/python -m cabinet.findings [--fixture PATH]
 
@@ -21,7 +21,7 @@ DEFAULT_FIXTURE = Path(__file__).resolve().parents[3] / "data" / "fixture.json"
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="cabinet.findings",
-        description="Compute metrics M1-M7 (CONTRACTS.md) from the fixture and print "
+        description="Compute metrics M1-M8 (CONTRACTS.md) from the fixture and print "
         "the ROADMAP §3 findings object as JSON.",
     )
     parser.add_argument(

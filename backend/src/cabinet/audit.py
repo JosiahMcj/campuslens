@@ -61,6 +61,18 @@ EVENT_TYPES: tuple[str, ...] = (
     # of the frozen vocabulary; see DECISIONS.md 2026-09-25. Payload:
     # {action, target_user_id, role, by} — never a password.
     "admin.changed",
+    # The governed execution step (per institution). task.dispatched: a
+    # draft message to the responsible office was composed in code from
+    # the approved task's findings (payload: dispatch_id, task_id,
+    # decision_id, to_office, subject). task.sent: a named staff member or
+    # admin clicked Send and the provider accepted it (payload adds
+    # provider and provider_ref; the actor is the sending user).
+    "task.dispatched",
+    # task.send_failed: a named person clicked Send and the provider refused
+    # or failed; the chain keeps the attempt (error text, never a secret or
+    # the message body) so a later retry is never a silent second delivery.
+    "task.send_failed",
+    "task.sent",
 )
 
 ENV_VAR = "CABINET_AUDIT_PATH"

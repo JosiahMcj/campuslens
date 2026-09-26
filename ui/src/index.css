@@ -467,12 +467,17 @@ details[open]::details-content {
   }
 }
 
-/* --- The four figures: typographic, on a ruled row, no boxes ----------------*/
+/* --- The five figures: typographic, on a ruled row, no boxes ----------------*/
 
 .stat-row {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   column-gap: 16px;
+  /* Five figures on two columns leave one cell alone on the last row; the
+     odd one spans the row so nothing sits beside an empty cell. */
+  & > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
   border-block: 1px solid var(--rule);
   margin-top: 24px;
   font-family: var(--document);
@@ -815,6 +820,90 @@ details[open]::details-content {
   margin: 0;
 }
 
+/* --- The dispatch: the message to the office ---------------------------------*/
+/* Same boxed treatment as the task card (the one boxed element), paper on the
+ * gold wash, hairline rule. No new colours. */
+
+.dispatch-prepare {
+  background: var(--paper);
+  color: var(--navy);
+  border: 1px solid var(--navy);
+  font-weight: 600;
+  padding: 8px 16px;
+  margin-top: 12px;
+}
+
+.dispatch-prepare:hover {
+  background: color-mix(in srgb, var(--navy) 8%, var(--paper));
+}
+
+.dispatch-draft {
+  margin-top: 16px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.dispatch-draft h4 {
+  margin: 0 0 8px;
+}
+
+.dispatch-draft dl {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.dispatch-draft dt {
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.dispatch-draft dd {
+  margin: 0;
+}
+
+.dispatch-body {
+  margin-top: 8px;
+  border-top: 1px solid var(--rule);
+  padding-top: 8px;
+}
+
+.dispatch-body p {
+  margin: 0 0 4px;
+  min-height: 1em;
+}
+
+.dispatch-body p:last-child {
+  margin-bottom: 0;
+}
+
+.dispatch-send {
+  background: var(--navy);
+  color: var(--paper);
+  border: 1px solid var(--navy);
+  font-weight: 600;
+  padding: 8px 16px;
+  margin-top: 12px;
+}
+
+.dispatch-send:hover {
+  background: color-mix(in srgb, var(--navy), white 12%);
+}
+
+.dispatch-send:disabled,
+.dispatch-prepare:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.dispatch-sent {
+  margin-top: 12px;
+  font-weight: 600;
+}
+
 /* --- Loading, error, empty -----------------------------------------------------*/
 
 .state-panel {
@@ -1037,6 +1126,34 @@ details[open]::details-content {
   border-radius: 6px;
   columns: 3;
   font-size: 0.89rem;
+}
+
+/* M8: per-student support indicators, one block per pseudonymous id. */
+.indicator-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.89rem;
+}
+
+.indicator-rows > li {
+  padding: 8px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.indicator-rows > li:first-child {
+  border-top: none;
+}
+
+.indicator-rows ul {
+  list-style: none;
+  margin: 4px 0 2px;
+  padding-inline-start: 16px;
+  color: var(--ink-soft);
+}
+
+.indicator-rows ul li {
+  margin-block: 4px;
 }
 
 @media (prefers-reduced-motion: no-preference) {

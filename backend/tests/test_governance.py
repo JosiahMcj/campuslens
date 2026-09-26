@@ -227,15 +227,17 @@ def test_findings_for_role_scoping() -> None:
         "M3",
         "M4",
         "M5",
+        "M8",
     ]
     chief = findings_for_role("chief_of_staff", obj)
-    assert sorted(chief) == ["M1", "M2", "M3", "M4", "M5", "M6", "M7"]
+    assert sorted(chief) == ["M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8"]
     # No role receives row IDs: the evidence drawer gets them from
     # /findings, never through a model.
     for role in ("chief_of_staff", "enrollment_analyst", "student_success_analyst"):
         scoped = json.dumps(findings_for_role(role, obj))
         assert "row_ids" not in scoped
         assert "hold_row_ids" not in scoped
+        assert "row_rules" not in scoped
         assert "STU-" not in scoped
         assert "PRI-" not in scoped
     with pytest.raises(ValueError, match="unknown role"):
@@ -302,6 +304,7 @@ def test_findings_endpoint(client: TestClient) -> None:
         "M5",
         "M6",
         "M7",
+        "M8",
     ]
     # The executive view keeps row IDs for the evidence drawer.
     assert body["M2"]["value"] == 42
@@ -331,6 +334,7 @@ def test_ask_approved_question(
         "M3": "18",
         "M4": "12",
         "M5": "28 unresolved holds",
+        "M8": "22",
     }
     # One /ask runs the whole cabinet and returns the full briefing.
     assert set(body["briefing"]["sections"]) == {"1", "2", "3", "4", "5", "6", "7"}

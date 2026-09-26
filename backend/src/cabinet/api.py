@@ -36,6 +36,23 @@ Endpoints:
 - ``POST /decisions/approve`` — creates one simulated follow-up task,
   idempotent per decision id (any approved question's decision id is
   accepted), restart-safe via the ``decisions`` table.
+- ``GET  /decisions/{id}/dispatch`` — the dispatch state for one decision
+  (approved?, office mailbox configured?, the draft or sent record); every
+  logged-in role may read it.
+- ``POST /decisions/{id}/dispatch`` — composes the draft message to the
+  responsible office from the approved task's findings (code, never the
+  model; staff, executive, admin). Idempotent per task and dataset; 409
+  when the decision is not approved. Logs ``task.dispatched``.
+- ``POST /decisions/{id}/dispatch/send`` — sends the draft through the
+  configured outbound provider (staff and admin only; an executive's send
+  is a loud 403). The provider is the on-machine outbox by default
+  (``var/outbox/<institution>/<dispatch id>.eml``); ``CABINET_OUTBOUND=smtp``
+  delivers for real and refuses to start in production when its settings
+  are incomplete. A sent dispatch is never resent (409 with the earlier
+  record). Logs ``task.sent`` with provider and reference.
+- ``GET  /admin/offices`` / ``PUT /admin/offices`` (admin role) — the
+  institution's office address book, the only source of dispatch
+  recipients. Offices, never student addresses.
 - ``GET  /admin/datasets`` / ``POST /admin/datasets`` /
   ``POST /admin/datasets/{id}/activate`` / ``DELETE /admin/datasets/{id}``
   (admin role) — the caller's institution's datasets: upload (strict
@@ -102,6 +119,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import sys
 import threading
@@ -129,6 +147,8 @@ from cabinet.auth import (
     COOKIE_NAME,
     ENV_ENV,
     PRODUCTION,
+    ROLE_ADMIN,
+    ROLE_STAFF,
     USER_ROLES,
     AuthStore,
     check_production_bind,
@@ -147,6 +167,7 @@ from cabinet.migrations import (
     SchemaVersionError,
     recorded_versions,
 )
+from cabinet.outbound import OutboundError, outbound_from_env
 from cabinet.permissions import (
     ROLE_FINDINGS,
     ROLE_TASK_FIELDS,
@@ -166,6 +187,7 @@ from cabinet.questions import (
     DEFAULT_QUESTION,
     QUESTIONS,
     Question,
+    find_decision,
     match_question,
     received_for,
 )
@@ -224,6 +246,20 @@ class AdminUserRoleRequest(BaseModel):
     role: str
 
 
+class OfficeContactEntry(BaseModel):
+    office: str
+    email: str
+
+
+class OfficesPutRequest(BaseModel):
+    offices: list[OfficeContactEntry]
+
+
+# Office mailboxes: a deliberately simple shape check (local@domain.tld).
+# The address book holds office mailboxes only, never student addresses.
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
 def _user_body(store: CabinetStore, user: dict[str, Any]) -> dict[str, Any]:
     """The user object the API returns, with its institution."""
     institution = store.institution_by_id(int(user["institution_id"]))
@@ -266,9 +302,7 @@ class InstitutionRuntime:
     def __init__(self, store: CabinetStore, institution_id: int) -> None:
         dataset = store.active_dataset(institution_id)
         if dataset is None:
-            raise StoreError(
-                f"institution {institution_id} has no active dataset"
-            )
+            raise StoreError(f"institution {institution_id} has no active dataset")
         self.dataset = dataset
         self.raw = store.read_dataset_bytes(dataset)
         self.document = json.loads(self.raw.decode("utf-8"))
@@ -277,9 +311,7 @@ class InstitutionRuntime:
             self.fixture, fixture_path=store.dataset_path(dataset)
         )
         meta = self.document.get("meta") if isinstance(self.document, dict) else None
-        self.fictional = (
-            isinstance(meta, dict) and meta.get("fictional") is True
-        )
+        self.fictional = isinstance(meta, dict) and meta.get("fictional") is True
         self.findings["meta"]["fictional"] = self.fictional
         self.findings["meta"]["dataset"] = {
             "id": dataset["id"],
@@ -337,9 +369,7 @@ def create_app(
     )
     fixture_path = fixture_path_from_env()
     try:
-        effective_db_path = (
-            Path(db_path) if db_path is not None else db_path_from_env()
-        )
+        effective_db_path = Path(db_path) if db_path is not None else db_path_from_env()
         session_ttl_seconds = int(session_ttl().total_seconds())
     except RuntimeError as exc:
         print(f"cabinet: cannot start: {exc}", file=sys.stderr)
@@ -356,6 +386,18 @@ def create_app(
         # A failed or half-applied migration, a corrupt file, an unreadable
         # path: one clear line, never a traceback.
         print(f"cabinet: cannot start: database error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from None
+    try:
+        # The outbound provider's configuration is checked at startup:
+        # an unknown CABINET_OUTBOUND is a refusal in every mode, and
+        # CABINET_OUTBOUND=smtp with a missing setting is a refusal in
+        # production (fail closed). Outside production a partial smtp
+        # configuration still starts; its first send fails loudly instead.
+        outbound_from_env(
+            outbox_dir=store.path.parent / "outbox", production=production
+        )
+    except RuntimeError as exc:
+        print(f"cabinet: cannot start: {exc}", file=sys.stderr)
         raise SystemExit(1) from None
     app.state.auth = store
     app.add_middleware(
@@ -457,22 +499,18 @@ def create_app(
             reasons.append(f"database {db_path} does not open: {exc}")
         if checks.get("migrations") is False and checks.get("database"):
             reasons.append(
-                f"database {db_path} records a schema version this build "
-                "does not know"
+                f"database {db_path} records a schema version this build does not know"
             )
 
         checks["secret"] = not ephemeral_secret
         if ephemeral_secret:
             reasons.append(
-                "CABINET_SECRET_KEY is not configured; sessions use an "
-                "ephemeral key"
+                "CABINET_SECRET_KEY is not configured; sessions use an ephemeral key"
             )
 
         checks["ui_dist"] = (ui_dist / "index.html").is_file()
         if not checks["ui_dist"]:
-            reasons.append(
-                f"the built UI is missing at {ui_dist} (run `make build`)"
-            )
+            reasons.append(f"the built UI is missing at {ui_dist} (run `make build`)")
 
         golden = golden_dir_from_env()
         golden_problem: str | None = None
@@ -497,9 +535,7 @@ def create_app(
             and store.active_dataset(int(bootstrap["id"])) is not None
         )
         if not checks["active_dataset"]:
-            reasons.append(
-                "the bootstrap institution has no active dataset"
-            )
+            reasons.append("the bootstrap institution has no active dataset")
 
         return checks, reasons
 
@@ -717,6 +753,7 @@ def create_app(
             "provider": result.provider,
             "model_label": result.model_label,
             "recorded": result.recorded,
+            "rekeyed_from": result.rekeyed_from,
         }
         runtime.briefing_cache[cache_key] = body
         store.save_recording(
@@ -757,6 +794,7 @@ def create_app(
                 "provider": body["provider"],
                 "model_label": body["model_label"],
                 "recorded": body["recorded"],
+                "rekeyed_from": body.get("rekeyed_from"),
             },
         }
 
@@ -774,6 +812,7 @@ def create_app(
                 "provider": result["provider"],
                 "model_label": result["model_label"],
                 "recorded": result["recorded"],
+                "rekeyed_from": result.get("rekeyed_from"),
             },
         }
 
@@ -918,6 +957,7 @@ def create_app(
                             "provider": result.provider,
                             "model_label": result.model_label,
                             "recorded": result.recorded,
+                            "rekeyed_from": result.rekeyed_from,
                         }
                         runtime.chief_cache[chief_key] = chief_body
                         store.save_recording(
@@ -939,9 +979,7 @@ def create_app(
                     else:
                         chief_reason = result.reason
         else:
-            missing = [
-                role for role in ANALYST_ROLES if analyst_bodies[role] is None
-            ]
+            missing = [role for role in ANALYST_ROLES if analyst_bodies[role] is None]
             chief_reason = (
                 "the Chief of Staff did not run because "
                 + " and ".join(missing).replace("_", " ")
@@ -953,6 +991,7 @@ def create_app(
             "provider": chief_body["provider"] if chief_body else None,
             "model_label": chief_body["model_label"] if chief_body else None,
             "recorded": chief_body["recorded"] if chief_body else False,
+            "rekeyed_from": chief_body.get("rekeyed_from") if chief_body else None,
         }
         sections: dict[str, Any] = {
             "1": chief_section(
@@ -977,7 +1016,7 @@ def create_app(
                         "display": findings_obj[finding_id]["display"],
                         "source_fields": findings_obj[finding_id]["source_fields"],
                     }
-                    for finding_id in ("M1", "M2", "M3", "M4", "M5", "M6", "M7")
+                    for finding_id in ("M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8")
                 }
             },
             "5": {"actions": question.build_actions(findings_obj)},
@@ -1012,6 +1051,7 @@ def create_app(
                 "provider": provenance["provider"],
                 "model_label": provenance["model_label"],
                 "recorded": provenance["recorded"],
+                "rekeyed_from": provenance.get("rekeyed_from"),
             }
 
         audit.append(
@@ -1118,8 +1158,7 @@ def create_app(
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    f"unknown role {body.role!r}; "
-                    f"expected one of {', '.join(ROLES)}"
+                    f"unknown role {body.role!r}; expected one of {', '.join(ROLES)}"
                 ),
             )
         if not body.fields:
@@ -1221,9 +1260,7 @@ def create_app(
         }
 
     @app.post("/decisions/approve")
-    def post_decision_approve(
-        body: ApproveRequest, request: Request
-    ) -> dict[str, Any]:
+    def post_decision_approve(body: ApproveRequest, request: Request) -> dict[str, Any]:
         # Any approved question's decision id is accepted, whichever question
         # was asked latest; approval is idempotent per (decision id, active
         # dataset), anchored by the decisions table's primary key
@@ -1288,6 +1325,379 @@ def create_app(
             "created": True,
             "event_ids": [approved_event["id"], created_event["id"]],
         }
+
+    # -- the governed execution step: dispatches ------------------------------
+    #
+    # An approved task can go to its responsible office, but only when a
+    # named person clicks Send. The message is composed in code from the
+    # findings (cabinet.questions.compose_dispatch — never the model, never
+    # free text, never a student identifier), lands as a draft, and leaves
+    # through the configured outbound provider, which is the on-machine
+    # outbox by default. Every refusal here is loud: a data.refused event
+    # with the reason, and a plain message to the caller.
+
+    def dispatch_body(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "task_id": row["task_id"],
+            "to_office": row["to_office"],
+            "channel": row["channel"],
+            "subject": row["subject"],
+            "body": row["body"],
+            "status": row["status"],
+            "created_by": row["created_by"],
+            "created_at": row["created_at"],
+            "sent_by": row["sent_by"],
+            "sent_at": row["sent_at"],
+            "provider": row["provider"],
+            "provider_ref": row["provider_ref"],
+            "error": row["error"],
+        }
+
+    def dispatch_refused(
+        request: Request, status_code: int, detail: str
+    ) -> JSONResponse:
+        """A dispatch refusal is never silent: it lands on the caller's
+        institution chain as data.refused with the reason, like every other
+        governance refusal."""
+        user = request.scope["cabinet_user"]
+        store.audit_append(
+            int(user["institution_id"]),
+            "data.refused",
+            actor=str(user["email"]),
+            payload={
+                "reason": detail,
+                "method": request.method,
+                "path": request.url.path,
+            },
+        )
+        return JSONResponse(status_code=status_code, content={"detail": detail})
+
+    def dispatch_context(
+        institution_id: int, decision_id: str
+    ) -> tuple[InstitutionRuntime, Question, dict[str, Any], int, str] | None:
+        """Everything a dispatch route needs, or None for an unknown
+        decision id (a 404, same rule as approve). The task id is the
+        approval's (TASK-<decision id>), and the dataset pin is the active
+        dataset's, so a dispatch is bound to the numbers it quotes."""
+        runtime = runtime_for(institution_id)
+        found = find_decision(runtime.findings, decision_id)
+        if found is None:
+            return None
+        question, decision = found
+        dataset_id = int(runtime.dataset["id"])
+        return runtime, question, decision, dataset_id, f"TASK-{decision_id}"
+
+    @app.get("/decisions/{decision_id}/dispatch")
+    def get_decision_dispatch(decision_id: str, request: Request) -> JSONResponse:
+        """The dispatch state for one decision: whether it is approved,
+        whether the office has a mailbox configured, and the draft or sent
+        record when one exists. Every logged-in role may read this — the
+        reviewer watches governance."""
+        institution_id = request_institution(request)
+        context = dispatch_context(institution_id, decision_id)
+        if context is None:
+            raise HTTPException(
+                status_code=404, detail=f"unknown decision_id {decision_id!r}"
+            )
+        _, _, decision, dataset_id, task_id = context
+        office = str(decision["follow_up"]["office"])
+        row = store.dispatch_for_task(institution_id, task_id, dataset_id=dataset_id)
+        return JSONResponse(
+            content={
+                "decision_id": decision_id,
+                "task_id": task_id,
+                "office": office,
+                "office_contact": store.office_contact(institution_id, office),
+                "approved": decision_id
+                in store.approved_decision_ids(institution_id, dataset_id=dataset_id),
+                "dispatch": dispatch_body(row) if row is not None else None,
+            }
+        )
+
+    @app.post("/decisions/{decision_id}/dispatch")
+    def post_decision_dispatch(decision_id: str, request: Request) -> JSONResponse:
+        """Compose the draft from the approved task (staff, executive,
+        admin). Idempotent per task and dataset: a second Prepare returns
+        the existing draft with created=false. 409, loudly, when the
+        decision is not approved — no approval, no message."""
+        institution_id = request_institution(request)
+        user = request.scope["cabinet_user"]
+        context = dispatch_context(institution_id, decision_id)
+        if context is None:
+            raise HTTPException(
+                status_code=404, detail=f"unknown decision_id {decision_id!r}"
+            )
+        runtime, question, decision, dataset_id, task_id = context
+        approval = store.decision_row(
+            institution_id, decision_id, dataset_id=dataset_id
+        )
+        if approval is None:
+            return dispatch_refused(
+                request,
+                409,
+                f"decision {decision_id!r} has not been approved for the "
+                "active dataset; approve it before a message is composed",
+            )
+        existing = store.dispatch_for_task(
+            institution_id, task_id, dataset_id=dataset_id
+        )
+        if existing is not None:
+            return JSONResponse(
+                content={"dispatch": dispatch_body(existing), "created": False}
+            )
+        composed = question.build_dispatch(
+            runtime.findings, decision, str(approval["approved_by"])
+        )
+        row = store.create_dispatch(
+            institution_id,
+            task_id=task_id,
+            dataset_id=dataset_id,
+            to_office=composed["to_office"],
+            channel=composed["channel"],
+            subject=composed["subject"],
+            body=composed["body"],
+            created_by=str(user["email"]),
+        )
+        if row is None:
+            # A concurrent Prepare won the UNIQUE constraint; its row is
+            # the answer either way.
+            existing = store.dispatch_for_task(
+                institution_id, task_id, dataset_id=dataset_id
+            )
+            assert existing is not None
+            return JSONResponse(
+                content={"dispatch": dispatch_body(existing), "created": False}
+            )
+        event = store.audit_append(
+            institution_id,
+            "task.dispatched",
+            actor=str(user["email"]),
+            payload={
+                "dispatch_id": row["id"],
+                "task_id": task_id,
+                "decision_id": decision_id,
+                "to_office": row["to_office"],
+                "subject": row["subject"],
+            },
+        )
+        return JSONResponse(
+            content={
+                "dispatch": dispatch_body(row),
+                "created": True,
+                "event_id": event["id"],
+            }
+        )
+
+    @app.post("/decisions/{decision_id}/dispatch/send")
+    def post_decision_dispatch_send(decision_id: str, request: Request) -> JSONResponse:
+        """Send the draft to the office mailbox. Staff and admin only — an
+        executive approves but does not send, and their Send is a loud 403.
+        A sent dispatch is never resent (409 with the earlier record); a
+        missing office mailbox refuses with a clear message; a provider
+        failure is recorded on the row and answered 503. Nothing is ever
+        sent without this click, and nothing is ever sent to a student."""
+        institution_id = request_institution(request)
+        user = request.scope["cabinet_user"]
+        # The middleware's prefix rule lets staff, executive, and admin
+        # POST under /decisions/ (compose is open to all three); sending is
+        # narrower, and the refusal is logged like any other.
+        if user["role"] not in (ROLE_STAFF, ROLE_ADMIN):
+            return dispatch_refused(
+                request,
+                403,
+                "only a staff member or an administrator can send an "
+                "approved message; the executive approves, a named person "
+                "sends",
+            )
+        # One Send at a time per institution: the status read, the provider
+        # call and the sent mark happen under the same lock the ask path uses,
+        # so two staff members clicking at once can never deliver twice.
+        with ask_lock_for(institution_id):
+            context = dispatch_context(institution_id, decision_id)
+            if context is None:
+                raise HTTPException(
+                    status_code=404, detail=f"unknown decision_id {decision_id!r}"
+                )
+            _, _, _, dataset_id, task_id = context
+            row = store.dispatch_for_task(
+                institution_id, task_id, dataset_id=dataset_id
+            )
+            if row is None:
+                return dispatch_refused(
+                    request,
+                    409,
+                    "no draft exists for this decision; prepare the message "
+                    "first (POST /decisions/{decision_id}/dispatch)",
+                )
+            if row["status"] == "sent":
+                refused = dispatch_refused(
+                    request,
+                    409,
+                    "this message was already sent; it will not be sent again",
+                )
+                # The earlier record rides along so the caller sees exactly
+                # what was sent, by whom, and when.
+                body = json.loads(bytes(refused.body).decode("utf-8"))
+                body["dispatch"] = dispatch_body(row)
+                return JSONResponse(status_code=409, content=body)
+            contact = store.office_contact(institution_id, str(row["to_office"]))
+            if contact is None:
+                return dispatch_refused(
+                    request,
+                    409,
+                    f"no mailbox is configured for the {row['to_office']} "
+                    "office; an administrator can add one with "
+                    "PUT /admin/offices before anything is sent",
+                )
+            institution = store.institution_by_id(institution_id)
+            assert institution is not None  # the session's own institution
+            try:
+                provider = outbound_from_env(
+                    outbox_dir=store.path.parent / "outbox", production=production
+                )
+            except RuntimeError as exc:
+                # The configuration changed after startup; still loud.
+                store.mark_dispatch_failed(
+                    institution_id, int(row["id"]), error=str(exc)
+                )
+                store.audit_append(
+                    institution_id,
+                    "task.send_failed",
+                    actor=str(user["email"]),
+                    payload={
+                        "dispatch_id": int(row["id"]),
+                        "task_id": task_id,
+                        "decision_id": decision_id,
+                        "to_office": row["to_office"],
+                        "error": str(exc),
+                    },
+                )
+                return JSONResponse(status_code=503, content={"detail": str(exc)})
+            try:
+                provider_ref = provider.send(
+                    to=contact,
+                    subject=str(row["subject"]),
+                    body=str(row["body"]),
+                    dispatch_id=int(row["id"]),
+                    institution_slug=str(institution["slug"]),
+                )
+            except OutboundError as exc:
+                store.mark_dispatch_failed(
+                    institution_id, int(row["id"]), error=str(exc)
+                )
+                # The attempt is on the chain: a provider that delivered and
+                # then timed out is not invisible, so a retry is a decision.
+                store.audit_append(
+                    institution_id,
+                    "task.send_failed",
+                    actor=str(user["email"]),
+                    payload={
+                        "dispatch_id": int(row["id"]),
+                        "task_id": task_id,
+                        "decision_id": decision_id,
+                        "to_office": row["to_office"],
+                        "provider": provider.name,
+                        "error": str(exc),
+                    },
+                )
+                return JSONResponse(status_code=503, content={"detail": str(exc)})
+            sent = store.mark_dispatch_sent(
+                institution_id,
+                int(row["id"]),
+                sent_by=str(user["email"]),
+                provider=provider.name,
+                provider_ref=provider_ref,
+            )
+            if sent is None:
+                # A concurrent Send committed first; this one is the duplicate.
+                fresh = store.dispatch_by_id(institution_id, int(row["id"]))
+                return JSONResponse(
+                    status_code=409,
+                    content={
+                        "detail": "this message was already sent; it will not "
+                        "be sent again",
+                        "dispatch": dispatch_body(fresh) if fresh is not None else None,
+                    },
+                )
+            event = store.audit_append(
+                institution_id,
+                "task.sent",
+                actor=str(user["email"]),
+                payload={
+                    "dispatch_id": sent["id"],
+                    "task_id": task_id,
+                    "decision_id": decision_id,
+                    "to_office": sent["to_office"],
+                    "provider": provider.name,
+                    "provider_ref": provider_ref,
+                },
+            )
+            return JSONResponse(
+                content={"dispatch": dispatch_body(sent), "event_id": event["id"]}
+            )
+
+        # -- institution admin: office contacts (the dispatch address book) ------
+        #
+        # Same tenancy rule as datasets and users: the institution comes from
+        # the session. The address book maps office names to office mailboxes;
+        # it is the only place a dispatch recipient can come from, so a message
+        # can never be addressed to a student.
+
+    @app.get("/admin/offices")
+    def get_admin_offices(request: Request) -> dict[str, Any]:
+        institution_id = request_institution(request)
+        return {"offices": store.office_contacts_for(institution_id)}
+
+    @app.put("/admin/offices")
+    def put_admin_offices(body: OfficesPutRequest, request: Request) -> JSONResponse:
+        """Replace the institution's office address book. Every entry is
+        validated before anything is stored; the change is one
+        admin.changed audit event naming the offices, never the addresses'
+        contents beyond that list."""
+        institution_id = request_institution(request)
+        admin = request.scope["cabinet_user"]
+        contacts: list[tuple[str, str]] = []
+        errors: list[str] = []
+        seen: set[str] = set()
+        for entry in body.offices:
+            office = entry.office.strip()
+            email = entry.email.strip()
+            if not office:
+                errors.append("an office name must not be empty")
+                continue
+            if office in seen:
+                errors.append(f"office {office!r} appears twice")
+                continue
+            if not EMAIL_RE.match(email):
+                errors.append(
+                    f"{email!r} is not a mailbox address (expected name@domain.tld)"
+                )
+                continue
+            seen.add(office)
+            contacts.append((office, email))
+        if errors:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "detail": "the office address book failed validation",
+                    "errors": errors,
+                },
+            )
+        store.set_office_contacts(institution_id, contacts)
+        store.audit_append(
+            institution_id,
+            "admin.changed",
+            actor=str(admin["id"]),
+            payload={
+                "action": "office_contacts",
+                "by": str(admin["email"]),
+                "offices": sorted(office for office, _ in contacts),
+            },
+        )
+        return JSONResponse(
+            content={"offices": store.office_contacts_for(institution_id)}
+        )
 
     # -- institution admin: datasets ----------------------------------------
     #
@@ -1390,9 +1800,7 @@ def create_app(
         )
 
     @app.post("/admin/datasets/{dataset_id}/activate")
-    def post_admin_dataset_activate(
-        dataset_id: int, request: Request
-    ) -> JSONResponse:
+    def post_admin_dataset_activate(dataset_id: int, request: Request) -> JSONResponse:
         """Make one of the institution's datasets active: the findings,
         briefings, decisions, and caches recompute from it on the next
         request. The previously active dataset stays until deleted."""
@@ -1493,9 +1901,7 @@ def create_app(
         return [admin_user_body(row) for row in store.users_for(institution_id)]
 
     @app.post("/admin/users")
-    def post_admin_user(
-        body: AdminUserCreateRequest, request: Request
-    ) -> JSONResponse:
+    def post_admin_user(body: AdminUserCreateRequest, request: Request) -> JSONResponse:
         """Create one user in the caller's institution with a generated
         one-time password — the same code path as `make user`
         (``generate_password`` + ``create_user``), so the CLI and the API
@@ -1627,8 +2033,7 @@ def create_app(
                 status_code=409,
                 content={
                     "detail": (
-                        "the institution's last enabled administrator "
-                        "cannot be demoted"
+                        "the institution's last enabled administrator cannot be demoted"
                     )
                 },
             )

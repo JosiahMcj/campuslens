@@ -38,7 +38,7 @@ PLATFORM_INSTITUTION_ID = 0
 BOOTSTRAP_SLUG = "bootstrap"
 BOOTSTRAP_NAME = "Bootstrap Institution"
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class SchemaVersionError(RuntimeError):
@@ -312,11 +312,63 @@ def _migration_4(conn: sqlite3.Connection) -> None:
     conn.execute("ALTER TABLE briefings_v4 RENAME TO briefings")
 
 
+def _migration_5(conn: sqlite3.Connection) -> None:
+    """The governed execution step: dispatches and office contacts.
+
+    ``dispatches`` holds one message per approved task per dataset (the
+    UNIQUE constraint is the anchor; a re-compose or a double-clicked Send
+    hits it instead of duplicating). The message itself is composed in code
+    from the findings (``cabinet.questions``) and is only ever sent by a
+    named staff member's click; ``status`` moves draft -> sent (or failed),
+    and a sent row is never resent — the API answers 409 with the earlier
+    record. ``sent_by``/``sent_at``/``provider``/``provider_ref`` stay NULL
+    until a real send happens, so a draft can never masquerade as sent.
+
+    ``office_contacts`` maps an office name to its mailbox per institution.
+    The recipient of a dispatch is always one of these office mailboxes,
+    configured by the institution's admin — never a student address, which
+    the schema has no column for.
+    """
+    for statement in (
+        """
+        CREATE TABLE IF NOT EXISTS office_contacts (
+            institution_id INTEGER NOT NULL REFERENCES institutions(id),
+            office TEXT NOT NULL,
+            email TEXT NOT NULL,
+            PRIMARY KEY (institution_id, office)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS dispatches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            institution_id INTEGER NOT NULL REFERENCES institutions(id),
+            task_id TEXT NOT NULL,
+            dataset_id INTEGER NOT NULL,
+            to_office TEXT NOT NULL,
+            channel TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            body TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('draft', 'sent', 'failed')),
+            created_by TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            sent_by TEXT,
+            sent_at TEXT,
+            provider TEXT,
+            provider_ref TEXT,
+            error TEXT,
+            UNIQUE (institution_id, task_id, dataset_id)
+        )
+        """,
+    ):
+        conn.execute(statement)
+
+
 MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (1, "h2 tenancy baseline", _migration_1),
     (2, "r3 dataset pinning and audit index", _migration_2),
     (3, "r3b decisions keyed per dataset", _migration_3),
-    (SCHEMA_VERSION, "r4 briefings keyed per dataset", _migration_4),
+    (4, "r4 briefings keyed per dataset", _migration_4),
+    (SCHEMA_VERSION, "dispatches and office contacts", _migration_5),
 ]
 
 

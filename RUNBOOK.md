@@ -2,8 +2,10 @@
 
 This runbook covers setup, run, stop, restart, replay, reset, backup, and
 production, and we run everything on `127.0.0.1` only until the production
-section. Nothing in development sends anything anywhere, `README.md` covers
-the architecture, and `DEMO-SCRIPT.md` covers the demo itself.
+section. By default nothing in development sends anything anywhere. The
+dispatch outbox writes files on this machine, and real email stays off unless
+someone configures it on purpose. `README.md` covers the architecture, and
+`DEMO-SCRIPT.md` covers the demo itself.
 
 ## Setup
 
@@ -368,6 +370,59 @@ are in `deploy/checklist.md`, the full first-deploy walkthrough.
 
 - **`fake`** is a deterministic stub for tests and offline development, run with
   `CABINET_PROVIDER=fake make api`.
+
+## Sending an approved follow-up (the dispatch)
+
+After an executive approves a leadership decision, the decision panel offers
+"Prepare the message to \<office\>". Preparing composes the message in code
+from the findings and stores it as a draft. A staff member or admin then
+clicks "Send as \<their address\>", and the message goes to the office
+mailbox. The executive prepares and approves but never sends, and we never
+compose, queue, or send anything without that click.
+
+The recipient must exist in the institution's office address book first, or
+Send refuses with a message naming the office. An admin manages the book with
+the same session and CSRF flow as the user routes above.
+
+```bash
+curl -b /tmp/cookies http://127.0.0.1:8910/admin/offices
+curl -b /tmp/cookies -X PUT http://127.0.0.1:8910/admin/offices \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
+  -d '{"offices": [{"office": "Financial Aid", "email": "financial-aid@example.edu"},
+                   {"office": "Bursar", "email": "bursar@example.edu"}]}'
+```
+
+Each PUT replaces the book whole, we validate every entry, and the change is
+one `admin.changed` audit event. The table holds offices only. No student
+address belongs in it, and the dispatch routes have no other place to get a
+recipient from.
+
+`CABINET_OUTBOUND` chooses the outbound provider.
+
+- **`outbox`** (default) writes the message to
+  `var/outbox/<institution slug>/<dispatch id>.eml` (0600) and marks the
+  dispatch sent with `provider=outbox`. Nothing leaves the machine. The .eml
+  file is the delivery, and a person opens it and sends it from their own
+  mailbox.
+- **`smtp`** is real delivery with stdlib smtplib (STARTTLS, or SMTPS on port
+  465). It requires every one of these settings, and in production a missing
+  one is a one-line startup refusal.
+
+  ```
+  CABINET_OUTBOUND=smtp
+  CABINET_SMTP_HOST=smtp.example.edu
+  CABINET_SMTP_PORT=587
+  CABINET_SMTP_FROM=cabinet@example.edu
+  CABINET_SMTP_USER=cabinet@example.edu        # optional; defaults to FROM
+  CABINET_SMTP_PASSWORD_FILE=/secure/path/smtp-password   # read from the file, never an env value; chmod 600, a looser mode is refused
+  ```
+
+- **`fake`** records sends in memory, for tests.
+
+We audit every draft and every send (`task.dispatched`, then `task.sent` with
+the provider and its reference). A sent message is never resent, because the
+repeat click is a 409 returning the earlier record. A failed send is recorded
+on the dispatch row with the provider's error so it can be retried.
 
 ## Replay and the golden run
 

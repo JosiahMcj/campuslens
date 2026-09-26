@@ -144,6 +144,8 @@ behind 119 and 125. Scroll the row list briefly.
 > data, and `data/VERIFY.md` lists them. The AI explains the numbers. It is never allowed to
 > invent one. A test extracts every numeral in this briefing and fails the build if it
 > is not in the data."
+> (Optional) "The support indicators work the same way. There are four named rules,
+> and for each pseudonymous student we show exactly which rules fired and why."
 
 ## Beat 5, 3:10 to 3:40 · The human decides
 
@@ -160,6 +162,18 @@ audit log. Nothing is sent anywhere.
 > review, not an aid decision, which is currently out of scope. It sends the review to
 > Financial Aid as a follow-up task, simulated, because nothing here ever emails a
 > student or touches a record. The approval itself becomes part of the record."
+
+**Optional ten seconds (use only when Beat 5 lands early).** The presenter clicks
+"Prepare the message to Financial Aid". The composed message appears read-only,
+with the office, the decision, the eighteen students with their finding link, and
+the approving president's name. The president's account has no Send button. The
+panel says a staff member sends it.
+
+**Said.**
+> "And if the office needs the message, a staff member sends it, not the AI and not
+> the president. The software wrote the message from the numbers we checked. It goes
+> to the office, never to a student, and the record will show exactly whose click sent
+> it."
 
 ## Beat 6, 3:40 to 4:00 · The audit log and the refusal
 

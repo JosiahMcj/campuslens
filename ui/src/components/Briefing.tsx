@@ -185,7 +185,7 @@ export function BriefingSections({
           rows behind it.
         </p>
         <ul className="finding-list">
-          {(['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] as const).map((id) => {
+          {(['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8'] as const).map((id) => {
             const finding = getFinding(findings, id)
             if (!finding) return null
             const display = findingDisplay(finding)

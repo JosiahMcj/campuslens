@@ -25,7 +25,13 @@ Each approved question carries:
   hence the replay hash — for every question other than the default, so
   Q1's prompt bytes and golden hashes never change;
 - ``build_decisions`` and ``build_actions`` — sections 6 and 5, functions
-  over the findings object; every number comes from the findings.
+  over the findings object; every number comes from the findings;
+- ``build_dispatch`` — the message to the responsible office once the
+  question's decision is approved (the governed execution step). One
+  deterministic template per decision id, filled from the findings object
+  only, with the same numeral rules as the briefing: no model call, no
+  student ids, and a missing value is spelled out in words, never
+  interpolated as a bare ``--``.
 """
 
 from __future__ import annotations
@@ -42,6 +48,9 @@ from cabinet.permissions import ROLE_FINDINGS, findings_for_role
 # adds it, which is what keeps Q1's hashes byte-identical.
 QUESTION_KEY = "question"
 
+# The channel every dispatch uses today: an email to the office mailbox.
+DISPATCH_CHANNEL = "email"
+
 
 @dataclass(frozen=True)
 class Question:
@@ -53,6 +62,9 @@ class Question:
     chief_brief: str
     build_decisions: Callable[[dict[str, Any]], list[dict[str, Any]]]
     build_actions: Callable[[dict[str, Any]], list[dict[str, Any]]]
+    build_dispatch: Callable[
+        [dict[str, Any], dict[str, Any], str], dict[str, str]
+    ]
 
 
 # --- Q1: spring registration (the original question, verbatim behavior) --------
@@ -170,6 +182,75 @@ def _q1_actions(findings_obj: dict[str, Any]) -> list[dict[str, Any]]:
     return actions
 
 
+def _dispatch_body(
+    decision: dict[str, Any], approved_by: str, evidence_lines: list[str]
+) -> str:
+    """The shared dispatch message shape. Every line is built in code from
+    the decision and the findings: the office, the decision, the approving
+    user, and the numbers with their finding ids. The closing sentence is a
+    promise the template keeps by construction, because no student row or
+    student id is ever passed in.
+    """
+    office = decision["follow_up"]["office"]
+    lines = [
+        f"To the {office} office,",
+        "",
+        "A leadership decision has been approved, and this office is "
+        "asked to act on it.",
+        "",
+        f"Decision: {decision['title']} ({decision['id']})",
+        f"Decision text: {decision['text']}",
+        f"Approved by: {approved_by}",
+        "",
+        f"Requested follow-up: {decision['follow_up']['description']}",
+        "",
+        "The numbers behind this request:",
+        *[f"- {line}" for line in evidence_lines],
+        "",
+        "This message was composed by the Golden Eagle AI Cabinet from "
+        "the verified findings of the current briefing, and it is sent by "
+        "a named member of staff, not by the model. It contains no student "
+        "records and no student identifiers.",
+    ]
+    return "\n".join(lines)
+
+
+def _q1_dispatch(
+    findings_obj: dict[str, Any], decision: dict[str, Any], approved_by: str
+) -> dict[str, str]:
+    """Q1's message to Financial Aid: the emergency-aid eligibility review.
+
+    The count and the threshold come from M3 exactly as the briefing's
+    numeral rules require: a real value is a numeral with its finding id,
+    a missing value is spelled out, never a bare ``--``.
+    """
+    limit = f"${M3_AMOUNT_LIMIT:,.0f}"
+    holds = findings_obj["M3"].get("value")
+    if isinstance(holds, int):
+        evidence = (
+            f"{holds} continuing students have an unresolved financial hold "
+            f"below {limit} (finding M3)."
+        )
+    else:
+        evidence = (
+            f"The count of continuing students with unresolved financial "
+            f"holds below {limit} is not available in the current findings "
+            "(finding M3)."
+        )
+    office = decision["follow_up"]["office"]
+    return {
+        "to_office": office,
+        "channel": DISPATCH_CHANNEL,
+        "subject": (
+            f"Approved follow-up for {office}: emergency-aid eligibility "
+            f"review below {limit}"
+        ),
+        "body": _dispatch_body(decision, approved_by, [evidence]),
+    }
+
+
+
+
 # --- Q2: unresolved holds affecting continued enrollment ------------------------
 
 UNRESOLVED_HOLDS_DECISION_ID = "D-unresolved-holds-1"
@@ -280,6 +361,46 @@ def _q2_actions(findings_obj: dict[str, Any]) -> list[dict[str, Any]]:
     return actions
 
 
+def _q2_dispatch(
+    findings_obj: dict[str, Any], decision: dict[str, Any], approved_by: str
+) -> dict[str, str]:
+    """Q2's message to the Bursar: the coordinated hold-resolution review.
+
+    The total comes from M5's rows and the threshold text from M3's
+    comparison, the same sources the decision text uses, with the same
+    spelled-out-missing rule.
+    """
+    limit = _m3_threshold_text(findings_obj)
+    rows = findings_obj["M5"].get("value")
+    total = (
+        sum(row["count"] for row in rows)
+        if isinstance(rows, list) and rows
+        else None
+    )
+    if total is not None:
+        evidence = (
+            f"{total} unresolved holds affect continued enrollment "
+            f"(finding M5), with the small-balance cases below {limit} "
+            "counted in finding M3."
+        )
+    else:
+        evidence = (
+            "The count of unresolved holds is not available in the "
+            f"current findings (finding M5); the small-balance threshold "
+            f"is {limit} (finding M3)."
+        )
+    office = decision["follow_up"]["office"]
+    return {
+        "to_office": office,
+        "channel": DISPATCH_CHANNEL,
+        "subject": (
+            f"Approved follow-up for {office}: coordinated "
+            "hold-resolution review"
+        ),
+        "body": _dispatch_body(decision, approved_by, [evidence]),
+    }
+
+
 # --- the registry ---------------------------------------------------------------
 
 SPRING_REGISTRATION = Question(
@@ -293,6 +414,7 @@ SPRING_REGISTRATION = Question(
     chief_brief="The president asked: What should I know about spring registration?",
     build_decisions=_q1_decisions,
     build_actions=_q1_actions,
+    build_dispatch=_q1_dispatch,
 )
 
 UNRESOLVED_HOLDS = Question(
@@ -309,6 +431,7 @@ UNRESOLVED_HOLDS = Question(
     ),
     build_decisions=_q2_decisions,
     build_actions=_q2_actions,
+    build_dispatch=_q2_dispatch,
 )
 
 
@@ -381,3 +504,31 @@ def received_for(
     if question.id == DEFAULT_QUESTION.id:
         return received
     return {**received, QUESTION_KEY: question_payload(question)}
+
+
+def find_decision(
+    findings_obj: dict[str, Any], decision_id: str
+) -> tuple[Question, dict[str, Any]] | None:
+    """The (question, decision) pair for a decision id, whichever approved
+    question it belongs to — the same rule ``POST /decisions/approve``
+    applies. The decision text is rebuilt from the current findings, so it
+    always matches the active dataset's numbers."""
+    for question in QUESTIONS:
+        for decision in question.build_decisions(findings_obj):
+            if decision["id"] == decision_id:
+                return question, decision
+    return None
+
+
+def compose_dispatch(
+    findings_obj: dict[str, Any], decision_id: str, approved_by: str
+) -> dict[str, str] | None:
+    """The message for one approved decision, composed deterministically
+    from the findings (``build_dispatch`` per question). None for an unknown
+    decision id. This is the only way a dispatch message is ever composed:
+    no model call, no free text, no student identifiers."""
+    found = find_decision(findings_obj, decision_id)
+    if found is None:
+        return None
+    question, decision = found
+    return question.build_dispatch(findings_obj, decision, approved_by)

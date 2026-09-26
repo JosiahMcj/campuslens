@@ -104,11 +104,12 @@ ROLE_PERMISSIONS: dict[str, dict[str, str]] = _build_table()
 ALL_FIELDS: tuple[str, ...] = tuple(sorted(ROLE_PERMISSIONS["chief_of_staff"]))
 
 # Which findings each role may receive (ROADMAP §3 layer 4). Every role
-# receives aggregates only: findings_for_role strips all row-ID lists.
+# receives aggregates only: findings_for_role strips all row-ID lists (and
+# M8's per-student rule map).
 ROLE_FINDINGS: dict[str, tuple[str, ...]] = {
     "enrollment_analyst": ("M1", "M2", "M7"),
-    "student_success_analyst": ("M3", "M4", "M5"),
-    "chief_of_staff": ("M1", "M2", "M3", "M4", "M5", "M6", "M7"),
+    "student_success_analyst": ("M3", "M4", "M5", "M8"),
+    "chief_of_staff": ("M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8"),
 }
 
 # The fields each analyst's task requests when the Chief of Staff dispatches
@@ -279,12 +280,13 @@ def run_task_with_model(
 
 
 def _strip_row_ids(value: Any) -> Any:
-    """Recursively remove row-ID lists (``row_ids``, ``hold_row_ids``)."""
+    """Recursively remove row-level detail: ``row_ids``, ``hold_row_ids``,
+    and M8's per-student rule map ``row_rules``."""
     if isinstance(value, dict):
         return {
             key: _strip_row_ids(item)
             for key, item in value.items()
-            if key not in ("row_ids", "hold_row_ids")
+            if key not in ("row_ids", "hold_row_ids", "row_rules")
         }
     if isinstance(value, list):
         return [_strip_row_ids(item) for item in value]
@@ -298,7 +300,7 @@ def findings_for_role(
 ) -> dict[str, Any]:
     """The findings a role may receive (ROADMAP §3 layer 4).
 
-    Enrollment Analyst: M1, M2, M7. Student Success Analyst: M3, M4, M5.
+    Enrollment Analyst: M1, M2, M7. Student Success Analyst: M3, M4, M5, M8.
     Chief of Staff: all findings. ``finding_ids`` narrows the role's standing
     set for one approved question's dispatch (``questions.received_for``); it
     must be a subset of ``ROLE_FINDINGS[role]`` — a question can narrow a

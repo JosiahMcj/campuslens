@@ -403,6 +403,10 @@ def test_every_protected_route_is_in_the_role_table() -> None:
         ("POST", "/briefing/student-success/refresh"),
         ("POST", "/governance/request"),
         ("POST", "/decisions/approve"),
+        # The office address book (admin only); the dispatch routes carry a
+        # decision id in the path and live in ROUTE_ROLE_PREFIXES.
+        ("GET", "/admin/offices"),
+        ("PUT", "/admin/offices"),
         # User administration (admin only; path-parameter routes live
         # in ROUTE_ROLE_PREFIXES).
         ("GET", "/admin/users"),

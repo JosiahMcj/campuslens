@@ -39,8 +39,9 @@ so a no-session caller is still capped and rate-limited):
    the Origin/Referer host is checked against the request host as a
    second layer. CSRF needs no body, so it runs before the body is read.
 6. **Rate limit (per session)** — same general bucket keyed by session,
-   plus the tighter ``POST /ask`` bucket (default 5/min — it spends model
-   calls).
+   plus the tighter consequential-action bucket (default 5/min) on
+   ``POST /ask`` (it spends model calls) and on the dispatch Send route
+   (it can make a message leave the machine).
 7. **Role** — per-route role table below; 403 when the user's role is
    not listed.
 8. **Body cap (guarded routes)** — only once the caller is authenticated
@@ -124,6 +125,10 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     ("POST", "/briefing/student-success/refresh"): ACT_ROLES,
     ("POST", "/governance/request"): ACT_ROLES,
     ("POST", "/decisions/approve"): ACT_ROLES,
+    # The dispatch address book: the institution's admin manages the
+    # office mailboxes messages may be sent to (never a student address).
+    ("GET", "/admin/offices"): (ROLE_ADMIN,),
+    ("PUT", "/admin/offices"): (ROLE_ADMIN,),
     # Institution admins manage their own institution's users; the
     # institution always comes from the session, never from the client.
     ("GET", "/admin/users"): (ROLE_ADMIN,),
@@ -140,6 +145,13 @@ ROUTE_ROLE_PREFIXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("DELETE", "/admin/datasets", (ROLE_ADMIN,)),
     ("POST", "/admin/users", (ROLE_ADMIN,)),
     ("PATCH", "/admin/users", (ROLE_ADMIN,)),
+    # The dispatch routes carry the decision id in the path. Reading the
+    # draft is open to every role (the reviewer watches governance); both
+    # composing and sending are POSTs, and the send route itself narrows
+    # this table to staff and admin — an executive's Send is a loud 403
+    # with a data.refused event, not a silent drop.
+    ("GET", "/decisions/", READ_ROLES),
+    ("POST", "/decisions/", (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF)),
 )
 
 # No session needed: liveness, readiness, and login itself.
@@ -612,7 +624,12 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
                 content={"detail": "rate limit exceeded"},
                 headers={"Retry-After": str(retry_after)},
             )
-        if (method, path) == ("POST", "/ask"):
+        # The tighter ask bucket covers POST /ask (it spends model calls)
+        # and the dispatch Send (it can make a message leave the machine);
+        # both are consequential enough to pace per session and per IP.
+        if (method, path) == ("POST", "/ask") or (
+            method == "POST" and path.endswith("/dispatch/send")
+        ):
             for key in (f"ask:session:{session['id']}", f"ask:ip:{client_ip}"):
                 allowed, retry_after = self.ask_bucket.allow(key)
                 if not allowed:

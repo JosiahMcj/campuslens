@@ -127,6 +127,9 @@ class Explanation:
     provider: str
     model_label: str
     recorded: bool = False
+    # Set only by the replay provider when the file carries a re-key marker:
+    # the sha256 key of the recording this text was first validated under.
+    rekeyed_from: str | None = None
 
 
 class Provider(Protocol):
@@ -589,6 +592,9 @@ class ReplayProvider:
             provider=str(data.get("provider", "unknown")),
             model_label=str(data.get("model_label", data.get("model", "unknown"))),
             recorded=True,
+            rekeyed_from=(
+                str(data["rekeyed_from"]) if data.get("rekeyed_from") else None
+            ),
         )
 
 

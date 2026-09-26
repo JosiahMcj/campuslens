@@ -29,6 +29,15 @@ Tables (created and versioned by ``cabinet.migrations``):
   same way; the primary key ``(institution_id, decision_id, dataset_id)``
   is the idempotency anchor, so a re-approval after a dataset switch is a
   new row (migration 3).
+- ``office_contacts(institution_id, office, email)`` — the office mailboxes
+  a dispatch can be addressed to, managed by the institution's admin
+  (migration 5). Always an office, never a student address.
+- ``dispatches(institution_id, id, task_id, dataset_id, to_office,
+  channel, subject, body, status, created_by, created_at, sent_by,
+  sent_at, provider, provider_ref, error)`` — the governed execution step
+  (migration 5): one message per approved task per dataset (the UNIQUE
+  constraint anchors that), composed in code and sent only on a named
+  staff member's click. ``status`` is draft, sent, or failed.
 - ``recordings(institution_id, role, key, json)`` — validated model outputs
   per institution; the key is the sha256 of the canonical received findings
   (which covers the dataset content and the question).
@@ -1032,6 +1041,192 @@ class CabinetStore:
         with self._lock:
             row = self._conn.execute(sql, params).fetchone()
         return json.loads(row["task"]) if row is not None else None
+
+    def decision_row(
+        self,
+        institution_id: int,
+        decision_id: str,
+        *,
+        dataset_id: int | None = None,
+    ) -> dict[str, Any] | None:
+        """The recorded approval itself (approver, time, task) — the
+        dispatch composer needs the approving user's name for the message."""
+        sql = (
+            "SELECT decision_id, approved_by, at, task, dataset_id,"
+            " dataset_sha256 FROM decisions WHERE institution_id = ?"
+            " AND decision_id = ?"
+        )
+        params: list[Any] = [institution_id, decision_id]
+        if dataset_id is not None:
+            sql += " AND dataset_id = ?"
+            params.append(dataset_id)
+        with self._lock:
+            row = self._conn.execute(sql, params).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["task"] = json.loads(result["task"])
+        return result
+
+    # -- office contacts (the dispatch address book) -------------------------
+
+    def office_contacts_for(self, institution_id: int) -> list[dict[str, Any]]:
+        """One institution's office mailboxes, in office order."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT office, email FROM office_contacts"
+                " WHERE institution_id = ? ORDER BY office",
+                (institution_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def office_contact(self, institution_id: int, office: str) -> str | None:
+        """One office's mailbox, or None when the admin has not set one."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT email FROM office_contacts"
+                " WHERE institution_id = ? AND office = ?",
+                (institution_id, office),
+            ).fetchone()
+        return str(row["email"]) if row is not None else None
+
+    def set_office_contacts(
+        self, institution_id: int, contacts: list[tuple[str, str]]
+    ) -> None:
+        """Replace the institution's whole address book in one transaction
+        (a half-written address book would misroute or silently drop a
+        dispatch, so the delete and the inserts commit together)."""
+        with self._lock, self._conn:
+            self._conn.execute(
+                "DELETE FROM office_contacts WHERE institution_id = ?",
+                (institution_id,),
+            )
+            self._conn.executemany(
+                "INSERT INTO office_contacts (institution_id, office, email)"
+                " VALUES (?, ?, ?)",
+                [(institution_id, office, email) for office, email in contacts],
+            )
+
+    # -- dispatches (the governed execution step) -----------------------------
+
+    @staticmethod
+    def _dispatch_dict(row: sqlite3.Row) -> dict[str, Any]:
+        result = dict(row)
+        result["id"] = int(result["id"])
+        result["dataset_id"] = int(result["dataset_id"])
+        return result
+
+    def create_dispatch(
+        self,
+        institution_id: int,
+        *,
+        task_id: str,
+        dataset_id: int,
+        to_office: str,
+        channel: str,
+        subject: str,
+        body: str,
+        created_by: str,
+    ) -> dict[str, Any] | None:
+        """Insert one draft dispatch; None when one already exists for this
+        (institution, task, dataset) — the UNIQUE constraint is the
+        idempotency anchor, so a double-clicked Prepare composes once."""
+        with self._lock:
+            cursor = self._conn.execute(
+                "INSERT OR IGNORE INTO dispatches (institution_id, task_id,"
+                " dataset_id, to_office, channel, subject, body, status,"
+                " created_by, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)",
+                (
+                    institution_id,
+                    task_id,
+                    dataset_id,
+                    to_office,
+                    channel,
+                    subject,
+                    body,
+                    created_by,
+                    _now(),
+                ),
+            )
+            self._conn.commit()
+            if cursor.rowcount != 1:
+                return None
+            dispatch_id = int(cursor.lastrowid)  # type: ignore[arg-type]
+        return self.dispatch_by_id(institution_id, dispatch_id)
+
+    def dispatch_by_id(
+        self, institution_id: int, dispatch_id: int
+    ) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM dispatches WHERE id = ? AND institution_id = ?",
+                (dispatch_id, institution_id),
+            ).fetchone()
+        return self._dispatch_dict(row) if row is not None else None
+
+    def dispatch_for_task(
+        self, institution_id: int, task_id: str, *, dataset_id: int
+    ) -> dict[str, Any] | None:
+        """The one dispatch for a task on one dataset, or None."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM dispatches WHERE institution_id = ?"
+                " AND task_id = ? AND dataset_id = ?",
+                (institution_id, task_id, dataset_id),
+            ).fetchone()
+        return self._dispatch_dict(row) if row is not None else None
+
+    def mark_dispatch_sent(
+        self,
+        institution_id: int,
+        dispatch_id: int,
+        *,
+        sent_by: str,
+        provider: str,
+        provider_ref: str,
+    ) -> dict[str, Any] | None:
+        """Move a draft (or a failed send) to sent and return the row.
+
+        The UPDATE's WHERE clause refuses rows already sent, so two
+        concurrent Sends cannot both claim the dispatch: one commits, the
+        other's rowcount is 0 and the API answers 409 with the earlier
+        record. Returns None when the row was not sendable."""
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "UPDATE dispatches SET status = 'sent', sent_by = ?,"
+                " sent_at = ?, provider = ?, provider_ref = ?, error = NULL"
+                " WHERE id = ? AND institution_id = ?"
+                " AND status IN ('draft', 'failed')",
+                (
+                    sent_by,
+                    _now(),
+                    provider,
+                    provider_ref,
+                    dispatch_id,
+                    institution_id,
+                ),
+            )
+            if cursor.rowcount != 1:
+                return None
+        return self.dispatch_by_id(institution_id, dispatch_id)
+
+    def mark_dispatch_failed(
+        self, institution_id: int, dispatch_id: int, *, error: str
+    ) -> dict[str, Any] | None:
+        """Record a failed send attempt on the row (a failure is never
+        silent) while leaving it sendable: the status moves to failed and
+        the next Send retries from there."""
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "UPDATE dispatches SET status = 'failed', error = ?"
+                " WHERE id = ? AND institution_id = ?"
+                " AND status IN ('draft', 'failed')",
+                (error, dispatch_id, institution_id),
+            )
+            if cursor.rowcount != 1:
+                return None
+        return self.dispatch_by_id(institution_id, dispatch_id)
 
     # -- recordings ---------------------------------------------------------------
 

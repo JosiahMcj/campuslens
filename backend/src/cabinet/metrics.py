@@ -1,4 +1,5 @@
-"""Deterministic metric functions M1-M7 (CONTRACTS.md) and the findings object.
+"""Deterministic metric functions M1-M7 (CONTRACTS.md), the M8 support
+indicators (cabinet.indicators), and the findings object.
 
 One pure function per contract row. Every value and row-ID list follows
 CONTRACTS.md exactly; the rules in brief:
@@ -22,9 +23,12 @@ from pathlib import Path
 from typing import Any
 
 from cabinet.fixture import Fixture, StudentRecord
+from cabinet.indicators import SMALL_BALANCE_LIMIT, evaluate_indicators, m8_finding
 
 MINUS_SIGN = "\u2212"
-M3_AMOUNT_LIMIT = Decimal("1000")
+# Alias of indicators.SMALL_BALANCE_LIMIT, so M3 and support rule I1 share one
+# small-balance boundary and can never drift apart.
+M3_AMOUNT_LIMIT = SMALL_BALANCE_LIMIT
 
 
 @dataclass(frozen=True)
@@ -376,7 +380,7 @@ def _count_finding(
 
 
 def findings(fixture: Fixture, *, fixture_path: str | Path) -> dict[str, Any]:
-    """The ROADMAP §3 findings object: one entry per metric M1-M7, plus meta.
+    """The ROADMAP §3 findings object: one entry per metric M1-M8, plus meta.
 
     The full object (row IDs included) backs the executive's evidence drawer;
     an AI employee receives the same object minus every row-ID list, scoped to
@@ -389,6 +393,7 @@ def findings(fixture: Fixture, *, fixture_path: str | Path) -> dict[str, Any]:
     m5 = m5_unresolved_holds_by_office(fixture)
     m6 = m6_days_until_registration_closes(fixture)
     m7 = m7_credit_hours_vs_prior_year(fixture)
+    m8 = evaluate_indicators(fixture)
     terms = fixture.terms
     equivalent_date = terms.prior_year.prior_year_equivalent_date.isoformat()
 
@@ -507,6 +512,7 @@ def findings(fixture: Fixture, *, fixture_path: str | Path) -> dict[str, Any]:
                 "denominator population) − 1"
             ),
         ),
+        "M8": m8_finding(m8),
         "meta": {
             "as_of": fixture.as_of.isoformat() if fixture.as_of is not None else None,
             "fixture": str(fixture_path),
