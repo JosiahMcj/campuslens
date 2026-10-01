@@ -1,7 +1,7 @@
 # Third-party design credits
 
 - **Landing hero** (hatched background, gradient glow, pill, headline layout) and
-  `public/landing/glow.webp` (resized from `gradient-noise-purple-azure-light.png`):
+  `public/landing/glow.webp` (resized and recoloured gold from `gradient-noise-purple-azure-light.png`):
   [techwithanirudh/shadcn-saas-landing](https://github.com/techwithanirudh/shadcn-saas-landing),
   MIT License, Copyright (c) 2025 Anirudh.
 - **Sign-in card interactions** (box reveal, pointer-following input glow, password

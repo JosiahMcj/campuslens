@@ -2,7 +2,7 @@
 
    Left: the hero from the referenced SaaS landing template
    (techwithanirudh/shadcn-saas-landing, MIT): the hatched "bg-dashed"
-   ground, the purple-azure noise gradient rising from the bottom-right
+   ground, the noise gradient (recoloured gold) rising from the bottom-right
    corner, the announcement pill, a tight Geist headline and a muted lede.
    Right: the sign-in card, after the animated sign-in reference: box-reveal
    entrances, an input frame that glows under the pointer, the password eye
@@ -25,7 +25,7 @@
   --l-field: #27272a;
   --l-skeleton: #1a2335;
   --l-gold: #c9a85c;
-  --l-azure: #7c8cff;
+  --l-azure: #f3dc9a; /* pale gold: the button edge's blur */
 
   position: relative;
   display: flex;
