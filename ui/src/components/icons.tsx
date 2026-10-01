@@ -260,3 +260,57 @@ export function EyeOffIcon() {
     </NavGlyph>
   )
 }
+
+export function FiguresNavIcon() {
+  return (
+    <NavGlyph>
+      <path d="M4 20h16M7 16v-4M12 16V8M17 16v-7" />
+    </NavGlyph>
+  )
+}
+
+export function EvidenceNavIcon() {
+  return (
+    <NavGlyph>
+      <path d="M13 3.5H7.5A1.5 1.5 0 0 0 6 5v14a1.5 1.5 0 0 0 1.5 1.5H11" />
+      <path d="M13 3.5l4 4v2.5M9.5 8.5h3M9.5 12h2" />
+      <circle cx="16" cy="16" r="3" />
+      <path d="m18.2 18.2 2.3 2.3" />
+    </NavGlyph>
+  )
+}
+
+export function ActionsNavIcon() {
+  return (
+    <NavGlyph>
+      <path d="m4 7 1.8 1.8L9 5.5M4 13.5l1.8 1.8L9 12M12.5 7H20M12.5 13.5H20M12.5 19H20" />
+    </NavGlyph>
+  )
+}
+
+export function DecisionNavIcon() {
+  return (
+    <NavGlyph>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="m8.5 12.2 2.4 2.4 4.8-5" />
+    </NavGlyph>
+  )
+}
+
+export function AccessNavIcon() {
+  return (
+    <NavGlyph>
+      <rect x="5" y="10.5" width="14" height="10" rx="2" />
+      <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5M12 14.5v2.5" />
+    </NavGlyph>
+  )
+}
+
+export function RefusalNavIcon() {
+  return (
+    <NavGlyph>
+      <path d="M12 3.5 19 6v5.5c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6z" />
+      <path d="m9.5 10 5 5M14.5 10l-5 5" />
+    </NavGlyph>
+  )
+}

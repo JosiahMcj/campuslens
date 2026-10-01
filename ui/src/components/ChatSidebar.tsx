@@ -2,12 +2,18 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { createPortal } from 'react-dom'
 
 import { canSeeInstitution, roleDisplayName, type Session } from '../auth'
-import { currentTheme, setTheme, type Theme } from '../theme'
+import { effectiveTheme, setPrefs, usePrefs } from '../theme'
 import { AscentMark } from './AscentMark'
 import { GlideGroup } from './GlideGroup'
 import {
+  AccessNavIcon,
+  ActionsNavIcon,
   AuditNavIcon,
   BriefingNavIcon,
+  DecisionNavIcon,
+  EvidenceNavIcon,
+  FiguresNavIcon,
+  RefusalNavIcon,
   CheckSmallIcon,
   ChevronDownIcon,
   CrossSmallIcon,
@@ -21,7 +27,17 @@ import {
   TeamNavIcon,
 } from './icons'
 
-export type PanelId = 'briefing' | 'agents' | 'audit'
+export type PanelId =
+  | 'briefing'
+  | 'figures'
+  | 'evidence'
+  | 'actions'
+  | 'decision'
+  | 'agents'
+  | 'access'
+  | 'audit'
+  | 'profile'
+  | 'settings'
 
 export interface HistoryItem {
   id: number
@@ -45,16 +61,31 @@ interface ChatSidebarProps {
   onNewQuestion: (() => void) | null
   onSelectHistory: (id: number) => void
   onOpenPanel: (panel: PanelId) => void
+  /** Run the refusal demo (roles that may act); null hides the row. */
+  onTestRefusal: (() => void) | null
   onNavigate: (path: string) => void
   onSignOut: () => void
   onClose: () => void
 }
 
-const PANEL_ROWS: Record<PanelId, { label: string; icon: ReactNode }> = {
+type NavPanel = Exclude<PanelId, 'profile' | 'settings'>
+
+const PANEL_ROWS: Record<NavPanel, { label: string; icon: ReactNode }> = {
   briefing: { label: 'Full briefing', icon: <BriefingNavIcon /> },
+  figures: { label: 'Key figures', icon: <FiguresNavIcon /> },
+  evidence: { label: 'Evidence & sources', icon: <EvidenceNavIcon /> },
+  actions: { label: 'Staff actions', icon: <ActionsNavIcon /> },
+  decision: { label: 'Decision', icon: <DecisionNavIcon /> },
   agents: { label: 'AI employees', icon: <TeamNavIcon /> },
+  access: { label: 'Data access', icon: <AccessNavIcon /> },
   audit: { label: 'Audit log', icon: <AuditNavIcon /> },
 }
+
+/** The capability groups, in sidebar order. */
+const NAV_GROUPS: { label: string; panels: NavPanel[] }[] = [
+  { label: 'Briefing', panels: ['briefing', 'figures', 'evidence', 'actions', 'decision'] },
+  { label: 'Governance', panels: ['agents', 'access', 'audit'] },
+]
 
 const SMALL_SCREEN = '(max-width: 899px)'
 
@@ -213,6 +244,7 @@ export function ChatSidebar({
   onNewQuestion,
   onSelectHistory,
   onOpenPanel,
+  onTestRefusal,
   onNavigate,
   onSignOut,
   onClose,
@@ -223,10 +255,12 @@ export function ChatSidebar({
   const [searchOpen, setSearchOpen] = useState(false)
   const [listOpen, setListOpen] = useState(true)
   const [query, setQuery] = useState('')
-  const [theme, setThemeState] = useState<Theme>(currentTheme)
+  const prefs = usePrefs()
+  const theme = effectiveTheme(prefs.theme)
   const searchRef = useRef<HTMLInputElement>(null)
 
-  const nextTheme: Theme = theme === 'dark' ? 'light' : 'dark'
+  const nextTheme = theme === 'dark' ? 'light' : 'dark'
+  const initial = session.user.email.trim().charAt(0).toUpperCase()
   const needle = query.trim().toLowerCase()
   const visibleHistory = [...history]
     .reverse()
@@ -316,20 +350,41 @@ export function ChatSidebar({
           </button>
         </div>
 
-        <GlideGroup className="rail-group">
-          {onNewQuestion !== null && (
+        {onNewQuestion !== null && (
+          <GlideGroup className="rail-group">
             <RailButton icon={<EditIcon />} label="New question" onClick={onNewQuestion} />
-          )}
-          {panels.map((panel) => (
-            <RailButton
-              key={panel}
-              icon={PANEL_ROWS[panel].icon}
-              label={PANEL_ROWS[panel].label}
-              active={activePanel === panel}
-              onClick={() => onOpenPanel(panel)}
-            />
-          ))}
-        </GlideGroup>
+          </GlideGroup>
+        )}
+
+        <div className="sidebar-body">
+          {NAV_GROUPS.map((group) => {
+            const rows = group.panels.filter((panel) => panels.includes(panel))
+            const refusal = group.label === 'Governance' && onTestRefusal !== null
+            if (rows.length === 0 && !refusal) return null
+            return (
+              <div key={group.label} className="nav-group">
+                <p className="sidebar-copy nav-group-label">{group.label}</p>
+                <GlideGroup className="rail-group">
+                  {rows.map((panel) => (
+                    <RailButton
+                      key={panel}
+                      icon={PANEL_ROWS[panel].icon}
+                      label={PANEL_ROWS[panel].label}
+                      active={activePanel === panel}
+                      onClick={() => onOpenPanel(panel)}
+                    />
+                  ))}
+                  {refusal && (
+                    <RailButton
+                      icon={<RefusalNavIcon />}
+                      label="Test a refusal"
+                      onClick={onTestRefusal}
+                    />
+                  )}
+                </GlideGroup>
+              </div>
+            )
+          })}
 
         <div className="sidebar-recents">
           <div className="sidebar-copy recents-head">
@@ -412,23 +467,49 @@ export function ChatSidebar({
           )}
         </div>
 
+        </div>
+
         <div className="sidebar-copy sidebar-foot">
           {datasetName !== null && (
             <p className="foot-dataset">
               {fictional ? 'Demo data' : 'Dataset'}: {datasetName}
             </p>
           )}
-          <button
-            type="button"
-            className="foot-button"
-            onClick={() => {
-              setTheme(nextTheme)
-              setThemeState(nextTheme)
-            }}
-          >
-            {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
-            {theme === 'dark' ? 'Light mode' : 'Dark mode'}
-          </button>
+          <div className="foot-row">
+            <button
+              type="button"
+              className="foot-profile"
+              aria-pressed={activePanel === 'profile'}
+              onClick={() => onOpenPanel('profile')}
+            >
+              <span className="foot-avatar" aria-hidden="true">
+                {initial}
+              </span>
+              <span className="foot-profile-text">
+                <span className="foot-email">{session.user.email}</span>
+                <span className="foot-role">{roleDisplayName(session.user.role)}</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="head-button foot-icon"
+              aria-label="Settings"
+              title="Settings"
+              aria-pressed={activePanel === 'settings'}
+              onClick={() => onOpenPanel('settings')}
+            >
+              <GearIcon size={18} />
+            </button>
+            <button
+              type="button"
+              className="head-button foot-icon"
+              aria-label={`Switch to ${nextTheme} theme`}
+              title={`Switch to ${nextTheme} theme`}
+              onClick={() => setPrefs({ theme: nextTheme })}
+            >
+              {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+            </button>
+          </div>
         </div>
       </div>
     </aside>

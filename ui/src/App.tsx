@@ -31,7 +31,19 @@ import {
 } from './auth'
 import { AskDispatch, DispatchPanel } from './components/DispatchPanel'
 import { AuditLog, type DeniedRequestState } from './components/AuditLog'
-import { BriefingSections, ExecutiveSummary, Limitations } from './components/Briefing'
+import {
+  BriefingSections,
+  EvidenceSources,
+  ExecutiveSummary,
+  Limitations,
+  StaffActions,
+} from './components/Briefing'
+import {
+  DataAccessPanel,
+  ProfilePanel,
+  SettingsPanel,
+  type AccessGrant,
+} from './components/AccountPanels'
 import { ChatComposer } from './components/ChatComposer'
 import { ChatSidebar, type HistoryItem, type PanelId } from './components/ChatSidebar'
 import { DecisionPanel } from './components/DecisionPanel'
@@ -669,9 +681,42 @@ function BriefingPage({
   const hasRun = lastAccepted !== null || (audit && runBaseEventId > 0) || cabinetBriefing !== null
   const panels: PanelId[] = [
     'briefing',
+    'figures',
+    'evidence',
+    'actions',
+    'decision',
     ...(hasRun ? (['agents'] as PanelId[]) : []),
+    'access',
     ...(audit ? (['audit'] as PanelId[]) : []),
   ]
+  // What each AI employee was granted on the latest run: from the ask
+  // response when this page asked, else from the audit log's task.assigned
+  // events for the newest question that dispatched tasks.
+  const grants: AccessGrant[] | null = (() => {
+    if (lastAccepted !== null) {
+      return lastAccepted.tasks.map((task) => ({
+        role: task.role,
+        fields: task.granted_fields,
+        findings: task.findings,
+        aggregate: task.level === 'aggregate',
+      }))
+    }
+    const assigned = (events ?? []).filter((event) => event.type === 'task.assigned')
+    const runOf = (event: AuditEvent) => String(event.payload.task_id ?? '').split('-').at(-1)
+    const latest = assigned.at(-1)
+    if (latest === undefined) return null
+    const run = runOf(latest)
+    const list = (value: unknown) =>
+      Array.isArray(value) ? value.map((item) => String(item)) : []
+    return assigned
+      .filter((event) => runOf(event) === run)
+      .map((event) => ({
+        role: String(event.payload.role ?? event.actor),
+        fields: list(event.payload.fields),
+        findings: list(event.payload.findings),
+        aggregate: event.payload.level === 'aggregate',
+      }))
+  })()
   const visible = thread.filter((item) => item.id >= viewFrom)
   const history: HistoryItem[] = thread.map((item) => ({
     id: item.id,
@@ -795,6 +840,12 @@ function BriefingPage({
               <button type="button" className="chip" onClick={() => openPanel('briefing')}>
                 Read the full briefing
               </button>
+              <button type="button" className="chip" onClick={() => openPanel('evidence')}>
+                Evidence & sources
+              </button>
+              <button type="button" className="chip" onClick={() => openPanel('actions')}>
+                Staff actions
+              </button>
               {audit && (
                 <button type="button" className="chip" onClick={() => openPanel('audit')}>
                   Audit log
@@ -809,9 +860,34 @@ function BriefingPage({
 
   const panelTitle: Record<PanelId, string> = {
     briefing: 'Full briefing',
+    figures: 'Key figures',
+    evidence: 'Evidence & sources',
+    actions: 'Staff actions',
+    decision: 'Decision',
     agents: 'AI employees',
+    access: 'Data access',
     audit: 'Audit log',
+    profile: 'Profile',
+    settings: 'Settings',
   }
+
+  // "Test a refusal": send the Enrollment Analyst's out-of-role request to
+  // the gate and show the logged refusal in the audit log.
+  const testRefusal = () => {
+    setPanel('audit')
+    setSidebarOpen(false)
+    void showDeniedRequest()
+  }
+
+  // One-click ways into every capability, shown under the composer.
+  const explore: { label: string; panel: PanelId | 'refusal' }[] = [
+    { label: 'Key figures', panel: 'figures' },
+    { label: 'Evidence & sources', panel: 'evidence' },
+    { label: 'Staff actions', panel: 'actions' },
+    { label: 'Data access', panel: 'access' },
+    ...(audit ? [{ label: 'Audit log', panel: 'audit' as const }] : []),
+    ...(act && audit ? [{ label: 'Test a refusal', panel: 'refusal' as const }] : []),
+  ]
 
   return (
     <div className="chat-app">
@@ -826,6 +902,7 @@ function BriefingPage({
         onNewQuestion={act ? newQuestion : null}
         onSelectHistory={selectHistory}
         onOpenPanel={openPanel}
+        onTestRefusal={act && audit ? testRefusal : null}
         onNavigate={navigate}
         onSignOut={onSignOut}
         onClose={() => setSidebarOpen(false)}
@@ -891,6 +968,23 @@ function BriefingPage({
                 onAsk={(question) => void ask(question)}
               />
             )}
+            <div className="explore">
+              <p className="explore-label">Or open</p>
+              <div className="explore-chips">
+                {explore.map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    className="chip"
+                    onClick={() =>
+                      item.panel === 'refusal' ? testRefusal() : openPanel(item.panel)
+                    }
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
@@ -971,14 +1065,77 @@ function BriefingPage({
             ) : (
               <p className="hint">The AI employees' task cards appear after you ask a question.</p>
             ))}
-          {panel === 'audit' && audit && (
-            <AuditLog
-              events={events}
-              readOnly={!act}
-              onRefresh={() => void loadEvents()}
-              deniedRequest={deniedRequest}
-              onShowDeniedRequest={() => void showDeniedRequest()}
+          {panel === 'figures' && ready && (
+            <div className="panel-figures">
+              <p className="panel-text">
+                The four headline measures. Open any one to see its formula and
+                the records behind it.
+              </p>
+              <StatRow findings={findingsState.data} onOpenEvidence={openEvidence} />
+              {fictional && (
+                <p className="demo-note">
+                  Demonstration data. An admin can upload the institution's
+                  own export in Institution settings.
+                </p>
+              )}
+            </div>
+          )}
+          {panel === 'evidence' && ready && (
+            <div className="doc panel-solo">
+              <EvidenceSources
+                findings={findingsState.data}
+                fictional={fictional}
+                onOpenEvidence={openEvidence}
+                headingId={null}
+              />
+            </div>
+          )}
+          {panel === 'actions' && ready && (
+            <div className="doc panel-solo">
+              <StaffActions
+                findings={findingsState.data}
+                onOpenEvidence={openEvidence}
+                headingId={null}
+              />
+            </div>
+          )}
+          {panel === 'decision' && (
+            <div className="doc panel-solo">
+              <DecisionPanel
+                headingId={null}
+                decisions={decisions}
+                events={events ?? []}
+                canApprove={act}
+                approving={approving}
+                approveError={approveError}
+                approvedTasks={approvedTasks}
+                onApprove={(id) => void approve(id)}
+              />
+            </div>
+          )}
+          {panel === 'access' && <DataAccessPanel grants={grants} />}
+          {panel === 'profile' && (
+            <ProfilePanel session={session} datasetName={datasetName} onSignOut={onSignOut} />
+          )}
+          {panel === 'settings' && (
+            <SettingsPanel
+              isAdmin={canSeeInstitution(session.user.role)}
+              onOpenInstitution={() => {
+                setPanel(null)
+                navigate('/institution')
+              }}
             />
+          )}
+          {panel === 'audit' && audit && (
+            <div className="panel-solo">
+              <AuditLog
+                events={events}
+                readOnly={!act}
+                onRefresh={() => void loadEvents()}
+                deniedRequest={deniedRequest}
+                onShowDeniedRequest={() => void showDeniedRequest()}
+              />
+            </div>
           )}
         </SidePanel>
       )}

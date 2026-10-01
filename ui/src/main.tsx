@@ -8,10 +8,11 @@ import './chat.css'
 import './sidebar-nav.css'
 import './landing.css'
 import App from './App.tsx'
-import { applyTheme, currentTheme } from './theme'
+import { applyPrefs, watchSystemTheme } from './theme'
 
 // Before the first render, so the page never flashes the wrong theme.
-applyTheme(currentTheme())
+applyPrefs()
+watchSystemTheme()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -136,98 +136,157 @@ export function BriefingSections({
         <OfficeTable finding={m5} onOpen={onOpenEvidence} />
       </section>
 
-      <section aria-labelledby="s-evidence">
-        <h2 id="s-evidence">4. Evidence and source fields</h2>
-        <p>
-          Every number in this briefing is computed from{' '}
-          {fictional ? 'fictional source data' : "your institution's source data"} and
-          traces to one of the findings below, each listed with the exact
-          source fields it read. Open any finding to see its formula and the
-          rows behind it.
-        </p>
-        <ul className="finding-list">
-          {(['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] as const).map((id) => {
-            const finding = getFinding(findings, id)
-            if (!finding) return null
-            const display = findingDisplay(finding)
-            return (
-              <li key={id}>
-                <button
-                  type="button"
-                  className="finding-row"
-                  onClick={() => onOpenEvidence(id)}
-                >
-                  <span className="finding-row-id">{id}</span>
-                  <span className="finding-row-title">{finding.title}</span>
-                  <span className="finding-row-display">{display.text}</span>
-                  <span className="finding-row-fields">
-                    {finding.source_fields.join(', ')}
-                  </span>
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      </section>
+      <EvidenceSources
+        findings={findings}
+        fictional={fictional}
+        onOpenEvidence={onOpenEvidence}
+      />
 
-      <section aria-labelledby="s-actions" className="staff-plan">
-        <h2 id="s-actions">5. Operational actions</h2>
-        <p>
-          Staff can take these actions now, each with a responsible office.
-          They need no leadership approval, and nothing here is sent
-          automatically.
-        </p>
-        <ul className="action-list">
-          <li>
-            <strong>Student Success</strong>{' '}
-            {findingDisplay(m4 ?? {}).missing ? (
-              <>
-                has no students to review. The{' '}
-                <FindingLink findingId="M4" onOpen={onOpenEvidence}>
-                  M4
-                </FindingLink>{' '}
-                value is not available.
-              </>
-            ) : (
-              <>
-                reviews the <Num finding={m4} id="M4" onOpen={onOpenEvidence} />{' '}
-                students with no advising contact this term.
-              </>
-            )}
-          </li>
-          <li>
-            <strong>Financial Aid</strong>{' '}
-            {findingDisplay(m3 ?? {}).missing ? (
-              <>
-                has no small-balance cases to review. The{' '}
-                <FindingLink findingId="M3" onOpen={onOpenEvidence}>
-                  M3
-                </FindingLink>{' '}
-                value is not available.
-              </>
-            ) : (
-              <>
-                reviews the <Num finding={m3} id="M3" onOpen={onOpenEvidence} />{' '}
-                small-balance cases (
-                <M3Threshold finding={m3} onOpen={onOpenEvidence} />
-                ).
-              </>
-            )}
-          </li>
-          {officeRows(m5).map((office) => (
-            <li key={office.office}>
-              <strong>{office.office}</strong> resolves the {office.count}{' '}
-              unresolved hold{office.count === 1 ? '' : 's'} recorded for that
-              office (
-              <FindingLink findingId="M5" onOpen={onOpenEvidence}>
-                M5
-              </FindingLink>
-              ).
-            </li>
-          ))}
-        </ul>
-      </section>
+      <StaffActions findings={findings} onOpenEvidence={onOpenEvidence} />
     </article>
+  )
+}
+
+/**
+ * Section 4, evidence and source fields: every finding with the exact
+ * source fields it read, each opening the evidence drawer. The briefing
+ * renders it as section 4; the sidebar's Evidence panel renders it alone,
+ * with `headingId` null so the page never carries a duplicate id.
+ */
+export function EvidenceSources({
+  findings,
+  fictional,
+  onOpenEvidence,
+  headingId = 's-evidence',
+  title = '4. Evidence and source fields',
+}: {
+  findings: Findings
+  fictional: boolean
+  onOpenEvidence: (findingId: string) => void
+  headingId?: string | null
+  title?: string
+}) {
+  return (
+    <section
+      aria-labelledby={headingId ?? undefined}
+      aria-label={headingId === null ? title : undefined}
+    >
+      <h2 id={headingId ?? undefined}>{title}</h2>
+      <p>
+        Every number in this briefing is computed from{' '}
+        {fictional ? 'fictional source data' : "your institution's source data"} and
+        traces to one of the findings below, each listed with the exact
+        source fields it read. Open any finding to see its formula and the
+        rows behind it.
+      </p>
+      <ul className="finding-list">
+        {(['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] as const).map((id) => {
+          const finding = getFinding(findings, id)
+          if (!finding) return null
+          const display = findingDisplay(finding)
+          return (
+            <li key={id}>
+              <button
+                type="button"
+                className="finding-row"
+                onClick={() => onOpenEvidence(id)}
+              >
+                <span className="finding-row-id">{id}</span>
+                <span className="finding-row-title">{finding.title}</span>
+                <span className="finding-row-display">{display.text}</span>
+                <span className="finding-row-fields">
+                  {finding.source_fields.join(', ')}
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
+
+/**
+ * Section 5, operational actions: what staff can do now, each with its
+ * responsible office, no approval needed. Rendered by the briefing and, on
+ * its own, by the sidebar's Staff actions panel.
+ */
+export function StaffActions({
+  findings,
+  onOpenEvidence,
+  headingId = 's-actions',
+  title = '5. Operational actions',
+}: {
+  findings: Findings
+  onOpenEvidence: (findingId: string) => void
+  headingId?: string | null
+  title?: string
+}) {
+  const m3 = getFinding(findings, 'M3')
+  const m4 = getFinding(findings, 'M4')
+  const m5 = getFinding(findings, 'M5')
+  return (
+    <section
+      className="staff-plan"
+      aria-labelledby={headingId ?? undefined}
+      aria-label={headingId === null ? title : undefined}
+    >
+      <h2 id={headingId ?? undefined}>{title}</h2>
+      <p>
+        Staff can take these actions now, each with a responsible office.
+        They need no leadership approval, and nothing here is sent
+        automatically.
+      </p>
+      <ul className="action-list">
+        <li>
+          <strong>Student Success</strong>{' '}
+          {findingDisplay(m4 ?? {}).missing ? (
+            <>
+              has no students to review. The{' '}
+              <FindingLink findingId="M4" onOpen={onOpenEvidence}>
+                M4
+              </FindingLink>{' '}
+              value is not available.
+            </>
+          ) : (
+            <>
+              reviews the <Num finding={m4} id="M4" onOpen={onOpenEvidence} />{' '}
+              students with no advising contact this term.
+            </>
+          )}
+        </li>
+        <li>
+          <strong>Financial Aid</strong>{' '}
+          {findingDisplay(m3 ?? {}).missing ? (
+            <>
+              has no small-balance cases to review. The{' '}
+              <FindingLink findingId="M3" onOpen={onOpenEvidence}>
+                M3
+              </FindingLink>{' '}
+              value is not available.
+            </>
+          ) : (
+            <>
+              reviews the <Num finding={m3} id="M3" onOpen={onOpenEvidence} />{' '}
+              small-balance cases (
+              <M3Threshold finding={m3} onOpen={onOpenEvidence} />
+              ).
+            </>
+          )}
+        </li>
+        {officeRows(m5).map((office) => (
+          <li key={office.office}>
+            <strong>{office.office}</strong> resolves the {office.count}{' '}
+            unresolved hold{office.count === 1 ? '' : 's'} recorded for that
+            office (
+            <FindingLink findingId="M5" onOpen={onOpenEvidence}>
+              M5
+            </FindingLink>
+            ).
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 

@@ -13,6 +13,8 @@ interface DecisionPanelProps {
   onApprove: (decisionId: string) => void
   /** The heading; the chat reply calls it "Your decision". */
   title?: string
+  /** The heading's id (s-decision); null where another copy already has it. */
+  headingId?: string | null
 }
 
 /**
@@ -32,10 +34,15 @@ export function DecisionPanel({
   approvedTasks,
   onApprove,
   title = '6. Leadership decisions',
+  headingId = 's-decision',
 }: DecisionPanelProps) {
   return (
-    <section aria-labelledby="s-decision" className="decision-panel">
-      <h2 id="s-decision">{title}</h2>
+    <section
+      aria-labelledby={headingId ?? undefined}
+      aria-label={headingId === null ? title : undefined}
+      className="decision-panel"
+    >
+      <h2 id={headingId ?? undefined}>{title}</h2>
       <p className="panel-note">
         This decision belongs to leadership. The cabinet advises, a person
         decides. Approving records a <code>decision.approved</code> event and

@@ -560,3 +560,305 @@
   font-size: 0.85rem;
   line-height: 1.55;
 }
+
+/* --- The empty screen's way into every capability ---------------------------------------*/
+
+.explore {
+  width: min(46rem, 100%);
+  margin-top: 22px;
+}
+
+.explore-label {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.explore-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* --- Panel contents -----------------------------------------------------------------------*/
+
+/* A section shown on its own in a panel: the panel header already names it. */
+.panel-solo > section > h2:first-child {
+  display: none;
+}
+
+.panel-solo > section,
+.panel-solo .decision-panel {
+  margin-top: 20px;
+}
+
+.panel-figures {
+  margin-top: 16px;
+}
+
+.panel-figures .stat-row {
+  margin-top: 14px;
+}
+
+.account-panel {
+  padding-top: 16px;
+}
+
+.panel-subhead {
+  margin: 26px 0 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.account-panel > .panel-subhead:first-child {
+  margin-top: 4px;
+}
+
+.panel-text {
+  margin: 8px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.profile-avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 999px;
+  background: var(--navy);
+  color: var(--paper);
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.profile-email {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.profile-role {
+  margin: 2px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+.profile-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 22px 0 0;
+}
+
+.profile-facts div {
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.profile-facts dt {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.profile-facts dd {
+  margin: 4px 0 0;
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+.ability-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.ability-list li {
+  position: relative;
+  padding-left: 22px;
+  font-size: 0.92rem;
+}
+
+.ability-list li::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 0.45em;
+  width: 9px;
+  height: 5px;
+  border-left: 2px solid var(--navy);
+  border-bottom: 2px solid var(--navy);
+  transform: rotate(-45deg);
+}
+
+.panel-danger,
+.panel-action {
+  margin-top: 24px;
+  padding: 9px 16px;
+  border-radius: var(--radius-control);
+  font-weight: 500;
+}
+
+.panel-danger {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--alert) 55%, var(--rule));
+  color: var(--alert);
+}
+
+.panel-danger:hover {
+  background: color-mix(in srgb, var(--alert) 8%, var(--paper));
+}
+
+.panel-action {
+  margin-top: 12px;
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  color: var(--paper);
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.setting-label {
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+}
+
+.segment {
+  padding: 5px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.segment[aria-checked='true'] {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+
+.grant-list {
+  display: grid;
+  gap: 10px;
+}
+
+.grant-card {
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.grant-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.grant-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--rule-strong);
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.grant-meta {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.grant-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.grant-fields code {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  font-size: 0.75rem;
+}
+
+.role-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  font-size: 0.88rem;
+}
+
+.role-table th,
+.role-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--rule);
+  text-align: start;
+  vertical-align: top;
+}
+
+.role-table tr:last-child th,
+.role-table tr:last-child td {
+  border-bottom: none;
+}
+
+.role-table thead th {
+  background: var(--surface);
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.role-table tbody th {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+/* Long payloads must not widen the log past the panel. */
+.event-list {
+  grid-template-columns: minmax(0, 1fr);
+}

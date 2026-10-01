@@ -697,3 +697,126 @@ svg.ascent-mark {
   border-radius: 24%;
   box-shadow: 0 0 0 1px rgb(255 255 255 / 0.14);
 }
+
+/* --- Capability groups: one scrolling body between the head and the footer -------------*/
+
+.sidebar-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.sidebar-body .sidebar-recents {
+  flex: none;
+  min-height: auto;
+  margin-top: 10px;
+  overflow: visible;
+}
+
+.nav-group {
+  margin-top: 10px;
+}
+
+.nav-group-label {
+  margin: 0 16px 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+/* Collapsed, the group labels give their space back so the icons stay a
+   tight column. */
+.chat-sidebar[data-collapsed='true'] .nav-group-label {
+  height: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+}
+
+/* --- Footer: profile, settings and theme on one row ------------------------------------*/
+
+.foot-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.foot-profile {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+  height: 40px;
+  padding: 0 6px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--ink);
+  text-align: start;
+  transition: background-color 150ms ease;
+}
+
+.foot-profile:hover,
+.foot-profile[aria-pressed='true'] {
+  background: var(--surface-hover);
+}
+
+.foot-avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--navy);
+  color: var(--paper);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.foot-profile-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.foot-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.foot-role {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.foot-icon[aria-pressed='true'] {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+/* --- Display preferences from Settings ---------------------------------------------------*/
+
+html.text-large {
+  font-size: 18px;
+}
+
+@media (min-width: 1200px) {
+  html.text-large {
+    font-size: 20px;
+  }
+}
+
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
