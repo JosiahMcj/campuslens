@@ -2,8 +2,8 @@
 
 We generated `data/fixture.json` with `data/generate_fixture.py` (seed `20260924`,
 deterministic, no wall-clock values). We wrote this file so a reviewer can recount
-every planted demo value (M1 = −4.8 %, M2 = 42, M3 = 18, M4 = 12) straight from the
-JSON. The script `data/check_fixture.py` recomputes the same numbers and the same
+every planted demo value (M1 = −4.8 %, M2 = 42, M3 = 18, M4 = 12, M8 = 22) straight
+from the JSON. The script `data/check_fixture.py` recomputes the same numbers and the same
 ID lists, and it exits non-zero if anything here disagrees.
 
 ## Shape of fixture.json
@@ -163,6 +163,30 @@ STU-0142 STU-0143
   as this term, so these are excluded. The other 28 M2 rows have completed
   appointments inside Fall 2026 (on or before the as-of date) and are likewise
   excluded.
+
+## M8. Students with one or more support indicators = 22
+
+The support indicators (CONTRACTS.md M8, `backend/src/cabinet/indicators.py`) are
+named, deterministic rules over one student record. A student "has indicators" when
+at least one rule fires. The rules never combine into a weighting, a sum, a
+threshold, or an ordering.
+
+| Rule | Test | Fields read | Count |
+|---|---|---|---|
+| I1 | continuing, not registered, unresolved financial hold under $1,000 | `profile.continuing`, `enrollment.registration_status`, `holds[].category`, `holds[].resolved`, `holds[].amount` | 18 |
+| I2 | continuing, not registered, no advising appointment this term | `profile.continuing`, `enrollment.registration_status`, `advising.last_appointment_date`, `terms.in_session.start_date` | 12 |
+| I3 | two or more unresolved holds at different offices | `holds[].resolved`, `holds[].responsible_office` | 0 |
+| I4 | continuing, not registered, registration closes within 14 days | `profile.continuing`, `enrollment.registration_status`, `terms.current.registration_close_date` | 0 |
+
+I1's population is exactly M3's (STU-0120 … STU-0137), and I2's is exactly M4's
+(STU-0120 … STU-0127, STU-0138 … STU-0141), so we hand-counted both above. The
+overlap is 8 rows (STU-0120 … STU-0127). No student carries more than one hold, so
+I3 fires for no one. Registration closes 2026-12-18, which is 28 days after the
+as-of date and outside I4's 14-day window, so I4 fires for no one. The union is
+18 + 12 − 8 = **22** rows.
+
+<!-- ids:M8 -->
+STU-0120 STU-0121 STU-0122 STU-0123 STU-0124 STU-0125 STU-0126 STU-0127 STU-0128 STU-0129 STU-0130 STU-0131 STU-0132 STU-0133 STU-0134 STU-0135 STU-0136 STU-0137 STU-0138 STU-0139 STU-0140 STU-0141
 
 ## Counseling fields (refusal demo only)
 

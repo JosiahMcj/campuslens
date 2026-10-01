@@ -283,6 +283,54 @@ In our arithmetic over the full fixture, the 119 registered continuing students 
 1821 / 1872 − 1 = −17/624 ≈ −0.02724 = −2.7 %   (to one decimal)
 ```
 
+## M8. Students with one or more support indicators
+
+We added M8 on 2026-09-26. It is a count of people who may need support, computed
+in code by named rules (`backend/src/cabinet/indicators.py`). It is not a model,
+not a probability, and never a per-person total.
+
+- The formula is `count(student ∈ students ∧ at least one support indicator rule
+  (I1 to I4) fires for that student)`, and the source fields are the union of the
+  fields the rules read, listed per rule below.
+- The grain is the student. The window is as-of, with the same term anchors as §0
+  (the derived as-of date, `terms.in_session.start_date`, and
+  `terms.current.registration_close_date`).
+- There is **no combination**. A student "has indicators" when at least one rule
+  fires. There is no weighting, no sum across rules, no threshold beyond each
+  rule's own definition, and no ordering by severity. The per-student map of fired
+  rules exists only for the evidence drawer. The AI employees receive the
+  aggregate count and per-rule counts with all row-level detail stripped (ROADMAP
+  §3 layer 4).
+- The `--` rule is `null` exactly when `students` is empty. A fixture with
+  students and no fires is **0**, rendered `0`. The planted value is 22.
+
+The registry is data, a tuple of rule objects a reviewer can read in one screen.
+Each rule carries a one-sentence reason that names its fields, and the evidence
+drawer shows that reason per pseudonymous id.
+
+| Id | Rule | Fields read | Fixture count |
+|---|---|---|---|
+| I1 | continuing ∧ not registered ∧ ∃ unresolved financial hold with `amount < 1000` (the M3 boundary, strict) | `profile.continuing`, `enrollment.registration_status`, `holds[].category`, `holds[].resolved`, `holds[].amount` | 18 |
+| I2 | continuing ∧ not registered ∧ no advising appointment in the term in session (the M4 test, `last_appointment_date` null or before `terms.in_session.start_date`, and on the start date counts as this term. When `terms.in_session.start_date` is missing, I2 fires only for students who never saw an advisor, because a dated appointment cannot be compared) | `profile.continuing`, `enrollment.registration_status`, `advising.last_appointment_date`, `terms.in_session.start_date` | 12 |
+| I3 | two or more unresolved holds at different offices (any student, registered or not) | `holds[].resolved`, `holds[].responsible_office` | 0 |
+| I4 | continuing ∧ not registered ∧ `0 ≤ registration_close_date − as_of ≤ 14` days (an already closed registration does not fire) | `profile.continuing`, `enrollment.registration_status`, `terms.current.registration_close_date` | 0 |
+
+We work the calculation on the hand counts above. I1's population is M3's (18
+rows, STU-0120…STU-0137), and I2's is M4's (12 rows, STU-0120…STU-0127 and
+STU-0138…STU-0141). The overlap is 8 rows (STU-0120…STU-0127). No student carries
+more than one hold, so I3 fires for no one. Registration closes 2026-12-18, which
+is 28 days after the as-of date and outside I4's 14-day window, so I4 fires for
+no one.
+
+```
+18 + 12 − 8 = 22
+```
+
+For a break test, flip STU-0142's amount to 999.99 and I1 and M8 both rise by
+one. Move the close date to 2026-12-04 and I4 fires for all 42 M2 rows, so M8
+becomes 42. `data/VERIFY.md` lists the 22 ids, and `data/check_fixture.py`
+recomputes M8 and each rule's count independently.
+
 ---
 
 ## How to break these contracts on paper
@@ -292,7 +340,7 @@ to redo that count on paper.
 
 1. Open `data/VERIFY.md`, which lists the row IDs behind each planted number.
 2. Count by hand in `data/fixture.json`, where the planted counts are 119, 125, 42,
-   18, 12, and any mismatch breaks the fixture contract. `python3
+   18, 12, 22, and any mismatch breaks the fixture contract. `python3
    data/check_fixture.py` recomputes the same counts and ID lists independently.
 3. Recompute M1 as `119 / 125 − 1`. If it is not exactly −4.8 %, the planted counts
    are wrong, not the arithmetic.

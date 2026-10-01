@@ -796,14 +796,15 @@ def test_reactivating_a_dataset_restores_its_own_briefing(
     assert again_b.json()["sections"] == briefing_b.json()["sections"]
 
 
-def test_version_1_2_database_migrates_to_4_keeping_every_approval_and_briefing(
+def test_version_1_2_database_migrates_to_5_keeping_every_approval_and_briefing(
     tmp_path: Path,
 ) -> None:
     """A database at versions [1, 2] with existing approvals and briefings
-    upgrades to 4 in place: every decision and briefing row survives the two
-    rebuilds, and the new primary keys admit the same decision id approved —
-    and the same question answered — against a second dataset while staying
-    idempotent per (institution, decision/question, dataset)."""
+    upgrades to the current schema in place: every decision and briefing row
+    survives the two rebuilds, and the new primary keys admit the same
+    decision id approved — and the same question answered — against a second
+    dataset while staying idempotent per (institution, decision/question,
+    dataset). Migration 5 adds the dispatch tables alongside."""
     import sqlite3
 
     from cabinet.migrations import _migration_1, _migration_2
@@ -846,10 +847,10 @@ def test_version_1_2_database_migrates_to_4_keeping_every_approval_and_briefing(
         )
     conn.close()
 
-    store = CabinetStore(db)  # applies migrations 3 and 4 on open
+    store = CabinetStore(db)  # applies migrations 3, 4, and 5 on open
     from cabinet.migrations import recorded_versions
 
-    assert recorded_versions(store._conn) == [1, 2, 3, 4]
+    assert recorded_versions(store._conn) == [1, 2, 3, 4, 5]
     assert store.approved_decision_ids(1, dataset_id=1) == {"d1", "d2"}
     # The briefing row survived the rebuild, still pinned to dataset 1.
     assert store.latest_briefing(1, dataset_id=1) == {"question_id": "q1"}

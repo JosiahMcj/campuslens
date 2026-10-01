@@ -14,6 +14,15 @@ function isRatioRowIds(rowIds: Finding['row_ids']): rowIds is RatioRowIds {
   return !Array.isArray(rowIds)
 }
 
+/** M8 carries a per-student map of the support indicator rules that fired. */
+function hasRowRules(finding: Finding): boolean {
+  return (
+    finding.row_rules !== undefined &&
+    Object.keys(finding.row_rules).length > 0 &&
+    Array.isArray(finding.row_ids)
+  )
+}
+
 /**
  * The evidence drawer (Beat 4): a claim opened to its source fields, its
  * formula/definition, and the row IDs behind the number. Keyboard-closable
@@ -116,6 +125,8 @@ export function EvidenceDrawer({ finding, fictional, onClose }: EvidenceDrawerPr
                   rows={finding.row_ids.denominator}
                 />
               </>
+            ) : hasRowRules(finding) ? (
+              <IndicatorRows finding={finding} />
             ) : finding.row_ids.length > 0 ? (
               <RowList label="Rows" rows={finding.row_ids} />
             ) : (
@@ -127,6 +138,7 @@ export function EvidenceDrawer({ finding, fictional, onClose }: EvidenceDrawerPr
         </dl>
 
         <OfficeBreakdown finding={finding} />
+        <IndicatorBreakdown finding={finding} />
 
         <p className="hint">
           {fictional
@@ -182,5 +194,76 @@ function OfficeBreakdown({ finding }: { finding: Finding }) {
         ))}
       </tbody>
     </table>
+  )
+}
+
+/**
+ * M8's per-rule table: each named support indicator with its count and the
+ * fields it reads. The rules never combine into a total per student.
+ */
+function IndicatorBreakdown({ finding }: { finding: Finding }) {
+  const rules = finding.rules
+  if (rules === undefined || rules.length === 0) return null
+  return (
+    <table className="office-table">
+      <caption>Support indicator rules</caption>
+      <thead>
+        <tr>
+          <th scope="col">Rule</th>
+          <th scope="col">Title</th>
+          <th scope="col">Students</th>
+          <th scope="col">Fields read</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rules.map((rule) => (
+          <tr key={rule.id}>
+            <td>
+              <span className="id-badge">{rule.id}</span>
+            </td>
+            <td>{rule.title}</td>
+            <td>{rule.count}</td>
+            <td>
+              <code>{rule.fields_read.join(', ')}</code>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+/**
+ * M8's per-student list: each pseudonymous id with every rule that fired and
+ * the rule's reason, exactly as the other findings list their rows. These
+ * are people who may need support; a student has indicators when at least
+ * one rule fires.
+ */
+function IndicatorRows({ finding }: { finding: Finding }) {
+  const rules = finding.rules ?? []
+  const rowRules = finding.row_rules ?? {}
+  const rows = Array.isArray(finding.row_ids) ? finding.row_ids : []
+  return (
+    <div className="row-list-block">
+      <h3>Support indicators by student ({rows.length})</h3>
+      <ul className="indicator-rows">
+        {rows.map((row) => (
+          <li key={row}>
+            <code>{row}</code>
+            <ul>
+              {(rowRules[row] ?? []).map((ruleId) => {
+                const rule = rules.find((entry) => entry.id === ruleId)
+                return (
+                  <li key={ruleId}>
+                    <span className="id-badge">{ruleId}</span>{' '}
+                    {rule !== undefined ? rule.reason : ruleId}
+                  </li>
+                )
+              })}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }

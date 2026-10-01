@@ -6,6 +6,10 @@ values, two byte-identical runs. Every field is fictional and there is no path f
 this schema to a real student, and `data/VERIFY.md` lists the row IDs behind every
 planted number while `data/check_fixture.py` recomputes them.
 
+We amended this document on 2026-09-26 to document the fields the M8 support
+indicator rules read (new section after `counseling`). The rules add no fields to
+this schema, and no rule may read a field the schema lacks.
+
 Field groups follow ROADMAP §5, and they are `profile`, `enrollment`, `holds`,
 `advising`, `comparison`, and `counseling`. ROADMAP §4 writes `hold.*`, but the group
 is a **list**, so `hold.x` means "field `x` of an element of `holds`", and `terms`
@@ -137,6 +141,24 @@ call and logged as `data.refused`.
 
 ---
 
+## Support indicator rules (M8) and the fields they read
+
+Named, deterministic rules (`backend/src/cabinet/indicators.py`) compute the M8
+finding (CONTRACTS.md M8). The rules add no fields to this schema, and a rule may
+read only fields the schema carries. The date anchors are the same derived as-of
+date and term objects the metrics use (CONTRACTS.md §0).
+
+| Rule | Fields read |
+|---|---|
+| I1 | `profile.continuing`, `enrollment.registration_status`, `holds[].category`, `holds[].resolved`, `holds[].amount` |
+| I2 | `profile.continuing`, `enrollment.registration_status`, `advising.last_appointment_date`, `terms.in_session.start_date` |
+| I3 | `holds[].resolved`, `holds[].responsible_office` |
+| I4 | `profile.continuing`, `enrollment.registration_status`, `terms.current.registration_close_date` |
+
+No rule reads `comparison.*` or `counseling.*`.
+
+---
+
 ## Worked example record (real row STU-0120, verbatim, in M2, M3, and M4)
 
 ```json
@@ -242,6 +264,12 @@ decisions(institution_id, decision_id, approved_by, at, task,
           dataset_id, dataset_sha256,
           PRIMARY KEY (institution_id, decision_id, dataset_id))
 recordings(institution_id, role, key, json, PRIMARY KEY (institution_id, role, key))
+office_contacts(institution_id, office, email, PRIMARY KEY (institution_id, office))
+dispatches(id INTEGER PRIMARY KEY, institution_id, task_id, dataset_id,
+           to_office, channel, subject, body,
+           status CHECK (status IN ('draft', 'sent', 'failed')),
+           created_by, created_at, sent_by, sent_at, provider, provider_ref, error,
+           UNIQUE (institution_id, task_id, dataset_id))
 ```
 
 Notes on the tables.
@@ -275,6 +303,18 @@ Notes on the tables.
   Recordings and the in-process caches are keyed by institution, dataset
   sha, role, and question. The model endpoint key stays platform level in
   the operator's environment, never per user.
+- `office_contacts` is the dispatch address book, the office mailboxes an
+  approved follow-up message may be sent to. The institution's admin manages
+  it through `GET`/`PUT /admin/offices`. It holds offices only, never student
+  addresses.
+- `dispatches` holds the governed execution step, with one row per approved
+  task per dataset (the UNIQUE constraint anchors it). We compose `subject`
+  and `body` in code from the findings, never by the model and never with a
+  student identifier. `sent_by`, `sent_at`, `provider`, and `provider_ref`
+  stay NULL until a named staff member clicks Send and the provider accepts
+  the message. A sent row is never resent. With the default `outbox` provider
+  the same content also sits in `var/outbox/<institution slug>/<dispatch id>.eml`
+  (0600), and nothing leaves the machine.
 - `make backup` snapshots the database through the SQLite backup API, plus
   the dataset files and a sha256 manifest, and verifies the copy into
   `var/backups/<timestamp>/`. `make restore FROM=<dir>` runs after `make

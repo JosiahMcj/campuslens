@@ -229,7 +229,7 @@ def test_findings_object_shape_and_displays() -> None:
     fixture = load_fixture(FIXTURE_PATH)
     out = findings(fixture, fixture_path=FIXTURE_PATH)
 
-    assert set(out) == {"M1", "M2", "M3", "M4", "M5", "M6", "M7", "meta"}
+    assert set(out) == {"M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "meta"}
     for finding_id in ("M1", "M2", "M3", "M4", "M5", "M6", "M7"):
         finding = out[finding_id]
         assert finding["id"] == finding_id

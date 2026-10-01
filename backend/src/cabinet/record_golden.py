@@ -8,7 +8,12 @@ runs each analyst (Enrollment, Student Success) once through the normal path
 — gate, provider, validation — then the Chief of Staff on the analysts'
 validated texts. Each golden file is written from the validated run's own
 output, in the same JSON shape the recorder writes — never copied from
-``var/replay/``. The replay cache is irrelevant here: the recorder keeps an
+``var/replay/``. The one allowed transformation of a golden file afterwards is
+a re-key: when the findings object gains an aggregate the recorded text does
+not mention, the byte-identical text is re-validated against the new payload
+and written under the new key with ``rekeyed_from`` (the old key),
+``rekeyed_at`` and ``rekey_reason``; a new text is never written this way.
+The replay cache is irrelevant here: the recorder keeps an
 existing ``var/replay/`` file, so whatever sits there may predate this run,
 and a stale cache file whose text differs from the validated text is ignored
 by construction. The Chief of Staff's recording is keyed by the hash of

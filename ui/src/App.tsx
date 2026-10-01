@@ -3,13 +3,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   fetchCabinetBriefingOnce,
   fetchDecisions,
+  fetchDispatch,
   fetchEvents,
   fetchFindings,
   fetchQuestions,
   getFinding,
   postApprove,
   postAsk,
+  postComposeDispatch,
   postGovernanceRequest,
+  postSendDispatch,
   resetBriefingOnce,
   type ApproveResponse,
   type ApprovedQuestion,
@@ -46,7 +49,7 @@ import {
 } from './components/AccountPanels'
 import { ChatComposer } from './components/ChatComposer'
 import { ChatSidebar, type HistoryItem, type PanelId } from './components/ChatSidebar'
-import { DecisionPanel } from './components/DecisionPanel'
+import { DecisionPanel, type DispatchUiState } from './components/DecisionPanel'
 import { EvidenceDrawer } from './components/EvidenceDrawer'
 import { Institution, type ActiveDatasetMeta } from './components/Institution'
 import { LoginScreen } from './components/LoginScreen'
@@ -376,6 +379,9 @@ function BriefingPage({
   const [approvedTasks, setApprovedTasks] = useState<
     Record<string, { task: SimulatedTask; created: boolean }>
   >({})
+  // The dispatch state per decision id (the governed execution step):
+  // fetched with the decisions, refreshed after every compose or send.
+  const [dispatches, setDispatches] = useState<Record<string, DispatchUiState>>({})
   const [deniedRequest, setDeniedRequest] = useState<DeniedRequestState>({
     kind: 'idle',
   })
@@ -398,13 +404,32 @@ function BriefingPage({
     }
   }, [audit, flags, setEvents])
 
+  const loadDispatch = useCallback(
+    async (decisionId: string) => {
+      try {
+        const info = await fetchDispatch(decisionId, flags)
+        setDispatches((previous) => ({
+          ...previous,
+          [decisionId]: { info, busy: null, error: null },
+        }))
+      } catch {
+        // Non-critical; the decision panel works without the dispatch state.
+      }
+    },
+    [flags],
+  )
+
   const loadDecisions = useCallback(async () => {
     try {
-      setDecisions(await fetchDecisions(flags))
+      const next = await fetchDecisions(flags)
+      setDecisions(next)
+      // Each decision's dispatch state (draft, sent, the office mailbox)
+      // rides along so the panel renders the whole governed step on load.
+      await Promise.all(next.map((decision) => loadDispatch(decision.id)))
     } catch {
       // Non-critical; the decision panel shows its own loading note.
     }
-  }, [flags])
+  }, [flags, loadDispatch])
 
   const loadQuestions = useCallback(async () => {
     try {
@@ -444,7 +469,6 @@ function BriefingPage({
     // the analysts and the Chief of Staff run only inside POST /ask, so
     // opening the page writes no audit events. The visible states already
     // start as 'loading', and these setState calls all land after an await.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadEvents()
     void loadDecisions()
     void loadQuestions()
@@ -580,6 +604,68 @@ function BriefingPage({
     [flags, loadDecisions, loadEvents],
   )
 
+  // The governed execution step: Prepare composes the draft on the API
+  // (code, never the model) and Send is the named person's click. Both
+  // refresh the dispatch state and the audit log from the API's answer.
+  const prepareDispatch = useCallback(
+    async (decisionId: string) => {
+      setDispatches((previous) => ({
+        ...previous,
+        [decisionId]: {
+          info: previous[decisionId]?.info ?? null,
+          busy: 'compose',
+          error: null,
+        },
+      }))
+      try {
+        await postComposeDispatch(decisionId, flags)
+        await Promise.all([loadDispatch(decisionId), loadEvents()])
+      } catch (error) {
+        setDispatches((previous) => ({
+          ...previous,
+          [decisionId]: {
+            info: previous[decisionId]?.info ?? null,
+            busy: null,
+            error: `Could not prepare the message: ${errorMessage(error)}`,
+          },
+        }))
+      }
+    },
+    [flags, loadDispatch, loadEvents],
+  )
+
+  const sendDispatch = useCallback(
+    async (decisionId: string) => {
+      setDispatches((previous) => ({
+        ...previous,
+        [decisionId]: {
+          info: previous[decisionId]?.info ?? null,
+          busy: 'send',
+          error: null,
+        },
+      }))
+      try {
+        await postSendDispatch(decisionId, flags)
+        await Promise.all([loadDispatch(decisionId), loadEvents()])
+      } catch (error) {
+        // A refusal (already sent, no mailbox, not the sender's role) lands
+        // here as the API's detail sentence, shown with the draft. Refresh
+        // the dispatch state FIRST (a failed send changes the row), then put
+        // the error back on top of the fresh state.
+        await loadDispatch(decisionId)
+        setDispatches((previous) => ({
+          ...previous,
+          [decisionId]: {
+            info: previous[decisionId]?.info ?? null,
+            busy: null,
+            error: errorMessage(error),
+          },
+        }))
+      }
+    },
+    [flags, loadDispatch, loadEvents],
+  )
+
   // Beat 6(a): send the Enrollment Analyst's out-of-role request to the
   // field-request gate, show its refusal sentence, and highlight the new
   // data.refused event in the log.
@@ -616,7 +702,6 @@ function BriefingPage({
     if (act && flags.demoRefusal && !demoRefusalFired.current) {
       demoRefusalFired.current = true
       // The panel opens once, from a URL switch read on load.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (audit) setPanel('audit')
       void showDeniedRequest()
     }
@@ -831,10 +916,16 @@ function BriefingPage({
               decisions={decisions}
               events={events ?? []}
               canApprove={act}
+              role={role}
+              userEmail={session.user.email}
               approving={approving}
               approveError={approveError}
               approvedTasks={approvedTasks}
+              dispatches={dispatches}
               onApprove={(id) => void approve(id)}
+              onPrepareDispatch={(id) => void prepareDispatch(id)}
+              onSendDispatch={(id) => void sendDispatch(id)}
+              onOpenEvidence={openEvidence}
             />
             <div className="reply-actions">
               <button type="button" className="chip" onClick={() => openPanel('briefing')}>
@@ -1068,7 +1159,7 @@ function BriefingPage({
           {panel === 'figures' && ready && (
             <div className="panel-figures">
               <p className="panel-text">
-                The four headline measures. Open any one to see its formula and
+                The five headline measures. Open any one to see its formula and
                 the records behind it.
               </p>
               <StatRow findings={findingsState.data} onOpenEvidence={openEvidence} />
@@ -1106,10 +1197,16 @@ function BriefingPage({
                 decisions={decisions}
                 events={events ?? []}
                 canApprove={act}
+                role={role}
+                userEmail={session.user.email}
                 approving={approving}
                 approveError={approveError}
                 approvedTasks={approvedTasks}
+                dispatches={dispatches}
                 onApprove={(id) => void approve(id)}
+                onPrepareDispatch={(id) => void prepareDispatch(id)}
+                onSendDispatch={(id) => void sendDispatch(id)}
+                onOpenEvidence={openEvidence}
               />
             </div>
           )}

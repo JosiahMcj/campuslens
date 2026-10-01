@@ -605,6 +605,10 @@ export const EVENT_TYPES = [
   'task.created',
   // User administration (the audit vocabulary's one allowed extension).
   'admin.changed',
+  // The governed execution step: a draft composed in code, then a named
+  // person's Send (payloads carry the provider and its reference).
+  'task.dispatched',
+  'task.sent',
 ] as const
 
 export interface AuditEvent {

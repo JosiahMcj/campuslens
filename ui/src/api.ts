@@ -27,6 +27,19 @@ export interface RatioRowIds {
   denominator: string[]
 }
 
+/** One support indicator rule's evidence row (M8): the rule, its
+ * plain-language reason, the fields it reads, and its aggregate count. The
+ * per-student `row_ids` reach only the evidence drawer; models never see
+ * them (the API strips row-level detail from role-scoped findings). */
+export interface IndicatorRuleRow {
+  id: string
+  title: string
+  reason: string
+  fields_read: string[]
+  count: number
+  row_ids: string[]
+}
+
 export interface Finding {
   id: string
   title: string
@@ -38,6 +51,10 @@ export interface Finding {
   row_ids: string[] | RatioRowIds
   definition: string
   closed?: boolean
+  /** M8 only: the support indicator rules, each with count and fields read. */
+  rules?: IndicatorRuleRow[]
+  /** M8 only: pseudonymous student id -> the rule ids that fired for it. */
+  row_rules?: Record<string, string[]>
 }
 
 export interface FindingsMeta {
@@ -63,7 +80,7 @@ export function getFinding(findings: Findings, id: string): Finding | undefined 
   return undefined
 }
 
-export const FINDING_IDS = ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'] as const
+export const FINDING_IDS = ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8'] as const
 
 export interface AskTask {
   task_id: string
@@ -276,6 +293,65 @@ export async function postApprove(
 ): Promise<ApproveResponse> {
   await maybeSlow(flags)
   return apiPost<ApproveResponse>('/decisions/approve', { decision_id: decisionId })
+}
+
+// --- The governed execution step: dispatches --------------------------------
+//
+// An approved decision's follow-up can go to its responsible office, but only
+// when a named person clicks Send. The message is composed by the API from the
+// findings (never the model, never free text here); the UI shows it read-only
+// and never edits it.
+
+export interface DispatchRecord {
+  id: number
+  task_id: string
+  to_office: string
+  channel: string
+  subject: string
+  body: string
+  status: 'draft' | 'sent' | 'failed'
+  created_by: string
+  created_at: string
+  sent_by: string | null
+  sent_at: string | null
+  provider: string | null
+  provider_ref: string | null
+  error: string | null
+}
+
+/** GET /decisions/{id}/dispatch: approval, the office mailbox, and the
+ * draft or sent record when one exists. */
+export interface DispatchInfo {
+  decision_id: string
+  task_id: string
+  office: string
+  office_contact: string | null
+  approved: boolean
+  dispatch: DispatchRecord | null
+}
+
+export async function fetchDispatch(
+  decisionId: string,
+  flags: UiFlags,
+): Promise<DispatchInfo> {
+  await maybeSlow(flags)
+  return apiGet<DispatchInfo>(`/decisions/${decisionId}/dispatch`)
+}
+
+export async function postComposeDispatch(
+  decisionId: string,
+  flags: UiFlags,
+): Promise<{ dispatch: DispatchRecord; created: boolean }> {
+  await maybeSlow(flags)
+  return apiPost(`/decisions/${decisionId}/dispatch`, {})
+}
+
+export async function postSendDispatch(
+  decisionId: string,
+  flags: UiFlags,
+): Promise<{ dispatch: DispatchRecord }> {
+  await maybeSlow(flags)
+  return apiPost(`/decisions/${decisionId}/dispatch/send`, {})
 }
 
 /**

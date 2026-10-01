@@ -366,7 +366,11 @@
 
 @media (min-width: 720px) {
   .msg-body .stat-row {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .msg-body .stat-row > :last-child:nth-child(odd) {
+    grid-column: auto;
   }
 }
 

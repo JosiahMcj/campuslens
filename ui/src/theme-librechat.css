@@ -497,7 +497,12 @@ button.secondary:active {
 
 @media (min-width: 1200px) {
   .stat-row {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  /* Five across: the odd last figure no longer needs the full row. */
+  .stat-row > :last-child:nth-child(odd) {
+    grid-column: auto;
   }
 }
 

@@ -511,3 +511,36 @@ def test_record_golden_writes_from_the_validated_run_not_the_replay_cache(
     ).hexdigest()
     # The stale cache file was left alone, not propagated into data/golden.
     assert "STALE" in (replay_dir / filename).read_text(encoding="utf-8")
+
+
+def test_rekeyed_golden_files_carry_their_provenance_and_the_same_text(
+    tmp_path: Path,
+) -> None:
+    """A golden file may be re-keyed (same validated text under a new
+    findings key) only with the full marker, and the replay provider
+    surfaces the marker so a briefing can say where the text was first
+    recorded."""
+    golden = Path(__file__).resolve().parents[2] / "data" / "golden"
+    files = {
+        p.name: json.loads(p.read_text(encoding="utf-8")) for p in golden.glob("*.json")
+    }
+    rekeyed = {name: d for name, d in files.items() if "rekeyed_from" in d}
+    assert rekeyed, "the M8 re-key must be marked"
+    for name, data in rekeyed.items():
+        assert data["rekeyed_at"] and data["rekey_reason"], name
+        assert data["text"].strip(), name
+        # The marker names a real key (sha256 hex), and the superseded file
+        # is gone so replay can never find two texts for one payload.
+        assert len(data["rekeyed_from"]) == 64, name
+        assert set(data["rekeyed_from"]) <= set("0123456789abcdef"), name
+        role = name.split("-", 1)[0]
+        assert f"{role}-{data['rekeyed_from']}.json" not in files, name
+    name, data = next(iter(rekeyed.items()))
+    role = name.split("-", 1)[0]
+    findings = {"M1": {"id": "M1", "value": 1}}
+    (tmp_path / replay_filename(findings, role)).write_text(
+        json.dumps(data), encoding="utf-8"
+    )
+    explanation = ReplayProvider(replay_dirs=[tmp_path]).explain(findings, role)
+    assert explanation.recorded is True
+    assert explanation.rekeyed_from == data["rekeyed_from"]

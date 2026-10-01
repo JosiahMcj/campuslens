@@ -24,6 +24,7 @@ const findings = {
   M2: finding('M2', 'Continuing students not yet registered', '42'),
   M3: finding('M3', 'Unresolved financial holds under the threshold', '18'),
   M4: finding('M4', 'No advising appointment this term', '12'),
+  M8: finding('M8', 'Students with one or more support indicators', '22'),
 } as unknown as Findings
 
 describe('StatRow', () => {
@@ -32,8 +33,8 @@ describe('StatRow', () => {
   )
 
   it('renders one figure per headline measure, each a finding link', () => {
-    expect(html.match(/stat-figure/g)?.length).toBe(4)
-    for (const id of ['M1', 'M2', 'M3', 'M4']) {
+    expect(html.match(/stat-figure/g)?.length).toBe(5)
+    for (const id of ['M1', 'M2', 'M3', 'M4', 'M8']) {
       expect(html).toContain(`Open the evidence for finding ${id}`)
     }
   })
@@ -42,7 +43,7 @@ describe('StatRow', () => {
     const displays = [...html.matchAll(/<span class="stat-display">([^<]*)<\/span>/g)].map(
       (match) => match[1],
     )
-    expect(displays).toEqual(['−4.8 %', '42', '18', '12'])
+    expect(displays).toEqual(['−4.8 %', '42', '18', '12', '22'])
   })
 
   it('shows the finding titles beneath the numbers', () => {
@@ -54,6 +55,7 @@ describe('StatRow', () => {
       'Continuing students not yet registered',
       'Unresolved financial holds under the threshold',
       'No advising appointment this term',
+      'Students with one or more support indicators',
     ])
   })
 })

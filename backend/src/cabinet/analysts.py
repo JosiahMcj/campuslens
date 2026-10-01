@@ -31,7 +31,7 @@ bad live answer can never overwrite a good recording.
 
 The Chief of Staff (``run_chief_of_staff``) follows the same runner pattern
 with two differences. It receives the aggregate findings for the asked
-question's chief dispatch (all of M1–M7 for the default question; row IDs
+question's chief dispatch (all of M1–M8 for the default question; row IDs
 stripped, like every role) plus the two analysts' *validated*
 explanations — never student rows, never the counseling group — and its gate
 is the aggregate grant (``data.granted`` at level ``aggregate``). It writes
@@ -183,6 +183,9 @@ class AnalystResult:
     model_label: str | None
     recorded: bool
     reason: str | None
+    # From a re-keyed golden recording: the key the text was first validated
+    # under (None for a live answer or an original recording).
+    rekeyed_from: str | None = None
 
 
 def build_prompt(findings: dict[str, Any], role: str) -> tuple[str, str]:
@@ -201,8 +204,7 @@ def build_prompt(findings: dict[str, Any], role: str) -> tuple[str, str]:
     if role == CHIEF_OF_STAFF:
         aggregate = findings["findings"]
         user = (
-            brief
-            + f"Role: {role}\n"
+            brief + f"Role: {role}\n"
             f"Aggregate findings you may cite (IDs: {', '.join(sorted(aggregate))}). "
             "Every sentence must end with the IDs of every finding it uses, in one "
             "bracket group like [M3, M4], and every number must come from these "
@@ -211,21 +213,16 @@ def build_prompt(findings: dict[str, Any], role: str) -> tuple[str, str]:
             + "\nThe analysts' validated explanations (already checked against "
             "the findings; write your own sentences, do not copy their "
             "brackets):\n"
-            + json.dumps(
-                findings["analyst_explanations"], indent=2, ensure_ascii=False
-            )
+            + json.dumps(findings["analyst_explanations"], indent=2, ensure_ascii=False)
             + '\nAnswer with a JSON object only: {"executive_summary": "...", '
             '"limitations": "..."}.'
         )
         return system, user
     citable = {
-        key: value
-        for key, value in findings.items()
-        if _FINDING_KEY_RE.fullmatch(key)
+        key: value for key, value in findings.items() if _FINDING_KEY_RE.fullmatch(key)
     }
     user = (
-        brief
-        + f"Role: {role}\n"
+        brief + f"Role: {role}\n"
         f"Findings you may cite (IDs: {', '.join(sorted(citable))}). "
         "Every claim must end with its finding ID in brackets, and every "
         "number must come from these findings:\n"
@@ -391,9 +388,7 @@ def _parse_number_word_token(phrase: str) -> tuple[Decimal, bool] | None:
         if integer is None:
             return None
         digits = "".join(
-            str(_DIGIT_WORDS[w])
-            for w in re.split(r"[-\s]+", parts[1].lower())
-            if w
+            str(_DIGIT_WORDS[w]) for w in re.split(r"[-\s]+", parts[1].lower()) if w
         )
         if not digits:
             return None
@@ -565,9 +560,7 @@ def _parse_numeral_token(
     return magnitude, is_percent, False
 
 
-def _collect_allowed(
-    node: Any, numbers: set[AllowedNumber], dates: set[date]
-) -> None:
+def _collect_allowed(node: Any, numbers: set[AllowedNumber], dates: set[date]) -> None:
     """Walk a findings value, collecting what prose may use from it.
 
     Numbers keep their sign; numerals inside strings (e.g. the display
@@ -685,9 +678,7 @@ def _strip_dates(text: str, allowed_dates: set[date]) -> str:
         month = _MONTHS[match.group(1).lower().rstrip(".")]
         day = int(match.group(2))
         if not 1 <= day <= 31:
-            raise OutputRejected(
-                f"invalid date {match.group(0)!r} in the output"
-            )
+            raise OutputRejected(f"invalid date {match.group(0)!r} in the output")
         if not any(d.month == month and d.day == day for d in allowed_dates):
             raise OutputRejected(
                 f"date {match.group(0)!r} is not in the cited findings"
@@ -766,8 +757,7 @@ def _check_one_number(
         for allowed in candidates
     ):
         raise OutputRejected(
-            f"numeral {raw!r} misstates the direction of the cited "
-            f"findings ({cited})"
+            f"numeral {raw!r} misstates the direction of the cited findings ({cited})"
         )
 
 
@@ -1034,6 +1024,7 @@ def run_analyst(
             provider=explanation.provider,
             model_label=explanation.model_label,
             recorded=explanation.recorded,
+            rekeyed_from=explanation.rekeyed_from,
             reason=f"the model's output failed validation: {exc}",
         )
 
@@ -1060,6 +1051,7 @@ def run_analyst(
         provider=explanation.provider,
         model_label=explanation.model_label,
         recorded=explanation.recorded,
+        rekeyed_from=explanation.rekeyed_from,
         reason=None,
     )
 
@@ -1072,9 +1064,7 @@ def run_enrollment_analyst(
     task_id: str = "briefing-enrollment",
 ) -> AnalystResult:
     """The Enrollment Analyst, kept as a thin wrapper over ``run_analyst``."""
-    return run_analyst(
-        ENROLLMENT_ANALYST, findings_obj, provider, log, task_id=task_id
-    )
+    return run_analyst(ENROLLMENT_ANALYST, findings_obj, provider, log, task_id=task_id)
 
 
 # --- the Chief of Staff --------------------------------------------------------
@@ -1099,6 +1089,9 @@ class ChiefResult:
     recorded: bool
     reason: str | None
     text: str | None = None
+    # From a re-keyed golden recording: the key the text was first validated
+    # under (None for a live answer or an original recording).
+    rekeyed_from: str | None = None
 
 
 # A sentence ends at terminal punctuation followed by whitespace and the start
@@ -1203,7 +1196,7 @@ def chief_received(
     the two analysts'
     *validated* explanation texts. Never student rows, never the counseling
     group. The aggregate findings are the question's chief dispatch (all of
-    M1–M7 for the default question); a question other than the default also
+    M1–M8 for the default question); a question other than the default also
     carries itself under ``QUESTION_KEY``, so its id is part of the
     replay/recording hash. This whole object is the replay/recording key, so
     it stays stable when the analysts' texts are replayed from the golden
@@ -1235,8 +1228,7 @@ def chief_aggregate_fields(received: dict[str, Any]) -> list[str]:
         source_fields = finding.get("source_fields")
         if isinstance(source_fields, list):
             fields.update(
-                normalize_field(str(field).replace("[]", ""))
-                for field in source_fields
+                normalize_field(str(field).replace("[]", "")) for field in source_fields
             )
     return sorted(fields)
 
@@ -1326,6 +1318,7 @@ def run_chief_of_staff(
             provider=explanation.provider,
             model_label=explanation.model_label,
             recorded=explanation.recorded,
+            rekeyed_from=explanation.rekeyed_from,
             reason=f"the model's output failed validation: {exc}",
         )
 
@@ -1342,6 +1335,7 @@ def run_chief_of_staff(
         provider=explanation.provider,
         model_label=explanation.model_label,
         recorded=explanation.recorded,
+        rekeyed_from=explanation.rekeyed_from,
         reason=None,
         text=explanation.text,
     )

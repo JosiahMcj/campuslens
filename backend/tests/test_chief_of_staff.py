@@ -126,7 +126,7 @@ class PartiallyDownProvider(FakeProvider):
 def test_chief_receives_aggregates_and_validated_texts_only(
     findings_obj: dict[str, Any], log: AuditLog
 ) -> None:
-    """The exact received keys: the aggregate findings M1–M7 and the two
+    """The exact received keys: the aggregate findings M1–M8 and the two
     analysts' validated explanations. No row IDs, no counseling fields."""
     provider = StubProvider(VALID_CHIEF_JSON)
     result = run_chief_of_staff(
@@ -136,7 +136,16 @@ def test_chief_receives_aggregates_and_validated_texts_only(
     received = provider.received
     assert received is not None
     assert set(received) == {"findings", "analyst_explanations"}
-    assert sorted(received["findings"]) == ["M1", "M2", "M3", "M4", "M5", "M6", "M7"]
+    assert sorted(received["findings"]) == [
+        "M1",
+        "M2",
+        "M3",
+        "M4",
+        "M5",
+        "M6",
+        "M7",
+        "M8",
+    ]
     assert sorted(received["analyst_explanations"]) == [
         ENROLLMENT_ANALYST,
         STUDENT_SUCCESS_ANALYST,
@@ -144,6 +153,7 @@ def test_chief_receives_aggregates_and_validated_texts_only(
     dumped = json.dumps(received)
     assert "row_ids" not in dumped
     assert "hold_row_ids" not in dumped
+    assert "row_rules" not in dumped
     assert "STU-" not in dumped
     assert "PRI-" not in dumped
     assert "counseling" not in dumped
@@ -423,7 +433,16 @@ def test_ask_runs_the_whole_cabinet(
     assert sections["2"]["provenance"]["source"] == ENROLLMENT_ANALYST
     assert sections["3"]["provenance"]["source"] == STUDENT_SUCCESS_ANALYST
     # Sections 4–6 are computed in code, never model-written.
-    assert set(sections["4"]["findings"]) == {"M1", "M2", "M3", "M4", "M5", "M6", "M7"}
+    assert set(sections["4"]["findings"]) == {
+        "M1",
+        "M2",
+        "M3",
+        "M4",
+        "M5",
+        "M6",
+        "M7",
+        "M8",
+    }
     assert sections["5"]["actions"]
     assert all(a["office"] for a in sections["5"]["actions"])
     assert len(sections["6"]["decisions"]) == 1

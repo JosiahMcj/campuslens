@@ -1,0 +1,11 @@
+{
+  "provider": "chat",
+  "model_label": "live model",
+  "role": "student_success_analyst",
+  "findings_sha256": "8492dcaad4832fd913fd83e99406afb224efe7e1201fa47f344633766cfaaa40",
+  "recorded_at": "2026-09-25T02:26:37.614800+00:00",
+  "text": "Among continuing students who have not registered, 18 have an unresolved financial hold under $1,000 [M3], and 12 have had no advising appointment this term [M4]. Across all current-term students, the Bursar is responsible for 24 of the 28 unresolved holds [M5]. The remaining offices hold far fewer: Library 1, Registrar 2, and Student Life 1 [M5].",
+  "rekeyed_from": "e413c070beca60515044226e04de3ebecf3f15ca41fe9f9a22ef1ef39d49db6f",
+  "rekeyed_at": "2026-09-26T09:36:12.484305+00:00",
+  "rekey_reason": "findings object gained M8, an aggregate the recorded text does not mention; text byte-identical and re-validated"
+}

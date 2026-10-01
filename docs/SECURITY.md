@@ -64,8 +64,8 @@ and never logs it, and further users come from `make user EMAIL=… ROLE=…`.
 
 **Authorization.** There are four roles, where `admin` can do everything and
 `executive` can ask, approve, read, and read the audit log, and the president
-runs the audit-log walkthrough. `staff` reads briefings and findings, with no
-approval and no audit log, and `reviewer` reads everything including the audit
+runs the audit-log walkthrough. `staff` reads briefings and findings and prepares
+and sends approved office messages, with no approval and no audit log, and `reviewer` reads everything including the audit
 log and changes nothing. Every route except `GET /health`, `GET /ready`, and `POST
 /auth/login` requires a session, and each route has an explicit role allow-list
 in `cabinet/security.py` (`ROUTE_ROLES`). No session is a 401, and the wrong
@@ -109,13 +109,17 @@ modification of retained events, but it cannot detect deletion of whole
 trailing events, so the moved-aside and `.torn-*` files matter and the app
 never deletes them. The torn-tail repair removes only bytes that were never a
 complete event, namely a killed process's partial final line, so it cannot
-break the chain. The vocabulary is twelve frozen event types, where the
+break the chain. The vocabulary is fifteen frozen event types, where the
 original eight are `question.asked`, `task.assigned`, `data.granted`,
 `data.refused`, `finding.produced`, `briefing.produced`, `decision.approved`,
 and `task.created`, and dataset administration added `dataset.uploaded`,
-`dataset.activated`, and `dataset.deleted`. The one allowed extension is
-`admin.changed`, which covers user creation, disable and enable, and role
-changes, with the payload `action`, target user id, `role`, and `by`.
+`dataset.activated`, and `dataset.deleted`. User administration added
+`admin.changed`, which covers user creation, disable and enable, role changes,
+and now office address book changes, with the payload `action`, target user id,
+`role`, and `by`. The dispatch events are `task.dispatched`, `task.sent`, and
+`task.send_failed` (a provider refusal or failure, with the error and never the
+message body), and their actor is the named person who composed or sent the
+message.
 
 **User administration.** Institution admins manage their institution's users
 from the Institution screen or `/admin/users`, which requires the admin role
@@ -126,6 +130,32 @@ keeps only its scrypt hash, which is never logged, and no audit payload carries
 it. An admin cannot disable their own account, and an institution's last
 enabled admin can be neither disabled nor demoted. A disabled account cannot
 log in, and its existing session is rejected on the next request.
+
+**Dispatches, the governed execution step.** An approved leadership decision
+can be sent to its responsible office, and only by a named person. We compose
+the message in code from the findings (`cabinet.questions.compose_dispatch`,
+one template per decision id), so no model writes it and no student identifier
+can enter it. `GET /decisions/{id}/dispatch` lets every role read the draft.
+`POST /decisions/{id}/dispatch` lets staff, executive, and admin compose the
+draft, with a loud 409 before approval. `POST /decisions/{id}/dispatch/send`
+is for staff and admin only, and an executive's Send answers a loud 403 with a
+`data.refused` event. Send carries the same CSRF token as every POST and sits
+under the tighter rate bucket that also paces `POST /ask`. The recipient is
+always an office mailbox from the institution's address book (`GET`/`PUT
+/admin/offices`, admin only), never a student address, and an office without a
+configured mailbox makes Send refuse with a clear message. There is one
+dispatch per task per dataset, and a second Send is a 409 that returns the
+earlier record. The outbound provider (`cabinet.outbound`) is `outbox` by
+default. It writes the message to
+`var/outbox/<institution slug>/<dispatch id>.eml` (0600) and reports it sent with `provider=outbox`, so nothing leaves
+the machine. `CABINET_OUTBOUND=smtp` delivers for real with stdlib smtplib
+(STARTTLS, or SMTPS on port 465), and we enable it only when every setting is
+present, namely `CABINET_SMTP_HOST`, `CABINET_SMTP_PORT`, `CABINET_SMTP_FROM`,
+and `CABINET_SMTP_PASSWORD_FILE`. The password is read from the named file,
+never from an environment value, so it cannot leak through a process listing.
+In production a missing setting is a one-line startup refusal. A failed send
+is recorded on the dispatch row (`status=failed` plus the error) and can be
+retried.
 
 **Secrets and configuration.** `CABINET_SECRET_KEY`, at least 32 bytes, signs
 sessions. We keep the model key in the environment or `cabinet.local.env`, which
@@ -174,8 +204,10 @@ clean, with no advisories and none accepted.
   exist yet, so an admin recreates a user, from the CLI or the Institution
   screen, and hands over the new one-time password.
 - **Per-user audit attribution of business events.** Who asked and who approved
-  still records the cabinet role as actor, and per-user actors on those events
-  are a follow-up.
+  still records the cabinet role as actor. The dispatch events are the exception
+  and the direction of travel. `task.dispatched` and `task.sent` record the
+  acting user's email, because a named person sending is the point of the
+  feature.
 
 ## Data-handling posture
 

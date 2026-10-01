@@ -24,6 +24,8 @@ For each institution we hold the following.
   and what was approved.
 - The briefings the service produces, the decisions an executive approves, and recordings
   of validated analyst replies used for replay.
+- The office mailboxes the institution's administrator configures for follow-up
+  messages, and the dispatch records of messages sent to those offices.
 
 Every new institution also starts with a fictional demonstration dataset, which is
 labelled fictional in every response and contains no real students.
@@ -53,6 +55,15 @@ The institution's own users see the service by role. Administrators manage users
 datasets, and executives ask questions and approve decisions. Staff read briefings and
 findings. Reviewers read everything, including the audit log, and change nothing.
 
+The briefing's support indicators are named rules computed in code, not models. Each
+rule is a simple test, for example an unresolved financial hold under a defined amount
+or no advising appointment this term, and each rule carries a plain-language reason
+that names the fields it read. Only the aggregate count and the per-rule counts may
+leave the server for the configured model endpoint, like the other findings. The
+per-student list of which rules fired never goes to a model. It appears only in the
+evidence drawer, which every signed-in role may read, and it carries pseudonymous
+identifiers only.
+
 We can see the data ourselves for maintenance and backups. That is the full list.
 
 ## What leaves the server
@@ -64,6 +75,19 @@ Student rows never leave. The counseling group never leaves.
 The endpoint's own retention terms apply to what it receives, and we name the endpoint to
 each institution on request. The key for the endpoint is ours as operators, never per
 user, and it never appears in logs, responses, recordings, or the repository.
+
+One more thing can leave, and only through a person's click. When an executive approves a
+leadership decision, a staff member may send the responsible office a message about the
+follow-up. The software writes the message from the verified findings, never the model,
+and it names offices, decisions, and aggregate numbers only. It never contains a student
+identifier or a student row. The recipient is an office mailbox the institution's
+administrator configured, never a student address. By default the message does not even
+leave the machine. The built-in outbox writes it to a file on the server, and a person
+delivers it. Real email delivery over SMTP stays off unless we turn it on.
+
+A dispatch record keeps the subject and body that were sent, the office it went to, who
+composed it, who sent it and when, and the delivery provider's reference. We keep these
+records because they are the proof that a person, not the software, sent each message.
 
 ## Retention and deletion
 

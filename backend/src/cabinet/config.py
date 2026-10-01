@@ -62,6 +62,13 @@ KNOWN_VARIABLES: tuple[str, ...] = (
     "CABINET_ETHOS_RESOURCES",
     "CABINET_ETHOS_TIMEZONE",
     "CABINET_EXPORTS_DIR",
+    # the outbound provider for dispatches (cabinet.outbound)
+    "CABINET_OUTBOUND",
+    "CABINET_SMTP_HOST",
+    "CABINET_SMTP_PORT",
+    "CABINET_SMTP_FROM",
+    "CABINET_SMTP_USER",
+    "CABINET_SMTP_PASSWORD_FILE",
     # rate limits
     ENV_RATE_GENERAL,
     ENV_RATE_ASK,

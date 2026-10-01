@@ -21,13 +21,30 @@ the seven-section briefing. The golden replay runs for both approved questions a
 all three roles are committed in `data/golden/`. Sign-in with four roles and
 institution accounts with validated dataset upload are live as well. The human panel approves the leadership decision and
 records it, and the audit log shows every grant and every refusal, including both
-refusal demos. Above the briefing, four stat tiles show M1 to M4, and each tile
-opens its own evidence drawer. Every analyst-written section carries an honest
+refusal demos. Beside the briefing, five figures show M1 to M4 and M8, and each
+one opens its own evidence drawer. Every analyst-written section carries an honest
 source label, "Written by the role (recorded live run)" on replay and "(live
 model)" live. We verified the whole system on the real path against the Day-8
 matrix in `docs/VERIFICATION.md`, and all eight rows pass. The six-beat demo timed
 at 204.9 seconds against the four-minute limit. We documented how to run, stop,
 replay, and reset any of it in `RUNBOOK.md`.
+
+An approved leadership decision can also go to its responsible office, and only
+a named person can send it. The software composes the message from the verified
+findings, never the model and never with a student identifier. A staff member
+reviews it and clicks Send, and the default outbound provider writes it to a local
+outbox file, so nothing leaves the machine. Real SMTP delivery stays off unless
+someone configures it on purpose (`RUNBOOK.md`, "Sending an approved follow-up").
+
+The briefing also reports M8, students with one or more support indicators
+(`backend/src/cabinet/indicators.py`, contract in `CONTRACTS.md`). Each indicator
+is a named, deterministic rule with a plain-language reason. The four rules test
+for an unresolved financial hold under $1,000, no advising appointment this term,
+unresolved holds at more than one office, or registration closing within 14 days.
+A student has indicators when at least one rule fires. The rules never combine
+into a weighting or sum, no model ever sees the per-student detail, and the
+evidence drawer shows exactly which rules fired for each pseudonymous id, with the
+rule's reason.
 
 What is left is rehearsal. The demo script and the offline deck in
 `docs/backup-demo.html` are frozen, and the remaining items are the timed
@@ -124,7 +141,7 @@ The dashboard's three states can be induced on demand with query switches on
   whose analyst section is unavailable (the provider answered 503 or
   `{available:false}`).
 
-`?evidence=M2` deep-links to the evidence drawer for a finding (M1-M7), and `#audit-log`
+`?evidence=M2` deep-links to the evidence drawer for a finding (M1-M8), and `#audit-log`
 deep-links to the audit log.
 
 The UI is also an installable web app, and it installs to a home screen. We
@@ -202,7 +219,10 @@ findings it receives.
 down. A cache miss is `ProviderUnavailable`, never a network call. Search order is
 `CABINET_REPLAY_DIR` if set, then `var/replay/`, then the committed golden run in
 `data/golden/`. Only validated output is ever recorded, and an existing recording is
-never overwritten unless `CABINET_RECORD=overwrite`. We recorded the golden run once with
+never overwritten unless `CABINET_RECORD=overwrite`. We may re-key a golden file when
+the findings object gains an aggregate the recorded text does not mention. In that
+case we write the same text, re-validated, under the new key with a `rekeyed_from`
+marker, and never a new text. We recorded the golden run once with
 `make record-golden` (see `RUNBOOK.md`), and afterwards this works.
 
 ```bash
