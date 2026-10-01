@@ -1,17 +1,23 @@
-import { useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 import { canSeeInstitution, roleDisplayName, type Session } from '../auth'
 import { currentTheme, setTheme, type Theme } from '../theme'
+import { GlideGroup } from './GlideGroup'
 import {
-  ChatIcon,
-  CloseIcon,
-  DocumentIcon,
-  LogIcon,
+  AuditNavIcon,
+  BriefingNavIcon,
+  CheckSmallIcon,
+  ChevronDownIcon,
+  CrossSmallIcon,
+  EditIcon,
+  GearIcon,
   MoonIcon,
-  PlusIcon,
-  SettingsIcon,
+  SearchIcon,
+  SidebarToggleIcon,
+  SignOutIcon,
   SunIcon,
-  TeamIcon,
+  TeamNavIcon,
 } from './icons'
 
 export type PanelId = 'briefing' | 'agents' | 'audit'
@@ -33,6 +39,7 @@ interface ChatSidebarProps {
    * read it; the AI employees once a run exists). */
   panels: PanelId[]
   activePanel: PanelId | null
+  /** Small screens: the off-canvas drawer is open. */
   open: boolean
   onNewQuestion: (() => void) | null
   onSelectHistory: (id: number) => void
@@ -42,24 +49,159 @@ interface ChatSidebarProps {
   onClose: () => void
 }
 
-const PANEL_LABELS: Record<PanelId, string> = {
-  briefing: 'Full briefing',
-  agents: 'AI employees',
-  audit: 'Audit log',
+const PANEL_ROWS: Record<PanelId, { label: string; icon: ReactNode }> = {
+  briefing: { label: 'Full briefing', icon: <BriefingNavIcon /> },
+  agents: { label: 'AI employees', icon: <TeamNavIcon /> },
+  audit: { label: 'Audit log', icon: <AuditNavIcon /> },
 }
 
-const PANEL_ICONS: Record<PanelId, () => React.JSX.Element> = {
-  briefing: DocumentIcon,
-  agents: TeamIcon,
-  audit: LogIcon,
+const SMALL_SCREEN = '(max-width: 899px)'
+
+function isSmallScreen(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia(SMALL_SCREEN).matches
+}
+
+/** One primary navigation row: icon, label, optional trailing note. */
+function RailButton({
+  icon,
+  label,
+  active = false,
+  note,
+  onClick,
+}: {
+  icon: ReactNode
+  label: string
+  active?: boolean
+  note?: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      data-row
+      type="button"
+      className="rail-row"
+      aria-current={active ? 'true' : undefined}
+      title={label}
+      onClick={onClick}
+    >
+      <span className="rail-icon">{icon}</span>
+      <span className="sidebar-copy rail-label">{label}</span>
+      {note !== undefined && <span className="sidebar-copy rail-note">{note}</span>}
+    </button>
+  )
 }
 
 /**
- * The chat sidebar, LibreChat style: the brand and a New question button on
- * top, this session's questions as the history list, one-click panels for
- * everything that is not the conversation, and the account (theme switch,
- * Institution for an admin, sign out) pinned to the bottom. Below 900 px it
- * is an off-canvas drawer opened from the top bar.
+ * The workspace menu, opened from the sidebar's top row: the institution
+ * (checked, the only one), who is signed in, Institution settings for an
+ * admin, and sign out. Rendered into <body> so the collapsing sidebar never
+ * clips it; positioned under its trigger through the style object (CSSOM).
+ */
+function WorkspaceMenu({
+  anchor,
+  session,
+  onClose,
+  onNavigate,
+  onSignOut,
+}: {
+  anchor: HTMLElement
+  session: Session
+  onClose: () => void
+  onNavigate: (path: string) => void
+  onSignOut: () => void
+}) {
+  const menuRef = useRef<HTMLDivElement>(null)
+  const institutionName = session.user.institution?.name ?? 'Your institution'
+
+  useLayoutEffect(() => {
+    const menu = menuRef.current
+    if (menu === null) return
+    const rect = anchor.getBoundingClientRect()
+    menu.style.top = `${rect.bottom + 6}px`
+    menu.style.left = `${rect.left}px`
+  }, [anchor])
+
+  useEffect(() => {
+    const close = (event: PointerEvent) => {
+      const target = event.target as Element
+      if (!target.closest('[data-workspace-trigger]') && !target.closest('[data-workspace-menu]')) {
+        onClose()
+      }
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('pointerdown', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
+  return createPortal(
+    <div ref={menuRef} className="workspace-menu" data-workspace-menu role="menu">
+      <GlideGroup className="menu-glide">
+        <button data-row type="button" role="menuitem" className="menu-row menu-row-tall" onClick={onClose}>
+          <span className="menu-monogram" aria-hidden="true">
+            GE
+          </span>
+          <span className="menu-label menu-label-strong">{institutionName}</span>
+          <span className="menu-check">
+            <CheckSmallIcon />
+          </span>
+        </button>
+        <div className="menu-rule" />
+        <p className="menu-account">
+          {session.user.email}
+          <span>{roleDisplayName(session.user.role)}</span>
+        </p>
+        {canSeeInstitution(session.user.role) && (
+          <button
+            data-row
+            type="button"
+            role="menuitem"
+            className="menu-row"
+            onClick={() => {
+              onClose()
+              onNavigate('/institution')
+            }}
+          >
+            <span className="menu-icon">
+              <GearIcon />
+            </span>
+            <span className="menu-label">Institution settings</span>
+          </button>
+        )}
+        <div className="menu-rule" />
+        <button
+          data-row
+          type="button"
+          role="menuitem"
+          className="menu-row"
+          onClick={() => {
+            onClose()
+            onSignOut()
+          }}
+        >
+          <span className="menu-icon">
+            <SignOutIcon />
+          </span>
+          <span className="menu-label">Sign out</span>
+        </button>
+      </GlideGroup>
+    </div>,
+    document.body,
+  )
+}
+
+/**
+ * The sidebar navigation, after the reference design: a compact workspace
+ * switcher with a collapse control, the primary rows (New question and the
+ * one-click panels) with a gliding hover highlight, this session's
+ * questions with an expanding search, and one footer action (the theme).
+ * Collapsed, it narrows to a 52 px icon rail with every icon in place.
+ * Below 900 px it is an off-canvas drawer, always expanded.
  */
 export function ChatSidebar({
   session,
@@ -76,128 +218,221 @@ export function ChatSidebar({
   onSignOut,
   onClose,
 }: ChatSidebarProps) {
+  const [collapsed, setCollapsed] = useState(false)
+  // The open workspace menu's trigger (null while closed).
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [listOpen, setListOpen] = useState(true)
+  const [query, setQuery] = useState('')
   const [theme, setThemeState] = useState<Theme>(currentTheme)
+  const searchRef = useRef<HTMLInputElement>(null)
+
   const nextTheme: Theme = theme === 'dark' ? 'light' : 'dark'
-  const initial = session.user.email.trim().charAt(0).toUpperCase()
-  const institutionName = session.user.institution?.name ?? null
+  const needle = query.trim().toLowerCase()
+  const visibleHistory = [...history]
+    .reverse()
+    .filter((item) => item.question.toLowerCase().includes(needle))
+
+  useEffect(() => {
+    if (searchOpen) searchRef.current?.focus()
+  }, [searchOpen])
+
+  const closeSearch = () => {
+    setSearchOpen(false)
+    setQuery('')
+  }
+
+  const collapse = () => {
+    if (isSmallScreen()) {
+      onClose()
+      return
+    }
+    setCollapsed(true)
+    setMenuAnchor(null)
+    closeSearch()
+  }
 
   return (
-    <aside className={`chat-sidebar${open ? ' open' : ''}`} aria-label="Cabinet sidebar">
-      <div className="sidebar-top">
-        <div className="sidebar-brand">
-          <span className="brand-mark" aria-hidden="true">
-            GE
-          </span>
-          <span className="brand-text">
-            <span className="brand-name">Golden Eagle AI Cabinet</span>
-            {institutionName !== null && (
-              <span className="brand-sub">{institutionName}</span>
-            )}
-          </span>
+    <aside
+      className={`chat-sidebar${open ? ' open' : ''}`}
+      data-collapsed={collapsed ? 'true' : 'false'}
+      aria-label="Cabinet navigation"
+    >
+      <div className="sidebar-inner">
+        <div className="sidebar-head">
           <button
             type="button"
-            className="icon-button sidebar-close"
-            aria-label="Close sidebar"
-            onClick={onClose}
+            data-workspace-trigger
+            className="workspace-control"
+            aria-haspopup="menu"
+            aria-expanded={menuAnchor !== null}
+            aria-hidden={collapsed}
+            tabIndex={collapsed ? -1 : 0}
+            onClick={(event) => {
+              const trigger = event.currentTarget
+              setMenuAnchor((current) => (current === null ? trigger : null))
+            }}
           >
-            <CloseIcon />
+            <span className="workspace-logo" aria-hidden="true">
+              GE
+            </span>
+            <span className="sidebar-copy workspace-name">Golden Eagle</span>
+            <span className="sidebar-copy workspace-chevron">
+              <ChevronDownIcon />
+            </span>
+          </button>
+          {menuAnchor !== null && (
+            <WorkspaceMenu
+              anchor={menuAnchor}
+              session={session}
+              onClose={() => setMenuAnchor(null)}
+              onNavigate={onNavigate}
+              onSignOut={onSignOut}
+            />
+          )}
+          <button
+            type="button"
+            className="head-button collapse-control"
+            aria-label="Collapse sidebar"
+            title="Collapse sidebar"
+            aria-hidden={collapsed}
+            tabIndex={collapsed ? -1 : 0}
+            onClick={collapse}
+          >
+            <span className="collapse-icon-wide">
+              <SidebarToggleIcon />
+            </span>
+            <span className="collapse-icon-small">
+              <CrossSmallIcon size={18} />
+            </span>
+          </button>
+          <button
+            type="button"
+            className="head-button expand-control"
+            aria-label="Expand sidebar"
+            title="Expand sidebar"
+            aria-hidden={!collapsed}
+            tabIndex={collapsed ? 0 : -1}
+            onClick={() => setCollapsed(false)}
+          >
+            <SidebarToggleIcon />
           </button>
         </div>
-        {onNewQuestion !== null && (
-          <button type="button" className="sidebar-new" onClick={onNewQuestion}>
-            <PlusIcon />
-            New question
-          </button>
-        )}
-      </div>
 
-      <nav className="sidebar-scroll" aria-label="Cabinet">
-        <p className="sidebar-label">This session</p>
-        {history.length === 0 ? (
-          <p className="sidebar-empty">Questions you ask appear here.</p>
-        ) : (
-          <ul className="sidebar-list">
-            {history.map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  className="sidebar-item"
-                  onClick={() => onSelectHistory(item.id)}
-                  title={item.question}
-                >
-                  <ChatIcon />
-                  <span className="sidebar-item-text">{item.question}</span>
-                  {item.refused && <span className="sidebar-tag">Refused</span>}
-                  {item.restored && <span className="sidebar-tag">Last</span>}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <GlideGroup className="rail-group">
+          {onNewQuestion !== null && (
+            <RailButton icon={<EditIcon />} label="New question" onClick={onNewQuestion} />
+          )}
+          {panels.map((panel) => (
+            <RailButton
+              key={panel}
+              icon={PANEL_ROWS[panel].icon}
+              label={PANEL_ROWS[panel].label}
+              active={activePanel === panel}
+              onClick={() => onOpenPanel(panel)}
+            />
+          ))}
+        </GlideGroup>
 
-        <p className="sidebar-label">Open</p>
-        <ul className="sidebar-list">
-          {panels.map((panel) => {
-            const Icon = PANEL_ICONS[panel]
-            return (
-              <li key={panel}>
-                <button
-                  type="button"
-                  className="sidebar-item"
-                  aria-pressed={activePanel === panel}
-                  onClick={() => onOpenPanel(panel)}
-                >
-                  <Icon />
-                  <span className="sidebar-item-text">{PANEL_LABELS[panel]}</span>
-                </button>
-              </li>
-            )
-          })}
-          {canSeeInstitution(session.user.role) && (
-            <li>
+        <div className="sidebar-recents">
+          <div className="sidebar-copy recents-head">
+            <button
+              type="button"
+              className={`recents-title${searchOpen ? ' is-hidden' : ''}`}
+              aria-expanded={listOpen}
+              aria-hidden={searchOpen}
+              tabIndex={searchOpen ? -1 : 0}
+              onClick={() => setListOpen((value) => !value)}
+            >
+              <span className={`recents-chevron${listOpen ? '' : ' closed'}`}>
+                <ChevronDownIcon />
+              </span>
+              Questions
+            </button>
+            <button
+              type="button"
+              className={`head-button recents-search${searchOpen ? ' is-hidden' : ''}`}
+              aria-label="Search questions"
+              aria-expanded={searchOpen}
+              tabIndex={searchOpen ? -1 : 0}
+              onClick={() => {
+                setListOpen(true)
+                setSearchOpen(true)
+              }}
+            >
+              <SearchIcon />
+            </button>
+            <div className={`recents-field${searchOpen ? ' open' : ''}`}>
+              <span className="recents-field-icon">
+                <SearchIcon size={15} />
+              </span>
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') closeSearch()
+                }}
+                placeholder="Search questions"
+                aria-label="Search this session's questions"
+                tabIndex={searchOpen ? 0 : -1}
+              />
               <button
                 type="button"
-                className="sidebar-item"
-                onClick={() => onNavigate('/institution')}
+                className="head-button"
+                aria-label="Close search"
+                tabIndex={searchOpen ? 0 : -1}
+                onClick={closeSearch}
               >
-                <SettingsIcon />
-                <span className="sidebar-item-text">Institution settings</span>
+                <CrossSmallIcon />
               </button>
-            </li>
+            </div>
+          </div>
+
+          {listOpen && (
+            <GlideGroup className="rail-group">
+              {visibleHistory.map((item) => (
+                <button
+                  key={item.id}
+                  data-row
+                  type="button"
+                  className="rail-row recent-row"
+                  title={item.question}
+                  onClick={() => onSelectHistory(item.id)}
+                >
+                  <span className="sidebar-copy rail-label">{item.question}</span>
+                  {item.refused && <span className="sidebar-copy rail-note">Refused</span>}
+                  {item.restored && <span className="sidebar-copy rail-note">Last</span>}
+                </button>
+              ))}
+              {history.length === 0 && (
+                <p className="sidebar-copy recents-empty">Questions you ask appear here.</p>
+              )}
+              {history.length > 0 && needle !== '' && visibleHistory.length === 0 && (
+                <p className="sidebar-copy recents-empty">No questions found</p>
+              )}
+            </GlideGroup>
           )}
-        </ul>
+        </div>
 
-        {datasetName !== null && (
-          <p className="sidebar-dataset">
-            Dataset: {datasetName}
-            {fictional && <span className="sidebar-tag">Demo data</span>}
-          </p>
-        )}
-      </nav>
-
-      <div className="sidebar-account">
-        <span className="account-avatar" aria-hidden="true">
-          {initial}
-        </span>
-        <span className="account-text">
-          <span className="account-email">{session.user.email}</span>
-          <span className="account-role">{roleDisplayName(session.user.role)}</span>
-        </span>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label={`Switch to ${nextTheme} theme`}
-          title={`Switch to ${nextTheme} theme`}
-          onClick={() => {
-            setTheme(nextTheme)
-            setThemeState(nextTheme)
-          }}
-        >
-          {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
-        </button>
-        <button type="button" className="account-signout" onClick={onSignOut}>
-          Sign out
-        </button>
+        <div className="sidebar-copy sidebar-foot">
+          {datasetName !== null && (
+            <p className="foot-dataset">
+              {fictional ? 'Demo data' : 'Dataset'}: {datasetName}
+            </p>
+          )}
+          <button
+            type="button"
+            className="foot-button"
+            onClick={() => {
+              setTheme(nextTheme)
+              setThemeState(nextTheme)
+            }}
+          >
+            {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+            {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+          </button>
+        </div>
       </div>
     </aside>
   )

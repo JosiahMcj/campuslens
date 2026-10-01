@@ -127,3 +127,118 @@ export function SettingsIcon() {
 export function ChatIcon() {
   return <Glyph d="M2.5 3.5h11v7.25H7L4 13.25v-2.5H2.5z" />
 }
+
+/* The sidebar navigation's icons, in the reference's round, 2px-stroke style
+   (drawn here; the reference's icon set is a paid package). */
+function NavGlyph({ children, size = 18 }: { children: React.ReactNode; size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  )
+}
+
+export function EditIcon() {
+  return (
+    <NavGlyph>
+      <path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5" />
+      <path d="M17.6 3.4a2 2 0 0 1 2.9 2.9L12 14.8l-3.5.7.7-3.5z" />
+    </NavGlyph>
+  )
+}
+
+export function SearchIcon({ size = 16 }: { size?: number }) {
+  return (
+    <NavGlyph size={size}>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m20 20-4.2-4.2" />
+    </NavGlyph>
+  )
+}
+
+export function ChevronDownIcon({ size = 16 }: { size?: number }) {
+  return (
+    <NavGlyph size={size}>
+      <path d="m8 10 4 4 4-4" />
+    </NavGlyph>
+  )
+}
+
+export function SidebarToggleIcon() {
+  return (
+    <NavGlyph>
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+      <path d="M9.5 4.5v15M16 10l-2 2 2 2" />
+    </NavGlyph>
+  )
+}
+
+export function CheckSmallIcon() {
+  return (
+    <NavGlyph>
+      <path d="m7.5 12.5 3 3 6-7" />
+    </NavGlyph>
+  )
+}
+
+export function SignOutIcon({ size = 16 }: { size?: number }) {
+  return (
+    <NavGlyph size={size}>
+      <path d="M14 4.5h3.5a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H14" />
+      <path d="M10 8l-4 4 4 4M6 12h9" />
+    </NavGlyph>
+  )
+}
+
+export function CrossSmallIcon({ size = 16 }: { size?: number }) {
+  return (
+    <NavGlyph size={size}>
+      <path d="m8 8 8 8M16 8l-8 8" />
+    </NavGlyph>
+  )
+}
+
+export function BriefingNavIcon() {
+  return (
+    <NavGlyph>
+      <path d="M7 3.5h7l4 4V19a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19V5A1.5 1.5 0 0 1 7.5 3.5" />
+      <path d="M13.5 3.5v4h4M9.5 12.5h5M9.5 16h5" />
+    </NavGlyph>
+  )
+}
+
+export function TeamNavIcon() {
+  return (
+    <NavGlyph>
+      <circle cx="9" cy="8.5" r="3" />
+      <path d="M3.5 19c.5-3 2.7-5 5.5-5s5 2 5.5 5M16 5.8a3 3 0 0 1 0 5.4M17.5 14.3c1.8.6 2.8 2.3 3 4.7" />
+    </NavGlyph>
+  )
+}
+
+export function AuditNavIcon() {
+  return (
+    <NavGlyph>
+      <path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" />
+    </NavGlyph>
+  )
+}
+
+export function GearIcon({ size = 16 }: { size?: number }) {
+  return (
+    <NavGlyph size={size}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
+    </NavGlyph>
+  )
+}

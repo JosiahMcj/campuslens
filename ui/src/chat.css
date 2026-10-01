@@ -56,31 +56,7 @@
   background: var(--surface-hover);
 }
 
-/* --- Sidebar ------------------------------------------------------------------*/
-
-.chat-sidebar {
-  display: flex;
-  flex-direction: column;
-  flex: none;
-  width: 16.5rem;
-  height: 100%;
-  background: var(--rail);
-  border-right: 1px solid var(--rule);
-  font-size: 0.9rem;
-}
-
-.sidebar-top {
-  padding: 12px 12px 4px;
-}
-
-.sidebar-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 4px 12px;
-}
-
-.brand-mark,
+/* The GE mark on the empty screen and beside each cabinet reply. */
 .empty-mark,
 .msg-avatar {
   display: inline-grid;
@@ -94,181 +70,6 @@
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.02em;
-}
-
-.brand-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-}
-
-.brand-name {
-  font-weight: 600;
-  line-height: 1.25;
-}
-
-.brand-sub {
-  font-size: 0.78rem;
-  color: var(--ink-soft);
-}
-
-.sidebar-close {
-  display: none;
-}
-
-.sidebar-new {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 9px 12px;
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  border-radius: 0.75rem;
-  color: var(--ink);
-  font-weight: 500;
-  box-shadow: var(--shadow);
-}
-
-.sidebar-new:hover {
-  background: var(--surface-hover);
-}
-
-.sidebar-scroll {
-  flex: 1;
-  overflow-y: auto;
-  padding: 4px 12px 12px;
-  scrollbar-width: thin;
-}
-
-.sidebar-label {
-  margin: 18px 10px 6px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--ink-soft);
-}
-
-.sidebar-empty {
-  margin: 0 10px;
-  font-size: 0.82rem;
-  color: var(--ink-soft);
-}
-
-.sidebar-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.sidebar-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 10px;
-  background: transparent;
-  border: none;
-  border-radius: 0.6rem;
-  color: var(--ink);
-  text-align: start;
-  font-size: 0.88rem;
-}
-
-.sidebar-item svg {
-  flex: none;
-  color: var(--ink-soft);
-}
-
-.sidebar-item:hover,
-.sidebar-item[aria-pressed='true'] {
-  background: var(--surface-hover);
-}
-
-.sidebar-item-text {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sidebar-tag {
-  display: inline-block;
-  margin-inline-start: 6px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  border: 1px solid var(--rule-strong);
-  font-size: 0.7rem;
-  color: var(--ink-soft);
-  vertical-align: 1px;
-}
-
-.sidebar-dataset {
-  margin: 18px 10px 0;
-  font-size: 0.78rem;
-  color: var(--ink-soft);
-}
-
-.sidebar-account {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px;
-  border-top: 1px solid var(--rule);
-}
-
-.account-avatar {
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 999px;
-  background: var(--navy);
-  color: var(--paper);
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
-.account-text {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  line-height: 1.25;
-}
-
-.account-email {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.82rem;
-}
-
-.account-role {
-  font-size: 0.75rem;
-  color: var(--ink-soft);
-}
-
-.account-signout {
-  flex: none;
-  padding: 5px 10px;
-  background: transparent;
-  border: 1px solid var(--rule-strong);
-  border-radius: 0.6rem;
-  color: var(--ink);
-  font-size: 0.78rem;
-}
-
-.account-signout:hover {
-  background: var(--surface-hover);
-}
-
-.sidebar-backdrop {
-  display: none;
 }
 
 /* --- Main column ------------------------------------------------------------------*/
@@ -717,37 +518,9 @@
   }
 }
 
-/* --- Small screens: the sidebar becomes an off-canvas drawer ----------------------------*/
+/* --- Small screens ---------------------------------------------------------------------------*/
 
 @media (max-width: 899px) {
-  .chat-sidebar {
-    position: fixed;
-    inset: 0 auto 0 0;
-    z-index: 20;
-    width: min(18rem, 86vw);
-    transform: translateX(-100%);
-    visibility: hidden;
-  }
-
-  .chat-sidebar.open {
-    transform: none;
-    visibility: visible;
-    box-shadow: 8px 0 32px rgb(0 0 0 / 0.2);
-  }
-
-  .sidebar-close,
-  .menu-button {
-    display: inline-grid;
-  }
-
-  .sidebar-backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 19;
-    background: rgb(0 0 0 / 0.35);
-  }
-
   .chat-topbar {
     padding: 8px 12px;
   }
@@ -778,12 +551,6 @@
   }
 }
 
-@media (max-width: 899px) and (prefers-reduced-motion: no-preference) {
-  .chat-sidebar {
-    transition: transform 220ms ease-out;
-  }
-}
-
 /* The thread scrolls its newest message clear of the docked composer. */
 .thread-end {
   scroll-margin-bottom: 180px;
@@ -792,15 +559,4 @@
 .msg-body .panel-note {
   font-size: 0.85rem;
   line-height: 1.55;
-}
-
-.sidebar-item .sidebar-tag {
-  flex: none;
-  margin-inline-start: 0;
-}
-
-/* Grid tracks must be allowed to shrink, or long questions push the rows
-   wider than the sidebar instead of ending in an ellipsis. */
-.sidebar-list {
-  grid-template-columns: minmax(0, 1fr);
 }

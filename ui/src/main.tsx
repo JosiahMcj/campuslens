@@ -4,6 +4,7 @@ import '@fontsource-variable/inter'
 import './index.css'
 import './theme-librechat.css'
 import './chat.css'
+import './sidebar-nav.css'
 import App from './App.tsx'
 import { applyTheme, currentTheme } from './theme'
 
