@@ -13,6 +13,7 @@ import {
   resetBriefingOnce,
   type ApproveResponse,
   type ApprovedQuestion,
+  type AskResponse,
   type AuditEvent,
   type CabinetBriefing,
   type Decision,
@@ -30,14 +31,17 @@ import {
 } from './auth'
 import { AskDispatch, DispatchPanel } from './components/DispatchPanel'
 import { AuditLog, type DeniedRequestState } from './components/AuditLog'
-import { BriefingSections, Limitations } from './components/Briefing'
+import { BriefingSections, ExecutiveSummary, Limitations } from './components/Briefing'
+import { ChatComposer } from './components/ChatComposer'
+import { ChatSidebar, type HistoryItem, type PanelId } from './components/ChatSidebar'
 import { DecisionPanel } from './components/DecisionPanel'
 import { EvidenceDrawer } from './components/EvidenceDrawer'
 import { Institution, type ActiveDatasetMeta } from './components/Institution'
 import { LoginScreen } from './components/LoginScreen'
 import { Masthead } from './components/Masthead'
-import { QuestionBar, type AskState } from './components/QuestionBar'
-import { SectionNav } from './components/SectionNav'
+import { type AskState } from './components/QuestionBar'
+import { SidePanel } from './components/SidePanel'
+import { MenuIcon } from './components/icons'
 import { StatRow } from './components/StatRow'
 import {
   APPROVED_QUESTION,
@@ -288,6 +292,19 @@ function Shell({ session, flags, route, navigate, onSignOut }: ShellProps) {
   )
 }
 
+/** One question and the cabinet's reply, as the chat thread shows it. A
+ * restored exchange is the briefing this API process already produced
+ * (GET /briefing on load), shown without re-running anything. */
+type ExchangeState = AskState | { kind: 'restored' }
+
+interface Exchange {
+  id: number
+  question: string
+  state: ExchangeState
+}
+
+type AcceptedAsk = Extract<AskResponse, { accepted: true }>
+
 interface BriefingPageProps {
   session: Session
   flags: UiFlags
@@ -349,6 +366,15 @@ function BriefingPage({
   const [deniedRequest, setDeniedRequest] = useState<DeniedRequestState>({
     kind: 'idle',
   })
+  // The chat: every exchange this page view has seen, the first one shown
+  // (New question starts a clean view without forgetting the history), the
+  // open slide-over panel, and the sidebar on small screens.
+  const [thread, setThread] = useState<Exchange[]>([])
+  const nextExchangeId = useRef(1)
+  const [viewFrom, setViewFrom] = useState(0)
+  const [panel, setPanel] = useState<PanelId | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const threadEndRef = useRef<HTMLDivElement>(null)
 
   const loadEvents = useCallback(async () => {
     if (!audit) return
@@ -380,11 +406,23 @@ function BriefingPage({
   const loadBriefing = useCallback(async () => {
     try {
       const briefing = await fetchCabinetBriefingOnce(flags)
-      if (briefing !== null) setCabinetBriefing(briefing)
+      if (briefing !== null) {
+        setCabinetBriefing(briefing)
+        const id = nextExchangeId.current++
+        setThread((previous) =>
+          previous.length === 0
+            ? [{ id, question: briefing.question, state: { kind: 'restored' } }]
+            : previous,
+        )
+        // Someone who may ask starts on the empty screen, question front and
+        // centre; the restored briefing waits in the sidebar's history. A
+        // role that may only read sees it straight away.
+        if (act) setViewFrom(id + 1)
+      }
     } catch {
       // Non-critical; the computed page already renders.
     }
-  }, [flags])
+  }, [act, flags])
 
   useEffect(() => {
     // Initial data fetch on mount: the audit log (for the roles that may
@@ -413,6 +451,15 @@ function BriefingPage({
   const ask = useCallback(
     async (question: string) => {
       setAskState({ kind: 'sending' })
+      const exchangeId = nextExchangeId.current++
+      const settle = (state: ExchangeState) =>
+        setThread((previous) =>
+          previous.map((item) => (item.id === exchangeId ? { ...item, state } : item)),
+        )
+      setThread((previous) => [
+        ...previous,
+        { id: exchangeId, question, state: { kind: 'sending' } },
+      ])
       try {
         // Mark this run's base from a FRESH events fetch, awaited before the
         // POST: eventsMaxIdRef is 0 until the first /events load resolves, so
@@ -428,17 +475,19 @@ function BriefingPage({
         setStillWorking(false)
         setRunInFlight(true)
         const response = await postAsk(question, flags)
-        setAskState(
-          response.accepted
-            ? { kind: 'accepted', response }
-            : { kind: 'refused', refusal: response.refusal },
-        )
+        const settled: AskState = response.accepted
+          ? { kind: 'accepted', response }
+          : { kind: 'refused', refusal: response.refusal }
+        setAskState(settled)
+        settle(settled)
         if (response.accepted) setCabinetBriefing(response.briefing)
         // GET /decisions answers for the latest question asked; a new run
         // can carry a different decision (each question has its own id).
         await Promise.all([loadEvents(), loadDecisions()])
       } catch (error) {
-        setAskState({ kind: 'error', message: errorMessage(error) })
+        const failed: AskState = { kind: 'error', message: errorMessage(error) }
+        setAskState(failed)
+        settle(failed)
       } finally {
         setRunInFlight(false)
       }
@@ -553,9 +602,12 @@ function BriefingPage({
   useEffect(() => {
     if (act && flags.demoRefusal && !demoRefusalFired.current) {
       demoRefusalFired.current = true
+      // The panel opens once, from a URL switch read on load.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (audit) setPanel('audit')
       void showDeniedRequest()
     }
-  }, [act, flags, showDeniedRequest])
+  }, [act, audit, flags, showDeniedRequest])
 
   // A #audit-log deep link scrolls the log into view once it has loaded.
   const auditLinkScrolled = useRef(false)
@@ -566,7 +618,7 @@ function BriefingPage({
       window.location.hash === '#audit-log'
     ) {
       auditLinkScrolled.current = true
-      document.getElementById('audit-log')?.scrollIntoView()
+      setPanel('audit')
     }
   }, [events])
 
@@ -595,130 +647,141 @@ function BriefingPage({
   const studentSuccessSection: ModelSection | null = flags.modelDown
     ? modelDownSection
     : (cabinetBriefing?.sections[3] ?? null)
-  const dispatchVisible = act && (askState.kind === 'sending' || askState.kind === 'accepted')
-  // The rail (task cards, section list, account) renders whenever it would
-  // have content; on the findings error state only the document column shows.
-  // The four figures sit above the document, not in the rail.
-  const railVisible = dispatchVisible || findingsState.kind !== 'error'
+  // The latest accepted run's response: the AI employees' panel and the
+  // reply's work line read its tasks (the executive's dispatch view).
+  const lastAccepted: AcceptedAsk | null = (() => {
+    for (let index = thread.length - 1; index >= 0; index -= 1) {
+      const state = thread[index].state
+      if (state.kind === 'accepted') return state.response
+    }
+    return null
+  })()
+  // The exchange that carries the full reply (summary, figures, decision):
+  // the newest answered one. Earlier answers keep their summary only.
+  const currentAnswerId = (() => {
+    for (let index = thread.length - 1; index >= 0; index -= 1) {
+      const kind = thread[index].state.kind
+      if (kind === 'accepted' || kind === 'restored') return thread[index].id
+    }
+    return null
+  })()
+  const hasRun = lastAccepted !== null || (audit && runBaseEventId > 0) || cabinetBriefing !== null
+  const panels: PanelId[] = [
+    'briefing',
+    ...(hasRun ? (['agents'] as PanelId[]) : []),
+    ...(audit ? (['audit'] as PanelId[]) : []),
+  ]
+  const visible = thread.filter((item) => item.id >= viewFrom)
+  const history: HistoryItem[] = thread.map((item) => ({
+    id: item.id,
+    question: item.question,
+    refused: item.state.kind === 'refused',
+    restored: item.state.kind === 'restored',
+  }))
+  const sending = askState.kind === 'sending'
+  const ready = findingsState.kind === 'ready'
 
-  return (
-    <main className="page">
-      <header className="page-header">
-        <h1>President Weekly Student Success Briefing</h1>
-        <p className="lede">
-          {fictional
-            ? 'Governed AI employees turning fictional student-system data into one briefing a leader can act on. Students are described as people who may need support, never as scores.'
-            : "Governed AI employees turning your institution's student-system data into one briefing a leader can act on. Students are described as people who may need support, never as scores."}
-        </p>
-      </header>
+  // Each new exchange (and each reply landing) scrolls the thread to its end.
+  const threadLength = thread.length
+  const lastStateKind = thread.at(-1)?.state.kind
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ block: 'end' })
+  }, [threadLength, lastStateKind])
 
-      {act && <QuestionBar state={askState} questions={questions} onAsk={ask} />}
+  const openPanel = (next: PanelId) => {
+    setPanel(next)
+    setSidebarOpen(false)
+  }
 
-      {findingsState.kind === 'loading' && (
-        <div className="stat-row" aria-hidden="true">
-          {[0, 1, 2, 3].map((index) => (
-            <div key={index} className="skeleton-figure">
-              <div className="skeleton skeleton-figure-value" />
-              <div className="skeleton skeleton-figure-label" />
-            </div>
-          ))}
+  const newQuestion = () => {
+    setViewFrom(nextExchangeId.current)
+    setPanel(null)
+    setSidebarOpen(false)
+    window.setTimeout(() => document.getElementById('question-input')?.focus(), 0)
+  }
+
+  const selectHistory = (id: number) => {
+    setViewFrom((current) => Math.min(current, id))
+    setSidebarOpen(false)
+    window.setTimeout(
+      () => document.getElementById(`exchange-${id}`)?.scrollIntoView({ block: 'start' }),
+      0,
+    )
+  }
+
+  const workLine = (state: ExchangeState) => {
+    if (state.kind === 'accepted') {
+      const count = state.response.tasks.length
+      return `${count} AI employees worked on this. Every grant is in the audit log.`
+    }
+    return 'The briefing this cabinet last produced, restored without re-running.'
+  }
+
+  const reply = (item: Exchange) => {
+    const state = item.state
+    if (state.kind === 'sending' || state.kind === 'idle') {
+      return (
+        <div className="reply-working" role="status">
+          <span className="typing" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+          {stillWorking
+            ? 'Still working… the analysts are taking longer than usual.'
+            : 'The Chief of Staff is assigning the analysts…'}
         </div>
-      )}
-      {findingsState.kind === 'ready' && (
-        <div className="stat-block">
-          <StatRow findings={findingsState.data} onOpenEvidence={openEvidence} />
-          {fictional && (
-            <p className="demo-note">
-              Demonstration data. Upload your institution's export in
-              Institution settings.
-            </p>
+      )
+    }
+    if (state.kind === 'refused') {
+      return (
+        <div className="refusal-card" role="alert">
+          <h3>Refused</h3>
+          <p>{state.refusal}</p>
+          {audit && (
+            <button type="button" className="link-button" onClick={() => openPanel('audit')}>
+              See the refusal in the audit log
+            </button>
           )}
         </div>
-      )}
-
-      {railVisible && (
-        <aside className="rail" aria-label="Instruments">
-          <div className="rail-inner">
-            <Masthead
-              session={session}
-              datasetName={datasetName}
-              route={route}
-              onNavigate={navigate}
-              onSignOut={onSignOut}
-            />
-            {dispatchVisible &&
-              (audit ? (
-                <DispatchPanel
-                  events={events ?? []}
-                  minEventId={runBaseEventId}
-                  inFlight={runInFlight}
-                  stillWorking={stillWorking}
-                />
-              ) : askState.kind === 'accepted' ? (
-                <AskDispatch
-                  tasks={askState.response.tasks}
-                  briefing={askState.response.briefing}
-                />
-              ) : (
-                <p className="status-line" role="status">
-                  The cabinet is working…
-                </p>
-              ))}
-            {findingsState.kind === 'ready' && <SectionNav />}
-          </div>
-        </aside>
-      )}
-
-      <div className="doc">
-        {findingsState.kind === 'loading' && (
-          <div
-            className="doc-skeleton"
-            role="status"
-            aria-busy="true"
-            aria-live="polite"
-          >
-            <span className="visually-hidden">Loading the briefing…</span>
-            <div className="skeleton skeleton-heading" />
-            <div className="skeleton" />
-            <div className="skeleton short" />
-            <div className="skeleton skeleton-heading" />
-            <div className="skeleton" />
-            <div className="skeleton short" />
-            <p className="hint">
-              Reading the findings, the audit log, and any briefing this session
-              already produced from the API. (<code>?slow=1</code> keeps this
-              visible for demos.)
-            </p>
-          </div>
+      )
+    }
+    if (state.kind === 'error') {
+      return (
+        <div className="refusal-card" role="alert">
+          <h3>The cabinet could not answer</h3>
+          <p>{state.message}</p>
+        </div>
+      )
+    }
+    if (!ready) return null
+    const findings = findingsState.data
+    const current = item.id === currentAnswerId
+    const summarySection: ModelSection | null =
+      state.kind === 'accepted' && !current
+        ? state.response.briefing.sections[1]
+        : chiefSummary
+    return (
+      <>
+        {current && (
+          <button type="button" className="work-line" onClick={() => openPanel('agents')}>
+            <span className="work-dot" aria-hidden="true" />
+            {workLine(state)}
+            <span className="work-link">View</span>
+          </button>
         )}
-
-        {findingsState.kind === 'error' && (
-          <div className="state-panel error-panel" role="alert">
-            <h2>The briefing could not be loaded</h2>
-            <p>{findingsState.message}</p>
-            <p>
-              The metrics, the evidence drawer, and the audit log all come from
-              the API. Check that <code>make api</code> is running on
-              127.0.0.1:8910.
-            </p>
-            <button type="button" onClick={onRetryFindings}>
-              Retry
-            </button>
-          </div>
-        )}
-
-        {findingsState.kind === 'ready' && (
+        <ExecutiveSummary
+          findings={findings}
+          chiefSummary={summarySection}
+          onOpenEvidence={openEvidence}
+          headingId={null}
+          title={current ? 'Summary' : 'Earlier answer'}
+        />
+        {current && (
           <>
-            <BriefingSections
-              findings={findingsState.data}
-              fictional={fictional}
-              enrollment={enrollmentSection}
-              studentSuccess={studentSuccessSection}
-              chiefSummary={chiefSummary}
-              onCheckAgain={act ? checkAgain : null}
-              onOpenEvidence={openEvidence}
-            />
+            <StatRow findings={findings} onOpenEvidence={openEvidence} />
             <DecisionPanel
+              title="Your decision"
               decisions={decisions}
               events={events ?? []}
               canApprove={act}
@@ -727,25 +790,201 @@ function BriefingPage({
               approvedTasks={approvedTasks}
               onApprove={(id) => void approve(id)}
             />
-            <Limitations
-              findings={findingsState.data}
-              fictional={fictional}
-              chiefLimitations={chiefLimitations}
-              onOpenEvidence={openEvidence}
-            />
+            <div className="reply-actions">
+              <button type="button" className="chip" onClick={() => openPanel('briefing')}>
+                Read the full briefing
+              </button>
+              {audit && (
+                <button type="button" className="chip" onClick={() => openPanel('audit')}>
+                  Audit log
+                </button>
+              )}
+            </div>
           </>
         )}
+      </>
+    )
+  }
 
-        {audit && (
-          <AuditLog
-            events={events}
-            readOnly={!act}
-            onRefresh={() => void loadEvents()}
-            deniedRequest={deniedRequest}
-            onShowDeniedRequest={() => void showDeniedRequest()}
-          />
+  const panelTitle: Record<PanelId, string> = {
+    briefing: 'Full briefing',
+    agents: 'AI employees',
+    audit: 'Audit log',
+  }
+
+  return (
+    <div className="chat-app">
+      <ChatSidebar
+        session={session}
+        datasetName={datasetName}
+        fictional={fictional}
+        history={history}
+        panels={panels}
+        activePanel={panel}
+        open={sidebarOpen}
+        onNewQuestion={act ? newQuestion : null}
+        onSelectHistory={selectHistory}
+        onOpenPanel={openPanel}
+        onNavigate={navigate}
+        onSignOut={onSignOut}
+        onClose={() => setSidebarOpen(false)}
+      />
+      {sidebarOpen && (
+        <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      <main className="chat-main" data-route={route}>
+        <header className="chat-topbar">
+          <button
+            type="button"
+            className="icon-button menu-button"
+            aria-label="Open sidebar"
+            onClick={() => setSidebarOpen(true)}
+          >
+            <MenuIcon />
+          </button>
+          <span className="topbar-title">Student success briefing</span>
+          {fictional && <span className="topbar-badge">Demo data</span>}
+        </header>
+
+        {findingsState.kind === 'loading' && (
+          <div className="chat-center" role="status" aria-busy="true" aria-live="polite">
+            <span className="visually-hidden">Loading the briefing…</span>
+            <div className="skeleton skeleton-heading" />
+            <div className="skeleton" />
+            <div className="skeleton short" />
+          </div>
         )}
-      </div>
+
+        {findingsState.kind === 'error' && (
+          <div className="chat-center">
+            <div className="state-panel error-panel" role="alert">
+              <h2>The briefing could not be loaded</h2>
+              <p>{findingsState.message}</p>
+              <p>
+                The metrics, the evidence drawer, and the audit log all come from
+                the API. Check that <code>make api</code> is running on
+                127.0.0.1:8910.
+              </p>
+              <button type="button" onClick={onRetryFindings}>
+                Retry
+              </button>
+            </div>
+          </div>
+        )}
+
+        {ready && visible.length === 0 && (
+          <div className="chat-empty">
+            <span className="empty-mark" aria-hidden="true">
+              GE
+            </span>
+            <h1>What should the cabinet look into?</h1>
+            <p className="empty-lede">
+              {act
+                ? 'Ask an approved question. Three AI employees answer with numbers checked against the data, and you make the call.'
+                : 'Briefings appear here once an executive asks the cabinet a question.'}
+            </p>
+            {act && (
+              <ChatComposer
+                questions={questions}
+                sending={sending}
+                starters
+                onAsk={(question) => void ask(question)}
+              />
+            )}
+          </div>
+        )}
+
+        {ready && visible.length > 0 && (
+          <>
+            <div className="chat-thread" aria-live="polite">
+              {visible.map((item) => (
+                <div key={item.id} id={`exchange-${item.id}`} className="exchange">
+                  <div className="msg msg-user">
+                    <p>{item.question}</p>
+                  </div>
+                  <div className="msg msg-cabinet">
+                    <span className="msg-avatar" aria-hidden="true">
+                      GE
+                    </span>
+                    <div className="msg-body">
+                      <p className="msg-author">Cabinet</p>
+                      {reply(item)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <div ref={threadEndRef} className="thread-end" />
+            </div>
+            {act && (
+              <div className="chat-dock">
+                <ChatComposer
+                  questions={questions}
+                  sending={sending}
+                  starters={false}
+                  onAsk={(question) => void ask(question)}
+                />
+              </div>
+            )}
+          </>
+        )}
+      </main>
+
+      {panel !== null && (
+        <SidePanel title={panelTitle[panel]} onClose={() => setPanel(null)}>
+          {panel === 'briefing' && ready && (
+            <div className="doc">
+              <BriefingSections
+                findings={findingsState.data}
+                fictional={fictional}
+                enrollment={enrollmentSection}
+                studentSuccess={studentSuccessSection}
+                chiefSummary={chiefSummary}
+                onCheckAgain={act ? checkAgain : null}
+                onOpenEvidence={openEvidence}
+              />
+              <section aria-labelledby="s-decision-note">
+                <h2 id="s-decision-note">6. Leadership decisions</h2>
+                <p>
+                  The decision and its approval live in the conversation, under
+                  the cabinet's latest answer.{' '}
+                  <button type="button" className="link-button" onClick={() => setPanel(null)}>
+                    Back to the conversation
+                  </button>
+                </p>
+              </section>
+              <Limitations
+                findings={findingsState.data}
+                fictional={fictional}
+                chiefLimitations={chiefLimitations}
+                onOpenEvidence={openEvidence}
+              />
+            </div>
+          )}
+          {panel === 'agents' &&
+            (audit ? (
+              <DispatchPanel
+                events={events ?? []}
+                minEventId={runBaseEventId}
+                inFlight={runInFlight}
+                stillWorking={stillWorking}
+              />
+            ) : lastAccepted !== null ? (
+              <AskDispatch tasks={lastAccepted.tasks} briefing={lastAccepted.briefing} />
+            ) : (
+              <p className="hint">The AI employees' task cards appear after you ask a question.</p>
+            ))}
+          {panel === 'audit' && audit && (
+            <AuditLog
+              events={events}
+              readOnly={!act}
+              onRefresh={() => void loadEvents()}
+              deniedRequest={deniedRequest}
+              onShowDeniedRequest={() => void showDeniedRequest()}
+            />
+          )}
+        </SidePanel>
+      )}
 
       {drawerFinding !== undefined && (
         <EvidenceDrawer
@@ -754,7 +993,7 @@ function BriefingPage({
           onClose={closeEvidence}
         />
       )}
-    </main>
+    </div>
   )
 }
 

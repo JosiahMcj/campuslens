@@ -64,54 +64,15 @@ export function BriefingSections({
   const m3 = getFinding(findings, 'M3')
   const m4 = getFinding(findings, 'M4')
   const m5 = getFinding(findings, 'M5')
-  const m6 = getFinding(findings, 'M6')
   const m7 = getFinding(findings, 'M7')
 
   return (
     <article className="briefing" aria-label="Executive briefing">
-      <section aria-labelledby="s-summary">
-        <h2 id="s-summary">1. Executive summary</h2>
-        {chiefSummary !== null && chiefSummary.kind === 'available' ? (
-          <ModelClaims
-            claims={chiefSummary.claims}
-            provenance={chiefSummary.provenance}
-            analyst="the Chief of Staff"
-            onOpen={onOpenEvidence}
-          />
-        ) : (
-          <p className="headline-text">
-            Spring registration is <Num finding={m1} id="M1" onOpen={onOpenEvidence} />{' '}
-            versus the same date last year, and{' '}
-            <Num finding={m2} id="M2" onOpen={onOpenEvidence} /> continuing students have
-            not yet registered, people who may need support.{' '}
-            {m6?.closed === true ? (
-              <>Registration for the spring term has closed.</>
-            ) : (
-              <>
-                Registration closes in{' '}
-                <Num finding={m6} id="M6" onOpen={onOpenEvidence} suffix=" days" />.
-              </>
-            )}
-          </p>
-        )}
-        {chiefSummary !== null && chiefSummary.kind === 'unavailable' && (
-          <div className="model-unavailable" role="status">
-            <h3>Model unavailable</h3>
-            <p>
-              The Chief of Staff's written summary is unavailable right now.
-              The headline above is computed from the data and remains fully
-              evidenced.
-            </p>
-            <details className="technical-detail">
-              <summary>
-                <ChevronIcon />
-                Technical detail
-              </summary>
-              <p>{chiefSummary.reason}</p>
-            </details>
-          </div>
-        )}
-      </section>
+      <ExecutiveSummary
+        findings={findings}
+        chiefSummary={chiefSummary}
+        onOpenEvidence={onOpenEvidence}
+      />
 
       <section aria-labelledby="s-measure">
         <h2 id="s-measure">2. Current measure and historical comparison</h2>
@@ -267,6 +228,79 @@ export function BriefingSections({
         </ul>
       </section>
     </article>
+  )
+}
+
+/**
+ * Section 1, the executive summary: the Chief of Staff's validated claims
+ * when a produced briefing exists, else the computed headline. The briefing
+ * renders it as section 1 (heading id s-summary); the chat reply renders the
+ * same content under its own heading, with `headingId` null so the page never
+ * carries a duplicate id.
+ */
+export function ExecutiveSummary({
+  findings,
+  chiefSummary,
+  onOpenEvidence,
+  headingId = 's-summary',
+  title = '1. Executive summary',
+}: {
+  findings: Findings
+  chiefSummary: ModelSection | null
+  onOpenEvidence: (findingId: string) => void
+  headingId?: string | null
+  title?: string
+}) {
+  const m1 = getFinding(findings, 'M1')
+  const m2 = getFinding(findings, 'M2')
+  const m6 = getFinding(findings, 'M6')
+  return (
+    <section
+      aria-labelledby={headingId ?? undefined}
+      aria-label={headingId === null ? title : undefined}
+    >
+      <h2 id={headingId ?? undefined}>{title}</h2>
+      {chiefSummary !== null && chiefSummary.kind === 'available' ? (
+        <ModelClaims
+          claims={chiefSummary.claims}
+          provenance={chiefSummary.provenance}
+          analyst="the Chief of Staff"
+          onOpen={onOpenEvidence}
+        />
+      ) : (
+        <p className="headline-text">
+          Spring registration is <Num finding={m1} id="M1" onOpen={onOpenEvidence} />{' '}
+          versus the same date last year, and{' '}
+          <Num finding={m2} id="M2" onOpen={onOpenEvidence} /> continuing students have
+          not yet registered, people who may need support.{' '}
+          {m6?.closed === true ? (
+            <>Registration for the spring term has closed.</>
+          ) : (
+            <>
+              Registration closes in{' '}
+              <Num finding={m6} id="M6" onOpen={onOpenEvidence} suffix=" days" />.
+            </>
+          )}
+        </p>
+      )}
+      {chiefSummary !== null && chiefSummary.kind === 'unavailable' && (
+        <div className="model-unavailable" role="status">
+          <h3>Model unavailable</h3>
+          <p>
+            The Chief of Staff's written summary is unavailable right now.
+            The headline above is computed from the data and remains fully
+            evidenced.
+          </p>
+          <details className="technical-detail">
+            <summary>
+              <ChevronIcon />
+              Technical detail
+            </summary>
+            <p>{chiefSummary.reason}</p>
+          </details>
+        </div>
+      )}
+    </section>
   )
 }
 

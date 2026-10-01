@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/inter'
 import './index.css'
 import './theme-librechat.css'
+import './chat.css'
 import App from './App.tsx'
 import { applyTheme, currentTheme } from './theme'
 

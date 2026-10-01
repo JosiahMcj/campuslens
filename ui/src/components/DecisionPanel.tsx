@@ -11,6 +11,8 @@ interface DecisionPanelProps {
   approveError: string | null
   approvedTasks: Record<string, { task: SimulatedTask; created: boolean }>
   onApprove: (decisionId: string) => void
+  /** The heading; the chat reply calls it "Your decision". */
+  title?: string
 }
 
 /**
@@ -29,10 +31,11 @@ export function DecisionPanel({
   approveError,
   approvedTasks,
   onApprove,
+  title = '6. Leadership decisions',
 }: DecisionPanelProps) {
   return (
     <section aria-labelledby="s-decision" className="decision-panel">
-      <h2 id="s-decision">6. Leadership decisions</h2>
+      <h2 id="s-decision">{title}</h2>
       <p className="panel-note">
         This decision belongs to leadership. The cabinet advises, a person
         decides. Approving records a <code>decision.approved</code> event and
