@@ -1,0 +1,490 @@
+/* The landing page: one static screen, no scroll.
+
+   Left: the hero from the referenced SaaS landing template
+   (techwithanirudh/shadcn-saas-landing, MIT): the hatched "bg-dashed"
+   ground, the purple-azure noise gradient rising from the bottom-right
+   corner, the announcement pill, a tight Geist headline and a muted lede.
+   Right: the sign-in card, after the animated sign-in reference: box-reveal
+   entrances, an input frame that glows under the pointer, the password eye
+   and a button whose bottom edge lights up on hover. Ported to plain CSS
+   (no Tailwind, no motion library, no inline styles, so the CSP holds).
+   The page is always dark, as the template's hero is. */
+
+@property --glow-r {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+.landing {
+  --l-bg: #121212;
+  --l-hatch: #232323;
+  --l-text: #f2f2f2;
+  --l-muted: #a1a1a1;
+  --l-line: #2a2a2a;
+  --l-field: #27272a;
+  --l-skeleton: #1a2335;
+  --l-gold: #c9a85c;
+  --l-azure: #7c8cff;
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  padding: 24px 40px;
+  box-sizing: border-box;
+  color: var(--l-text);
+  background-color: var(--l-bg);
+  background-image: linear-gradient(
+    45deg,
+    var(--l-hatch) 12.5%,
+    transparent 12.5%,
+    transparent 50%,
+    var(--l-hatch) 50%,
+    var(--l-hatch) 62.5%,
+    transparent 62.5%,
+    transparent 100%
+  );
+  background-size: 0.25rem 0.25rem;
+  font-family: 'Geist Variable', Geist, 'Inter Variable', system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+/* The template's gradient, anchored on the bottom-right corner. */
+.landing-glow {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  width: 1004px;
+  height: 900px;
+  transform: translate(50%, 50%);
+  background: url('/landing/glow.webp') center / cover no-repeat;
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .landing-glow {
+    animation: landing-fade 400ms ease-out both;
+  }
+}
+
+@keyframes landing-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.landing-brand {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.landing-mark {
+  width: 28px;
+  height: 28px;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.14);
+  border-radius: 24%;
+}
+
+.landing-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 26rem);
+  align-items: center;
+  gap: 64px;
+  width: 100%;
+  max-width: 1200px;
+  min-height: 0;
+  margin: 0 auto;
+}
+
+/* --- Hero ------------------------------------------------------------------------*/
+
+.landing-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 7px 14px;
+  border: 1px solid #2e2e2e;
+  border-radius: 8px;
+  background: rgb(38 38 38 / 0.7);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.landing-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--l-gold);
+  box-shadow: 0 0 0 3px rgb(201 168 92 / 0.2);
+}
+
+.landing-hero h1 {
+  margin: 28px 0 0;
+  color: var(--l-text);
+  font-family: inherit;
+  font-size: clamp(2.6rem, 5.4vw, 4.6rem);
+  font-weight: 400;
+  line-height: 1.02;
+  letter-spacing: -0.05em;
+  text-wrap: balance;
+}
+
+.landing-lede {
+  max-width: 34rem;
+  margin: 22px 0 0;
+  color: var(--l-muted);
+  font-size: 1.15rem;
+  line-height: 1.65;
+  letter-spacing: -0.01em;
+}
+
+/* --- Sign-in card -----------------------------------------------------------------*/
+
+.landing-card {
+  padding: 32px;
+  border: 1px solid var(--l-line);
+  border-radius: 18px;
+  background: rgb(18 18 18 / 0.72);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.45);
+  backdrop-filter: blur(10px);
+}
+
+.landing-card h2 {
+  margin: 0;
+  color: #e5e5e5;
+  font-family: inherit;
+  font-size: 1.9rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.landing-card-sub {
+  margin: 6px 0 0;
+  padding-bottom: 8px;
+  color: #a3a3a3;
+  font-size: 0.9rem;
+}
+
+.landing-card form {
+  margin-top: 14px;
+}
+
+.landing-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.landing-field label {
+  color: #e5e5e5;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.landing-required {
+  color: #ef4444;
+}
+
+/* The frame glows gold under the pointer. */
+.glow-field {
+  position: relative;
+  padding: 2px;
+  border-radius: 10px;
+  background: radial-gradient(
+    var(--glow-r) circle at var(--glow-x, 50%) var(--glow-y, 50%),
+    var(--l-gold),
+    transparent 80%
+  );
+  transition: --glow-r 300ms ease;
+}
+
+.glow-field:hover {
+  --glow-r: 100px;
+}
+
+.glow-field input {
+  display: block;
+  width: 100%;
+  height: 42px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--l-field);
+  box-shadow: 0 0 1px 1px #404040;
+  color: #fff;
+  font: inherit;
+  font-size: 0.9rem;
+  transition: box-shadow 400ms ease;
+}
+
+.glow-field:hover input {
+  box-shadow: none;
+}
+
+.glow-field input::placeholder {
+  color: #737373;
+}
+
+.glow-field input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #5a5a5a;
+}
+
+.glow-field input[type='password'],
+.glow-field input#login-password {
+  padding-right: 44px;
+}
+
+.landing-eye {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: #a3a3a3;
+  transform: translateY(-50%);
+}
+
+.landing-eye:hover {
+  color: #fff;
+}
+
+.landing-field-error {
+  min-height: 1rem;
+  margin: 6px 0 4px;
+  color: #f87171;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.landing-error {
+  margin: 0 0 14px;
+  color: #f87171;
+  font-size: 0.875rem;
+}
+
+.landing-notice {
+  margin: 4px 0 0;
+  padding: 8px 12px;
+  border: 1px solid #3b3b3b;
+  border-radius: 8px;
+  background: #1d1d1d;
+  color: #e5e5e5;
+  font-size: 0.875rem;
+}
+
+.landing-submit {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 42px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(to bottom right, #18181b, #18181b);
+  box-shadow:
+    0 1px 0 0 #2e2e33 inset,
+    0 -1px 0 0 #2e2e33 inset;
+  color: #fff;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.landing-submit:hover:not(:disabled) {
+  background: #1f1f23;
+}
+
+.landing-submit-line,
+.landing-submit-blur {
+  position: absolute;
+  bottom: -1px;
+  height: 1px;
+  opacity: 0;
+  transition: opacity 500ms ease;
+  pointer-events: none;
+}
+
+.landing-submit-line {
+  inset-inline: 0;
+  background: linear-gradient(to right, transparent, var(--l-gold), transparent);
+}
+
+.landing-submit-blur {
+  left: 25%;
+  width: 50%;
+  filter: blur(4px);
+  background: linear-gradient(to right, transparent, var(--l-azure), transparent);
+}
+
+.landing-submit:hover .landing-submit-line,
+.landing-submit:hover .landing-submit-blur {
+  opacity: 1;
+}
+
+.landing-help {
+  margin: 16px 0 0;
+  color: #8a8a8a;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+/* --- Box reveal ---------------------------------------------------------------------
+   A box sweeps across each line while its content rises into place, one
+   line after another. overflow: clip with a small margin keeps focus rings
+   and the button's glowing edge visible. */
+
+.reveal {
+  position: relative;
+  width: fit-content;
+  overflow: clip;
+  overflow-clip-margin: 6px;
+}
+
+.reveal-wide {
+  width: auto;
+}
+
+.reveal:has(.landing-help) {
+  width: auto;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .reveal > * {
+    animation: reveal-rise 300ms ease both;
+    animation-delay: calc(var(--reveal-step) + 250ms);
+  }
+
+  .reveal::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    border-radius: 4px;
+    background: var(--l-skeleton);
+    animation: reveal-sweep 300ms ease-in both;
+    animation-delay: var(--reveal-step);
+    pointer-events: none;
+  }
+}
+
+.reveal-1 {
+  --reveal-step: 0ms;
+}
+.reveal-2 {
+  --reveal-step: 60ms;
+}
+.reveal-3 {
+  --reveal-step: 120ms;
+}
+.reveal-4 {
+  --reveal-step: 180ms;
+}
+.reveal-5 {
+  --reveal-step: 240ms;
+}
+.reveal-6 {
+  --reveal-step: 300ms;
+}
+.reveal-7 {
+  --reveal-step: 360ms;
+}
+.reveal-8 {
+  --reveal-step: 420ms;
+}
+
+@keyframes reveal-rise {
+  from {
+    opacity: 0;
+    transform: translateY(75px);
+  }
+}
+
+@keyframes reveal-sweep {
+  from {
+    left: 0;
+  }
+  to {
+    left: 100%;
+    opacity: 0;
+  }
+}
+
+/* --- Smaller screens: the card leads, the hero shrinks ---------------------------------*/
+
+@media (max-width: 960px) {
+  .landing {
+    padding: 20px;
+  }
+
+  .landing-grid {
+    grid-template-columns: 1fr;
+    align-content: center;
+    gap: 22px;
+    max-width: 28rem;
+  }
+
+  .landing-pill {
+    display: none;
+  }
+
+  .landing-hero h1 {
+    margin-top: 0;
+    font-size: clamp(2rem, 8.5vw, 2.6rem);
+  }
+
+  .landing-lede {
+    margin-top: 12px;
+    font-size: 0.98rem;
+    line-height: 1.55;
+  }
+
+  .landing-card {
+    padding: 24px 22px;
+  }
+
+  .landing-card h2 {
+    font-size: 1.5rem;
+  }
+
+  .landing-glow {
+    width: 700px;
+    height: 628px;
+  }
+}
+
+@media (max-width: 960px) and (max-height: 800px) {
+  .landing-lede {
+    display: none;
+  }
+}
+
+/* A screen too short for the page scrolls rather than hiding the form. */
+@media (max-height: 600px) {
+  .landing {
+    overflow-y: auto;
+  }
+}
