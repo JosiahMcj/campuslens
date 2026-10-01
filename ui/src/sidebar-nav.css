@@ -674,3 +674,26 @@
     transition: none;
   }
 }
+
+/* --- The Ascent mark ----------------------------------------------------------------*/
+
+/* The mark draws its own rounded tile, so the placeholder boxes it replaces
+   lose their fill and their text styling. */
+svg.ascent-mark {
+  display: block;
+  flex: none;
+  background: transparent;
+  border-radius: 0;
+}
+
+.login-mark {
+  width: 3rem;
+  height: 3rem;
+  margin: 0 auto 16px;
+}
+
+/* On dark surfaces a hairline keeps the navy tile from sinking into the page. */
+.dark svg.ascent-mark {
+  border-radius: 24%;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.14);
+}

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 
 import { canSeeInstitution, roleDisplayName, type Session } from '../auth'
 import { currentTheme, setTheme, type Theme } from '../theme'
+import { AscentMark } from './AscentMark'
 import { GlideGroup } from './GlideGroup'
 import {
   AuditNavIcon,
@@ -143,9 +144,7 @@ function WorkspaceMenu({
     <div ref={menuRef} className="workspace-menu" data-workspace-menu role="menu">
       <GlideGroup className="menu-glide">
         <button data-row type="button" role="menuitem" className="menu-row menu-row-tall" onClick={onClose}>
-          <span className="menu-monogram" aria-hidden="true">
-            GE
-          </span>
+          <AscentMark className="menu-monogram" />
           <span className="menu-label menu-label-strong">{institutionName}</span>
           <span className="menu-check">
             <CheckSmallIcon />
@@ -273,9 +272,7 @@ export function ChatSidebar({
               setMenuAnchor((current) => (current === null ? trigger : null))
             }}
           >
-            <span className="workspace-logo" aria-hidden="true">
-              GE
-            </span>
+            <AscentMark className="workspace-logo" />
             <span className="sidebar-copy workspace-name">Golden Eagle</span>
             <span className="sidebar-copy workspace-chevron">
               <ChevronDownIcon />

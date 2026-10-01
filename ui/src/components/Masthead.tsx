@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import { canSeeInstitution, roleDisplayName, type Session } from '../auth'
 import { currentTheme, setTheme, type Theme } from '../theme'
+import { AscentMark } from './AscentMark'
 import { MoonIcon, SunIcon } from './icons'
 
 interface MastheadProps {
@@ -41,9 +42,7 @@ export function Masthead({
     <>
       <div className="rail-masthead masthead masthead-brand">
         <p className="masthead-product">
-          <span className="masthead-mark" aria-hidden="true">
-            GE
-          </span>
+          <AscentMark className="masthead-mark" />
           Golden Eagle AI Cabinet
         </p>
         {institutionName !== null && <p className="masthead-institution">{institutionName}</p>}

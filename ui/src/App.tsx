@@ -41,6 +41,7 @@ import { LoginScreen } from './components/LoginScreen'
 import { Masthead } from './components/Masthead'
 import { type AskState } from './components/QuestionBar'
 import { SidePanel } from './components/SidePanel'
+import { AscentMark } from './components/AscentMark'
 import { MenuIcon } from './components/icons'
 import { StatRow } from './components/StatRow'
 import {
@@ -875,9 +876,7 @@ function BriefingPage({
 
         {ready && visible.length === 0 && (
           <div className="chat-empty">
-            <span className="empty-mark" aria-hidden="true">
-              GE
-            </span>
+            <AscentMark className="empty-mark" />
             <h1>What should the cabinet look into?</h1>
             <p className="empty-lede">
               {act
@@ -904,9 +903,7 @@ function BriefingPage({
                     <p>{item.question}</p>
                   </div>
                   <div className="msg msg-cabinet">
-                    <span className="msg-avatar" aria-hidden="true">
-                      GE
-                    </span>
+                    <AscentMark className="msg-avatar" />
                     <div className="msg-body">
                       <p className="msg-author">Cabinet</p>
                       {reply(item)}

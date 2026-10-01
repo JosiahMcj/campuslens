@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 
 import { LoginError, login, type Session } from '../auth'
+import { AscentMark } from './AscentMark'
 import { errorMessage } from '../states'
 
 interface LoginScreenProps {
@@ -48,6 +49,7 @@ export function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
   return (
     <main className="login-page">
       <div className="login-panel">
+        <AscentMark className="login-mark" />
         <h1>Golden Eagle AI Cabinet</h1>
         <p className="login-lede">
           The weekly student success briefing, under your institution's
