@@ -6,12 +6,11 @@ import { FindingLink } from './FindingLink'
 const STAT_IDS = ['M1', 'M2', 'M3', 'M4', 'M8'] as const
 
 /**
- * The five headline measures, room-scale for the projector: typographic
- * figures on a ruled row, no boxes. Each figure IS a FindingLink — it opens
- * the evidence drawer — and shows the finding's `display` string verbatim
- * (no arithmetic in the UI) at 2.4rem with tabular figures, the finding's
- * title beneath at 0.89rem. The rail stacks them vertically from 1200 px;
- * below that they form a two-column ruled row above the document.
+ * The five headline measures, room-scale for the projector. Each figure IS
+ * a FindingLink — it opens the evidence drawer — and shows the finding's
+ * `display` string verbatim (no arithmetic in the UI) with tabular figures,
+ * the finding's title beneath. They sit as a row of cards above the
+ * document: one row across from 1200 px, two across below.
  */
 export function StatRow({
   findings,

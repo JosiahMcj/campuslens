@@ -1,0 +1,787 @@
+/* LibreChat-style theme for the Golden Eagle AI Cabinet.
+
+   Loaded after index.css, it keeps every component and the page structure
+   and changes only the look: LibreChat's neutral gray palette with its teal
+   accent, Inter throughout, rounded surfaces, a full-height left sidebar,
+   and a dark mode switched by a `dark` class on <html> (see theme.ts).
+   Colour values follow LibreChat's client/src/style.css tokens (MIT).
+
+   index.css reads its colours from nine tokens (--paper, --rail, --ink,
+   --ink-soft, --rule, --navy, --gold, --gold-wash, --alert), so remapping
+   them here restyles the whole app; the rules below add the new shapes. */
+
+:root {
+  --paper: #ffffff; /* surface-primary */
+  --rail: #f7f7f8; /* sidebar: surface-primary-alt (gray-50) */
+  --surface: #f7f7f8; /* cards on the page */
+  --surface-hover: #ececec; /* gray-100 */
+  --ink: #212121; /* text-primary (gray-800) */
+  --ink-soft: #595959; /* text-secondary-alt (gray-500) */
+  --rule: #e3e3e3; /* border-light (gray-200) */
+  --rule-strong: #cdcdcd; /* border-medium (gray-300) */
+  --navy: #126e6b; /* accent-primary: links, focus, primary actions */
+  --gold: #b45309; /* amber-700: the leadership decision */
+  --gold-wash: #fffbeb; /* amber-50 */
+  --alert: #b91c1c; /* red-700 */
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 4px 12px rgb(0 0 0 / 0.06);
+
+  --document: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --instrument: var(--document);
+
+  --radius-control: 0.75rem;
+  --radius-surface: 1rem;
+
+  color-scheme: light;
+}
+
+.dark {
+  --paper: #212121; /* gray-800: the main surface in dark */
+  --rail: #171717; /* gray-850: the sidebar */
+  --surface: #2f2f2f; /* gray-700 */
+  --surface-hover: #393939; /* gray-650 */
+  --ink: #ececec; /* gray-100 */
+  --ink-soft: #b4b4b4;
+  --rule: #393939;
+  --rule-strong: #595959;
+  --navy: #41a79d; /* accent-primary, dark */
+  --gold: #f59e0b; /* amber-500 */
+  --gold-wash: #2a2419;
+  --alert: #f87171; /* red-400 */
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 12px rgb(0 0 0 / 0.25);
+
+  color-scheme: dark;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--navy) 25%, var(--paper));
+}
+
+/* --- Type: Inter, neutral headings, a calmer scale ---------------------------*/
+
+h1,
+h2,
+h3 {
+  color: var(--ink);
+  letter-spacing: -0.015em;
+}
+
+h1 {
+  font-size: 1.6rem;
+}
+
+h2 {
+  font-size: 1.2rem;
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 12px;
+}
+
+h3 {
+  font-size: 1.05rem;
+}
+
+.doc {
+  line-height: 1.7;
+}
+
+.doc section {
+  margin-top: 40px;
+}
+
+.page-header .lede,
+.login-lede {
+  color: var(--ink-soft);
+}
+
+a {
+  color: var(--navy);
+}
+
+/* --- Controls: LibreChat's rounded buttons ------------------------------------*/
+
+button {
+  border-radius: var(--radius-control);
+}
+
+button.secondary,
+.close-button {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--rule-strong);
+}
+
+button.secondary:hover,
+.close-button:hover {
+  background: var(--surface-hover);
+  border-color: var(--rule-strong);
+  color: var(--ink);
+}
+
+button.secondary:active {
+  background: var(--rule);
+}
+
+/* Filled actions are the ink colour, as LibreChat's send button is. */
+.primary-button,
+.question-row button[type='submit'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.primary-button:hover,
+.question-row button[type='submit']:hover {
+  background: color-mix(in srgb, var(--ink) 82%, var(--paper));
+}
+
+.primary-button:active,
+.question-row button[type='submit']:active {
+  background: color-mix(in srgb, var(--ink) 70%, var(--paper));
+}
+
+/* --- Page layout: sidebar on the left, one centred content column ------------*/
+
+@media (min-width: 1200px) {
+  .page {
+    display: grid;
+    grid-template-columns: 17rem minmax(0, 1fr);
+    grid-template-areas:
+      'rail header'
+      'rail question'
+      'rail stats'
+      'rail doc';
+    grid-template-rows: auto auto auto 1fr;
+    column-gap: 0;
+    justify-content: stretch;
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  .page > :not(.rail) {
+    width: min(100% - 64px, 52rem);
+    justify-self: center;
+  }
+
+  .page-header {
+    padding-top: 40px;
+  }
+
+  .stat-block,
+  .page > .stat-row {
+    grid-area: stats;
+  }
+
+  .doc {
+    padding-bottom: 64px;
+  }
+
+  .rail {
+    grid-area: rail;
+    grid-row: 1 / -1;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    margin: 0;
+    padding: 12px;
+    box-sizing: border-box;
+    overflow-y: auto;
+    border-radius: 0;
+    border-right: 1px solid var(--rule);
+    background: var(--rail);
+    scrollbar-width: thin;
+  }
+
+  .rail-inner {
+    position: static;
+    min-height: 100%;
+    gap: 16px;
+  }
+
+  /* The account block stays pinned to the sidebar's bottom edge. */
+  .rail .masthead-account {
+    order: 99;
+    margin-top: auto;
+    position: sticky;
+    bottom: -12px;
+    margin-inline: -12px;
+    margin-bottom: -12px;
+    padding: 12px 20px 16px;
+    background: var(--rail);
+  }
+}
+
+/* Below 1200 px the sidebar's parts flow into the page: the brand and account
+   blocks lead as a compact header, the section list is dropped (the page is
+   one column to scroll), and the task cards follow the question bar. */
+@media (max-width: 1199px) {
+  .page {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .masthead-brand,
+  .masthead-account {
+    order: -1;
+  }
+
+  .section-nav {
+    display: none;
+  }
+
+  .dispatch {
+    margin-top: 28px;
+  }
+}
+
+/* --- Sidebar masthead: brand on top, account at the bottom --------------------*/
+
+.masthead {
+  margin: 0;
+  padding: 0;
+  border-bottom: none;
+}
+
+.masthead-brand {
+  padding: 8px 8px 12px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.masthead-product {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.masthead-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 0.6rem;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.masthead-institution,
+.masthead-dataset {
+  font-size: 0.85rem;
+  padding-inline-start: calc(1.9rem + 10px);
+}
+
+.masthead-account {
+  padding: 12px 8px 4px;
+  border-top: 1px solid var(--rule);
+}
+
+.masthead-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--ink);
+}
+
+.masthead-avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 999px;
+  background: var(--navy);
+  color: var(--paper);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.masthead-user-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.85rem;
+}
+
+.masthead-actions {
+  gap: 8px;
+}
+
+.masthead-actions button {
+  margin-inline-start: 0;
+  border-radius: 0.6rem;
+}
+
+.masthead-actions button:last-child {
+  margin-inline-start: auto;
+}
+
+.theme-toggle {
+  display: inline-grid;
+  place-items: center;
+  padding: 6px 8px;
+}
+
+@media (max-width: 1199px) {
+  .masthead-brand {
+    margin-top: 16px;
+    border-bottom: none;
+    padding-bottom: 4px;
+  }
+
+  .masthead-account {
+    border-top: none;
+    border-bottom: 1px solid var(--rule);
+    padding: 4px 8px 16px;
+    margin-bottom: 8px;
+  }
+}
+
+/* --- Sidebar section list: LibreChat's conversation-list rows -----------------*/
+
+.section-nav {
+  margin-top: 0;
+}
+
+.section-nav::before {
+  content: 'Briefing';
+  display: block;
+  padding: 0 10px 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.section-nav ul {
+  border-top: none;
+  display: grid;
+  gap: 2px;
+}
+
+.section-nav li {
+  border-bottom: none;
+}
+
+.section-nav a {
+  padding: 7px 10px;
+  border-radius: 0.6rem;
+  color: var(--ink);
+}
+
+.section-nav a:hover,
+.section-nav a:focus-visible {
+  background: var(--surface-hover);
+  text-decoration: none;
+}
+
+.section-nav a[aria-current='location'] {
+  background: var(--surface-hover);
+  font-weight: 600;
+}
+
+/* --- Task cards in the sidebar -------------------------------------------------*/
+
+.dispatch {
+  margin-top: 0;
+}
+
+.dispatch h3 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  letter-spacing: 0;
+  padding-inline: 2px;
+}
+
+.task-card {
+  background: var(--paper);
+  border-color: var(--rule);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow);
+}
+
+.task-card .task-id {
+  font-variant-numeric: normal;
+  font-size: 0.8rem;
+}
+
+.task-card[data-status='done'] {
+  border-color: color-mix(in srgb, var(--navy) 55%, var(--rule));
+}
+
+/* --- Question bar: LibreChat's composer ----------------------------------------*/
+
+.question-bar {
+  margin-top: 24px;
+}
+
+.question-bar h2 {
+  font-size: 1rem;
+  margin-bottom: 8px;
+}
+
+.question-row {
+  position: relative;
+  align-items: center;
+}
+
+.question-row input {
+  flex-basis: 100%;
+  padding: 14px 18px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 1.5rem;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+
+.question-row input:focus {
+  border-color: var(--rule-strong);
+  outline: 2px solid color-mix(in srgb, var(--navy) 45%, transparent);
+  outline-offset: 0;
+}
+
+.question-row input {
+  padding-inline-end: 10.5rem;
+}
+
+/* The send button sits inside the composer, at its right edge. */
+.question-row button[type='submit'] {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  border-radius: 999px;
+  padding: 8px 18px;
+}
+
+/* The approved questions read as LibreChat's starter prompts. */
+.question-row button.secondary {
+  border-radius: 999px;
+  border-color: var(--rule);
+  background: var(--surface);
+  font-size: 0.9rem;
+  padding: 8px 14px;
+}
+
+.question-row button.secondary:hover {
+  background: var(--surface-hover);
+}
+
+.refusal-card,
+.model-unavailable {
+  background: color-mix(in srgb, var(--alert) 7%, var(--paper));
+  border-color: color-mix(in srgb, var(--alert) 45%, var(--rule));
+  border-radius: var(--radius-control);
+}
+
+/* --- The four figures: a row of cards -------------------------------------------*/
+
+.stat-block {
+  margin-top: 24px;
+}
+
+.stat-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  border-block: none;
+  margin-top: 0;
+}
+
+@media (min-width: 1200px) {
+  .stat-row {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  /* Five across: the odd last figure no longer needs the full row. */
+  .stat-row > :last-child:nth-child(odd) {
+    grid-column: auto;
+  }
+}
+
+.stat-row .stat-figure,
+.skeleton-figure,
+.stat-figure:nth-child(-n + 2),
+.skeleton-figure:nth-child(-n + 2) {
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.stat-row .stat-figure:hover {
+  background: var(--surface-hover);
+}
+
+.stat-display {
+  font-size: 1.9rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.stat-figure:hover .stat-display {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.stat-title {
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.skeleton-figure-value {
+  height: 1.9rem;
+}
+
+.demo-note {
+  margin-top: 10px;
+}
+
+/* --- The briefing document ------------------------------------------------------*/
+
+.finding-link {
+  border-radius: 4px;
+  text-decoration-color: color-mix(in srgb, var(--navy) 50%, transparent);
+}
+
+.finding-link:hover {
+  color: var(--navy);
+  background: color-mix(in srgb, var(--navy) 12%, transparent);
+}
+
+.finding-list {
+  border-top: none;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+
+.finding-row {
+  padding: 10px 14px;
+}
+
+.finding-list li:last-child .finding-row {
+  border-bottom: none;
+}
+
+.finding-row:hover {
+  background: var(--surface);
+}
+
+.office-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+
+.office-table th,
+.office-table td {
+  border: none;
+  border-bottom: 1px solid var(--rule);
+}
+
+.office-table tr:last-child td {
+  border-bottom: none;
+}
+
+.office-table th {
+  background: var(--surface);
+}
+
+.staff-plan {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-surface);
+}
+
+.stub-tag {
+  background: var(--surface);
+  border-radius: 999px;
+}
+
+.decision-panel {
+  border-color: color-mix(in srgb, var(--gold) 55%, var(--rule));
+  border-radius: var(--radius-surface);
+}
+
+.approve-button {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--paper);
+}
+
+.approve-button:hover,
+.approve-button:active {
+  background: color-mix(in srgb, var(--gold) 85%, var(--ink));
+  color: var(--paper);
+}
+
+.simulated-task,
+.state-panel,
+.confirm-inline,
+.upload-result,
+.upload-errors,
+.password-callout {
+  border-radius: var(--radius-control);
+}
+
+.simulated-task {
+  background: var(--paper);
+}
+
+.skeleton {
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--surface) 25%,
+    var(--surface-hover) 50%,
+    var(--surface) 75%
+  );
+  background-size: 200% 100%;
+}
+
+/* --- Evidence drawer --------------------------------------------------------------*/
+
+.drawer-overlay {
+  background: rgb(0 0 0 / 0.45);
+}
+
+.drawer {
+  border-radius: var(--radius-surface) 0 0 var(--radius-surface);
+  box-shadow: -8px 0 32px rgb(0 0 0 / 0.2);
+}
+
+.drawer-facts dt {
+  color: var(--ink);
+}
+
+.drawer-value {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.id-badge {
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.formula,
+.row-list,
+.event pre {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+}
+
+/* --- Audit log --------------------------------------------------------------------*/
+
+.filter-bar .filter {
+  background: var(--surface);
+  border-color: var(--rule);
+}
+
+.filter-bar .filter:hover {
+  background: var(--surface-hover);
+  border-color: var(--rule);
+}
+
+.filter-bar .filter.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.event-list {
+  border-top: none;
+  display: grid;
+  gap: 8px;
+}
+
+.event {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  padding: 12px 14px;
+}
+
+.event-type {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.event-data-refused {
+  border-color: color-mix(in srgb, var(--alert) 45%, var(--rule));
+  background: color-mix(in srgb, var(--alert) 5%, var(--paper));
+}
+
+.event-data-refused .event-type {
+  color: var(--alert);
+}
+
+/* --- Sign-in: LibreChat's centred auth card ----------------------------------------*/
+
+.login-page {
+  align-items: center;
+  background: var(--paper);
+}
+
+.login-panel {
+  margin-top: 0;
+  padding: 32px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--shadow);
+  background: var(--paper);
+}
+
+.login-panel h1 {
+  font-size: 1.5rem;
+  text-align: center;
+}
+
+.login-lede {
+  text-align: center;
+}
+
+.login-panel form input,
+.question-row input,
+.user-table select,
+.add-user-row select,
+.add-user-row input {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.login-panel form input {
+  padding: 12px 14px;
+  border-color: var(--rule-strong);
+  border-radius: var(--radius-control);
+}
+
+.login-panel form input:focus {
+  border-color: var(--navy);
+}
+
+.login-panel form .primary-button {
+  padding: 12px 16px;
+  background: var(--navy);
+  border-color: var(--navy);
+}
+
+.login-panel form .primary-button:hover {
+  background: color-mix(in srgb, var(--navy) 85%, var(--ink));
+}
+
+.login-notice {
+  border-radius: var(--radius-control);
+}

@@ -28,6 +28,10 @@ interface DecisionPanelProps {
   approvedTasks: Record<string, { task: SimulatedTask; created: boolean }>
   dispatches: Record<string, DispatchUiState>
   onApprove: (decisionId: string) => void
+  /** The heading; the chat reply calls it "Your decision". */
+  title?: string
+  /** The heading's id (s-decision); null where another copy already has it. */
+  headingId?: string | null
   onPrepareDispatch: (decisionId: string) => void
   onSendDispatch: (decisionId: string) => void
   onOpenEvidence: (findingId: string) => void
@@ -92,6 +96,8 @@ export function DecisionPanel({
   approvedTasks,
   dispatches,
   onApprove,
+  title = '6. Leadership decisions',
+  headingId = 's-decision',
   onPrepareDispatch,
   onSendDispatch,
   onOpenEvidence,
@@ -99,8 +105,12 @@ export function DecisionPanel({
   const canCompose = COMPOSE_ROLES.includes(role)
   const canSend = SEND_ROLES.includes(role)
   return (
-    <section aria-labelledby="s-decision" className="decision-panel">
-      <h2 id="s-decision">6. Leadership decisions</h2>
+    <section
+      aria-labelledby={headingId ?? undefined}
+      aria-label={headingId === null ? title : undefined}
+      className="decision-panel"
+    >
+      <h2 id={headingId ?? undefined}>{title}</h2>
       <p className="panel-note">
         This decision belongs to leadership. The cabinet advises, a person
         decides. Approving records a <code>decision.approved</code> event and

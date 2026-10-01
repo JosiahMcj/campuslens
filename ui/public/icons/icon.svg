@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#1F3A5F"/>
-  <text x="256" y="296" text-anchor="middle" font-family="'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif" font-size="196" font-weight="600" fill="#F7F6F2">GE</text>
-  <rect x="156" y="336" width="200" height="10" fill="#8A6D1F"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
+  <rect width="100" height="100" fill="#10213F"/>
+  <path d="M28 58 L50 37.5 L72 58" fill="none" stroke="#C9A85C" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M37.5 66 L50 54 L62.5 66" fill="none" stroke="#FFFFFF" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

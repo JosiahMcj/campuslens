@@ -64,8 +64,8 @@ export function DispatchPanel({
       )}
       {allDone && (
         <p className="hint">
-          Every grant above is logged. The full event list is in the audit log
-          below.
+          Every grant above is logged. The full event list is in the audit
+          log.
         </p>
       )}
     </section>
