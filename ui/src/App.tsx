@@ -596,8 +596,9 @@ function BriefingPage({
     ? modelDownSection
     : (cabinetBriefing?.sections[3] ?? null)
   const dispatchVisible = act && (askState.kind === 'sending' || askState.kind === 'accepted')
-  // The rail (figures, task cards, section list) renders whenever it would
+  // The rail (task cards, section list, account) renders whenever it would
   // have content; on the findings error state only the document column shows.
+  // The four figures sit above the document, not in the rail.
   const railVisible = dispatchVisible || findingsState.kind !== 'error'
 
   return (
@@ -612,6 +613,28 @@ function BriefingPage({
       </header>
 
       {act && <QuestionBar state={askState} questions={questions} onAsk={ask} />}
+
+      {findingsState.kind === 'loading' && (
+        <div className="stat-row" aria-hidden="true">
+          {[0, 1, 2, 3].map((index) => (
+            <div key={index} className="skeleton-figure">
+              <div className="skeleton skeleton-figure-value" />
+              <div className="skeleton skeleton-figure-label" />
+            </div>
+          ))}
+        </div>
+      )}
+      {findingsState.kind === 'ready' && (
+        <div className="stat-block">
+          <StatRow findings={findingsState.data} onOpenEvidence={openEvidence} />
+          {fictional && (
+            <p className="demo-note">
+              Demonstration data. Upload your institution's export in
+              Institution settings.
+            </p>
+          )}
+        </div>
+      )}
 
       {railVisible && (
         <aside className="rail" aria-label="Instruments">
@@ -641,28 +664,7 @@ function BriefingPage({
                   The cabinet is working…
                 </p>
               ))}
-            {findingsState.kind === 'loading' && (
-              <div className="stat-row" aria-hidden="true">
-                {[0, 1, 2, 3].map((index) => (
-                  <div key={index} className="skeleton-figure">
-                    <div className="skeleton skeleton-figure-value" />
-                    <div className="skeleton skeleton-figure-label" />
-                  </div>
-                ))}
-              </div>
-            )}
-            {findingsState.kind === 'ready' && (
-              <>
-                <StatRow findings={findingsState.data} onOpenEvidence={openEvidence} />
-                {fictional && (
-                  <p className="demo-note">
-                    Demonstration data. Upload your institution's export in
-                    Institution settings.
-                  </p>
-                )}
-                <SectionNav />
-              </>
-            )}
+            {findingsState.kind === 'ready' && <SectionNav />}
           </div>
         </aside>
       )}
