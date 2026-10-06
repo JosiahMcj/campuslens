@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 
+import { findingLabel } from '../findingLabels'
+
 interface FindingLinkProps {
   findingId: string
   onOpen: (findingId: string) => void
@@ -8,16 +10,23 @@ interface FindingLinkProps {
   className?: string
 }
 
-/** A number in the briefing text that opens the evidence drawer for its finding. */
+/**
+ * A number on screen that opens the evidence for its figure. The number itself
+ * is the link text; a screen reader also hears which figure it opens (by its
+ * display label, never the bare finding code).
+ */
 export function FindingLink({ findingId, onOpen, children, className }: FindingLinkProps) {
   return (
     <button
       type="button"
       className={className !== undefined ? `finding-link ${className}` : 'finding-link'}
       onClick={() => onOpen(findingId)}
-      aria-label={`Open the evidence for finding ${findingId}`}
     >
       {children}
+      <span className="visually-hidden">
+        {' '}
+        (open the evidence: {findingLabel(findingId)})
+      </span>
     </button>
   )
 }

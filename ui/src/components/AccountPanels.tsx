@@ -1,5 +1,8 @@
 import { roleDisplayName, type Role, type Session } from '../auth'
-import { setPrefs, usePrefs, type Motion, type TextSize, type ThemeChoice } from '../theme'
+import { fieldLabels } from '../fieldLabels'
+import { findingLabel } from '../findingLabels'
+import { setPrefs, usePrefs, type Motion, type TextSize } from '../theme'
+import { ChevronIcon } from './icons'
 
 /** What each human role may do, mirroring the API's role table (auth.ts). */
 const ROLE_ABILITIES: Record<Role, string[]> = {
@@ -140,13 +143,12 @@ export function SettingsPanel({
     <div className="account-panel">
       <h3 className="panel-subhead">Display</h3>
       <p className="panel-text">Saved in this browser only.</p>
-      <Segmented<ThemeChoice>
+      <Segmented<'light' | 'dark'>
         label="Theme"
-        value={prefs.theme}
+        value={prefs.theme === 'dark' ? 'dark' : 'light'}
         options={[
           { value: 'light', label: 'Light' },
           { value: 'dark', label: 'Dark' },
-          { value: 'system', label: 'System' },
         ]}
         onChange={(theme) => setPrefs({ theme })}
       />
@@ -204,7 +206,17 @@ const EMPLOYEE_NAMES: Record<string, string> = {
  * the audit log or the ask response, never assumed); then what each human
  * role may do. Nobody, human or AI, receives student names or identifiers.
  */
-export function DataAccessPanel({ grants }: { grants: AccessGrant[] | null }) {
+export function DataAccessPanel({
+  grants,
+  error = null,
+  onRetry,
+}: {
+  grants: AccessGrant[] | null
+  /** The latest run's grants could not be loaded: a plain sentence, shown
+   * with Retry instead of the "ask a question" empty text. */
+  error?: string | null
+  onRetry?: () => void
+}) {
   return (
     <div className="account-panel">
       <p className="panel-text">
@@ -214,9 +226,18 @@ export function DataAccessPanel({ grants }: { grants: AccessGrant[] | null }) {
       </p>
 
       <h3 className="panel-subhead">AI employees, latest run</h3>
-      {grants === null || grants.length === 0 ? (
-        <p className="panel-text">
-          Ask a question to see exactly what each employee was granted.
+      {error !== null ? (
+        <div className="state-error state-panel error-panel" role="alert">
+          <p>Couldn't load what each employee was given. {error}</p>
+          {onRetry !== undefined && (
+            <button type="button" className="btn-secondary secondary" onClick={onRetry}>
+              Retry
+            </button>
+          )}
+        </div>
+      ) : grants === null || grants.length === 0 ? (
+        <p className="panel-text state-empty">
+          Ask a question to see exactly what each employee was given.
         </p>
       ) : (
         <div className="grant-list">
@@ -226,17 +247,36 @@ export function DataAccessPanel({ grants }: { grants: AccessGrant[] | null }) {
                 {EMPLOYEE_NAMES[grant.role] ?? grant.role}
                 {grant.aggregate && <span className="grant-tag">Totals only</span>}
               </p>
-              <p className="grant-meta">
-                Findings: {grant.findings.length > 0 ? grant.findings.join(', ') : 'none'}
-              </p>
-              <p className="grant-meta">{grant.fields.length} fields granted</p>
-              <ul className="grant-fields">
-                {grant.fields.map((field) => (
-                  <li key={field}>
-                    <code>{field}</code>
-                  </li>
-                ))}
-              </ul>
+              {grant.findings.length > 0 && (
+                <p className="grant-meta">
+                  Explains: {grant.findings.map((id) => findingLabel(id)).join('; ')}
+                </p>
+              )}
+              <details className="fold technical-detail">
+                <summary>
+                  <ChevronIcon />
+                  {grant.aggregate ? 'Totals it was given' : 'Data it was given'} (
+                  {grant.fields.length})
+                </summary>
+                <ul className="plain-list">
+                  {fieldLabels(grant.fields).map((label) => (
+                    <li key={label}>{label}</li>
+                  ))}
+                </ul>
+                <details className="fold technical-detail">
+                  <summary>
+                    <ChevronIcon />
+                    Technical detail
+                  </summary>
+                  <ul className="field-list">
+                    {grant.fields.map((field) => (
+                      <li key={field}>
+                        <code>{field}</code>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </details>
             </div>
           ))}
         </div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { ApiError } from '../auth'
 import {
@@ -16,12 +16,27 @@ import {
   type AidReviewRow,
   type AidStatus,
 } from '../aid'
-import { formatTimestamp, errorMessage } from '../states'
+import { friendlyError } from '../errors'
+import { formatTimestamp } from '../states'
+import { ChevronIcon } from './icons'
 
 type QueueState =
   | { kind: 'loading' }
   | { kind: 'error'; message: string }
   | { kind: 'ready'; queue: AidQueue }
+
+type StatusFilter = 'all' | AidStatus
+
+/** The row's holds in one short phrase: "$412.50, Bursar". */
+function holdSummary(row: AidReviewRow): string {
+  const holds = row.facts.holds
+  if (holds.length === 0) return 'No hold on record'
+  if (holds.length === 1) {
+    return `${formatAmount(holds[0].amount)}, ${holds[0].responsible_office}`
+  }
+  const offices = [...new Set(holds.map((hold) => hold.responsible_office))].join(', ')
+  return `${holds.length} holds, ${offices}`
+}
 
 /** The facts one row shows, read from the record and nothing else. */
 function RowFacts({ row }: { row: AidReviewRow }) {
@@ -77,6 +92,7 @@ function EditableRow({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const savedRef = useRef<HTMLSpanElement>(null)
   // The row as saved by someone else, after a refused (409) save.
   const [savedVersion, setSavedVersion] = useState<AidReviewRow | null>(null)
   const changed = status !== row.status || note !== row.note
@@ -94,7 +110,7 @@ function EditableRow({
   ].join(' ')
 
   const save = async () => {
-    if (!changed || over > 0) return
+    if (saving || !changed || over > 0) return
     const change: AidReviewChange = { expected_updated_at: row.updated_at }
     if (status !== row.status) change.status = status
     if (note !== row.note) change.note = note
@@ -106,6 +122,9 @@ function EditableRow({
       onSaved(updated)
       setSavedVersion(null)
       setSaved(true)
+      // The Save button goes quiet once nothing has changed: focus moves to
+      // the "Saved" line so it never falls to the page.
+      window.setTimeout(() => savedRef.current?.focus(), 0)
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
         setError(AID_ROW_CHANGED_MESSAGE)
@@ -118,7 +137,7 @@ function EditableRow({
           if (note === row.note) setNote(fresh.note)
         }
       } else {
-        setError(errorMessage(caught))
+        setError(friendlyError(caught, 'The review'))
       }
     } finally {
       setSaving(false)
@@ -140,6 +159,7 @@ function EditableRow({
         onChange={(event) => {
           setStatus(event.target.value as AidStatus)
           setSaved(false)
+          setError(null)
         }}
       >
         {AID_STATUSES.map((value) => (
@@ -160,6 +180,7 @@ function EditableRow({
         onChange={(event) => {
           setNote(event.target.value)
           setSaved(false)
+          setError(null)
         }}
       />
       <p className="aid-count" id={countId}>
@@ -181,13 +202,18 @@ function EditableRow({
       <div className="aid-edit-actions">
         <button
           type="submit"
-          className="dispatch-prepare"
-          disabled={!changed || saving || over > 0}
+          className="btn-primary primary-button"
+          disabled={!saving && (!changed || over > 0)}
+          aria-busy={saving}
+          onClick={(event) => {
+            if (saving) event.preventDefault()
+          }}
         >
+          {saving && <span className="spinner" aria-hidden="true" />}
           {saving ? 'Saving…' : 'Save'}
         </button>
         {saved && !changed && (
-          <span className="hint" role="status">
+          <span className="hint" role="status" tabIndex={-1} ref={savedRef}>
             Saved
           </span>
         )}
@@ -211,12 +237,14 @@ function EditableRow({
  */
 export function AidQueuePanel({ canEdit }: { canEdit: boolean }) {
   const [state, setState] = useState<QueueState>({ kind: 'loading' })
+  const [filter, setFilter] = useState<StatusFilter>('all')
+  const [openRow, setOpenRow] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     try {
       setState({ kind: 'ready', queue: await fetchAidQueue() })
     } catch (caught) {
-      setState({ kind: 'error', message: errorMessage(caught) })
+      setState({ kind: 'error', message: friendlyError(caught, 'The review queue') })
     }
   }, [])
 
@@ -252,11 +280,10 @@ export function AidQueuePanel({ canEdit }: { canEdit: boolean }) {
 
   return (
     <div className="aid-queue">
-      <p className="panel-text">
-        Facts for the Financial Aid office to start its own review. The cabinet
-        makes no determination about any student. Each status and note is set by
-        a person in the Financial Aid office.
-        {canEdit ? '' : ' This view is read only.'}
+      <p className="panel-intro">
+        Facts for the Financial Aid office to start its own review. The Cabinet
+        decides nothing about any student; a person in the office sets each
+        status and note.{canEdit ? '' : ' This view is read only.'}
       </p>
 
       {state.kind === 'loading' && (
@@ -266,11 +293,11 @@ export function AidQueuePanel({ canEdit }: { canEdit: boolean }) {
       )}
 
       {state.kind === 'error' && (
-        <div className="state-panel error-panel" role="alert">
-          <h3>The review queue could not be loaded</h3>
-          <p>{state.message}</p>
+        <div className="state-error state-panel error-panel" role="alert">
+          <p>Couldn't load the review queue. {state.message}</p>
           <button
             type="button"
+            className="btn-secondary secondary"
             onClick={() => {
               setState({ kind: 'loading' })
               void load()
@@ -282,48 +309,123 @@ export function AidQueuePanel({ canEdit }: { canEdit: boolean }) {
       )}
 
       {state.kind === 'ready' && state.queue.rows.length === 0 && (
-        <p className="hint">
-          No students are queued yet. The queue is prepared from the decision
-          panel once leadership authorizes the emergency-aid review.
+        <p className="state-empty hint">
+          No students are queued yet. Once leadership approves the decision,
+          prepare the queue from the decision's Next steps.
         </p>
       )}
 
       {state.kind === 'ready' && state.queue.rows.length > 0 && (
-        <>
-          <p className="aid-summary">
-            {state.queue.rows.length} students
-            {state.queue.fictional ? ', demonstration data' : ''}.{' '}
-            {AID_STATUSES.map((status) => {
-              const count = state.queue.rows.filter((row) => row.status === status).length
-              return `${aidStatusLabel(status)} ${count}`
-            }).join(', ')}
-            .
-          </p>
-          <ul className="aid-rows">
-            {state.queue.rows.map((row) => (
-              <li key={row.id} className="aid-row" aria-label={`Student ${row.student_id}`}>
-                <div className="aid-row-head">
-                  <span className="id-badge">{row.student_id}</span>
-                  <span className="aid-status">{aidStatusLabel(row.status)}</span>
-                </div>
-                <RowFacts row={row} />
-                {canEdit ? (
-                  <EditableRow row={row} onSaved={replaceRow} onStale={reloadRow} />
-                ) : (
-                  <p className="aid-note-read">
-                    {row.note !== '' ? row.note : 'No note yet.'}
-                  </p>
-                )}
-                {row.updated_by !== null && row.updated_at !== null && (
-                  <p className="hint">
-                    Last updated by {row.updated_by} at {formatTimestamp(row.updated_at)}.
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        </>
+        <QueueRows
+          queue={state.queue}
+          filter={filter}
+          onFilter={setFilter}
+          openRow={openRow}
+          onToggle={(id) => setOpenRow((current) => (current === id ? null : id))}
+          canEdit={canEdit}
+          onSaved={replaceRow}
+          onStale={reloadRow}
+        />
       )}
     </div>
+  )
+}
+
+/**
+ * The queue as one compact row per student (id, hold, status) that opens to
+ * the facts and the form when chosen, with a status filter above.
+ */
+function QueueRows({
+  queue,
+  filter,
+  onFilter,
+  openRow,
+  onToggle,
+  canEdit,
+  onSaved,
+  onStale,
+}: {
+  queue: AidQueue
+  filter: StatusFilter
+  onFilter: (filter: StatusFilter) => void
+  openRow: number | null
+  onToggle: (id: number) => void
+  canEdit: boolean
+  onSaved: (row: AidReviewRow) => void
+  onStale: (id: number) => Promise<AidReviewRow | null>
+}) {
+  const count = (status: AidStatus) => queue.rows.filter((row) => row.status === status).length
+  const rows = filter === 'all' ? queue.rows : queue.rows.filter((row) => row.status === filter)
+  return (
+    <>
+      <p className="aid-summary">
+        {queue.rows.length} student{queue.rows.length === 1 ? '' : 's'}
+        {queue.fictional ? ', demonstration data' : ''}:{' '}
+        {AID_STATUSES.map((status) => `${count(status)} ${aidStatusLabel(status).toLowerCase()}`).join(
+          ', ',
+        )}
+        .
+      </p>
+      <label className="aid-filter">
+        <span>Show</span>{' '}
+        <select value={filter} onChange={(event) => onFilter(event.target.value as StatusFilter)}>
+          <option value="all">All ({queue.rows.length})</option>
+          {AID_STATUSES.map((status) => (
+            <option key={status} value={status}>
+              {aidStatusLabel(status)} ({count(status)})
+            </option>
+          ))}
+        </select>
+      </label>
+      {rows.length === 0 ? (
+        <p className="state-empty hint">
+          No students with this status. Choose All to see every student.
+        </p>
+      ) : (
+        <ul className="aid-rows">
+          {rows.map((row) => {
+            const open = openRow === row.id
+            const panelId = `aid-row-${row.id}`
+            return (
+              <li
+                key={row.id}
+                className={open ? 'aid-row open' : 'aid-row'}
+                aria-label={`Student ${row.student_id}`}
+              >
+                <button
+                  type="button"
+                  className="aid-row-head finding-row"
+                  aria-expanded={open}
+                  aria-controls={panelId}
+                  onClick={() => onToggle(row.id)}
+                >
+                  <span className="aid-row-id">{row.student_id}</span>
+                  <span className="aid-row-hold">{holdSummary(row)}</span>
+                  <span className="aid-status">{aidStatusLabel(row.status)}</span>
+                  <ChevronIcon />
+                </button>
+                {open && (
+                  <div className="aid-row-body" id={panelId}>
+                    <RowFacts row={row} />
+                    {canEdit ? (
+                      <EditableRow row={row} onSaved={onSaved} onStale={onStale} />
+                    ) : (
+                      <p className="aid-note-read">
+                        {row.note !== '' ? row.note : 'No note yet.'}
+                      </p>
+                    )}
+                    {row.updated_by !== null && row.updated_at !== null && (
+                      <p className="hint">
+                        Last updated by {row.updated_by} at {formatTimestamp(row.updated_at)}.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </>
   )
 }
