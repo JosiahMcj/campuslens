@@ -100,7 +100,7 @@ make build          # production UI into ui/dist
 make serve          # one production process serving UI + API (needs CABINET_SECRET_KEY)
 ```
 
-The app always opens on the login screen, and the demo begins by signing in as
+The app always opens on the sign-in screen, and the demo begins by signing in as
 the president. Every route except `/health` and `/ready` needs a logged-in user,
 and `RUNBOOK.md` has the curl flow under "Users and login".
 
@@ -214,7 +214,10 @@ server-side and HMAC-signed, passwords are scrypt-hashed, and every POST needs
 the session's CSRF token. Sign-in throttling hard-locks an IP, or an IP and
 email pair, after 5 failures in 15 minutes, answering 429 with a `Retry-After`
 header. The bare email is never hard-blocked and instead pays a progressive
-delay of 1, 2, 4, and 8 seconds, capped at 30. Request bodies are capped at
+delay of 1, 2, 4, and 8 seconds, capped at 30. Every address may make 600
+requests a minute, because a whole campus can share one address, and each
+signed-in session may make 120. Over either limit the answer is "The Cabinet is
+busy. Wait a minute and try again." Request bodies are capped at
 256 KB (20 MB on the dataset upload route). We enforce the cap on the bytes
 actually read, and on admin routes it applies only after authentication. The
 audit log is a verifiable hash chain in the `audit_events` table

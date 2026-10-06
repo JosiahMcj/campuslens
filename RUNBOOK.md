@@ -38,7 +38,7 @@ of `var/api.log` and exits non-zero. `make ui` starts Vite on
 `http://127.0.0.1:5200` with the same health-polling contract.
 
 Both servers run in the background with pid files in `var/`, so open
-`http://127.0.0.1:5200`. It opens on the login screen, and the demo signs in as
+`http://127.0.0.1:5200`. It opens on the sign-in screen, and the demo signs in as
 the president.
 
 ## Users, institutions, and login
@@ -49,8 +49,10 @@ recordings live in `var/cabinet.db` (override with `CABINET_DB`). Dataset
 documents live under `var/data/<institution slug>/<dataset id>.json` with 0600
 permissions.
 
-`make bootstrap-admin` creates the bootstrap institution and its first admin,
-and the generated password prints exactly once and is never logged.
+`make bootstrap-admin` creates the first institution and its first admin,
+and the generated password prints exactly once and is never logged. The first
+institution is shown as "Demonstration University" and keeps the slug
+`bootstrap`.
 `make institution` adds another tenant, and `make user` adds a login in one of
 five roles, which are admin, executive, staff, reviewer, and aid (the Financial Aid office). Every new
 institution is seeded with the fictional demonstration dataset ("Demonstration
@@ -238,7 +240,10 @@ The database schema is versioned in the `schema_migrations` table. The app
 applies known pending migrations at startup and refuses to start on a schema
 version it does not know, which means a database written by a newer build. The
 refusal is one clear line on stderr, not a traceback. `make migrate` runs the
-migrations explicitly and shows what applied.
+migrations explicitly and shows what applied. Migration 8 renames the first
+institution from "Bootstrap Institution" to "Demonstration University" when it
+still has the old name. A name an admin already changed is left alone, and the
+slug stays `bootstrap`.
 
 ```bash
 make migrate
@@ -307,8 +312,8 @@ app's 20 MB upload cap, so the app's own 413 is what a client sees), and sets
 HSTS. `deploy/nginx.conf` is the equivalent for nginx, with edge rate limits
 matching the in-process ones, and certbot owns the certificate
 (`certbot --nginx -d <domain>`). Stock Caddy has no rate limiting, so the
-in-process limits (60 per minute per IP and session, 5 per minute on
-`POST /ask`) still apply and see the real client IP. The Caddyfile names the
+in-process limits (600 per minute per IP, 120 per minute per signed-in session,
+and 5 per minute on `POST /ask` and the dispatch Send) still apply and see the real client IP. The Caddyfile names the
 plugin to use when the edge must limit too.
 
 ### Keeping it alive
@@ -378,7 +383,9 @@ After an executive approves a leadership decision, the decision panel offers
 from the findings and stores it as a draft. A staff member or admin then
 clicks "Send as \<their address\>", and the message goes to the office
 mailbox. The executive prepares and approves but never sends, and we never
-compose, queue, or send anything without that click.
+compose, queue, or send anything without that click. Until then the follow-up
+task reads "Waiting for the message to be sent", and the panel shows "Sent"
+once the message has left.
 
 The recipient must exist in the institution's office address book first, or
 Send refuses with a message naming the office. An admin manages the book in

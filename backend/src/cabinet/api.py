@@ -33,7 +33,8 @@ Endpoints:
 - ``GET  /decisions`` — the leadership decision for the latest question
   asked (the registry default before anything is asked), with approval
   state; the text is built from the findings at request time.
-- ``POST /decisions/approve`` — creates one simulated follow-up task,
+- ``POST /decisions/approve`` — creates one follow-up task (waiting until
+  a named person sends the office's message),
   idempotent per decision id (any approved question's decision id is
   accepted), restart-safe via the ``decisions`` table.
 - ``GET  /decisions/{id}/dispatch`` — the dispatch state for one decision
@@ -243,7 +244,13 @@ ANALYST_ROLES = ("enrollment_analyst", "student_success_analyst")
 build_decisions = DEFAULT_QUESTION.build_decisions
 build_actions = DEFAULT_QUESTION.build_actions
 
-SIMULATED_STATUS = "simulated, nothing sent"
+# The follow-up task's status. Approving creates the task; the message to
+# the office leaves only when a named person presses Send, and the UI takes
+# "Sent" from the dispatch record. A task stored by an earlier build carries
+# the legacy wording, which is rewritten on the way out.
+TASK_STATUS_WAITING = "Waiting for the message to be sent"
+TASK_STATUS_SENT = "Sent"
+LEGACY_TASK_STATUS = "simulated, nothing sent"
 
 
 class AskRequest(BaseModel):
@@ -1448,7 +1455,7 @@ def create_app(
             "decision_id": body.decision_id,
             "office": decision["follow_up"]["office"],
             "description": decision["follow_up"]["description"],
-            "status": SIMULATED_STATUS,
+            "status": TASK_STATUS_WAITING,
         }
         user = request.scope["cabinet_user"]
         created = store.record_decision(
@@ -1465,8 +1472,19 @@ def create_app(
                 body.decision_id,
                 dataset_id=int(runtime.dataset["id"]),
             )
+            current = dict(existing) if existing is not None else dict(task)
+            # Never claim "nothing sent" once the office's message has left.
+            dispatch = store.dispatch_for_task(
+                institution_id,
+                str(current.get("id", task["id"])),
+                dataset_id=int(runtime.dataset["id"]),
+            )
+            if dispatch is not None and dispatch["status"] == "sent":
+                current["status"] = TASK_STATUS_SENT
+            elif current.get("status") in (LEGACY_TASK_STATUS, None):
+                current["status"] = TASK_STATUS_WAITING
             return {
-                "task": existing if existing is not None else task,
+                "task": current,
                 "created": False,
                 "event_ids": [],
             }

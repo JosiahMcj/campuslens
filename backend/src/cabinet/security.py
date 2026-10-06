@@ -18,8 +18,11 @@ Controls, in the order a request meets them (the first three apply to the
 public routes too — ``GET /health``, ``GET /ready``, ``POST /auth/login`` —
 so a no-session caller is still capped and rate-limited):
 
-1. **Rate limit (per client IP)** — in-process token bucket (default 60
-   requests/min). Over the limit is 429 with ``Retry-After``. The buckets
+1. **Rate limit (per client IP)** — in-process token bucket (default 600
+   requests/min, generous because a whole campus can share one address;
+   each signed-in session has its own tighter bucket, default 120/min, in
+   step 6). Over the limit is 429 with ``Retry-After`` and the plain
+   message ``RATE_LIMIT_MESSAGE``. The buckets
    are per process: behind more than one worker or replica, limits must
    move to the proxy (see docs/SECURITY.md). Keys idle longer than the
    eviction horizon are dropped, so the bucket dict cannot grow without
@@ -38,7 +41,8 @@ so a no-session caller is still capped and rate-limited):
    otherwise; ``GET /auth/me`` hands the token to the UI). In production
    the Origin/Referer host is checked against the request host as a
    second layer. CSRF needs no body, so it runs before the body is read.
-6. **Rate limit (per session)** — same general bucket keyed by session,
+6. **Rate limit (per session)** — a separate bucket per signed-in
+   session (default 120 requests/min, ``CABINET_RATE_SESSION_PER_MIN``),
    plus the tighter consequential-action bucket (default 5/min) on
    ``POST /ask`` (it spends model calls) and on the dispatch Send route
    (it can make a message leave the machine).
@@ -194,9 +198,17 @@ def is_api_route(method: str, path: str) -> bool:
     )
 
 ENV_RATE_GENERAL = "CABINET_RATE_GENERAL_PER_MIN"
+ENV_RATE_SESSION = "CABINET_RATE_SESSION_PER_MIN"
 ENV_RATE_ASK = "CABINET_RATE_ASK_PER_MIN"
-DEFAULT_RATE_GENERAL_PER_MIN = 60
+# Per client address. Everyone behind one campus address shares it, so it
+# is generous; the per-session bucket below is what paces one person.
+DEFAULT_RATE_GENERAL_PER_MIN = 600
+DEFAULT_RATE_SESSION_PER_MIN = 120
 DEFAULT_RATE_ASK_PER_MIN = 5
+
+# The body of every rate-limit 429: plain words a person can act on. The
+# Retry-After header carries the seconds.
+RATE_LIMIT_MESSAGE = "The Cabinet is busy. Wait a minute and try again."
 
 GENERIC_LOGIN_ERROR = "invalid email or password"
 
@@ -400,6 +412,7 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
         secret_key: str,
         production: bool,
         rate_general_per_min: int | None = None,
+        rate_session_per_min: int | None = None,
         rate_ask_per_min: int | None = None,
     ) -> None:
         super().__init__(app)
@@ -410,6 +423,11 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
             rate_general_per_min
             if rate_general_per_min is not None
             else _env_int(ENV_RATE_GENERAL, DEFAULT_RATE_GENERAL_PER_MIN)
+        )
+        self.session_bucket = TokenBucket(
+            rate_session_per_min
+            if rate_session_per_min is not None
+            else _env_int(ENV_RATE_SESSION, DEFAULT_RATE_SESSION_PER_MIN)
         )
         self.ask_bucket = TokenBucket(
             rate_ask_per_min
@@ -525,7 +543,7 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
         if not allowed:
             return JSONResponse(
                 status_code=429,
-                content={"detail": "rate limit exceeded"},
+                content={"detail": RATE_LIMIT_MESSAGE},
                 headers={"Retry-After": str(retry_after)},
             )
 
@@ -632,11 +650,11 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
                 )
 
         # 6. Per-session rate limits.
-        allowed, retry_after = self.general_bucket.allow(f"session:{session['id']}")
+        allowed, retry_after = self.session_bucket.allow(f"session:{session['id']}")
         if not allowed:
             return JSONResponse(
                 status_code=429,
-                content={"detail": "rate limit exceeded"},
+                content={"detail": RATE_LIMIT_MESSAGE},
                 headers={"Retry-After": str(retry_after)},
             )
         # The tighter ask bucket covers POST /ask (it spends model calls)
@@ -650,7 +668,7 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
                 if not allowed:
                     return JSONResponse(
                         status_code=429,
-                        content={"detail": "ask rate limit exceeded"},
+                        content={"detail": RATE_LIMIT_MESSAGE},
                         headers={"Retry-After": str(retry_after)},
                     )
 

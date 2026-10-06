@@ -36,8 +36,12 @@ from cabinet.auth import (
     sign_session_id,
 )
 from cabinet.security import (
+    DEFAULT_RATE_ASK_PER_MIN,
+    DEFAULT_RATE_GENERAL_PER_MIN,
+    DEFAULT_RATE_SESSION_PER_MIN,
     GENERIC_LOGIN_ERROR,
     MAX_BODY_BYTES,
+    RATE_LIMIT_MESSAGE,
     ROUTE_ROLE_PREFIXES,
     ROUTE_ROLES,
 )
@@ -675,6 +679,45 @@ def test_general_rate_limit_429_with_retry_after(
     limited = client.get("/questions")
     assert limited.status_code == 429
     assert int(limited.headers["Retry-After"]) > 0
+    assert limited.json() == {"detail": RATE_LIMIT_MESSAGE}
+
+
+def test_rate_limit_defaults_fit_a_shared_campus_address() -> None:
+    """Everyone behind one campus address shares the per-address bucket,
+    so it is ten times the old 60; one person is paced by the session."""
+    assert DEFAULT_RATE_GENERAL_PER_MIN == 600
+    assert DEFAULT_RATE_SESSION_PER_MIN == 120
+    assert DEFAULT_RATE_ASK_PER_MIN == 5
+    assert RATE_LIMIT_MESSAGE == "The Cabinet is busy. Wait a minute and try again."
+
+
+def test_session_rate_limit_is_its_own_bucket(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A session is paced by its own bucket while the address bucket still
+    has room: two calls pass, the third is a plain-worded 429."""
+    monkeypatch.setenv("CABINET_RATE_SESSION_PER_MIN", "2")
+    client = make_authenticated_client(create_app())
+    assert client.get("/questions").status_code == 200
+    assert client.get("/questions").status_code == 200
+    limited = client.get("/questions")
+    assert limited.status_code == 429
+    assert int(limited.headers["Retry-After"]) > 0
+    assert limited.json() == {"detail": RATE_LIMIT_MESSAGE}
+
+
+def test_session_rate_limit_does_not_spend_another_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two people behind one address: one person using up their session
+    bucket leaves the other person's untouched."""
+    monkeypatch.setenv("CABINET_RATE_SESSION_PER_MIN", "1")
+    app = create_app()
+    first = make_authenticated_client(app)
+    assert first.get("/questions").status_code == 200
+    assert first.get("/questions").status_code == 429
+    second = make_authenticated_client(app, role="executive")
+    assert second.get("/questions").status_code == 200
 
 
 def test_ask_has_a_tighter_rate_limit(
@@ -690,6 +733,7 @@ def test_ask_has_a_tighter_rate_limit(
     limited = client.post("/ask", json=question)
     assert limited.status_code == 429
     assert int(limited.headers["Retry-After"]) > 0
+    assert limited.json() == {"detail": RATE_LIMIT_MESSAGE}
 
 
 # --- production fail-closed ------------------------------------------------------

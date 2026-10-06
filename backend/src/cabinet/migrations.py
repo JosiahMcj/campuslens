@@ -36,9 +36,13 @@ from datetime import UTC, datetime
 PLATFORM_INSTITUTION_ID = 0
 
 BOOTSTRAP_SLUG = "bootstrap"
-BOOTSTRAP_NAME = "Bootstrap Institution"
+# The display name of the first institution. The slug stays ``bootstrap``
+# (scripts, exports and outbox paths use it); only the name a person reads
+# changed, in migration 8.
+BOOTSTRAP_NAME = "Demonstration University"
+LEGACY_BOOTSTRAP_NAME = "Bootstrap Institution"
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 class SchemaVersionError(RuntimeError):
@@ -431,6 +435,20 @@ def _migration_7(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE institutions ADD COLUMN {name} {declaration}")
 
 
+def _migration_8(conn: sqlite3.Connection) -> None:
+    """The first institution's display name: "Bootstrap Institution"
+    becomes "Demonstration University". Only a row that still carries the
+    old name under the ``bootstrap`` slug is renamed, so an institution an
+    admin has already renamed keeps its name. The slug is unchanged. A new
+    database is created with the new name already (migration 1 seeds
+    ``BOOTSTRAP_NAME``), so there this is a no-op.
+    """
+    conn.execute(
+        "UPDATE institutions SET name = ? WHERE slug = ? AND name = ?",
+        (BOOTSTRAP_NAME, BOOTSTRAP_SLUG, LEGACY_BOOTSTRAP_NAME),
+    )
+
+
 MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (1, "h2 tenancy baseline", _migration_1),
     (2, "r3 dataset pinning and audit index", _migration_2),
@@ -438,7 +456,8 @@ MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (4, "r4 briefings keyed per dataset", _migration_4),
     (5, "dispatches and office contacts", _migration_5),
     (6, "financial aid review queue", _migration_6),
-    (SCHEMA_VERSION, "counseling aggregate authorization", _migration_7),
+    (7, "counseling aggregate authorization", _migration_7),
+    (SCHEMA_VERSION, "demonstration institution display name", _migration_8),
 ]
 
 
