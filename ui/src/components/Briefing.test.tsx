@@ -81,6 +81,42 @@ describe('the full briefing', () => {
     )
   })
 
+  it('has one "About this answer" for the whole panel, however many sections a model wrote', () => {
+    const html = full()
+    expect(html.split('About this answer')).toHaveLength(2)
+    // It closes the briefing, after section 5.
+    expect(html.indexOf('About this answer')).toBeGreaterThan(html.indexOf('id="s-actions"'))
+  })
+
+  it('section 3 links each figure once: no stray Evidence link, no linked caption', () => {
+    const groups: ModelSection = {
+      kind: 'available',
+      text: 'raw',
+      provenance: PROVENANCE,
+      claims: [
+        { text: 'The Bursar is responsible for 24 of the 28 unresolved holds.', finding_ids: ['M5'] },
+        { text: 'The remaining offices hold far fewer: Library 1, Registrar 2.', finding_ids: ['M5'] },
+      ],
+    }
+    const html = renderToStaticMarkup(
+      <BriefingSections
+        findings={FINDINGS}
+        fictional
+        enrollment={null}
+        studentSuccess={groups}
+        chiefSummary={null}
+        onCheckAgain={null}
+        onOpenEvidence={() => {}}
+      />,
+    )
+    const s3 = html.slice(html.indexOf('id="s-groups"'), html.indexOf('id="s-evidence"'))
+    expect(s3).toMatch(/<span class="num">28 unresolved holds<\/span>/)
+    expect(s3).not.toContain('>Evidence<')
+    expect(s3).not.toContain('Unresolved holds by office: ')
+    expect(s3).toContain('<caption class="visually-hidden">Unresolved holds by office</caption>')
+    expect(s3.split('finding-link').length - 1).toBe(1)
+  })
+
   it('section 2 adds the comparison table and folds the analyst text', () => {
     const html = full()
     const s2 = html.slice(html.indexOf('id="s-measure"'), html.indexOf('id="s-groups"'))

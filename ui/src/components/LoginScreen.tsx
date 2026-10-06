@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { LoginError, login, type Session } from '../auth'
 import { AscentMark } from './AscentMark'
@@ -30,6 +30,18 @@ export function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
+  const emailRef = useRef<HTMLInputElement>(null)
+  const passwordRef = useRef<HTMLInputElement>(null)
+  // Which field takes focus once the form is usable again after a failed
+  // sign-in (the inputs are disabled while it is in flight).
+  const refocus = useRef<'email' | 'password' | null>(null)
+
+  useEffect(() => {
+    if (refocus.current === null || submitting) return
+    const field = refocus.current === 'email' ? emailRef.current : passwordRef.current
+    refocus.current = null
+    field?.focus()
+  })
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -42,6 +54,7 @@ export function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
     setFieldErrors(problems)
     if (problems.email !== undefined || problems.password !== undefined) {
       setError(null)
+      refocus.current = problems.email !== undefined ? 'email' : 'password'
       return
     }
     setSubmitting(true)
@@ -51,6 +64,9 @@ export function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
         onSignedIn(await login(trimmedEmail, password))
       } catch (cause) {
         setError(cause instanceof LoginError ? cause.message : SIGN_IN_FALLBACK_ERROR)
+        // Back to the start of the form to try again; the error under the
+        // button is announced (role="alert") and named by the button.
+        refocus.current = 'email'
       } finally {
         setSubmitting(false)
       }
@@ -90,6 +106,7 @@ export function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
             <div className="landing-field">
               <label htmlFor="login-email">Email</label>
               <input
+                ref={emailRef}
                 id="login-email"
                 type="email"
                 autoComplete="username"
@@ -100,7 +117,13 @@ export function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
                 onChange={(event) => setEmail(event.target.value)}
                 disabled={submitting}
                 aria-invalid={emailError !== undefined}
-                aria-describedby={emailError !== undefined ? 'login-email-error' : undefined}
+                aria-describedby={
+                  emailError !== undefined
+                    ? 'login-email-error'
+                    : error !== null
+                      ? 'login-error'
+                      : undefined
+                }
               />
               {emailError !== undefined && (
                 <p className="landing-field-error" id="login-email-error">
@@ -113,6 +136,7 @@ export function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
               <label htmlFor="login-password">Password</label>
               <div className="landing-password">
                 <input
+                  ref={passwordRef}
                   id="login-password"
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"

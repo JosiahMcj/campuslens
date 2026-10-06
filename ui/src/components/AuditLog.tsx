@@ -6,7 +6,8 @@ import { aidStatusLabel, type AidStatus } from '../aid'
 import { plainSentence } from '../errors'
 import { fieldLabels } from '../fieldLabels'
 import { findingLabel } from '../findingLabels'
-import { formatTimestamp } from '../states'
+import { getSession } from '../auth'
+import { formatTimestamp, formatTimestampFull, personName } from '../states'
 import {
   ApprovedIcon,
   GrantedIcon,
@@ -37,6 +38,9 @@ interface AuditLogProps {
   highlightEventId?: number | null
   /** The log could not be loaded: a plain sentence, shown with Retry. */
   loadError?: string | null
+  /** Who is looking: their own entries read "You approved …". Defaults to
+   * the signed-in person. */
+  viewerEmail?: string | null
 }
 
 /** The "Show" filter: five plain groups instead of the raw event types. */
@@ -83,10 +87,11 @@ function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-/** Who did it, in words: an AI employee by name, a person by email. */
-function actorName(actor: string): string {
+/** Who did it, in words: an AI employee by name, the viewer as "you",
+ * anyone else by email. */
+function actorName(actor: string, viewerEmail: string | null = null): string {
   if (ROLE_NAMES[actor] !== undefined) return ROLE_NAMES[actor]
-  if (actor.includes('@')) return actor
+  if (actor.includes('@')) return personName(actor, viewerEmail)
   if (/^\d+$/.test(actor)) return 'a signed-in person'
   return 'the Cabinet'
 }
@@ -106,7 +111,7 @@ function quotedFields(fields: string[]): string {
 
 function statusWord(value: unknown): string {
   return value === 'open' || value === 'in_review' || value === 'closed'
-    ? aidStatusLabel(value as AidStatus)
+    ? aidStatusLabel(value as AidStatus).toLowerCase()
     : 'another status'
 }
 
@@ -119,10 +124,11 @@ interface DescribedEvent {
   details: [string, string][]
 }
 
-/** One audit entry as a plain sentence, its governance mark, and details. */
-function describeEvent(event: AuditEvent): DescribedEvent {
+/** One audit entry as a plain sentence, its governance mark, and details
+ * (only what the sentence does not already say). */
+function describeEvent(event: AuditEvent, viewerEmail: string | null): DescribedEvent {
   const payload = event.payload
-  const who = actorName(event.actor)
+  const who = actorName(event.actor, viewerEmail)
   // An email address keeps its own case; a name starts the sentence.
   const Who = who.includes('@') ? who : capitalize(who)
   const details: [string, string][] = []
@@ -131,7 +137,6 @@ function describeEvent(event: AuditEvent): DescribedEvent {
   }
   switch (event.type) {
     case 'question.asked':
-      add('Question', str(payload.question))
       return {
         sentence: `${Who} asked “${str(payload.question) ?? 'a question'}”.`,
         mark: null,
@@ -183,7 +188,6 @@ function describeEvent(event: AuditEvent): DescribedEvent {
       }
       const question = str(payload.question)
       if (question !== null) {
-        add('Question', question)
         const reason = str(payload.reason)
         add('Reason', reason === null ? null : plainSentence(reason))
         return {
@@ -265,7 +269,8 @@ function describeEvent(event: AuditEvent): DescribedEvent {
       }
     }
     case 'admin.changed': {
-      const by = str(payload.by) ?? 'An administrator'
+      const byEmail = str(payload.by)
+      const by = byEmail !== null ? capitalize(personName(byEmail, viewerEmail)) : 'An administrator'
       switch (payload.action) {
         case 'office_contacts':
           return { sentence: `${by} updated the office mailboxes.`, mark: null, details }
@@ -319,9 +324,10 @@ function deniedRequestSentence(): string {
 }
 
 /**
- * The audit log (Beat 6): every entry as a plain sentence, oldest first,
- * filtered by a five-option "Show" select, each with a "Details" fold of
- * plain labels and values (never the raw record). "Test a refusal" sends
+ * The audit log (Beat 6): every entry as a compact plain sentence and its
+ * time, newest first, filtered by a five-option "Show" select. An entry
+ * with more to say than its sentence has a "Details" fold of plain labels
+ * and values (never the raw record), ending with the full record time. "Test a refusal" sends
  * the Enrollment Analyst's out-of-role request; the refusal is recorded and
  * its entry highlighted. An entry passed in (highlightEventId) is scrolled
  * to and highlighted the same way.
@@ -334,9 +340,13 @@ export function AuditLog({
   onShowDeniedRequest,
   highlightEventId = null,
   loadError = null,
+  viewerEmail = getSession()?.user.email ?? null,
 }: AuditLogProps) {
   const [filter, setFilter] = useState<AuditFilterId>('all')
+  // Newest first: the API returns the chain in order (ascending ids).
   const visible = filterAuditEvents(events ?? [], filter)
+    .slice()
+    .sort((a, b) => b.id - a.id)
   const highlightId =
     deniedRequest.kind === 'shown' ? deniedRequest.eventId : (highlightEventId ?? null)
   const highlightPresent =
@@ -353,7 +363,7 @@ export function AuditLog({
     <section aria-label="Audit log" id="audit-log" className="audit-log">
       <p className="panel-intro">
         Every question, data request, refusal and decision is recorded here and can
-        never be changed. Newest entries are last.
+        never be changed. Newest entries are first.
       </p>
 
       <div className="audit-tools">
@@ -430,7 +440,7 @@ export function AuditLog({
       ) : (
         <ol className="event-list">
           {visible.map((event) => {
-            const described = describeEvent(event)
+            const described = describeEvent(event, viewerEmail)
             const highlighted = event.id === highlightId
             const mark = described.mark !== null ? MARKS[described.mark] : null
             return (
@@ -452,9 +462,11 @@ export function AuditLog({
                   {described.sentence}
                   {highlighted && <span className="event-badge">Just recorded</span>}
                 </p>
-                <p className="event-ts">{formatTimestamp(event.ts)}</p>
+                <p className="event-ts">
+                  <time dateTime={event.ts}>{formatTimestamp(event.ts)}</time>
+                </p>
                 {described.details.length > 0 && (
-                  <details className="fold technical-detail" open={highlighted}>
+                  <details className="fold technical-detail event-details" open={highlighted}>
                     <summary>
                       Details
                     </summary>
@@ -465,6 +477,8 @@ export function AuditLog({
                           <dd>{value}</dd>
                         </Fragment>
                       ))}
+                      <dt>Recorded</dt>
+                      <dd>{formatTimestampFull(event.ts)}</dd>
                     </dl>
                   </details>
                 )}

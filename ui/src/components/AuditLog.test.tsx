@@ -158,3 +158,32 @@ describe('AuditLog', () => {
     expect(document.body.textContent).toContain('Nothing is recorded yet. Ask an approved question')
   })
 })
+
+describe('AuditLog — order, viewer and details', () => {
+  it('lists the newest entry first and says so', () => {
+    const { container } = mount()
+    const ids = [...container.querySelectorAll('.event')].map((item) => item.id)
+    expect(ids).toEqual(['event-6', 'event-5', 'event-4', 'event-3', 'event-2', 'event-1'])
+    expect(container.textContent).toContain('Newest entries are first.')
+  })
+
+  it('reads the viewer as "You" and anyone else by address', () => {
+    mount({ viewerEmail: 'staff@example.edu' })
+    expect(screen.getByText(/You sent the message to Financial Aid\./)).toBeTruthy()
+    cleanup()
+    mount({ viewerEmail: 'someone@example.edu' })
+    expect(screen.getByText(/staff@example\.edu sent the message to Financial Aid\./)).toBeTruthy()
+  })
+
+  it('shows a short time on the row, the full time only inside Details, and Details only where there is detail', () => {
+    const { container } = mount()
+    const asked = container.querySelector('#event-1')!
+    expect(asked.querySelector('.event-ts')?.textContent).toMatch(/^Oct 5, \d{1,2}:00 (AM|PM)$/)
+    // The question is the sentence itself: no Details fold to repeat it.
+    expect(asked.querySelector('details')).toBeNull()
+    const granted = container.querySelector('#event-3')!
+    const details = granted.querySelector('details')!
+    expect(details.textContent).toContain('Recorded')
+    expect(details.textContent).toMatch(/2026-10-05 \d{2}:00:00 \S+/)
+  })
+})

@@ -784,7 +784,8 @@ export interface AuditEvent {
   payload: Record<string, unknown>
 }
 
-/** The log renders oldest first — newest last — per the demo script. */
+/** Filter by event type; the order is the caller's (the audit log shows
+ * newest first). */
 export function filterEvents(
   events: AuditEvent[],
   eventType: string | null,
@@ -794,10 +795,45 @@ export function filterEvents(
 }
 
 // The API records every event in UTC; the reader is a person in one place
-// (a president in one time zone), so the log shows the viewer's own zone, named,
-// rather than making them convert. `timeZone` is a test seam — production
-// leaves it undefined and takes the browser's zone.
+// (a president in one time zone), so times show in the viewer's own zone.
+// `timeZone` is a test seam: production leaves it undefined and takes the
+// browser's zone.
+
+function timeParts(date: Date, timeZone: string | undefined, withDate: boolean) {
+  const part: Record<string, string> = {}
+  for (const { type, value } of new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    ...(withDate ? { month: 'short', day: 'numeric' } : {}),
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).formatToParts(date)) {
+    part[type] = value
+  }
+  return part
+}
+
+/** A time as people read it on screen: "Oct 5, 10:41 PM" (no seconds, no
+ * zone code). */
 export function formatTimestamp(ts: string, timeZone?: string): string {
+  const date = new Date(ts)
+  if (Number.isNaN(date.getTime())) return ts
+  const part = timeParts(date, timeZone, true)
+  return `${part.month} ${part.day}, ${part.hour}:${part.minute} ${part.dayPeriod}`
+}
+
+/** The time of day alone: "10:38 PM" (the AI employees' cards, where the
+ * run is the one just asked). */
+export function formatClock(ts: string, timeZone?: string): string {
+  const date = new Date(ts)
+  if (Number.isNaN(date.getTime())) return ts
+  const part = timeParts(date, timeZone, false)
+  return `${part.hour}:${part.minute} ${part.dayPeriod}`
+}
+
+/** The full record time, to the second and with the zone named:
+ * "2026-09-24 17:24:46 CDT". Only inside the audit log's Details fold. */
+export function formatTimestampFull(ts: string, timeZone?: string): string {
   const date = new Date(ts)
   if (Number.isNaN(date.getTime())) return ts
   const part: Record<string, string> = {}
@@ -818,6 +854,15 @@ export function formatTimestamp(ts: string, timeZone?: string): string {
     `${part.year}-${part.month}-${part.day} ` +
     `${part.hour}:${part.minute}:${part.second} ${part.timeZoneName}`
   )
+}
+
+/** "you" when the person named is the one viewing, else their address. */
+export function personName(email: string, viewerEmail: string | null | undefined): string {
+  return viewerEmail != null &&
+    viewerEmail !== '' &&
+    email.trim().toLowerCase() === viewerEmail.trim().toLowerCase()
+    ? 'you'
+    : email
 }
 
 export interface TaskRecord {

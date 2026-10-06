@@ -36,7 +36,11 @@ describe('DispatchPanel', () => {
   it('shows each AI employee plainly: finished time, figures by label, fields by name', () => {
     const html = panel()
     expect(html).toContain('Enrollment Analyst')
-    expect(html).toContain('Finished at 2026-10-05')
+    // "Finished 10:38 PM": the time of day, no date, seconds or zone code.
+    expect(html).toMatch(/Finished \d{1,2}:\d{2} (AM|PM)</)
+    expect(html).not.toContain('Finished at')
+    expect(html).toContain('class="panel-intro"')
+    expect(html).toContain('>Done<')
     expect(html).toContain('Explains: Spring registration vs. same point last year; Registered credit hours vs. last year')
     expect(html).toContain('<li>Registration status</li>')
     expect(html).toContain('<li>Hold amount</li>')

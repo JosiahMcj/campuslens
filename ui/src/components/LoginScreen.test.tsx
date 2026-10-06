@@ -108,6 +108,26 @@ describe('LoginScreen', () => {
     expect(submitButton().getAttribute('aria-describedby')).toBe(alert.id)
   })
 
+  it('moves focus to the email field after a failed sign-in, which names the error', async () => {
+    loginMock.mockRejectedValue(new LoginError('That email and password did not work.'))
+    render(<LoginScreen notice={null} onSignedIn={() => {}} />)
+    fill('president@demo.test', 'wrong')
+    fireEvent.click(submitButton())
+    const alert = await screen.findByRole('alert')
+    const email = screen.getByLabelText('Email')
+    await waitFor(() => expect(document.activeElement).toBe(email))
+    expect(email.getAttribute('aria-describedby')).toBe(alert.id)
+  })
+
+  it('moves focus to the first field with a problem', () => {
+    render(<LoginScreen notice={null} onSignedIn={() => {}} />)
+    fireEvent.click(submitButton())
+    expect(document.activeElement).toBe(screen.getByLabelText('Email'))
+    fill('president@demo.test', '')
+    fireEvent.click(submitButton())
+    expect(document.activeElement).toBe(screen.getByLabelText('Password'))
+  })
+
   it('never shows raw error text for an unexpected failure', async () => {
     loginMock.mockRejectedValue(new TypeError('Failed to fetch'))
     render(<LoginScreen notice={null} onSignedIn={() => {}} />)

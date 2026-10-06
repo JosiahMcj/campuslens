@@ -787,7 +787,9 @@ svg.mark {
   border-bottom: 1px solid var(--rule);
   text-align: start;
   vertical-align: top;
-  overflow-wrap: anywhere;
+  /* Whole words on desktop ("Status" never breaks into "Statu s"); a long
+     address still wraps. The stacked phone view below may break anywhere. */
+  overflow-wrap: break-word;
 }
 
 .stack-table thead th {
@@ -817,6 +819,11 @@ svg.mark {
     display: block;
     width: 100%;
     box-sizing: border-box;
+  }
+
+  .stack-table th,
+  .stack-table td {
+    overflow-wrap: anywhere;
   }
 
   .stack-table {
@@ -983,6 +990,9 @@ details[open]::details-content {
 .task-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  /* Cards keep their own height and line up at the top: name, status,
+     what it explains, then the data fold, in the same order on each. */
+  align-items: start;
   gap: var(--space-3);
 }
 
@@ -1027,11 +1037,36 @@ details[open]::details-content {
 
 .task-card .task-status {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin: var(--space-1) 0 var(--space-2);
+  color: var(--ink-soft);
+}
+
+/* The status as a small labelled pill, its mark beside the word. */
+.task-card .task-mark {
+  display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  margin: var(--space-2) 0 0;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  font-size: var(--text-xs);
   font-weight: 600;
-  color: var(--ink-soft);
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+.task-card .task-mark svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: none;
+}
+
+.task-card .task-time {
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
 }
 
 .task-card .task-findings {
@@ -1044,11 +1079,13 @@ details[open]::details-content {
   border-color: var(--navy);
 }
 
-.task-card[data-status='done'] .task-status {
+.task-card[data-status='done'] .task-mark {
+  border-color: var(--navy);
   color: var(--navy);
 }
 
-.task-card[data-status='unavailable'] .task-status {
+.task-card[data-status='unavailable'] .task-mark {
+  border-color: var(--alert);
   color: var(--alert);
 }
 
@@ -1057,8 +1094,10 @@ details[open]::details-content {
     transition: border-color 200ms ease-out;
   }
 
-  .task-card .task-status {
-    transition: color 200ms ease-out;
+  .task-card .task-mark {
+    transition:
+      color 200ms ease-out,
+      border-color 200ms ease-out;
   }
 }
 
@@ -1397,10 +1436,6 @@ details[open]::details-content {
 
 .decision-panel h2 {
   border-bottom-color: var(--gold);
-}
-
-.panel-note {
-  color: var(--ink-soft);
 }
 
 .decision-card h3 {
@@ -1868,8 +1903,24 @@ details[open]::details-content {
 }
 
 .event {
+  /* One compact row: the sentence, its time at the end of the line, and
+     Details (where there is any) under both. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-4);
+  align-items: baseline;
   border-bottom: 1px solid var(--rule);
-  padding: var(--space-3) var(--space-1);
+  padding: var(--space-2) var(--space-1);
+}
+
+.event > .event-details {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 639px) {
+  .event {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .event.highlighted {
@@ -1878,7 +1929,8 @@ details[open]::details-content {
 }
 
 .event-ts {
-  margin: var(--space-1) 0 0;
+  margin: 0;
+  white-space: nowrap;
   color: var(--ink-soft);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
@@ -1909,7 +1961,17 @@ details[open]::details-content {
 }
 
 .event details {
-  margin-top: var(--space-2);
+  margin-top: var(--space-1);
+  border-top: none;
+}
+
+/* Details is a quiet link-sized fold on desktop; on phones it keeps the
+   44 px tap target every summary has. */
+@media (min-width: 900px) {
+  .event > .event-details > summary {
+    min-height: 0;
+    padding-block: var(--space-1);
+  }
 }
 
 .event summary {
@@ -2197,8 +2259,9 @@ details[open]::details-content {
   font-size: var(--text-sm);
 }
 
+/* Gold belongs to the decision only: a missing mailbox is a quiet note. */
 .office-gap {
-  color: var(--gold);
+  color: var(--ink-soft);
 }
 
 .field-error {
