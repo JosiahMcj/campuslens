@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react'
 
 import type { ApprovedQuestion } from '../api'
-import { APPROVED_QUESTION, isApprovedQuestion } from '../states'
 import { SendIcon } from './icons'
+import './Explore.css'
 
 interface ChatComposerProps {
   /** The approved questions from GET /questions; null until loaded. */
@@ -20,16 +20,23 @@ interface ChatComposerProps {
    * takes the starter cards' place (the field still works). */
   questionsFailed?: boolean
   onRetryQuestions?: (() => void) | null
+  /** The Explore example questions for the "Try" row on the empty screen:
+   * null while loading, [] when there are none to show. */
+  examples?: string[] | null
+  /** The examples could not be loaded: a quiet line with Retry. */
+  examplesFailed?: boolean
+  onRetryExamples?: (() => void) | null
 }
 
 /**
  * The chat composer: one question field (id question-input, as the demo
- * script and verification expect) with the send button inside it. On the
- * empty screen (before the first answer) the approved questions show as
- * one-click starter cards; after that the composer is the field alone, so
- * the answer keeps the screen. The field accepts only the
- * approved questions; anything else is still submitted, so the API refuses
- * it and records the refusal as a data.refused audit event (Beat 6).
+ * script and verification expect) with the send button inside it. It takes
+ * any question: an approved briefing question runs the briefing, anything
+ * else is answered by Explore (the page decides). On the empty screen
+ * (before the first answer) the approved questions show as one-click
+ * starter cards with a quiet "Try" row of example questions under them;
+ * after that the composer is the field alone, so the answer keeps the
+ * screen.
  */
 export function ChatComposer({
   questions,
@@ -40,11 +47,12 @@ export function ChatComposer({
   onAskAgain = null,
   questionsFailed = false,
   onRetryQuestions = null,
+  examples = [],
+  examplesFailed = false,
+  onRetryExamples = null,
 }: ChatComposerProps) {
   const [question, setQuestion] = useState('')
   const approved = questions ?? []
-  const approvedTexts = questions?.map((q) => q.text) ?? [APPROVED_QUESTION]
-  const offScope = question.trim().length > 0 && !isApprovedQuestion(question, approvedTexts)
 
   const send = (text: string) => {
     const trimmed = text.trim()
@@ -61,12 +69,11 @@ export function ChatComposer({
   return (
     <div className="composer-wrap">
       {starters && approved.length > 0 && (
-        <div className="starters" role="list" aria-label="Approved questions">
+        <div className="starters" role="group" aria-label="Approved questions">
           {approved.map((item) => (
             <button
               key={item.id}
               type="button"
-              role="listitem"
               className="starter"
               disabled={sending}
               onClick={() => send(item.text)}
@@ -82,6 +89,43 @@ export function ChatComposer({
           The approved questions didn’t load. You can still type one below.{' '}
           {onRetryQuestions !== null && (
             <button type="button" className="link-button" onClick={onRetryQuestions}>
+              Retry
+            </button>
+          )}
+        </p>
+      )}
+      {starters && examples !== null && examples.length > 0 && (
+        <div className="explore-try">
+          <p className="explore-try-title" id="explore-try-title">
+            Try
+          </p>
+          <ul className="explore-chip-row" aria-labelledby="explore-try-title">
+            {examples.map((text) => (
+              <li key={text}>
+                <button
+                  type="button"
+                  className="chip explore-chip"
+                  disabled={sending}
+                  onClick={() => send(text)}
+                >
+                  {text}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {starters && examples === null && !examplesFailed && (
+        <div className="explore-try" role="status" aria-busy="true">
+          <span className="visually-hidden">Loading example questions…</span>
+          <div className="skeleton skeleton-line short" />
+        </div>
+      )}
+      {starters && examplesFailed && (
+        <p className="explore-try explore-try-line" role="status">
+          The example questions didn’t load.{' '}
+          {onRetryExamples !== null && (
+            <button type="button" className="link-button" onClick={onRetryExamples}>
               Retry
             </button>
           )}
@@ -104,7 +148,7 @@ export function ChatComposer({
       )}
       <form className="composer" onSubmit={submit}>
         <label htmlFor="question-input" className="visually-hidden">
-          Ask the Cabinet an approved question
+          Ask the Cabinet a question
         </label>
         <input
           id="question-input"
@@ -112,7 +156,7 @@ export function ChatComposer({
           autoComplete="off"
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
-          placeholder="Ask an approved question…"
+          placeholder="e.g. Which course has the highest withdrawal rate?"
           disabled={sending}
         />
         <button
@@ -125,11 +169,7 @@ export function ChatComposer({
           <SendIcon />
         </button>
       </form>
-      <p className="composer-note" role={offScope ? 'note' : undefined}>
-        {offScope
-          ? 'Not an approved question: it will be refused and logged.'
-          : 'Approved questions only. Every number is checked.'}
-      </p>
+      <p className="composer-note">Every number is computed from the records and checked.</p>
     </div>
   )
 }
