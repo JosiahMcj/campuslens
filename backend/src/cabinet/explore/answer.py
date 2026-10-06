@@ -648,12 +648,73 @@ def model_answer(steps: list[StepResult], provider: Provider) -> list[Sentence]:
     return out
 
 
+def _claimed_cells(
+    sentences: list[Sentence], steps: list[StepResult]
+) -> set[tuple[int, int, str]]:
+    """(table, row, value) for every NUMBER the sentences cite. The value,
+    not the column, so "7 sections in 7 terms" counts both sevens of the row;
+    text cells (an instructor id) are names, checked by label instead."""
+    by_index = {step.index: step for step in steps}
+    cells: set[tuple[int, int, str]] = set()
+    for sentence in sentences:
+        for claim in sentence.claims:
+            step = by_index.get(claim["table"])
+            if step is None or not 0 <= claim["row"] < len(step.rows):
+                continue
+            value = step.rows[claim["row"]].get(claim["column"])
+            if isinstance(value, bool) or not isinstance(value, int | float):
+                continue
+            cells.add((claim["table"], claim["row"], str(value)))
+    return cells
+
+
+def require_complete(
+    rewrite: list[Sentence], template: list[Sentence], steps: list[StepResult]
+) -> None:
+    """A rewording may change the words, never drop a fact: every figure the
+    template answer states (by row and value) and every major, course, or
+    name it mentions must also be in the rewording. Raises OutputRejected."""
+    missing = _claimed_cells(template, steps) - _claimed_cells(rewrite, steps)
+    if missing:
+        raise OutputRejected(
+            f"the rewording left out {len(missing)} figure(s) the computed "
+            "answer states"
+        )
+    template_rows = _rows_named(" ".join(s.text for s in template), steps)
+    rewrite_rows = _rows_named(" ".join(s.text for s in rewrite), steps)
+    unnamed = template_rows - rewrite_rows
+    if unnamed:
+        raise OutputRejected(
+            f"the rewording leaves out {len(unnamed)} major(s), course(s), or "
+            "name(s) the computed answer names"
+        )
+
+
+# An instructor id ("I-0001") is not a name a reader sees; the screen shows
+# the instructor's (fictional) name.
+_ID_LABEL_RE = re.compile(r"^[A-Z]-\d{4}$")
+
+
+def _rows_named(text: str, steps: list[StepResult]) -> set[tuple[int, int]]:
+    """(table, row) for every row the text names by one of its labels (a
+    major, course, title, term, office, group, or name), whole words only, so
+    "male students" is not found inside "female students"."""
+    named: set[tuple[int, int]] = set()
+    for label, table, row in _row_labels(steps):
+        if _ID_LABEL_RE.match(label):
+            continue
+        pattern = r"(?<!\w)" + re.escape(label) + r"(?!\w)"
+        if re.search(pattern, text, re.IGNORECASE):
+            named.add((table, row))
+    return named
+
+
 def write_answer(
     steps: list[StepResult], provider: Provider | None
 ) -> tuple[list[Sentence], str, str | None]:
     """(sentences, source, fallback reason). The template answer is always
     built and checked; a live provider may replace it with a validated
-    rewording."""
+    rewording that keeps every figure and name the template states."""
     template = []
     for sentence in template_answer(steps):
         try:
@@ -665,7 +726,9 @@ def write_answer(
     if provider is None:
         return template, SOURCE_TEMPLATE, None
     try:
-        return model_answer(steps, provider), SOURCE_MODEL, None
+        rewrite = model_answer(steps, provider)
+        require_complete(rewrite, template, steps)
+        return rewrite, SOURCE_MODEL, None
     except (OutputRejected, ProviderUnavailable) as exc:
         reason = exc.reason if isinstance(exc, ProviderUnavailable) else str(exc)
         logger.warning("explore writer fell back to the template: %s", reason)

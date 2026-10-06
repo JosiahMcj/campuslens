@@ -822,15 +822,6 @@ export function formatTimestamp(ts: string, timeZone?: string): string {
   return `${part.month} ${part.day}, ${part.hour}:${part.minute} ${part.dayPeriod}`
 }
 
-/** The time of day alone: "10:38 PM" (the AI employees' cards, where the
- * run is the one just asked). */
-export function formatClock(ts: string, timeZone?: string): string {
-  const date = new Date(ts)
-  if (Number.isNaN(date.getTime())) return ts
-  const part = timeParts(date, timeZone, false)
-  return `${part.hour}:${part.minute} ${part.dayPeriod}`
-}
-
 /** The full record time, to the second and with the zone named:
  * "2026-09-24 17:24:46 CDT". Only inside the audit log's Details fold. */
 export function formatTimestampFull(ts: string, timeZone?: string): string {

@@ -359,6 +359,7 @@ are in `deploy/checklist.md`, the full first-deploy walkthrough.
   CABINET_LLM_MODEL=your-model-id
   CABINET_LLM_LABEL=live model        # what the UI shows as the source
   CABINET_LLM_REASONING_EFFORT=low    # keeps reasoning models from thinking past the answer
+  CABINET_LLM_MAX_TOKENS=2048         # output budget per call; hidden reasoning counts against it
   CABINET_LLM_API_KEY=your-key-here
   ```
 
@@ -368,6 +369,17 @@ are in `deploy/checklist.md`, the full first-deploy walkthrough.
   with a reason naming the missing `CABINET_*` variables, and the rest of the app
   keeps working. The endpoint key and the model id are never logged, recorded, or
   returned to the UI, because responses carry the label only.
+
+  A local thinking model needs two settings. On our OpenAI-compatible local server,
+  `reasoning_effort: low` changed nothing (about 950 characters of hidden reasoning per
+  short answer, the same as no setting), and the server's `think: false` field and a
+  `/no_think` prefix were ignored, while `none` turned the hidden reasoning off
+  (0 characters, 0.6 s instead of 4 to 5 s). With `low` and 2,048 tokens, 1 of 8
+  approved-question asks lost the Student Success Analyst to `finish_reason 'length'`
+  (and with it sections 1 and 7), and an ask took 25 to 51 s. With `none` and 2,048,
+  all 24 sections of 6 fresh asks came back on the first try in 6 to 16 s. So the
+  local `cabinet.local.env` sets `CABINET_LLM_REASONING_EFFORT=none` and
+  `CABINET_LLM_MAX_TOKENS=2048`. A hosted endpoint keeps the defaults.
 
   When the model's answer fails validation (for example it cites a finding its
   role did not receive), we ask it once more with the same inputs plus one
@@ -627,29 +639,58 @@ the same rows (the canonical hash in `VERIFY.md` proves it). The data is
 synthetic, students are pseudonymous ids with no names, and instructor names are
 fictional. Tables are documented in `data/school/SCHEMA.md`.
 
-### Explore (questions over the school data)
+## Asking any question (Explore)
 
-Explore needs `var/school/school.db` (`make school-data`). Without it, `POST /explore`
-and `GET /explore/catalog` answer 503 with "The demonstration university data is not
-installed. Run make school-data." It runs inside the API process, so starting, stopping,
-and restarting the API covers it. `make explore-check` runs the full-scale check (the
-owner's example and five more planted facts) and prints the owner's example with its
-three tables. With the API running, ask as a signed-in executive:
+Explore answers specific questions about Demonstration University, the fictional
+school in `data/school/`: GPA by major, the hardest courses, who taught them, equity
+gaps, growth, registration, withdrawals, standing, graduations, holds, and advising.
+Every number comes from code over the records, each number in the answer links to its
+table cell, and a "How this was answered" fold shows each step.
+
+1. Build the school data once: `make school-data` (writes `var/school/school.db`, about
+   3 s, and checks it). Without it, `POST /explore` and `GET /explore/catalog` answer
+   503 with "The demonstration university data is not installed. Run make
+   school-data." Explore runs inside the API process, so starting, stopping, and
+   restarting the API covers it.
+2. Sign in as an executive, admin, staff member, or reviewer (the Financial Aid role
+   gets a 403) and type the question into the composer, for example "Which major has
+   the lowest GPA, what is its hardest class, and who has taught it?" The answer is
+   Mechanical Engineering at 2.623, MEEN 3310 Thermodynamics I at 41.8 %, and Alicia
+   Shelby (fictional), 7 sections at 56.7 %.
+3. `make explore-check` runs the full-scale check (the owner's question in both
+   wordings and five more planted facts) and prints the answer with its three tables.
+
+Privacy rules: the model never sees a student row, groups under 10 students are
+withheld, and instructor rows go to the executive and admin roles only (staff and
+reviewers get the course as a whole, and the API records a `data.refused`).
+Questions about counseling or spiritual care, about one student, or about what a
+student will do next are refused before planning, and the refusal is recorded.
+
+The reviewed rule planner maps every question it can, and the live model plans only
+the rest (`CABINET_EXPLORE_PLANNER=model-first` asks the model first). We measured
+why: on our local model, reading the catalog took longer than the 55 s request
+budget every time, while the rules map all forty test wordings of the planted
+questions. The live model is configured in the gitignored `cabinet.local.env` (any
+OpenAI-compatible endpoint; we run a local model), and it may reword the answer,
+which is checked number by number or replaced by the template.
+
+With the API running, the same question over HTTP:
 
 ```sh
 curl -s -b cookies.txt -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
-  -d '{"question": "Which major has the lowest GPA? In that major, what is historically the hardest class, and which instructor has historically taught it?"}' \
+  -d '{"question": "Which major has the lowest GPA, what is its hardest class, and who has taught it?"}' \
   http://127.0.0.1:8910/explore
 # -> {"refused": false, "answer": [{"text": ..., "claims": [...]}, ...],
-#     "steps": [...three tables...], "source": "Written from computed tables (no model)"}
+#     "steps": [...three tables...], "planner": "rule", "source": ...}
+# ("planner" is "model" only for a question the rules could not map)
 ```
 
 `.venv/bin/python -m cabinet.explore "<question>"` answers offline from the same code and
 writes nothing. Each question writes `question.asked`, then `data.refused` (refused
 questions) or one `data.granted` per step and `explore.answered`, on the asker's
-institution chain. Replay and fake modes use the rule planner and the template answer.
-A live provider may plan and reword, and `CABINET_RECORD=1` records validated plans under
-`var/replay/explore/` (details in `docs/EXPLORE.md`).
+institution chain. Replay and fake modes use the rule planner and the template answer,
+and `CABINET_RECORD=1` records validated model plans under `var/replay/explore/`
+(details in `docs/EXPLORE.md`).
 
 ## Known issues
 

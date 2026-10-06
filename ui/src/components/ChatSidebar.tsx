@@ -32,7 +32,6 @@ import {
   SidebarToggleIcon,
   SignOutIcon,
   SunIcon,
-  TeamNavIcon,
 } from './icons'
 
 export type PanelId =
@@ -41,7 +40,6 @@ export type PanelId =
   | 'evidence'
   | 'actions'
   | 'decision'
-  | 'agents'
   | 'access'
   | 'audit'
   | 'aid'
@@ -72,7 +70,7 @@ interface ChatSidebarProps {
   /** The current route: '/institution' marks the Institution row. */
   route: string
   /** The panels this role may open (the audit log only for roles that may
-   * read it; the AI employees once a run exists). */
+   * read it). */
   panels: PanelId[]
   activePanel: PanelId | null
   /** Small screens: the off-canvas drawer is open. */
@@ -93,7 +91,6 @@ const PANEL_ROWS: Record<NavPanel, { label: string; icon: ReactNode }> = {
   evidence: { label: 'Evidence & sources', icon: <EvidenceNavIcon /> },
   actions: { label: 'Staff actions', icon: <ActionsNavIcon /> },
   decision: { label: 'Decision', icon: <DecisionNavIcon /> },
-  agents: { label: 'AI employees', icon: <TeamNavIcon /> },
   access: { label: 'AI employees and data access', icon: <AccessNavIcon /> },
   audit: { label: 'Audit log', icon: <AuditNavIcon /> },
   aid: { label: 'Financial Aid review', icon: <AidQueueNavIcon /> },

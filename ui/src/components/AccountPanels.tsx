@@ -197,11 +197,31 @@ const EMPLOYEE_NAMES: Record<string, string> = {
   chief_of_staff: 'Chief of Staff',
 }
 
+/** Each AI employee's job, in one plain line, in the order they work. */
+const EMPLOYEE_JOBS: Record<string, string> = {
+  enrollment_analyst:
+    'Explains the registration figures: who has registered and how that compares with last year.',
+  student_success_analyst:
+    'Explains what stands in students’ way: holds, missing advising appointments and support indicators.',
+  chief_of_staff:
+    'Assigns the analysts, then writes the summary and its limits from their checked work, using totals only.',
+}
+
+/** The three AI employees in working order, then any other role a grant
+ * names (never dropped silently). */
+function employeeRoles(grants: AccessGrant[] | null): string[] {
+  const roles = Object.keys(EMPLOYEE_NAMES)
+  for (const grant of grants ?? []) {
+    if (!roles.includes(grant.role)) roles.push(grant.role)
+  }
+  return roles
+}
+
 /**
  * The Data access panel: the cabinet's data boundary in one place. For each
- * AI employee, the findings and the fields its latest task was granted (from
- * the audit log or the ask response, never assumed); then what each human
- * role may do. Nobody, human or AI, receives student names or identifiers.
+ * AI employee, its job in one line, then the findings and the fields its
+ * latest task was granted (from the audit log or the ask response, never
+ * assumed); then what each human role may do. Nobody, human or AI, receives student names or identifiers.
  */
 export function DataAccessPanel({
   grants,
@@ -222,8 +242,8 @@ export function DataAccessPanel({
         refused before any model runs, and the refusal is logged.
       </p>
 
-      <h3 className="panel-subhead">AI employees, latest run</h3>
-      {error !== null ? (
+      <h3 className="panel-subhead">AI employees</h3>
+      {error !== null && (
         <div className="state-error state-panel error-panel" role="alert">
           <p>Couldn't load what each employee was given. {error}</p>
           {onRetry !== undefined && (
@@ -232,50 +252,56 @@ export function DataAccessPanel({
             </button>
           )}
         </div>
-      ) : grants === null || grants.length === 0 ? (
+      )}
+      {error === null && (grants === null || grants.length === 0) && (
         <p className="panel-text state-empty">
           Ask a question to see exactly what each employee was given.
         </p>
-      ) : (
-        <div className="grant-list">
-          {grants.map((grant) => (
-            <div key={grant.role} className="grant-card">
+      )}
+      <div className="grant-list">
+        {employeeRoles(grants).map((role) => {
+          const grant = grants?.find((item) => item.role === role)
+          return (
+            <div key={role} className="grant-card">
               <p className="grant-name">
-                {EMPLOYEE_NAMES[grant.role] ?? grant.role}
-                {grant.aggregate && <span className="grant-tag">Totals only</span>}
+                {EMPLOYEE_NAMES[role] ?? role}
+                {grant?.aggregate === true && <span className="grant-tag">Totals only</span>}
               </p>
-              {grant.findings.length > 0 && (
+              {EMPLOYEE_JOBS[role] !== undefined && (
+                <p className="grant-job">{EMPLOYEE_JOBS[role]}</p>
+              )}
+              {grant !== undefined && grant.findings.length > 0 && (
                 <p className="grant-meta">
-                  Explains: {grant.findings.map((id) => findingLabel(id)).join('; ')}
+                  Latest run explained: {grant.findings.map((id) => findingLabel(id)).join('; ')}
                 </p>
               )}
-              <details className="fold technical-detail">
-                <summary>
-                  {grant.aggregate ? 'Totals it was given' : 'Data it was given'} (
-                  {grant.fields.length})
-                </summary>
-                <ul className="plain-list">
-                  {fieldLabels(grant.fields).map((label) => (
-                    <li key={label}>{label}</li>
-                  ))}
-                </ul>
+              {grant !== undefined && (
                 <details className="fold technical-detail">
                   <summary>
-                    Technical detail
+                    {grant.aggregate ? 'Totals it was given' : 'Data it was given'} (
+                    {grant.fields.length})
                   </summary>
-                  <ul className="field-list">
-                    {grant.fields.map((field) => (
-                      <li key={field}>
-                        <code>{field}</code>
-                      </li>
+                  <ul className="plain-list">
+                    {fieldLabels(grant.fields).map((label) => (
+                      <li key={label}>{label}</li>
                     ))}
                   </ul>
+                  <details className="fold technical-detail">
+                    <summary>Technical detail</summary>
+                    <ul className="field-list">
+                      {grant.fields.map((field) => (
+                        <li key={field}>
+                          <code>{field}</code>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
                 </details>
-              </details>
+              )}
             </div>
-          ))}
-        </div>
-      )}
+          )
+        })}
+      </div>
 
       <h3 className="panel-subhead">People</h3>
       <table className="role-table">

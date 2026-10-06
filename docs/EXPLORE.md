@@ -69,11 +69,14 @@ graded registrations. A student counts once, in the program and cumulative GPA o
 latest term. Rates are rounded exactly as `data/school/check.py` rounds them, so the
 planted facts come back to the digit.
 
-Some questions the rule planner maps (the tests check all 39 phrasings in
-`RULE_PHRASINGS`):
+Some questions the rule planner maps (the tests check all 40 phrasings in
+`RULE_PHRASINGS`, and 40 more wordings of the planted questions with other words
+and typos, such as "worst", "toughest", "lowest-performing", "who teaches", and
+"teh"):
 
 - Which major has the lowest GPA? In that major, what is historically the hardest class,
   and which instructor has historically taught it?
+- Which major has the lowest GPA, what is its hardest class, and who has taught it?
 - Which required courses in Nursing have the highest DFW rate?
 - How has the DFW rate in Organic Chemistry I changed by term?
 - What is the first-generation equity gap in College Algebra?
@@ -98,13 +101,21 @@ analyses yet." with the three example questions closest to it.
    major requires, and the instructors of that course. Two planners sit behind one
    interface.
    - The **rule planner** matches keywords, synonyms, and the database's names (majors,
-     courses, instructors, terms). Replay and fake modes use it, and so do the tests.
-   - The **model planner** runs only with a live provider. It receives only the catalog
-     (analysis ids, titles, parameter names, and allowed values) and the question, and it
-     must answer with a JSON plan. The plan is checked against the catalog: every id,
-     parameter, value, and reference. Invalid JSON, a value outside the catalog, a bad
-     reference, or an unavailable provider falls back to the rule planner, and the
-     response says so in `fallbacks`.
+     courses, instructors, terms). It splits a question into its parts at question marks,
+     colons, and a new question word after a comma or an "and", so "Which major has the
+     lowest GPA, what is its hardest class, and who has taught it?" is three chained
+     steps, and it corrects common typos ("teh") first. Replay and fake modes use it,
+     and so do the tests.
+   - The **model planner** runs only with a live provider, and by default only for a
+     question the rules cannot map (`CABINET_EXPLORE_PLANNER`, `rules-first` by default;
+     `model-first` asks the model every time and falls back to the rules). We chose
+     rules first after measuring a local model: with the full catalog it did not answer
+     within the 55 s request budget on any of six questions, twice over, while the rules
+     map every planted question. It receives only the catalog (analysis ids, titles,
+     parameter names, and allowed values) and the question, and it must answer with a
+     JSON plan. The plan is checked against the catalog: every id, parameter, value, and
+     reference. Invalid JSON, a value outside the catalog, a bad reference, or an
+     unavailable provider is never used, and the response says so in `fallbacks`.
    - Validated model plans are recorded under `var/replay/explore/` when `CABINET_RECORD=1`
      (`CABINET_REPLAY_DIR` overrides the place), keyed by the question and the catalog's
      hash. Replay reads each replay directory's `explore/` folder, including
@@ -122,7 +133,12 @@ analyses yet." with the three example questions closest to it.
    which one you see: "Written from computed tables (no model)" or "Written by the Chief of
    Staff from computed tables". A reworded sentence must also keep each number with its
    row: the row named nearest to a number in the sentence must hold that number, so a
-   true figure cannot be attached to the wrong major or course.
+   true figure cannot be attached to the wrong major or course. A rewording may change
+   the words, never drop a fact: every figure and every major, course, or name the
+   template answer states must also be in it, or the template answer is shown. (On our
+   local model the rewording of the owner's question compared majors and courses the
+   question did not ask about and named no instructor, so this rule now shows the
+   template there.)
 5. **Record.** `explore.answered` closes the run with the step ids, their row counts, and
    which planner and writer ran. It never carries a value.
 

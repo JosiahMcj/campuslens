@@ -41,10 +41,6 @@
     justify-self: center;
   }
 
-  .page-header {
-    padding-top: var(--space-6);
-  }
-
   .stat-block,
   .page > .stat-row {
     grid-area: stats;
@@ -108,9 +104,6 @@
     display: none;
   }
 
-  .dispatch {
-    margin-top: var(--space-5);
-  }
 }
 
 /* --- Sidebar masthead: brand on top, account at the bottom --------------------*/
@@ -260,35 +253,6 @@
 .section-nav a[aria-current='location'] {
   background: var(--surface-hover);
   font-weight: 600;
-}
-
-/* --- Task cards in the sidebar -------------------------------------------------*/
-
-.dispatch {
-  margin-top: 0;
-}
-
-.dispatch h3 {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--ink-soft);
-  letter-spacing: 0;
-  padding-inline: 0;
-}
-
-.task-card {
-  background: var(--paper);
-  border-color: var(--rule);
-  border-radius: var(--radius-control);
-}
-
-.task-card .task-id {
-  font-variant-numeric: normal;
-  font-size: var(--text-xs);
-}
-
-.task-card[data-status='done'] {
-  border-color: color-mix(in srgb, var(--navy) 55%, var(--rule));
 }
 
 /* --- Question bar: LibreChat's composer ----------------------------------------*/

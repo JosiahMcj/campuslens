@@ -42,7 +42,6 @@ import {
 } from './auth'
 import { AidQueuePanel } from './components/AidQueuePanel'
 import { type AidQueueUiState } from './components/AidQueueNotice'
-import { AskDispatch, DispatchPanel } from './components/DispatchPanel'
 import { AuditLog, type DeniedRequestState } from './components/AuditLog'
 import {
   BriefingSections,
@@ -82,6 +81,7 @@ import {
   APPROVED_QUESTION,
   documentTitle,
   evidenceUrl,
+  dispatchTasks,
   eventsAfter,
   friendlyTime,
   isApprovedQuestion,
@@ -93,6 +93,7 @@ import {
   PANEL_MOTION_MS,
   POLL_BASE_MS,
   prefersReducedMotion,
+  roleDisplayName,
   type LoadState,
   type ModelSection,
   type UiFlags,
@@ -161,6 +162,13 @@ type AuthState =
   | { kind: 'signed-in'; session: Session }
 
 const SESSION_ENDED_NOTICE = 'Your session ended. Sign in again.'
+
+/** A task's status in the working reply, in plain words. */
+const TASK_STATUS_WORDS = {
+  working: 'working…',
+  done: 'done',
+  unavailable: 'unavailable',
+} as const
 
 /**
  * The shell: sign-in first, then the app behind it. On load the session
@@ -402,15 +410,15 @@ function InstitutionPage({
   const institutionName = session.user.institution?.name ?? 'your institution'
   return (
     <div className="chat-center doc institution-doc">
-      <header className="page-header">
-        <h1 id="main-heading" tabIndex={-1}>
-          Institution settings
-        </h1>
-        <p className="lede">
-          People, office mailboxes, counseling permission and the data the briefing
-          is computed from, for {institutionName}.
-        </p>
-      </header>
+      {/* The top bar shows the page name; this h1 names it for screen
+          readers and is the focus target after navigation. */}
+      <h1 id="main-heading" className="visually-hidden" tabIndex={-1}>
+        Institution settings
+      </h1>
+      <p className="lede">
+        People, office mailboxes, counseling permission and the data the briefing
+        is computed from, for {institutionName}.
+      </p>
       {canSeeInstitution(session.user.role) ? (
         <Institution
           institutionName={institutionName}
@@ -1120,14 +1128,12 @@ function BriefingPage({
     }
     return null
   })()
-  const hasRun = lastAccepted !== null || (audit && runBaseEventId > 0) || cabinetBriefing !== null
   const panels: PanelId[] = [
     'briefing',
     'figures',
     'evidence',
     'actions',
     'decision',
-    ...(hasRun ? (['agents'] as PanelId[]) : []),
     'access',
     ...(aidQueue ? (['aid'] as PanelId[]) : []),
     ...(audit ? (['audit'] as PanelId[]) : []),
@@ -1214,7 +1220,6 @@ function BriefingPage({
     evidence: 'Evidence & sources',
     actions: 'Staff actions',
     decision: 'Decision',
-    agents: 'AI employees',
     access: 'AI employees and data access',
     audit: 'Audit log',
     aid: 'Financial Aid review',
@@ -1304,6 +1309,14 @@ function BriefingPage({
     }
     void loadEvents()
   }
+
+  // The run in flight, task by task, from the audit events polled while it
+  // works (roles that may read the log). Shown inline in the working reply.
+  const liveTasks = (() => {
+    if (!runInFlight || events === null) return []
+    const questionEventId = latestQuestionEventId(eventsAfter(events, runBaseEventId))
+    return questionEventId === null ? [] : dispatchTasks(events, questionEventId)
+  })()
 
   const workLine = (state: ExchangeState) => {
     if (state.kind === 'accepted') {
@@ -1404,9 +1417,22 @@ function BriefingPage({
             <span />
             <span />
           </span>
-          {stillWorking
-            ? 'Still working… the analysts are taking longer than usual.'
-            : 'The Chief of Staff is assigning the analysts…'}
+          <div className="work-text">
+            {stillWorking
+              ? 'Still working… the analysts are taking longer than usual.'
+              : liveTasks.length > 0
+                ? 'The Cabinet is working…'
+                : 'The Chief of Staff is assigning the analysts…'}
+            {liveTasks.length > 0 && (
+              <ul className="work-progress">
+                {liveTasks.map((task) => (
+                  <li key={task.task_id} data-status={task.status}>
+                    {roleDisplayName(task.role)}: {TASK_STATUS_WORDS[task.status]}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       )
     }
@@ -1437,7 +1463,7 @@ function BriefingPage({
     return (
       <>
         {current && (
-          <button type="button" className="work-line" onClick={() => openPanel('agents')}>
+          <button type="button" className="work-line" onClick={() => openPanel('access')}>
             <span className="work-dot" aria-hidden="true" />
             {workLine(state)}
             <span className="work-link">View</span>
@@ -1692,32 +1718,11 @@ function BriefingPage({
                 </div>
               ) : null,
             ))}
-          {shownPanel === 'agents' &&
-            (audit ? (
-              eventsStatus.kind === 'loading' && events === null ? (
-                notReady(eventsStatus, retryEvents, 'the AI employees’ work')
-              ) : (
-                <DispatchPanel
-                  events={events ?? []}
-                  minEventId={runBaseEventId}
-                  inFlight={runInFlight}
-                  stillWorking={stillWorking}
-                  error={
-                    eventsStatus.kind === 'error' && events === null ? eventsStatus.message : null
-                  }
-                  onRetry={retryEvents}
-                />
-              )
-            ) : lastAccepted !== null ? (
-              <AskDispatch tasks={lastAccepted.tasks} briefing={lastAccepted.briefing} />
-            ) : (
-              <p className="hint">The AI employees' task cards appear after you ask a question.</p>
-            ))}
           {shownPanel === 'figures' &&
             findingsPanel(() =>
               ready ? (
                 <div className="panel-figures">
-                  <p className="panel-text">
+                  <p className="panel-intro">
                     The five headline measures. Open any one to see how it is
                     worked out and the records behind it.
                   </p>

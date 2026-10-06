@@ -16,7 +16,6 @@ import {
   eventsAfter,
   filterEvents,
   findingDisplay,
-  formatClock,
   formatTimestamp,
   formatTimestampFull,
   isApprovedQuestion,
@@ -300,7 +299,6 @@ describe('audit log helpers', () => {
     expect(formatTimestamp('2026-09-25T05:00:00+00:00', 'America/Chicago')).toBe(
       'Sep 25, 12:00 AM',
     )
-    expect(formatClock(recorded, 'America/Chicago')).toBe('5:24 PM')
   })
 
   it('keeps the full record time, to the second and zone named, for Details', () => {
@@ -314,7 +312,6 @@ describe('audit log helpers', () => {
 
   it('leaves an unparseable timestamp as it came', () => {
     expect(formatTimestamp('not a time')).toBe('not a time')
-    expect(formatClock('not a time')).toBe('not a time')
     expect(formatTimestampFull('not a time')).toBe('not a time')
   })
 

@@ -219,15 +219,6 @@ export function BriefingNavIcon() {
   )
 }
 
-export function TeamNavIcon() {
-  return (
-    <NavGlyph>
-      <circle cx="9" cy="8.5" r="3" />
-      <path d="M3.5 19c.5-3 2.7-5 5.5-5s5 2 5.5 5M16 5.8a3 3 0 0 1 0 5.4M17.5 14.3c1.8.6 2.8 2.3 3 4.7" />
-    </NavGlyph>
-  )
-}
-
 export function AuditNavIcon() {
   return (
     <NavGlyph>

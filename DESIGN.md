@@ -6,10 +6,13 @@ radius in `ui/src` follows this file. Change this file first when the look chang
 ## Concept
 
 A calm, chat-style workspace. The president asks one of the approved questions in the centre
-of the screen, and everything else (the full briefing, the figures, the evidence, the staff
-actions, the decision, the AI employees, data access, the audit log, the Financial Aid review)
-is one click away in the sidebar and opens as a slide-over panel. The page never shows more
-than one thing asking to be done. The governance is visible, not decorative: refusals, sources
+of the screen, and everything else is one click away in the sidebar and opens as a slide-over
+panel: Full briefing, Staff actions, Decision, AI employees and data access, Audit log,
+Financial Aid review, and Institution (for administrators, a page rather than a panel). The
+figures and their evidence open from the numbers in an answer. Any other question about the
+demonstration university is an Explore question: the answer is computed from the records, each
+number in it links to the table cell it came from, and a "How this was answered" fold shows
+every step. The page never shows more than one thing asking to be done. The governance is visible, not decorative: refusals, sources
 and approvals use the same marks everywhere.
 
 ## Colour

@@ -133,6 +133,32 @@ production configuration fail closed. The API refuses to start without a
 `CABINET_SECRET_KEY` of 32 bytes or more and an explicit `CABINET_BIND`.
 `RUNBOOK.md` covers the rest under "Operating in production".
 
+## Asking any question (Explore)
+
+Beyond the two approved briefing questions, anyone who may ask can put a specific
+question to Demonstration University, the fictional school in `data/school/`. We ask
+it the way a president would: "Which major has the lowest GPA, what is its hardest
+class, and who has taught it?" The Cabinet answers in a few plain sentences, and each
+number in them links to the table cell it came from. A "How this was answered" fold
+shows every step, the fields it read, and its table.
+
+- **First run** `make school-data` once (about 3 s). It writes `var/school/school.db`
+  and checks every planted fact. Without it, Explore says the data is not installed.
+- **Roles.** The executive, admin, staff, and reviewer roles can ask. The Financial
+  Aid role cannot. Instructor names and rows go to the executive and admin roles
+  only, and staff and reviewers see the course as a whole.
+- **Privacy.** Code computes every number from reviewed analyses, and the model
+  never sees a student row. Questions about counseling or spiritual care, about one
+  student, or about what a student will do next are refused before anything runs,
+  and the refusal is recorded. Groups under 10 students are withheld.
+- **Planning.** The reviewed rule planner maps the question to analyses. The live
+  model plans only what the rules cannot map, and its plan is checked against the
+  catalog (`CABINET_EXPLORE_PLANNER=model-first` reverses the order).
+
+The live model is configured in the gitignored `cabinet.local.env` at the repo root.
+Any OpenAI-compatible endpoint works, and we run a local model. `docs/EXPLORE.md` has
+the analyses, the rules, and the routes.
+
 ## Institutions and datasets
 
 Every user belongs to an institution, and each institution's findings come from
@@ -212,7 +238,8 @@ never by code changes.
 | `CABINET_LLM_BASE_URL` | base URL of the configured model endpoint | unset |
 | `CABINET_LLM_MODEL` | model id sent to the endpoint (never shown or recorded) | unset |
 | `CABINET_LLM_LABEL` | what the UI shows as the source | `live model` |
-| `CABINET_LLM_REASONING_EFFORT` | sent as `reasoning_effort`, since reasoning models otherwise spend the output budget thinking. Empty omits it | `low` |
+| `CABINET_LLM_REASONING_EFFORT` | sent as `reasoning_effort`, since reasoning models otherwise spend the output budget thinking. A local thinking model may ignore `low` and honour only `none`, which turns its hidden reasoning off. Empty omits it | `low` |
+| `CABINET_LLM_MAX_TOKENS` | the output budget per call, sent as `max_tokens` (256 to 32768). Hidden reasoning counts against it, and running out makes that section unavailable, never half written | `2048` |
 | `CABINET_LLM_API_KEY` | the endpoint key, environment only, never in the repo | unset |
 | `CABINET_LLM_API_KEY_FILE` + `CABINET_LLM_API_KEY_VAR` | read that one variable's line from another env file | unset |
 | `CABINET_RECORD` | `1` records each validated response into `var/replay/`. `overwrite` also replaces existing recordings | off |

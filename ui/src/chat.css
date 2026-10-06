@@ -438,6 +438,26 @@
   color: var(--ink-soft);
 }
 
+.work-text {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The run in flight, one entry per AI employee, under the working line. */
+.work-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.work-progress [data-status='done'] {
+  color: var(--ink);
+}
+
 .typing {
   display: inline-flex;
   gap: var(--space-1);
@@ -541,17 +561,8 @@
   padding: var(--space-1) var(--space-5) var(--space-7);
 }
 
-.side-panel-body .dispatch,
 .side-panel-body .audit-log {
   margin-top: var(--space-4);
-}
-
-.dispatch > .panel-intro {
-  margin-bottom: var(--space-4);
-}
-
-.side-panel-body .task-cards {
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
 }
 
 /* The evidence layer: a second .panel-overlay (.evidence-overlay) that opens
@@ -668,27 +679,6 @@
 /* The thread scrolls its newest message clear of the docked composer. */
 .thread-end {
   scroll-margin-bottom: 180px;
-}
-
-/* --- The empty screen's way into every capability ---------------------------------------*/
-
-.explore {
-  width: min(46rem, 100%);
-  margin-top: var(--space-5);
-}
-
-.explore-label {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--ink-soft);
-}
-
-.explore-chips {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-2);
 }
 
 /* --- Panel contents -----------------------------------------------------------------------*/
@@ -909,6 +899,11 @@
   font-size: var(--text-xs);
   font-weight: 500;
   color: var(--ink-soft);
+}
+
+.grant-job {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
 }
 
 .grant-meta {

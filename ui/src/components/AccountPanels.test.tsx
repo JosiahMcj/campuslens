@@ -25,11 +25,29 @@ describe('DataAccessPanel', () => {
 
   it('names figures and fields plainly, raw names folded', () => {
     const html = renderToStaticMarkup(<DataAccessPanel grants={grants} />)
-    expect(html).toContain('Explains: Not yet registered, with a hold under $1,000;')
+    expect(html).toContain('Latest run explained: Not yet registered, with a hold under $1,000;')
     expect(html).toContain('<li>Hold amount</li>')
     expect(html).not.toContain('Findings: M3')
     expect(html).toMatch(/Technical detail(?:(?!<\/details>).)*holds\.amount/s)
     expect(html).toMatch(/^<div class="account-panel"><p class="panel-intro">/)
+  })
+
+  it('gives each AI employee a one-line job, before and after a run', () => {
+    for (const html of [
+      renderToStaticMarkup(<DataAccessPanel grants={null} />),
+      renderToStaticMarkup(<DataAccessPanel grants={grants} />),
+    ]) {
+      for (const name of ['Enrollment Analyst', 'Student Success Analyst', 'Chief of Staff']) {
+        expect(html).toContain(name)
+      }
+      expect(html.match(/class="grant-job"/g)).toHaveLength(3)
+      expect(html).toContain('Explains the registration figures')
+      expect(html).toContain('holds, missing advising appointments and support indicators')
+      expect(html).toContain('writes the summary and its limits')
+    }
+    expect(renderToStaticMarkup(<DataAccessPanel grants={null} />)).toContain(
+      'Ask a question to see exactly what each employee was given.',
+    )
   })
 
   it('shows a failed load with Retry, not the empty text', () => {

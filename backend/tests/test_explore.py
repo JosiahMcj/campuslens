@@ -37,6 +37,7 @@ from cabinet.api import create_app
 from cabinet.audit import verify_db
 from cabinet.auth import AuthStore
 from cabinet.explore.answer import (
+    MAX_SENTENCES,
     SOURCE_MODEL,
     SOURCE_TEMPLATE,
     check_sentence,
@@ -55,6 +56,7 @@ from cabinet.explore.execute import StepResult, execute
 from cabinet.explore.planner import (
     EXAMPLE_QUESTIONS,
     OWNER_EXAMPLE,
+    OWNER_SHORT,
     RULE_PHRASINGS,
     UNANSWERABLE_MESSAGE,
     PlanInvalid,
@@ -63,6 +65,7 @@ from cabinet.explore.planner import (
     load_recorded_plan,
     plan_question,
     rule_plan,
+    rule_plan_detail,
     validate_plan,
 )
 from cabinet.explore.privacy import refusal_for
@@ -430,9 +433,163 @@ def test_rule_planner_maps_every_phrasing(catalog: Catalog) -> None:
     assert covered == set(ANALYSIS_BY_ID)
 
 
-def test_model_planner_receives_only_the_catalog_and_the_question(
+# The eight planted facts in data/school/VERIFY.md, asked the way people ask:
+# other words ("worst", "toughest", "lowest-performing", "who teaches",
+# "historically") and typos ("teh"). Each maps to the plan that reaches the
+# planted fact: analysis ids in order, with the parameters that matter.
+_Plan = list[tuple[str, dict[str, Any]]]
+_OWNER_CHAIN: _Plan = [
+    ("gpa_by_major", {"order": "lowest_first"}),
+    (
+        "dfw_by_course",
+        {
+            "major_required": {"from_step": 0, "column": "major"},
+            "order": "highest_first",
+        },
+    ),
+    ("course_instructors", {"course": {"from_step": 1, "column": "course"}}),
+]
+_LOWEST_GPA: _Plan = [("gpa_by_major", {"order": "lowest_first"})]
+_MEEN_HARDEST: _Plan = [
+    ("dfw_by_course", {"major_required": "MEEN", "order": "highest_first"})
+]
+_THERMO: _Plan = [("course_instructors", {"course": "MEEN 3310"})]
+_OCHEM_TREND: _Plan = [("course_dfw_trend", {"course": "CHEM 2323"})]
+_OCHEM_TEACHERS: _Plan = [("course_instructors", {"course": "CHEM 2323"})]
+_ALGEBRA_GAP: _Plan = [
+    ("equity_gap", {"group": "first_generation", "course": "MATH 1314"})
+]
+_SPRING: _Plan = [("continuing_registration_change", {})]
+_SPRING_2026: _Plan = [("continuing_registration_change", {"term": "202620"})]
+_GROWTH: _Plan = [("headcount_growth", {})]
+_ONLINE: _Plan = [("withdrawal_by_modality", {})]
+_ONLINE_LARGEST: _Plan = [("withdrawal_by_modality", {"order": "largest_gap"})]
+
+PLANTED_VARIANTS: list[tuple[str, _Plan]] = [
+    # 1 to 3 chained: the owner's question
+    (
+        "Which major has the lowest GPA, what is its hardest class, and who has "
+        "taught it?",
+        _OWNER_CHAIN,
+    ),
+    (
+        "Which major has the worst GPA, what's its toughest class, and who teaches it?",
+        _OWNER_CHAIN,
+    ),
+    (
+        "What is teh lowest-performing major, its hardest required course, and who "
+        "has historically taught that course?",
+        _OWNER_CHAIN,
+    ),
+    ("Lowest GPA major: what is its hardest course and who taught it?", _OWNER_CHAIN),
+    (
+        "Which major has the lowest GPA and what is its hardest class and who "
+        "taught it?",
+        _OWNER_CHAIN,
+    ),
+    # 1. the lowest-GPA major
+    ("Which major has the lowest average GPA?", _LOWEST_GPA),
+    ("What major has the worst GPA?", _LOWEST_GPA),
+    ("Which is the lowest-performing major by GPA?", _LOWEST_GPA),
+    ("Which major has teh lowest grade point average?", _LOWEST_GPA),
+    ("Which program has the lowest cumulative GPA?", _LOWEST_GPA),
+    # 2. the hardest required course in Mechanical Engineering
+    (
+        "What is the hardest required class for Mechanical Engineering majors?",
+        _MEEN_HARDEST,
+    ),
+    (
+        "Which Mechanical Engineering required course has historically been the "
+        "toughest?",
+        _MEEN_HARDEST,
+    ),
+    (
+        "What's the worst DFW rate among required courses in Mechanical Engineering?",
+        _MEEN_HARDEST,
+    ),
+    (
+        "In Mechanical Engineering, which required course do students fail most?",
+        _MEEN_HARDEST,
+    ),
+    ("Hardest class in mechanical engineering?", _MEEN_HARDEST),
+    # 3. who has taught Thermodynamics I
+    ("Who teaches Thermodynamics I?", _THERMO),
+    ("Who has historically taught MEEN 3310?", _THERMO),
+    ("Which professors have taught Thermodynamics I?", _THERMO),
+    ("who taught teh Thermodynamics I sections?", _THERMO),
+    ("Which instructors have taught MEEN 3310?", _THERMO),
+    # 4. Organic Chemistry I before and after the instructor change
+    ("How did the DFW rate in Organic Chemistry I change over time?", _OCHEM_TREND),
+    ("Show the DFW trend for CHEM 2323 by term.", _OCHEM_TREND),
+    ("What is the DFW rate in Organic Chemistry I each term?", _OCHEM_TREND),
+    ("Who has taught Organic Chemistry I historically?", _OCHEM_TEACHERS),
+    (
+        "Did Organic Chemistry I get easier after the instructor changed?",
+        _OCHEM_TEACHERS,
+    ),
+    # 5. the first-generation gap in College Algebra
+    ("How big is the first-gen gap in College Algebra?", _ALGEBRA_GAP),
+    ("Do first-generation students fail College Algebra more often?", _ALGEBRA_GAP),
+    (
+        "What is the equity gap for first generation students in MATH 1314?",
+        _ALGEBRA_GAP,
+    ),
+    ("Is there a first-gen disparity in teh College Algebra DFW rate?", _ALGEBRA_GAP),
+    # 6. continuing spring registration
+    (
+        "How did continuing student registration for Spring 2026 compare with last "
+        "spring?",
+        _SPRING_2026,
+    ),
+    ("Did continuing registration drop this spring?", _SPRING),
+    (
+        "How many continuing students registered in Spring 2026 versus Spring 2025?",
+        _SPRING_2026,
+    ),
+    ("What was the change in returning student registration for spring?", _SPRING),
+    # 7. the fastest-growing major
+    (
+        "Which major has grown the fastest since Fall 2020?",
+        [("headcount_growth", {"start_term": "202110"})],
+    ),
+    (
+        "Which program grew most between Fall 2020 and Fall 2025?",
+        [("headcount_growth", {"start_term": "202110", "end_term": "202610"})],
+    ),
+    ("What is the fastest-growing major?", _GROWTH),
+    # 8. online against in-person withdrawals
+    ("Which term had the worst online withdrawal gap?", _ONLINE_LARGEST),
+    ("Are online withdrawal rates higher than in-person ones?", _ONLINE),
+    (
+        "When was the gap between online and in-person withdrawals largest?",
+        _ONLINE_LARGEST,
+    ),
+    (
+        "Which semester had teh biggest online vs in-person withdrawal gap?",
+        _ONLINE_LARGEST,
+    ),
+]
+
+
+def test_forty_variants_of_the_planted_questions_map_to_the_right_plan(
     catalog: Catalog,
 ) -> None:
+    assert len(PLANTED_VARIANTS) == 40
+    for question, expected in PLANTED_VARIANTS:
+        assert refusal_for(question, catalog.title_names) is None, question
+        steps = rule_plan(question, catalog)
+        assert steps is not None, question
+        got = [s.to_json() for s in steps]
+        assert [g["analysis_id"] for g in got] == [e[0] for e in expected], question
+        for step, (_, params) in zip(got, expected, strict=True):
+            for name, value in params.items():
+                assert step["params"].get(name) == value, (question, name)
+
+
+def test_model_planner_receives_only_the_catalog_and_the_question(
+    catalog: Catalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CABINET_EXPLORE_PLANNER", "model-first")
     plan = {
         "steps": [{"analysis_id": "gpa_by_major", "params": {"order": "highest_first"}}]
     }
@@ -486,13 +643,77 @@ def test_model_planner_receives_only_the_catalog_and_the_question(
     ],
 )
 def test_invalid_model_plans_fall_back_to_the_rule_planner(
-    catalog: Catalog, text: str
+    catalog: Catalog, text: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("CABINET_EXPLORE_PLANNER", "model-first")
     stub = StubProvider({"explore_planner": text})
     outcome = plan_question(OWNER_EXAMPLE, catalog, stub)
     assert outcome.planner == "rule"
     assert outcome.fallback_reason
     assert outcome.steps == rule_plan(OWNER_EXAMPLE, catalog)
+
+
+def test_clause_splitting_edge_cases(catalog: Catalog) -> None:
+    def plan(question: str) -> tuple[list[dict[str, Any]], tuple[str, ...]]:
+        steps, notes = rule_plan_detail(question, catalog)
+        return [s.to_json() for s in steps or []], notes
+
+    # "and" before a verb stays one part; no campus-wide course ranking.
+    steps, notes = plan(
+        "Which instructors have taught MEEN 3310 and have the highest DFW rates?"
+    )
+    assert [s["analysis_id"] for s in steps] == ["course_instructors"] and not notes
+    # A trailing lead-in no step used is named, never dropped silently.
+    steps, notes = plan("Which major has the lowest GPA? For Nursing")
+    assert [s["analysis_id"] for s in steps] == ["gpa_by_major"]
+    assert any('"For Nursing"' in note for note in notes)
+    # A part an earlier table already answers needs no "unanswered" note.
+    steps, notes = plan(
+        "Which instructors taught MEEN 3310, and what were their DFW rates?"
+    )
+    assert [s["analysis_id"] for s in steps] == ["course_instructors"] and not notes
+    # One named major is about that major, not a ranking of all of them.
+    steps, _ = plan("How do Nursing majors perform?")
+    assert steps == [
+        {
+            "analysis_id": "gpa_by_major",
+            "params": {"major": "NURS", "order": "lowest_first"},
+        }
+    ]
+    steps, _ = plan("Which majors have the highest GPA?")
+    assert "major" not in steps[0]["params"]
+
+
+def test_rules_first_is_the_default_and_asks_the_model_only_when_rules_cannot(
+    catalog: Catalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("CABINET_EXPLORE_PLANNER", raising=False)
+    plan = {"steps": [{"analysis_id": "gpa_by_college", "params": {}}]}
+    stub = StubProvider({"explore_planner": json.dumps(plan)})
+    # A question the rules map never reaches the model.
+    outcome = plan_question(OWNER_SHORT, catalog, stub)
+    assert outcome.planner == "rule"
+    assert outcome.fallback_reason is None
+    assert [s.analysis_id for s in outcome.steps or []] == [
+        "gpa_by_major",
+        "dfw_by_course",
+        "course_instructors",
+    ]
+    assert stub.calls == []
+    # One the rules cannot map goes to the model, and its plan is validated.
+    unmapped = "Tell me something surprising about this university"
+    assert rule_plan(unmapped, catalog) is None
+    outcome = plan_question(unmapped, catalog, stub)
+    assert outcome.planner == "model"
+    assert outcome.steps == [Step("gpa_by_college", {})]
+    # A rejected model plan leaves the question unmapped, with the reason.
+    bad = StubProvider({"explore_planner": "not a plan"})
+    outcome = plan_question(unmapped, catalog, bad)
+    assert outcome.steps is None
+    assert outcome.fallback_reason and "rejected" in outcome.fallback_reason
+    # An unknown setting reads as the default.
+    monkeypatch.setenv("CABINET_EXPLORE_PLANNER", "sometimes")
+    assert plan_question(OWNER_SHORT, catalog, stub).planner == "rule"
 
 
 def test_validate_plan_accepts_references_and_checks_kinds(catalog: Catalog) -> None:
@@ -521,6 +742,7 @@ def test_model_plans_are_recorded_and_replayed(
     replay_dir = tmp_path / "replay"
     monkeypatch.setenv("CABINET_REPLAY_DIR", str(replay_dir))
     monkeypatch.setenv("CABINET_RECORD", "1")
+    monkeypatch.setenv("CABINET_EXPLORE_PLANNER", "model-first")
     question = "Which majors have the best grades?"
     first = {
         "steps": [{"analysis_id": "gpa_by_major", "params": {"order": "highest_first"}}]
@@ -586,18 +808,34 @@ def test_model_rewrite_is_validated_or_replaced_by_the_template(
 ) -> None:
     results = _owner_results(con, catalog)
     top = results[0].rows[0]
-    good = {
-        "sentences": [
-            f"{top['major_name']} has the lowest average GPA, "
-            f"{top['avg_gpa']}, across {top['students']} students."
-        ]
-    }
-    stub = StubProvider({"explore_writer": json.dumps(good)})
+    template = [s.text for s in template_answer(results)]
+    reworded = [
+        f"{top['major_name']} has the lowest average GPA, "
+        f"{top['avg_gpa']}, across {top['students']} students.",
+        *template[1:],
+    ]
+    stub = StubProvider({"explore_writer": json.dumps({"sentences": reworded})})
     answer, source, reason = write_answer(results, stub)
     assert source == SOURCE_MODEL and reason is None
     assert answer[0].claims[0] == {"table": 0, "row": 0, "column": "avg_gpa"}
     role, payload = stub.calls[0]
     assert role == "explore_writer" and set(payload) == {"tables"}
+    # A rewording that drops a fact the computed answer states is not used:
+    # here the hardest course and its instructors are left out.
+    partial = StubProvider({"explore_writer": json.dumps({"sentences": reworded[:1]})})
+    answer, source, reason = write_answer(results, partial)
+    assert source == SOURCE_TEMPLATE and reason and "left out" in reason
+    # Instructor ids are not figures: the name alone is enough.
+    no_ids = [re.sub(r"\bI-\d{4}\s+", "", text) for text in reworded]
+    stub = StubProvider({"explore_writer": json.dumps({"sentences": no_ids})})
+    assert write_answer(results, stub)[1] == SOURCE_MODEL
+    # So is one that keeps the numbers but drops the instructor's name.
+    nameless = [
+        text.replace("Alicia Shelby (fictional)", "One instructor") for text in reworded
+    ]
+    if nameless != reworded:
+        stub = StubProvider({"explore_writer": json.dumps({"sentences": nameless})})
+        assert write_answer(results, stub)[1] == SOURCE_TEMPLATE
     for invented in ("The lowest average GPA is 1.99.", "S-100001 struggles most."):
         bad = StubProvider({"explore_writer": json.dumps({"sentences": [invented]})})
         answer, source, reason = write_answer(results, bad)
@@ -675,8 +913,9 @@ def _texts(body: dict[str, Any]) -> str:
 
 
 @FULL
-def test_full_scale_owner_example(full_env: None, app: FastAPI) -> None:
-    body = _ask(_client(app, "executive"), OWNER_EXAMPLE)
+@pytest.mark.parametrize("question", [OWNER_EXAMPLE, OWNER_SHORT])
+def test_full_scale_owner_example(full_env: None, app: FastAPI, question: str) -> None:
+    body = _ask(_client(app, "executive"), question)
     gpa, hardest, instructors = (s["table"] for s in body["steps"])
     assert gpa["rows"][0][:2] == ["MEEN", "Mechanical Engineering"]
     assert gpa["rows"][0][3:] == [250, 2.623]
@@ -915,10 +1154,13 @@ def test_model_rewrite_cannot_swap_numbers_between_rows(
         f"{first['major_name']} has {first['students']} students and "
         f"{second['major_name']} has {second['students']}."
     )
-    stub = StubProvider({"explore_writer": json.dumps({"sentences": [honest]})})
+    # The rewording keeps the computed answer's own facts and adds the row.
+    template = [s.text for s in template_answer(results)]
+    sentences = [*template[: MAX_SENTENCES - 1], honest]
+    stub = StubProvider({"explore_writer": json.dumps({"sentences": sentences})})
     answer, source, _ = write_answer(results, stub)
     assert source == SOURCE_MODEL
-    assert {c["row"] for c in answer[0].claims} == {0, 1}
+    assert {c["row"] for c in answer[-1].claims} == {0, 1}
 
 
 def test_planner_says_what_it_did_not_apply(app: FastAPI, catalog: Catalog) -> None:

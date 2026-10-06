@@ -394,6 +394,41 @@ describe('Explore', () => {
     expect(within(row).getByText('Explore')).toBeTruthy()
   })
 
+  it('shows each AI employee’s progress inline while a briefing runs', async () => {
+    let asked = false
+    const ts = '2026-10-05T12:00:00+00:00'
+    const event = (id: number, type: string, payload: Record<string, unknown>) => ({
+      id,
+      ts,
+      type,
+      actor: 'chief_of_staff',
+      payload,
+    })
+    mockApi({
+      // The run stays in flight: the reply shows progress from the polled log.
+      '/ask': () => {
+        asked = true
+        return new Promise<Response>(() => {})
+      },
+      '/events': () =>
+        json({
+          events: asked
+            ? [
+                event(5, 'question.asked', { question: QUESTION }),
+                event(6, 'task.assigned', { task_id: 'task-enrollment_analyst-5', role: 'enrollment_analyst', fields: [] }),
+                event(7, 'task.assigned', { task_id: 'task-student_success_analyst-5', role: 'student_success_analyst', fields: [] }),
+                event(8, 'finding.produced', { task_id: 'task-enrollment_analyst-5' }),
+              ]
+            : [],
+        }),
+    })
+    render(<App />)
+    await screen.findByText('What would you like to know?')
+    await askQuestion(QUESTION)
+    expect(await screen.findByText('Enrollment Analyst: done', {}, { timeout: 6000 })).toBeTruthy()
+    expect(screen.getByText('Student Success Analyst: working…')).toBeTruthy()
+  }, 10_000)
+
   it('runs an approved question as a briefing, never through Explore', async () => {
     const calls = mockApi()
     render(<App />)
@@ -564,5 +599,9 @@ describe('the briefing before any question', () => {
     render(<App />)
     expect(await screen.findByText(/Showing the latest briefing/)).toBeTruthy()
     expect(document.body.textContent).not.toContain('Showing your last briefing')
+    // The work line opens the one AI employees panel, with each job named.
+    fireEvent.click(screen.getByRole('button', { name: /Showing the latest briefing/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'AI employees and data access' })
+    expect(within(dialog).getByText(/writes the summary and its limits/)).toBeTruthy()
   })
 })

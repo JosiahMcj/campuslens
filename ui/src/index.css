@@ -499,10 +499,6 @@ section {
     padding: var(--space-6) var(--space-5) var(--space-7);
   }
 
-  .page-header {
-    grid-area: header;
-  }
-
   .question-bar {
     grid-area: question;
   }
@@ -544,15 +540,6 @@ section {
   font-size: var(--text-sm);
   color: var(--ink-soft);
   margin: var(--space-5) 0 0;
-}
-
-/* --- Header --------------------------------------------------------------*/
-
-.page-header .lede {
-  color: var(--ink-soft);
-  max-width: 68ch;
-  margin: var(--space-2) 0 0;
-  text-wrap: pretty;
 }
 
 /* --- Question bar ---------------------------------------------------------*/
@@ -974,130 +961,6 @@ details[open]::details-content {
     transition:
       block-size 200ms ease-out,
       content-visibility 200ms ease-out allow-discrete;
-  }
-}
-
-/* --- Task cards (the cabinet's dispatch) -----------------------------------*/
-
-.dispatch {
-  margin-top: var(--space-5);
-}
-
-.dispatch h3 {
-  margin: 0 0 var(--space-3);
-}
-
-.task-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  /* Cards keep their own height and line up at the top: name, status,
-     what it explains, then the data fold, in the same order on each. */
-  align-items: start;
-  gap: var(--space-3);
-}
-
-@media (min-width: 1200px) {
-  .rail .task-cards {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* The one boxed element: three parallel entities with state. */
-.task-card {
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-control);
-  padding: var(--space-3);
-  font-size: var(--text-sm);
-}
-
-.task-card h4 {
-  margin: 0 0 var(--space-1);
-}
-
-.task-card .task-id {
-  color: var(--ink-soft);
-  margin: 0 0 var(--space-2);
-  overflow-wrap: anywhere;
-  font-variant-numeric: tabular-nums;
-}
-
-.task-card ul {
-  margin: var(--space-1) 0 var(--space-2);
-  padding-inline-start: var(--space-4);
-}
-
-.task-card details {
-  margin: var(--space-1) 0 var(--space-2);
-}
-
-.task-card details ul {
-  margin-bottom: 0;
-}
-
-.task-card .task-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-2);
-  margin: var(--space-1) 0 var(--space-2);
-  color: var(--ink-soft);
-}
-
-/* The status as a small labelled pill, its mark beside the word. */
-.task-card .task-mark {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 0 var(--space-2);
-  border: 1px solid var(--rule-strong);
-  border-radius: 999px;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  line-height: 1.6;
-  color: var(--ink);
-}
-
-.task-card .task-mark svg {
-  width: 0.875rem;
-  height: 0.875rem;
-  flex: none;
-}
-
-.task-card .task-time {
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
-}
-
-.task-card .task-findings {
-  margin: var(--space-1) 0 0;
-  color: var(--ink-soft);
-  overflow-wrap: anywhere;
-}
-
-.task-card[data-status='done'] {
-  border-color: var(--navy);
-}
-
-.task-card[data-status='done'] .task-mark {
-  border-color: var(--navy);
-  color: var(--navy);
-}
-
-.task-card[data-status='unavailable'] .task-mark {
-  border-color: var(--alert);
-  color: var(--alert);
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .task-card {
-    transition: border-color 200ms ease-out;
-  }
-
-  .task-card .task-mark {
-    transition:
-      color 200ms ease-out,
-      border-color 200ms ease-out;
   }
 }
 

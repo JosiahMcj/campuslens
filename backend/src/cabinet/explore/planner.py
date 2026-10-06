@@ -8,14 +8,16 @@ the second analysis on whatever major the first one ranked lowest.
 Two planners sit behind ``plan_question``:
 
 - the rule planner (keywords, synonyms, and patterns over the catalog's
-  allowed values), used in replay and fake modes, in tests, and as the
-  fallback for anything the model gets wrong;
+  allowed values), used in replay and fake modes, in tests, and with a live
+  provider for every question it can map (``CABINET_EXPLORE_PLANNER``,
+  default ``rules-first``);
 - the model planner (through the provider interface, role
   ``explore_planner``), which receives ONLY the catalog spec (analysis ids,
   titles, parameter names and allowed values) and the question, and must
-  return JSON that ``validate_plan`` accepts. Invalid JSON, an unknown id, a
-  value outside the catalog, a bad reference, or an unavailable provider all
-  fall back to the rule planner.
+  return JSON that ``validate_plan`` accepts. It plans the questions the
+  rules cannot map, or every question with ``model-first``. Invalid JSON, an
+  unknown id, a value outside the catalog, a bad reference, or an
+  unavailable provider all fall back to the rule planner.
 
 Validated model plans are recorded like golden runs, keyed by the question
 and the catalog hash, so replay serves them offline: written to
@@ -67,6 +69,11 @@ OWNER_EXAMPLE = (
     "class, and which instructor has historically taught it?"
 )
 
+# The owner's short form of the same question, one sentence with commas.
+OWNER_SHORT = (
+    "Which major has the lowest GPA, what is its hardest class, and who has taught it?"
+)
+
 # GET /explore/catalog lists these; the unanswerable message suggests the
 # three nearest.
 EXAMPLE_QUESTIONS: tuple[str, ...] = (
@@ -88,6 +95,7 @@ EXAMPLE_QUESTIONS: tuple[str, ...] = (
 # order). Tests assert every one; docs/EXPLORE.md lists them as examples.
 RULE_PHRASINGS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (OWNER_EXAMPLE, ("gpa_by_major", "dfw_by_course", "course_instructors")),
+    (OWNER_SHORT, ("gpa_by_major", "dfw_by_course", "course_instructors")),
     ("Which major has the lowest GPA?", ("gpa_by_major",)),
     ("Which majors have the highest average GPA?", ("gpa_by_major",)),
     ("What is the average GPA in Nursing?", ("gpa_by_major",)),
@@ -385,24 +393,76 @@ def model_plan(question: str, catalog: Catalog, provider: Provider) -> list[Step
     return steps
 
 
+ENV_PLANNER_ORDER = "CABINET_EXPLORE_PLANNER"
+RULES_FIRST = "rules-first"
+MODEL_FIRST = "model-first"
+
+
+def planner_order_from_env() -> str:
+    """``CABINET_EXPLORE_PLANNER``: ``rules-first`` (the default) asks the model
+    only for a question the rule planner cannot map; ``model-first`` asks the
+    model every time and falls back to the rules. Anything else is logged and
+    read as the default."""
+    raw = os.environ.get(ENV_PLANNER_ORDER, "").strip().lower()
+    if raw in ("", RULES_FIRST):
+        return RULES_FIRST
+    if raw == MODEL_FIRST:
+        return MODEL_FIRST
+    logger.warning(
+        "%s=%r is not %s or %s; using %s",
+        ENV_PLANNER_ORDER,
+        raw,
+        RULES_FIRST,
+        MODEL_FIRST,
+        RULES_FIRST,
+    )
+    return RULES_FIRST
+
+
+def _try_model(
+    question: str, catalog: Catalog, provider: Provider
+) -> tuple[list[Step] | None, str | None]:
+    """(model steps, None), or (None, the plain reason the model was not used)."""
+    try:
+        return model_plan(question, catalog, provider), None
+    except ProviderUnavailable as exc:
+        reason = f"the model planner was unavailable: {exc.reason}"
+    except PlanInvalid as exc:
+        reason = f"the model's plan was rejected: {exc}"
+    logger.warning("explore model planner not used: %s", reason)
+    return None, reason
+
+
 def plan_question(question: str, catalog: Catalog, provider: Provider) -> PlanOutcome:
-    """The plan for one question (call only after the refusal check)."""
+    """The plan for one question (call only after the refusal check).
+
+    Replay serves a recorded plan first. With a live provider the default
+    order is rules first: the reviewed rule planner answers every question
+    it can map, and the model plans only the rest (we measured a local model
+    taking longer than the request budget to read the catalog, and the rules
+    reach every planted fact). ``CABINET_EXPLORE_PLANNER=model-first`` asks
+    the model first and falls back to the rules. Fake and replay modes never
+    call a model."""
     if provider.name == "replay":
         recorded = load_recorded_plan(question, catalog)
         if recorded is not None:
             return PlanOutcome(recorded, "recorded")
-    if uses_model(provider):
-        try:
-            return PlanOutcome(model_plan(question, catalog, provider), "model")
-        except ProviderUnavailable as exc:
-            reason = f"the model planner was unavailable: {exc.reason}"
-        except PlanInvalid as exc:
-            reason = f"the model's plan was rejected: {exc}"
-        logger.warning("explore planner fell back to rules: %s", reason)
+    if not uses_model(provider):
         steps, notes = rule_plan_detail(question, catalog)
-        return PlanOutcome(steps, "rule", reason, notes)
+        return PlanOutcome(steps, "rule", None, notes)
+    if planner_order_from_env() == RULES_FIRST:
+        steps, notes = rule_plan_detail(question, catalog)
+        if steps is not None:
+            return PlanOutcome(steps, "rule", None, notes)
+        model_steps, reason = _try_model(question, catalog, provider)
+        if model_steps is not None:
+            return PlanOutcome(model_steps, "model")
+        return PlanOutcome(None, "rule", reason, ())
+    model_steps, reason = _try_model(question, catalog, provider)
+    if model_steps is not None:
+        return PlanOutcome(model_steps, "model")
     steps, notes = rule_plan_detail(question, catalog)
-    return PlanOutcome(steps, "rule", None, notes)
+    return PlanOutcome(steps, "rule", reason, notes)
 
 
 # --- the rule planner --------------------------------------------------------
@@ -658,10 +718,49 @@ def _matcher(catalog: Catalog) -> _Matcher:
     return matcher
 
 
+# Common slips of the keyboard, corrected before planning ("teh" -> "the").
+_TYPOS = {
+    "teh": "the",
+    "hte": "the",
+    "waht": "what",
+    "whta": "what",
+    "wich": "which",
+    "whcih": "which",
+    "hwo": "how",
+    "taugh": "taught",
+    "tuaght": "taught",
+    "hardets": "hardest",
+    "lowset": "lowest",
+    "lowets": "lowest",
+    "majro": "major",
+    "gpa's": "GPAs",
+}
+_TYPO_RE = re.compile(r"\b(" + "|".join(map(re.escape, _TYPOS)) + r")\b", re.I)
+
+
+def _fix_typos(question: str) -> str:
+    return _TYPO_RE.sub(lambda m: _TYPOS[m.group(1).lower()], question)
+
+
+_NEXT_QUESTION = (
+    r"(?=(?:which|what|what's|whats|who|whom|how|where|when|is|are|did|does|do|"
+    r"has|have)\b)"
+)
+
+
 def _clauses(question: str) -> list[str]:
+    """The question split into the parts a step can answer: at question
+    marks, semicolons, sentence ends, a colon, and before a new question word
+    after a comma or an "and" ("Which major has the lowest GPA, what is its
+    hardest class, and who has taught it?" is three parts)."""
     parts = re.split(
-        r"\?|;|\.\s+|\.$|,\s*(?:and|then|and\s+then)\s+(?=(?:which|what|who|"
-        r"how|where|when|is|are|did|does|do|has|have)\b)|\s+and\s+then\s+",
+        r"\?|;|:\s+|\.\s+|\.$|,\s*(?:and\s+then\s+|then\s+|and\s+)?"
+        + _NEXT_QUESTION
+        + r"|,\s*(?:and\s+)?(?=its\b)"
+        + r"|\s+and\s+then\s+|\s+and\s+"
+        # After a bare "and", only a wh-word starts a new part: "taught MEEN
+        # 3310 and have the highest DFW rates" stays one part.
+        + r"(?=(?:which|what|what's|whats|who|whom|how|where|when)\b)",
         question.strip(),
         flags=re.I,
     )
@@ -677,6 +776,9 @@ class _ClausePlanner:
         self.m = matcher
         self.q = question_entities
         self.steps: list[Step] = []
+        # Set when a clause needs no step because an earlier table already
+        # answers it ("and what were their DFW rates?").
+        self.already_shown = False
 
     def chain(self, kind: str) -> Ref | None:
         for index in range(len(self.steps) - 1, -1, -1):
@@ -720,7 +822,7 @@ class _ClausePlanner:
         p: dict[str, Any] = {}
 
         if (
-            _has(r"\bcontinuing\b", text)
+            _has(r"\bcontinuing\b|\breturning\b", text)
             and _has(r"regist", text)
             or _has(r"spring[- ]to[- ]spring", text)
         ):
@@ -791,9 +893,9 @@ class _ClausePlanner:
             and _has(dfw_words, text)
             and ANALYSIS_BY_ID[self.steps[-1].analysis_id].column("dfw_rate")
         ):
-            return (
-                None  # "what were their DFW rates": the last table already shows them
-            )
+            # "what were their DFW rates": the last table already shows them.
+            self.already_shown = True
+            return None
         if _has(dfw_words, text) or _has(trend_words, text):
             course = (
                 e.courses[0] if e.courses else self.chain("course") if refers else None
@@ -807,11 +909,19 @@ class _ClausePlanner:
             if _has(
                 r"\bcourses?\b|\bclass(?:es)?\b|hardest|easiest|toughest|dfw", text
             ):
+                # "MATH courses" or "chem courses" (a subject code or short
+                # name) ranks the subject's courses; a major named in words
+                # ("hardest class in Mechanical Engineering") ranks the
+                # courses that major requires.
+                coded_subject = any(
+                    re.search(r"\b" + re.escape(code) + r"\b", text)
+                    for code in e.subjects
+                ) or any(_has(rf"\b{short}\b", text) for short in _SUBJECT_SYNONYMS)
                 major = (
                     e.majors[0]
                     if e.majors
                     and not (
-                        e.subjects
+                        coded_subject
                         and _has(r"\b(?:courses?|class(?:es)?)\b", text)
                         and not _has(r"\bmajors?\b|requir", text)
                     )
@@ -928,7 +1038,10 @@ class _ClausePlanner:
                 p["season"] = e.seasons[0]
             return Step("enrollment_by_term", p)
 
-        if _has(r"\bgpas?\b|grade point|\bgrades\b", text):
+        if _has(r"\bgpas?\b|grade point|\bgrades\b", text) or (
+            _has(r"perform", text)
+            and _has(r"\bmajors?\b|\bprograms?\b|\bcolleges?\b", text)
+        ):
             if e.colleges or (
                 _has(r"\bcolleges?\b", text)
                 and not e.majors
@@ -938,9 +1051,11 @@ class _ClausePlanner:
                     p["college"] = e.colleges[0]
                 p["order"] = "highest_first" if high and not low else "lowest_first"
                 return Step("gpa_by_college", p)
-            if e.majors and not _has(
-                r"\bwhich\s+majors?\b|\bwhat\s+majors?\b|\bmajors\b", text
-            ):
+            ranking = _has(r"\bwhich\s+majors?\b|\bwhat\s+majors?\b", text) or (
+                _has(r"\bmajors\b", text) and (low or high or len(e.majors) != 1)
+            )
+            if e.majors and not ranking:
+                # "How do Nursing majors perform?" is about Nursing.
                 p["major"] = e.majors[0]
             p["order"] = "highest_first" if high and not low else "lowest_first"
             return Step("gpa_by_major", p)
@@ -1001,15 +1116,24 @@ def rule_plan_detail(
     """(steps, notes): the rule plan, plus a plain sentence for every named
     term or college a step could not apply and every part of the question no
     analysis answered (so a partial answer never passes for a full one)."""
+    question = _fix_typos(question)
     matcher = _matcher(catalog)
     planner = _ClausePlanner(matcher, matcher.extract(question))
     notes: list[str] = []
     unanswered: list[str] = []
+    carry = ""
     for clause in _clauses(question):
+        clause = f"{carry}, {clause}" if carry else clause
+        carry = ""
+        planner.already_shown = False
         step = planner.plan(clause)
         if step is None:
+            if planner.already_shown:
+                continue
             if _QUESTION_WORD_RE.search(clause):
                 unanswered.append(clause)
+            else:  # "In Nursing, which ...": the lead-in belongs to what follows
+                carry = clause
             continue
         if step in planner.steps:
             continue
@@ -1017,6 +1141,8 @@ def rule_plan_detail(
         planner.steps.append(step)
         if len(planner.steps) == MAX_STEPS:
             break
+    if carry:  # a trailing lead-in ("For Nursing") no step used
+        unanswered.append(carry)
     if not planner.steps:
         return None, ()
     for clause in unanswered:
