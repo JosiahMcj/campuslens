@@ -6,6 +6,7 @@
 
 import type { AidQueueSummary } from './aid'
 import { ApiError, SessionEndedError, apiDetail, apiFetch, retryAfterFrom } from './auth'
+import { exploreResponseFrom, type ExploreCatalog, type ExploreResponse } from './explore'
 import {
   analystFromResponse,
   cabinetBriefingFrom,
@@ -16,6 +17,7 @@ import {
 } from './states'
 
 export type { AnalystBriefing, AuditEvent, CabinetBriefing } from './states'
+export type { ExploreCatalog, ExploreResponse } from './explore'
 
 export interface OfficeHolds {
   office: string
@@ -482,4 +484,27 @@ export function refreshEnrollmentBriefing(flags: UiFlags): Promise<AnalystBriefi
 /** "Check again" for the Student Success Analyst's section. */
 export function refreshStudentSuccessBriefing(flags: UiFlags): Promise<AnalystBriefing> {
   return refreshAnalystBriefing('/briefing/student-success', flags)
+}
+
+// --- Explore: specific questions over Demonstration University --------------
+//
+// POST /explore answers from tables reviewed code computed; GET
+// /explore/catalog lists the example questions. The aid role gets a 403 on
+// both, so the page never calls them for that role (canExplore).
+
+export async function postExplore(question: string, flags: UiFlags): Promise<ExploreResponse> {
+  await maybeSlow(flags)
+  return exploreResponseFrom(await apiPost<unknown>('/explore', { question }))
+}
+
+export async function fetchExploreCatalog(flags: UiFlags): Promise<ExploreCatalog> {
+  await maybeSlow(flags)
+  const body = await apiGet<unknown>('/explore/catalog')
+  const examples =
+    typeof body === 'object' && body !== null && Array.isArray((body as { examples?: unknown }).examples)
+      ? (body as { examples: unknown[] }).examples.filter(
+          (item): item is string => typeof item === 'string',
+        )
+      : []
+  return { examples }
 }

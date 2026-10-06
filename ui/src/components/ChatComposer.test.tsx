@@ -43,7 +43,61 @@ describe('ChatComposer', () => {
 
   it('keeps the footnote to one short line', () => {
     const html = render(false)
-    expect(html).toContain('Approved questions only. Every number is checked.')
+    expect(html).toContain('Every number is computed from the records and checked.')
+    expect(html).not.toContain('Approved questions only')
+  })
+
+  it('takes any question: an example placeholder and no "will be refused" warning', () => {
+    const html = render(true)
+    expect(html).toContain('placeholder="e.g. Which course has the highest withdrawal rate?"')
+    expect(html).toContain('Ask the Cabinet a question')
+    expect(html).not.toContain('will be refused')
+  })
+})
+
+describe('ChatComposer — the "Try" row of Explore examples', () => {
+  const EXAMPLES = [
+    'Which major has the lowest GPA? In that major, what is historically the hardest class, and which instructor has historically taught it?',
+    'Which majors have the highest average GPA?',
+    'What is the average GPA by college?',
+  ]
+  const withExamples = (
+    starters: boolean,
+    examples: string[] | null,
+    examplesFailed = false,
+  ) =>
+    renderToStaticMarkup(
+      <ChatComposer
+        questions={QUESTIONS}
+        sending={false}
+        starters={starters}
+        onAsk={() => {}}
+        examples={examples}
+        examplesFailed={examplesFailed}
+        onRetryExamples={() => {}}
+      />,
+    )
+
+  it('shows three example questions under the approved cards', () => {
+    const html = withExamples(true, EXAMPLES)
+    expect(html).toContain('>Try<')
+    for (const text of EXAMPLES) expect(html).toContain(text)
+    // The approved cards come first.
+    expect(html.indexOf('Approved question')).toBeLessThan(html.indexOf('>Try<'))
+    // Two cards, three examples, and the send button.
+    expect(html.match(/<button/g)?.length).toBe(6)
+  })
+
+  it('hides the examples once an answer is on screen', () => {
+    expect(withExamples(false, EXAMPLES)).not.toContain('>Try<')
+  })
+
+  it('shows one skeleton line while loading and a quiet Retry line on failure', () => {
+    expect(withExamples(true, null)).toContain('Loading example questions')
+    const failed = withExamples(true, null, true)
+    expect(failed).toContain('The example questions didn’t load.')
+    expect(failed).toMatch(/<button[^>]*class="link-button"[^>]*>Retry<\/button>/)
+    expect(failed).not.toContain('Loading example questions')
   })
 })
 

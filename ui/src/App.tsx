@@ -5,12 +5,14 @@ import {
   fetchDecisions,
   fetchDispatch,
   fetchEvents,
+  fetchExploreCatalog,
   fetchFindings,
   fetchQuestions,
   getFinding,
   postApprove,
   postAsk,
   postComposeDispatch,
+  postExplore,
   postGovernanceRequest,
   postSendDispatch,
   resetBriefingOnce,
@@ -20,6 +22,7 @@ import {
   type AuditEvent,
   type CabinetBriefing,
   type Decision,
+  type ExploreResponse,
   type Finding,
   type Findings,
   type SimulatedTask,
@@ -57,6 +60,7 @@ import {
 } from './components/AccountPanels'
 import { ChatComposer } from './components/ChatComposer'
 import { ChatSidebar, type HistoryItem, type PanelId } from './components/ChatSidebar'
+import { ExploreAnswer, ExploreWorking } from './components/ExploreAnswer'
 import { DecisionPanel, type DispatchUiState } from './components/DecisionPanel'
 import { EvidenceDrawer } from './components/EvidenceDrawer'
 import { Institution, type ActiveDatasetMeta } from './components/Institution'
@@ -67,11 +71,20 @@ import { MenuIcon } from './components/icons'
 import { StatRow } from './components/StatRow'
 import { friendlyError, friendlyLoadError, isRateLimited, retryAfterSeconds } from './errors'
 import {
+  canExplore,
+  loadExploreHistory,
+  pickExamples,
+  redactQuestion,
+  saveExploreHistory,
+  withQuestion,
+} from './explore'
+import {
   APPROVED_QUESTION,
   documentTitle,
   evidenceUrl,
   eventsAfter,
   friendlyTime,
+  isApprovedQuestion,
   latestQuestionEventId,
   maxEventId,
   nextPollDelay,
@@ -417,8 +430,13 @@ function InstitutionPage({
 
 /** One question and the cabinet's reply, as the chat thread shows it. A
  * restored exchange is the briefing this API process already produced
- * (GET /briefing on load), shown without re-running anything. */
-type ExchangeState = AskState | { kind: 'restored' }
+ * (GET /briefing on load), shown without re-running anything. An Explore
+ * exchange is a question answered from computed tables (POST /explore). */
+type ExchangeState =
+  | AskState
+  | { kind: 'restored' }
+  | { kind: 'explore-sending' }
+  | { kind: 'explore'; response: ExploreResponse }
 
 interface Exchange {
   id: number
@@ -460,6 +478,11 @@ function BriefingPage({
 }: BriefingPageProps) {
   const role = session.user.role
   const act = canAct(role)
+  // Explore: every role but the Financial Aid office (the API answers it 403).
+  const explorer = canExplore(role)
+  // Anyone who may type a question: the briefing roles and the Explore roles.
+  const asker = act || explorer
+  const userId = session.user.id
   const audit = canSeeAuditLog(role)
   const aidQueue = canSeeAidQueue(role)
 
@@ -480,6 +503,14 @@ function BriefingPage({
   const [questions, setQuestions] = useState<ApprovedQuestion[] | null>(null)
   const [questionsFailed, setQuestionsFailed] = useState(false)
   const [askState, setAskState] = useState<AskState>({ kind: 'idle' })
+  // The Explore example questions (GET /explore/catalog) for the "Try" row.
+  const [examples, setExamples] = useState<string[] | null>(null)
+  const [examplesFailed, setExamplesFailed] = useState(false)
+  // The Explore questions asked in this tab, kept across a reload (the
+  // answers are not: opening one after a reload asks it again).
+  const [exploreHistory, setExploreHistory] = useState<string[]>(() =>
+    loadExploreHistory(userId),
+  )
   // The last briefing this API process produced (GET /briefing on load).
   const [briefingStatus, setBriefingStatus] = useState<ResourceStatus>({ kind: 'loading' })
   // The briefing one /ask produced (or the last one this API process made,
@@ -589,6 +620,8 @@ function BriefingPage({
   }, [loadDecisions])
 
   const loadQuestions = useCallback(async () => {
+    // Only the briefing roles ask the approved questions.
+    if (!act) return
     try {
       setQuestions(await fetchQuestions(flags))
       setQuestionsFailed(false)
@@ -597,7 +630,29 @@ function BriefingPage({
       // line with Retry takes their place.
       setQuestionsFailed(true)
     }
-  }, [flags])
+  }, [act, flags])
+
+  const loadExamples = useCallback(async () => {
+    if (!explorer) return
+    try {
+      const catalog = await fetchExploreCatalog(flags)
+      setExamples(pickExamples(catalog.examples))
+      setExamplesFailed(false)
+    } catch {
+      // The field still takes any question; a quiet line with Retry stands in.
+      setExamplesFailed(true)
+    }
+  }, [explorer, flags])
+
+  const retryExamples = useCallback(() => {
+    setExamplesFailed(false)
+    setExamples(null)
+    void loadExamples()
+  }, [loadExamples])
+
+  useEffect(() => {
+    saveExploreHistory(userId, exploreHistory)
+  }, [userId, exploreHistory])
 
   // The last briefing this API process produced: a reload renders it without
   // re-running anything. 404 (none yet) leaves the computed page in place.
@@ -641,7 +696,8 @@ function BriefingPage({
     void loadDecisions()
     void loadQuestions()
     void loadBriefing()
-  }, [loadEvents, loadDecisions, loadQuestions, loadBriefing])
+    void loadExamples()
+  }, [loadEvents, loadDecisions, loadQuestions, loadBriefing, loadExamples])
 
   const openEvidence = useCallback((findingId: string) => {
     setEvidenceId(findingId)
@@ -731,6 +787,64 @@ function BriefingPage({
       }
     },
     [audit, flags, loadEvents, loadDecisions, setEvents, route, navigate, restoredHidden, restoredId, events],
+  )
+
+  // An Explore question: answered from tables code computed (POST /explore).
+  // It never starts a briefing run, so the dispatch poll and the decisions
+  // stay as they are; the audit log is refreshed for the roles that read it.
+  // A failed request leaves no row behind, exactly like a failed ask.
+  const explore = useCallback(
+    async (question: string) => {
+      setAskState({ kind: 'sending' })
+      if (route !== '/') navigate('/')
+      if (restoredHidden && restoredId !== null) setViewFrom((current) => Math.max(current, restoredId + 1))
+      setRestoredSettled(true)
+      const exchangeId = nextExchangeId.current++
+      setThread((previous) => [
+        ...previous,
+        { id: exchangeId, question, state: { kind: 'explore-sending' } },
+      ])
+      try {
+        const response = await postExplore(question, flags)
+        setThread((previous) =>
+          previous.map((item) =>
+            item.id === exchangeId ? { ...item, state: { kind: 'explore', response } } : item,
+          ),
+        )
+        // Only answered questions are kept for after a reload: reopening one
+        // asks it again, and a refusal should not be asked (and logged) twice.
+        if (!response.refused && response.answer.length > 0) {
+          setExploreHistory((previous) => withQuestion(previous, question))
+        }
+        setAskState({ kind: 'idle' })
+        if (audit) void loadEvents()
+      } catch (error) {
+        setThread((previous) => previous.filter((item) => item.id !== exchangeId))
+        setAskState({
+          kind: 'error',
+          message: friendlyError(error, 'Your question'),
+          question,
+        })
+      }
+    },
+    [audit, flags, loadEvents, route, navigate, restoredHidden, restoredId],
+  )
+
+  // The composer takes any question: an approved briefing question runs the
+  // briefing (the roles that may ask it); anything else is an Explore question.
+  const approvedTexts = useMemo(
+    () => (questions !== null ? questions.map((q) => q.text) : [APPROVED_QUESTION]),
+    [questions],
+  )
+  const submit = useCallback(
+    (question: string) => {
+      if (act && (isApprovedQuestion(question, approvedTexts) || !explorer)) {
+        void ask(question)
+      } else if (explorer) {
+        void explore(question)
+      }
+    },
+    [act, explorer, approvedTexts, ask, explore],
   )
 
   // "Check again" in a model-unavailable section re-runs the question that
@@ -1047,12 +1161,36 @@ function BriefingPage({
       }))
   })()
   const visible = thread.filter((item) => item.id >= firstShown)
-  const history: HistoryItem[] = thread.map((item) => ({
-    id: item.id,
-    question: item.question,
-    refused: item.state.kind === 'refused',
-    restored: item.state.kind === 'restored',
-  }))
+  // Explore questions from earlier in this tab (before a reload) that this
+  // page view has not asked yet: listed first, with negative ids; opening
+  // one asks it again.
+  const askedHere = new Set(
+    thread
+      .filter((item) => item.state.kind === 'explore' || item.state.kind === 'explore-sending')
+      .map((item) => redactQuestion(item.question)),
+  )
+  const storedQuestions = exploreHistory.filter((question) => !askedHere.has(question))
+  const history: HistoryItem[] = [
+    ...storedQuestions.map((question, index) => ({
+      id: -1 - index,
+      question,
+      refused: false,
+      restored: false,
+      explore: true,
+    })),
+    ...thread.map((item) => ({
+      id: item.id,
+      question:
+        item.state.kind === 'explore' || item.state.kind === 'explore-sending'
+          ? redactQuestion(item.question)
+          : item.question,
+      refused:
+        item.state.kind === 'refused' ||
+        (item.state.kind === 'explore' && item.state.response.refused),
+      restored: item.state.kind === 'restored',
+      explore: item.state.kind === 'explore' || item.state.kind === 'explore-sending',
+    })),
+  ]
   const sending = askState.kind === 'sending'
   const ready = findingsState.kind === 'ready'
   const onInstitution = route === '/institution'
@@ -1077,7 +1215,7 @@ function BriefingPage({
     actions: 'Staff actions',
     decision: 'Decision',
     agents: 'AI employees',
-    access: 'Data access',
+    access: 'AI employees and data access',
     audit: 'Audit log',
     aid: 'Financial Aid review',
     profile: 'Profile',
@@ -1134,6 +1272,13 @@ function BriefingPage({
   }
 
   const selectHistory = (id: number) => {
+    if (id < 0) {
+      // A question from before a reload: its answer was not kept, so ask again.
+      const question = storedQuestions[-1 - id]
+      if (sidebarOpen) closeSidebar()
+      if (question !== undefined && !sending) submit(question)
+      return
+    }
     if (onInstitution) navigate('/')
     setViewFrom((current) => Math.min(firstShown, current, id))
     setRestoredSettled(true)
@@ -1171,8 +1316,8 @@ function BriefingPage({
         : undefined
     const when = produced !== undefined ? friendlyTime(produced.ts) : null
     return when !== null
-      ? `Showing your last briefing, from ${when}.`
-      : 'Showing your last briefing.'
+      ? `Showing the latest briefing, from ${when}.`
+      : 'Showing the latest briefing.'
   }
 
   // The skeleton or the error a panel shows while its data is not ready.
@@ -1231,6 +1376,26 @@ function BriefingPage({
 
   const reply = (item: Exchange) => {
     const state = item.state
+    if (state.kind === 'explore-sending') return <ExploreWorking />
+    if (state.kind === 'explore') {
+      return (
+        <ExploreAnswer
+          answerKey={String(item.id)}
+          response={state.response}
+          fallbackSuggestions={examples ?? []}
+          onAsk={submit}
+          busy={sending}
+          onSeeAuditLog={
+            audit
+              ? () => {
+                  openPanel('audit')
+                  void loadEvents()
+                }
+              : null
+          }
+        />
+      )
+    }
     if (state.kind === 'sending' || state.kind === 'idle' || state.kind === 'error') {
       return (
         <div className="reply-working" role="status">
@@ -1301,20 +1466,43 @@ function BriefingPage({
   }
 
   const composer = (starters: boolean) =>
-    act ? (
+    asker ? (
       <ChatComposer
-        questions={questions}
+        questions={act ? questions : []}
         sending={sending}
         starters={starters}
-        onAsk={(question) => void ask(question)}
+        onAsk={submit}
         error={askState.kind === 'error' ? askState.message : null}
         onAskAgain={
-          askState.kind === 'error' ? () => void ask(askState.question) : null
+          askState.kind === 'error' ? () => submit(askState.question) : null
         }
-        questionsFailed={questionsFailed && questions === null}
+        questionsFailed={act && questionsFailed && questions === null}
         onRetryQuestions={() => void loadQuestions()}
+        examples={explorer ? examples : []}
+        examplesFailed={explorer && examplesFailed}
+        onRetryExamples={retryExamples}
       />
     ) : null
+
+  // Before any question has been asked there is no briefing and no decision
+  // to show: the Briefing panels and the Decision say so (and never offer
+  // an approval for a briefing nobody asked for). The latest briefing is
+  // kept by the API across restarts (GET /briefing), so "asked" is simply
+  // "a briefing exists".
+  const briefingGate = (content: () => ReactNode) =>
+    cabinetBriefing === null && briefingStatus.kind !== 'ready' ? (
+      notReady(briefingStatus, retryBriefing, 'the briefing')
+    ) : cabinetBriefing === null ? (
+      <div className="state-panel state-empty">
+        <p>
+          {act
+            ? 'Ask the spring registration question first. The briefing and the decision appear here.'
+            : 'The briefing and the decision appear here once an executive asks the spring registration question.'}
+        </p>
+      </div>
+    ) : (
+      content()
+    )
 
   const findingsPanel = (content: () => ReactNode) =>
     ready ? content() : notReady(findingsStatus, onRetryFindings, 'the briefing')
@@ -1324,18 +1512,18 @@ function BriefingPage({
   return (
     <div className="chat-app">
       <a
-        href={act && !onInstitution ? '#question-input' : '#main-content'}
+        href={asker && !onInstitution ? '#question-input' : '#main-content'}
         className="skip-link visually-hidden"
         onFocus={(event) => event.currentTarget.classList.remove('visually-hidden')}
         onBlur={(event) => event.currentTarget.classList.add('visually-hidden')}
         onClick={(event) => {
           event.preventDefault()
-          const question = act && !onInstitution ? document.getElementById('question-input') : null
+          const question = asker && !onInstitution ? document.getElementById('question-input') : null
           if (question !== null && !question.closest('[inert]')) question.focus()
           else document.getElementById('main-content')?.focus()
         }}
       >
-        {act && !onInstitution ? 'Skip to question' : 'Skip to main content'}
+        {asker && !onInstitution ? 'Skip to question' : 'Skip to main content'}
       </a>
       <div className="chat-layer" inert={pageCovered} style={{ display: 'contents' }}>
         <ChatSidebar
@@ -1344,6 +1532,7 @@ function BriefingPage({
           fictional={fictional}
           history={history}
           historyError={briefingStatus.kind === 'error' ? briefingStatus.message : null}
+          historyLoading={briefingStatus.kind === 'loading'}
           onRetryHistory={retryBriefing}
           route={route}
           panels={panels}
@@ -1422,13 +1611,15 @@ function BriefingPage({
           {!onInstitution && ready && visible.length === 0 && !restoredPending && (
             <div className="chat-empty">
               <AscentMark className="empty-mark" />
-              <h1>What should the Cabinet look into?</h1>
+              <h1>{asker ? 'What would you like to know?' : 'The Cabinet’s briefings'}</h1>
               <p className="empty-lede">
                 {act
-                  ? 'Ask an approved question. Three AI employees answer with numbers checked against the data, and you make the call.'
-                  : briefingStatus.kind === 'error'
-                    ? "We couldn't load the last briefing."
-                    : 'Briefings appear here once an executive asks the Cabinet a question.'}
+                  ? "Ask an approved briefing question, or ask anything about Demonstration University's students, courses and majors. Every number is computed from the records."
+                  : explorer
+                    ? "Ask anything about Demonstration University's students, courses and majors. Every number is computed from the records."
+                    : briefingStatus.kind === 'error'
+                      ? "We couldn't load the last briefing."
+                      : 'Briefings appear here once an executive asks the Cabinet a question.'}
               </p>
               {!act && briefingStatus.kind === 'error' && (
                 <button type="button" className="secondary btn-secondary" onClick={retryBriefing}>
@@ -1458,7 +1649,7 @@ function BriefingPage({
                 ))}
                 <div className="thread-end" />
               </div>
-              {act && <div className="chat-dock">{composer(false)}</div>}
+              {asker && <div className="chat-dock">{composer(false)}</div>}
             </>
           )}
         </main>
@@ -1472,7 +1663,7 @@ function BriefingPage({
           covered={evidenceOpen}
         >
           {shownPanel === 'briefing' &&
-            findingsPanel(() =>
+            briefingGate(() => findingsPanel(() =>
               ready ? (
                 <div className="doc">
                   <BriefingSections
@@ -1500,7 +1691,7 @@ function BriefingPage({
                   />
                 </div>
               ) : null,
-            )}
+            ))}
           {shownPanel === 'agents' &&
             (audit ? (
               eventsStatus.kind === 'loading' && events === null ? (
@@ -1549,7 +1740,7 @@ function BriefingPage({
               ) : null,
             )}
           {shownPanel === 'actions' &&
-            findingsPanel(() =>
+            briefingGate(() => findingsPanel(() =>
               ready ? (
                 <div className="doc panel-solo">
                   <StaffActions
@@ -1559,10 +1750,9 @@ function BriefingPage({
                   />
                 </div>
               ) : null,
-            )}
-          {shownPanel === 'decision' && (
-            <div className="doc panel-solo">{decisionPanel(undefined)}</div>
-          )}
+            ))}
+          {shownPanel === 'decision' &&
+            briefingGate(() => <div className="doc panel-solo">{decisionPanel(undefined)}</div>)}
           {shownPanel === 'access' &&
             (lastAccepted === null && events === null && eventsStatus.kind === 'loading' ? (
               notReady(eventsStatus, retryEvents, 'what each AI employee could see')

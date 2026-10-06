@@ -54,6 +54,8 @@ export interface HistoryItem {
   refused: boolean
   /** The briefing this cabinet produced before this page view. */
   restored: boolean
+  /** An Explore question (not a briefing): marked in the list. */
+  explore: boolean
 }
 
 interface ChatSidebarProps {
@@ -64,6 +66,8 @@ interface ChatSidebarProps {
   /** The last briefing could not be loaded: the questions list says so and
    * offers Retry instead of looking empty. */
   historyError: string | null
+  /** The last briefing is still loading: one skeleton line, not the empty text. */
+  historyLoading: boolean
   onRetryHistory: () => void
   /** The current route: '/institution' marks the Institution row. */
   route: string
@@ -90,15 +94,18 @@ const PANEL_ROWS: Record<NavPanel, { label: string; icon: ReactNode }> = {
   actions: { label: 'Staff actions', icon: <ActionsNavIcon /> },
   decision: { label: 'Decision', icon: <DecisionNavIcon /> },
   agents: { label: 'AI employees', icon: <TeamNavIcon /> },
-  access: { label: 'Data access', icon: <AccessNavIcon /> },
+  access: { label: 'AI employees and data access', icon: <AccessNavIcon /> },
   audit: { label: 'Audit log', icon: <AuditNavIcon /> },
   aid: { label: 'Financial Aid review', icon: <AidQueueNavIcon /> },
 }
 
-/** The capability groups, in sidebar order. */
+/** The capability groups, in sidebar order. Key figures, Evidence and the
+ * AI employees' task cards are not rows: the figures sit under every
+ * answer, the evidence opens from each number (and the Full briefing lists
+ * it), and the employees are in "AI employees and data access". */
 const NAV_GROUPS: { label: string; panels: NavPanel[] }[] = [
-  { label: 'Briefing', panels: ['briefing', 'figures', 'evidence', 'actions', 'decision'] },
-  { label: 'Governance', panels: ['agents', 'access', 'aid', 'audit'] },
+  { label: 'Briefing', panels: ['briefing', 'actions', 'decision'] },
+  { label: 'Governance', panels: ['access', 'audit', 'aid'] },
 ]
 
 const SMALL_SCREEN = '(max-width: 899px)'
@@ -322,6 +329,7 @@ export function ChatSidebar({
   fictional,
   history,
   historyError,
+  historyLoading,
   onRetryHistory,
   route,
   panels,
@@ -598,18 +606,29 @@ export function ChatSidebar({
                 >
                   <span className="sidebar-copy rail-label">{item.question}</span>
                   {item.refused && <span className="sidebar-copy rail-note">Refused</span>}
+                  {!item.refused && item.explore && (
+                    <span className="sidebar-copy rail-note" title="An Explore question, not a briefing">
+                      Explore
+                    </span>
+                  )}
                   {item.restored && <span className="sidebar-copy rail-note">Last</span>}
                 </button>
               ))}
               {historyError !== null && (
                 <div className="sidebar-copy recents-empty" role="alert">
-                  <p>{historyError}</p>
+                  <p>Couldn't load your questions.</p>
                   <button type="button" className="link-button" onClick={onRetryHistory}>
                     Retry
                   </button>
                 </div>
               )}
-              {history.length === 0 && historyError === null && (
+              {history.length === 0 && historyError === null && historyLoading && (
+                <div className="sidebar-copy recents-empty" role="status" aria-busy="true">
+                  <span className="visually-hidden">Loading your questions…</span>
+                  <div className="skeleton skeleton-line short" />
+                </div>
+              )}
+              {history.length === 0 && historyError === null && !historyLoading && (
                 <p className="sidebar-copy recents-empty">Questions you ask appear here.</p>
               )}
               {history.length > 0 && needle !== '' && visibleHistory.length === 0 && (
