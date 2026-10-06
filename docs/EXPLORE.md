@@ -43,11 +43,11 @@ example questions.
 |---|---|---|
 | `gpa_by_major` | Average cumulative GPA per major, ranked | order, college, major, minimum students (20), rows |
 | `gpa_by_college` | Average cumulative GPA per college, ranked | order |
-| `dfw_by_course` | DFW rate per course, ranked | required by major, subject, level, term range, minimum sections (8) and terms (4), order, rows |
-| `course_dfw_trend` | One course's DFW rate per term and over all terms | course |
-| `course_instructors` | Each instructor of record for a course, with sections, terms, DFW rate | course |
+| `dfw_by_course` | D, F or withdrawal (DFW) rate per course, ranked | required by major, subject, level, term range, minimum sections (8) and terms (4), order, rows |
+| `course_dfw_trend` | One course's D, F or withdrawal rate per term and over all terms | course |
+| `course_instructors` | Each instructor of record for a course, with sections, terms, D, F or withdrawal rate | course |
 | `instructor_history` | The courses one instructor taught | instructor, rows |
-| `equity_gap` | DFW rate by student group in a course or a major, with the gap in points | course or major, group (first-generation, Pell, residency, entry cohort, entry type) |
+| `equity_gap` | D, F or withdrawal rate by student group in a course or a major, with the gap in points | course or major, group (first-generation, Pell, residency, entry cohort, entry type) |
 | `headcount_growth` | Each major's headcount in two terms and the growth, ranked | from and to terms, major, college, order, minimum starting headcount (40) |
 | `enrollment_by_term` | Students enrolled per term, new and continuing | major, college, season |
 | `continuing_registration_change` | Continuing students registered against the same term a year earlier | term (latest spring) |

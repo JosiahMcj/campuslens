@@ -149,7 +149,7 @@ def _primary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
             b.c(step, 0, "sections")
             .t(" sections in ")
             .c(step, 0, "terms")
-            .t(" terms with a DFW rate of ")
+            .t(" terms with a D, F or withdrawal rate of ")
             .c(step, 0, "dfw_rate")
             .t(".")
             .done()
@@ -201,9 +201,11 @@ def _primary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
             subject = _subject_name(step)
             b.t(f"Among {subject} courses, the one" if subject else "The course")
             b.t(" with the ").t("highest" if not order_low else "lowest").t(
-                " DFW rate is "
+                " D, F or withdrawal rate is "
             )
-        b.c(step, 0, "course").t(f" {step.cell(0, 'title')}, with a DFW rate of ")
+        b.c(step, 0, "course").t(
+            f" {step.cell(0, 'title')}, with a D, F or withdrawal rate of "
+        )
         b.c(step, 0, "dfw_rate").t(" (").c(step, 0, "dfw").t(" of ").c(
             step, 0, "graded"
         )
@@ -215,7 +217,7 @@ def _primary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
         )
     if a == "course_dfw_trend":
         total = len(step.rows) - 1
-        b.t(f"{_course_title(steps, step)} has a DFW rate of ").c(
+        b.t(f"{_course_title(steps, step)} has a D, F or withdrawal rate of ").c(
             step, total, "dfw_rate"
         )
         if step.cell(total, "dfw_rate") != SUPPRESSED_DISPLAY:
@@ -235,14 +237,19 @@ def _primary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
             f" {step.cell(0, 'name')} has taught {course} most: "
         )
         b.c(step, 0, "sections").t(" sections in ").c(step, 0, "terms").t(" terms")
-        return b.t(", with a DFW rate of ").c(step, 0, "dfw_rate").t(".").done()
+        return (
+            b.t(", with a D, F or withdrawal rate of ")
+            .c(step, 0, "dfw_rate")
+            .t(".")
+            .done()
+        )
     if a == "instructor_history":
         name = step.params_plain[0].split(": ", 1)[-1] if step.params_plain else ""
         name = re.sub(r"^I-\d+\s+", "", name)
         b.t(f"{name} has taught ").c(step, 0, "course").t(
             f" {step.cell(0, 'title')} most, "
         )
-        b.c(step, 0, "sections").t(" sections with a DFW rate of ").c(
+        b.c(step, 0, "sections").t(" sections with a D, F or withdrawal rate of ").c(
             step, 0, "dfw_rate"
         )
         return b.t(".").done()
@@ -262,7 +269,9 @@ def _primary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
             (i for i, r in enumerate(step.rows) if r.get("group") == reference), None
         )
         top = next((i for i in range(len(step.rows)) if i != ref), 0)
-        b.t(f"In {scope}, ").c(step, top, "group").t(" have a DFW rate of ")
+        b.t(f"In {scope}, ").c(step, top, "group").t(
+            " have a D, F or withdrawal rate of "
+        )
         b.c(step, top, "dfw_rate")
         if ref is not None and ref != top:
             b.t(" against ").c(step, ref, "dfw_rate").t(" for ").c(step, ref, "group")
@@ -364,7 +373,7 @@ def _secondary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
     b = _Builder(steps)
     if a == "course_instructors":
         b.c(step, 1, "instructor").t(f" {step.cell(1, 'name')} taught ")
-        b.c(step, 1, "sections").t(" sections, with a DFW rate of ")
+        b.c(step, 1, "sections").t(" sections, with a D, F or withdrawal rate of ")
         return b.c(step, 1, "dfw_rate").t(".").done()
     if a in (
         "gpa_by_major",

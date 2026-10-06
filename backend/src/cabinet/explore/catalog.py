@@ -19,10 +19,10 @@ Privacy rules applied here, in code:
   gives their rows only to the executive and admin roles. Every instructor
   name in the school database is fictional and is labelled so.
 
-The definitions match data/school/VERIFY.md (graded registration, DFW rate,
-students in a major, continuing student, headcount, withdrawal rate), and
-rates are rounded exactly as ``data/school/check.py`` rounds them, so the
-planted facts reproduce to the digit.
+The definitions match data/school/VERIFY.md (graded registration, D, F or
+withdrawal rate, students in a major, continuing student, headcount,
+withdrawal rate), and rates are rounded exactly as ``data/school/check.py``
+rounds them, so the planted facts reproduce to the digit.
 """
 
 from __future__ import annotations
@@ -413,7 +413,7 @@ def _gpa_by_college(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Res
     return Result(kept, _withheld_note(withheld, "college"))
 
 
-# --- 3. DFW rate by course ------------------------------------------------------
+# --- 3. D, F or withdrawal rate by course ---------------------------------------
 
 
 def _dfw_by_course(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Result:
@@ -591,7 +591,7 @@ def _course_instructors(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) ->
     notes = ["Instructor names are fictional."]
     if withheld:
         notes.append(
-            f"DFW rates are withheld for {withheld} "
+            f"D, F or withdrawal rates are withheld for {withheld} "
             f"{'instructor' if withheld == 1 else 'instructors'} " + PROTECT_NOTE
         )
     return Result(out, notes)
@@ -667,7 +667,7 @@ COURSE_SUMMARY_COLUMNS = (
     Column("instructors", "Instructors", "count"),
     Column("graded", "Graded registrations", "count"),
     Column("dfw", "D, F, or W", "count"),
-    Column("dfw_rate", "DFW rate (%)", "pct"),
+    Column("dfw_rate", "D, F or withdrawal rate (%)", "pct"),
 )
 
 
@@ -703,7 +703,7 @@ def _instructor_history(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) ->
     notes = [f"Instructor: {v.instructor_label(inst)}. Instructor names are fictional."]
     if withheld:
         notes.append(
-            f"DFW rates are withheld for {withheld} "
+            f"D, F or withdrawal rates are withheld for {withheld} "
             f"{'course' if withheld == 1 else 'courses'} " + PROTECT_NOTE
         )
     return Result(_top(out, p.get("top")), notes)
@@ -1292,7 +1292,7 @@ _TERM_COLS = (Column("term", "Term code", entity="term"), Column("term_name", "T
 _DFW_COLS = (
     Column("graded", "Graded registrations", "count"),
     Column("dfw", "D, F, or W", "count"),
-    Column("dfw_rate", "DFW rate (%)", "pct"),
+    Column("dfw_rate", "D, F or withdrawal rate (%)", "pct"),
 )
 
 ANALYSES: tuple[Analysis, ...] = (
@@ -1353,7 +1353,7 @@ ANALYSES: tuple[Analysis, ...] = (
     ),
     Analysis(
         "dfw_by_course",
-        "DFW rate by course",
+        "D, F or withdrawal rate by course",
         "Share of graded registrations ending in D+, D, F, or W, by course, "
         "ranked. Filters: "
         "courses a major requires, subject, level, term range, a minimum track record.",
@@ -1402,8 +1402,9 @@ ANALYSES: tuple[Analysis, ...] = (
     ),
     Analysis(
         "course_dfw_trend",
-        "A course's DFW trend by term",
-        "One course's DFW rate in each term it was offered, and over all terms.",
+        "A course's D, F or withdrawal trend by term",
+        "One course's D, F or withdrawal rate in each term it was offered, "
+        "and over all terms.",
         (_P_COURSE_REQUIRED,),
         (
             "final_grades.grade",
@@ -1423,7 +1424,8 @@ ANALYSES: tuple[Analysis, ...] = (
     Analysis(
         "course_instructors",
         "Instructors who taught a course",
-        "Each instructor of record for one course: sections, terms, and DFW rate. "
+        "Each instructor of record for one course: sections, terms, "
+        "and D, F or withdrawal rate. "
         "Executive and admin roles only. Names are fictional.",
         (_P_COURSE_REQUIRED,),
         (
@@ -1451,7 +1453,8 @@ ANALYSES: tuple[Analysis, ...] = (
     Analysis(
         "instructor_history",
         "An instructor's teaching history",
-        "The courses one instructor taught: sections, terms, and DFW rate. "
+        "The courses one instructor taught: sections, terms, "
+        "and D, F or withdrawal rate. "
         "Executive and "
         "admin roles only. Names are fictional.",
         (
@@ -1478,7 +1481,8 @@ ANALYSES: tuple[Analysis, ...] = (
     Analysis(
         "equity_gap",
         "Equity gap by student group",
-        "DFW rate in a course, or in a major's registrations, by student group "
+        "D, F or withdrawal rate in a course, or in a major's registrations, "
+        "by student group "
         "(first-generation, Pell, residency, entry cohort, entry type), with the "
         "gap in "
         "points against a reference group.",
@@ -1509,7 +1513,7 @@ ANALYSES: tuple[Analysis, ...] = (
             Column("students", "Students", "count"),
             Column("graded", "Graded registrations", "count"),
             Column("dfw", "D, F, or W", "count"),
-            Column("dfw_rate", "DFW rate (%)", "pct"),
+            Column("dfw_rate", "D, F or withdrawal rate (%)", "pct"),
             Column("gap_points", "Gap (points)", "points"),
         ),
         _equity_gap,

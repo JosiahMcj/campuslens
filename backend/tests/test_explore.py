@@ -947,14 +947,14 @@ def test_full_scale_owner_example(full_env: None, app: FastAPI, question: str) -
         "students.",
         "In Mechanical Engineering, the historically hardest required course is "
         "MEEN 3310 "
-        "Thermodynamics I, with a DFW rate of 41.8 % (38 of 91 graded "
+        "Thermodynamics I, with a D, F or withdrawal rate of 41.8 % (38 of 91 graded "
         "registrations over "
         "10 sections).",
         "I-0001 Alicia Shelby (fictional) has taught it most: 7 sections in 7 "
         "terms, with "
-        "a DFW rate of 56.7 %.",
-        "I-0002 Anthony Jennings (fictional) taught 3 sections, with a DFW rate of "
-        "12.9 %.",
+        "a D, F or withdrawal rate of 56.7 %.",
+        "I-0002 Anthony Jennings (fictional) taught 3 sections, "
+        "with a D, F or withdrawal rate of 12.9 %.",
     ]
 
 

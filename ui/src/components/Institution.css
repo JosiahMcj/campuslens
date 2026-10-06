@@ -45,6 +45,8 @@
 @media (max-width: 899px) {
   .inst-toc a {
     min-height: var(--tap);
+    min-width: var(--tap);
+    justify-content: center;
   }
 }
 
