@@ -370,7 +370,7 @@ are in `deploy/checklist.md`, the full first-deploy walkthrough.
   keeps working. The endpoint key and the model id are never logged, recorded, or
   returned to the UI, because responses carry the label only.
 
-  A local thinking model needs two settings. On our OpenAI-compatible local server,
+  A local thinking model needs two settings. On our local chat-completions server,
   `reasoning_effort: low` changed nothing (about 950 characters of hidden reasoning per
   short answer, the same as no setting), and the server's `think: false` field and a
   `/no_think` prefix were ignored, while `none` turned the hidden reasoning off
@@ -671,7 +671,7 @@ the rest (`CABINET_EXPLORE_PLANNER=model-first` asks the model first). We measur
 why: on our local model, reading the catalog took longer than the 55 s request
 budget every time, while the rules map all forty test wordings of the planted
 questions. The live model is configured in the gitignored `cabinet.local.env` (any
-OpenAI-compatible endpoint; we run a local model), and it may reword the answer,
+standard chat-completions endpoint; we run a local model), and it may reword the answer,
 which is checked number by number or replaced by the template.
 
 With the API running, the same question over HTTP:

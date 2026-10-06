@@ -156,7 +156,7 @@ shows every step, the fields it read, and its table.
   catalog (`CABINET_EXPLORE_PLANNER=model-first` reverses the order).
 
 The live model is configured in the gitignored `cabinet.local.env` at the repo root.
-Any OpenAI-compatible endpoint works, and we run a local model. `docs/EXPLORE.md` has
+Any standard chat-completions endpoint works, and we run a local model. `docs/EXPLORE.md` has
 the analyses, the rules, and the routes.
 
 ## Institutions and datasets
