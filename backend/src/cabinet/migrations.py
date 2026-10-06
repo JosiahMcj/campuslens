@@ -38,7 +38,7 @@ PLATFORM_INSTITUTION_ID = 0
 BOOTSTRAP_SLUG = "bootstrap"
 BOOTSTRAP_NAME = "Bootstrap Institution"
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 class SchemaVersionError(RuntimeError):
@@ -400,13 +400,45 @@ def _migration_6(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+# The counseling aggregate authorization, one set of columns on the
+# institution row (migration 7). Kept as a module constant so the store, the
+# migration and its test agree on the exact column names.
+COUNSELING_AUTHORIZATION_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("counseling_aggregate_authorized", "INTEGER NOT NULL DEFAULT 0"),
+    ("counseling_aggregate_authorized_by", "TEXT"),
+    ("counseling_aggregate_document_reference", "TEXT"),
+    ("counseling_aggregate_recorded_by", "TEXT"),
+    ("counseling_aggregate_recorded_at", "TEXT"),
+)
+
+
+def _migration_7(conn: sqlite3.Connection) -> None:
+    """The counseling aggregate authorization on the ``institutions`` row.
+
+    An institution's counseling director may authorize, in writing, one
+    aggregate figure (M9, a count with no rows); an admin records that
+    authorization here. Every existing institution starts unauthorized
+    (``DEFAULT 0``), so upgrading a database changes nothing a user can see.
+    SQLite has no ``ADD COLUMN IF NOT EXISTS``, so each column is checked
+    first: a database that already carries a column (a hand repair, or a
+    retried migration) is upgraded without a "duplicate column" failure.
+    """
+    existing = {
+        str(row[1]) for row in conn.execute("PRAGMA table_info(institutions)")
+    }
+    for name, declaration in COUNSELING_AUTHORIZATION_COLUMNS:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE institutions ADD COLUMN {name} {declaration}")
+
+
 MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (1, "h2 tenancy baseline", _migration_1),
     (2, "r3 dataset pinning and audit index", _migration_2),
     (3, "r3b decisions keyed per dataset", _migration_3),
     (4, "r4 briefings keyed per dataset", _migration_4),
     (5, "dispatches and office contacts", _migration_5),
-    (SCHEMA_VERSION, "financial aid review queue", _migration_6),
+    (6, "financial aid review queue", _migration_6),
+    (SCHEMA_VERSION, "counseling aggregate authorization", _migration_7),
 ]
 
 

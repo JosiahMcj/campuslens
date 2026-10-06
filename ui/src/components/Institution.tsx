@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { roleDisplayName, type Role } from '../auth'
+import { CounselingAuthorizationSection } from './CounselingAuthorization'
 import {
   activateDataset,
   deleteDataset,
@@ -79,6 +80,7 @@ export const OFFICES_SECTION_ID = 'inst-offices'
  * roles and status (with the one-time password of a newly added user shown
  * once in a callout), the office address book approved follow-ups are sent
  * to (one mailbox per office, edited inline and saved whole), the
+ * counseling figure's recorded authorization (record or revoke), the
  * institution's datasets with their row counts and
  * active and fictional flags, an upload form (JSON only, with the API's
  * validation errors listed line by line and the counseling flag shown as
@@ -786,6 +788,8 @@ export function Institution({
           </form>
         )}
       </section>
+
+      <CounselingAuthorizationSection onChanged={onDataChanged} />
 
       <section aria-labelledby="inst-datasets">
         <h2 id="inst-datasets">Datasets</h2>

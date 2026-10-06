@@ -1777,3 +1777,52 @@ details[open]::details-content {
     display: none;
   }
 }
+
+/* --- Institution settings: the counseling figure's authorization ------------*/
+
+.counseling-auth-state {
+  margin: 12px 0 4px;
+}
+
+.counseling-auth .hint {
+  margin-bottom: 12px;
+}
+
+.counseling-auth-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.counseling-auth-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 16rem;
+  min-width: 0;
+  font-size: 0.89rem;
+  color: var(--ink-soft);
+}
+
+.counseling-auth-fields input {
+  box-sizing: border-box;
+  width: 100%;
+  font: inherit;
+  font-size: 0.89rem;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+/* The authorized counseling count in briefing section 3: computed in code,
+ * so it carries its authorization as its source label. */
+.aggregate-figure {
+  margin-top: 12px;
+}
+
+.authorization-record li {
+  overflow-wrap: anywhere;
+}

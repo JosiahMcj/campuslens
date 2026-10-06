@@ -137,6 +137,10 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     # office mailboxes messages may be sent to (never a student address).
     ("GET", "/admin/offices"): (ROLE_ADMIN,),
     ("PUT", "/admin/offices"): (ROLE_ADMIN,),
+    # The counseling aggregate authorization: the admin records or revokes
+    # what the counseling director authorized in writing.
+    ("GET", "/admin/institution/counseling-authorization"): (ROLE_ADMIN,),
+    ("PUT", "/admin/institution/counseling-authorization"): (ROLE_ADMIN,),
     # Institution admins manage their own institution's users; the
     # institution always comes from the session, never from the client.
     ("GET", "/admin/users"): (ROLE_ADMIN,),

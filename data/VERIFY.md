@@ -193,5 +193,21 @@ STU-0120 STU-0121 STU-0122 STU-0123 STU-0124 STU-0125 STU-0126 STU-0127 STU-0128
 Five rows carry gentle, fictional `counseling.counseling_notes` (STU-0026,
 STU-0071, STU-0126, STU-0147, STU-0177), with `chaplain_contact: true`. These
 fields exist only so the permission layer's refusal is real (ROADMAP.md §5).
-No metric reads them. Students are people, not risk scores. We wrote the notes
-accordingly.
+No metric among M1 to M8 reads them, and no role is ever granted them. Students
+are people, not risk scores. We wrote the notes accordingly.
+
+## M9. Of M2, any counseling contact this term = 2, shown as "fewer than 10"
+
+M9 exists only after an institution records a counseling aggregate
+authorization (CONTRACTS.md M9). It counts the M2 rows whose `counseling` group
+has a note or a chaplain contact. Of the five rows above, STU-0026 and STU-0071
+are registered and STU-0177 is not continuing, so all three fall outside M2. That
+leaves STU-0126 and STU-0147, a raw count of **2**.
+
+Two is below the minimum group size of 10. The product therefore withholds it.
+The briefing and the evidence drawer show "fewer than 10", the model receives a
+marker with no number in it, and no rows are shown anywhere. We list the two ids
+here only so a reviewer can confirm the count the product refuses to show.
+
+<!-- ids:M9 -->
+STU-0126 STU-0147

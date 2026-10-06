@@ -8,6 +8,7 @@ import {
   type AnalystClaim,
   type ModelSection,
 } from '../states'
+import { authorizedSourceLabel, suppressionNote } from '../counseling'
 import { FindingLink } from './FindingLink'
 import { ChevronIcon } from './icons'
 
@@ -34,6 +35,13 @@ interface BriefingProps {
    * ask (staff, reviewer): the button is not offered. */
   onCheckAgain: (() => void) | null
   onOpenEvidence: (findingId: string) => void
+  /**
+   * M9, the authorized counseling count, from the produced briefing's own
+   * `aggregates` (never the current findings). Null when the briefing did
+   * not carry it: before the first Ask, under another question, or on a
+   * briefing produced while the authorization was off.
+   */
+  counselingFigure?: Finding | null
 }
 
 /**
@@ -58,6 +66,7 @@ export function BriefingSections({
   chiefSummary,
   onCheckAgain,
   onOpenEvidence,
+  counselingFigure = null,
 }: BriefingProps) {
   const m1 = getFinding(findings, 'M1')
   const m2 = getFinding(findings, 'M2')
@@ -133,6 +142,11 @@ export function BriefingSections({
         {studentSuccess !== null && studentSuccess.kind === 'unavailable' && (
           <ModelUnavailable reason={studentSuccess.reason} onRetry={onCheckAgain} />
         )}
+        <CounselingAggregate
+          finding={counselingFigure ?? undefined}
+          m2={m2}
+          onOpen={onOpenEvidence}
+        />
         <OfficeTable finding={m5} onOpen={onOpenEvidence} />
       </section>
 
@@ -140,6 +154,7 @@ export function BriefingSections({
         findings={findings}
         fictional={fictional}
         onOpenEvidence={onOpenEvidence}
+        counselingFigure={counselingFigure}
       />
 
       <StaffActions findings={findings} onOpenEvidence={onOpenEvidence} />
@@ -159,12 +174,15 @@ export function EvidenceSources({
   onOpenEvidence,
   headingId = 's-evidence',
   title = '4. Evidence and source fields',
+  counselingFigure = null,
 }: {
   findings: Findings
   fictional: boolean
   onOpenEvidence: (findingId: string) => void
   headingId?: string | null
   title?: string
+  /** M9 from the produced briefing, listed last when present. */
+  counselingFigure?: Finding | null
 }) {
   return (
     <section
@@ -201,6 +219,25 @@ export function EvidenceSources({
             </li>
           )
         })}
+        {counselingFigure !== null && (
+          <li key="M9">
+            <button
+              type="button"
+              className="finding-row"
+              onClick={() => onOpenEvidence('M9')}
+            >
+              <span className="finding-row-id">M9</span>
+              <span className="finding-row-title">{counselingFigure.title}</span>
+              <span className="finding-row-display">
+                {findingDisplay(counselingFigure).text}
+              </span>
+              <span className="finding-row-fields">
+                {authorizedSourceLabel(counselingFigure)}. No rows are shown for
+                this figure.
+              </span>
+            </button>
+          </li>
+        )}
       </ul>
     </section>
   )
@@ -521,6 +558,36 @@ function Num({
         {suffix}
       </span>
     </FindingLink>
+  )
+}
+
+/**
+ * M9, the authorized counseling aggregate, in section 3. Rendered only when
+ * the findings carry it (the institution recorded the counseling director's
+ * written authorization). It is computed in code, never written by a model,
+ * so its source label names the authorization instead of an analyst. A small
+ * count is withheld, and the sentence says so plainly.
+ */
+function CounselingAggregate({
+  finding,
+  m2,
+  onOpen,
+}: {
+  finding: Finding | undefined
+  m2: Finding | undefined
+  onOpen: (findingId: string) => void
+}) {
+  if (finding === undefined) return null
+  const note = suppressionNote(finding)
+  return (
+    <div className="aggregate-figure">
+      <p className="analyst-source">Source: {authorizedSourceLabel(finding)}</p>
+      <p>
+        Of the <Num finding={m2} id="M2" onOpen={onOpen} /> students not yet
+        registered, <Num finding={finding} id="M9" onOpen={onOpen} /> have had
+        any counseling contact this term.{note !== null && <> {note}</>}
+      </p>
+    </div>
   )
 }
 

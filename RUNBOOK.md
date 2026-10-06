@@ -479,6 +479,44 @@ queue as `aid.queued` (decision, dataset, and count) and every change as
 `aid.updated` with the acting user. The note text stays out of the audit
 log.
 
+## Recording a counseling authorization
+
+Per-student counseling data stays refused to everyone. An institution can allow one
+aggregate figure (M9, CONTRACTS.md), the count of continuing students not yet
+registered who have had any counseling contact this term. We record it only after the
+institution's counseling director has authorized it in writing.
+
+An admin records it in Institution settings, under "Counseling figure". Enter the
+director's name and title as written and the document reference, then press "Record
+the authorization". The same section shows who recorded it and when, and "Revoke the
+authorization" turns it off behind a confirmation. The API does the same.
+
+```bash
+curl -b /tmp/cookies http://127.0.0.1:8910/admin/institution/counseling-authorization
+curl -b /tmp/cookies -X PUT http://127.0.0.1:8910/admin/institution/counseling-authorization \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
+  -d '{"authorized": true, "authorized_by": "Dr. Example, Director of Counseling",
+       "document_reference": "memo 2026-09-26"}'
+# -> {"authorized": true, "authorized_by": ..., "recorded_by": ..., "recorded_at": ...}
+curl -b /tmp/cookies -X PUT http://127.0.0.1:8910/admin/institution/counseling-authorization \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
+  -d '{"authorized": false}'                                  # revoke
+```
+
+The findings recompute on the next request. While the authorization is recorded,
+the next ask of the spring registration question gives the Chief of Staff the count
+or the withheld marker, and that briefing keeps its own copy of M9. It shows M9 in
+section 3 and in section 4's evidence list as "aggregate, authorized", with no rows.
+A briefing for the other question, or one produced before the authorization, never
+shows it. A revoke removes
+M9 at once. A stored Chief of Staff section that cited it is held back until the
+question is asked again, and the next ask runs without it. A change waits for a
+question that is being answered, so no run sees half of it. A count under 10 shows as "fewer than 10", which is what the fictional
+demonstration dataset shows (its raw count is 2). The evidence for M9 shows the
+authorization and the fields read, never a row. Each change is one `admin.changed`
+event with action `counseling_authorization`. The beat-6 refusal and every
+`/governance/request` for a counseling field stay refused either way.
+
 ## Replay and the golden run
 
 The golden run is a committed, reviewable recording in `data/golden/` that REPLAY

@@ -78,11 +78,37 @@ identifiers only.
 
 We can see the data ourselves for maintenance and backups. That is the full list.
 
+## The counseling figure
+
+Per-student counseling and spiritual-care data is refused to every role and every AI
+employee. That does not change, and it is the default for every institution.
+
+An institution may allow one aggregate figure, and only in writing. When the
+institution's counseling director authorizes it, an administrator records the
+authorization in Institution settings with the director's name and title and a
+reference to the document. The record keeps who entered it and when, and an
+administrator can revoke it the same way. Each change is recorded in the audit log.
+
+While the authorization is recorded, the briefing shows one count, the number of
+continuing students not yet registered who have had any counseling contact this term.
+The count is computed in code. Its source label names the person who authorized it.
+
+- **Minimum group size.** A count under 10 is never shown. The briefing says "fewer
+  than 10" and explains that the count is withheld so no one can be identified.
+- **No rows.** The evidence for the figure shows the authorization and the fields it
+  read, never a student, an identifier, or a note. There is no drill-down.
+- **Never shown, to anyone.** Counseling notes, chaplain contacts, and which students
+  had contact. No role can request those fields, with or without the authorization,
+  and every such request is refused and recorded as before.
+
 ## What leaves the server
 
 Only two things leave the server for the configured model endpoint, namely the aggregate
 findings computed in code from the active dataset and the analysts' validated texts.
-Student rows never leave. The counseling group never leaves. The Financial Aid
+Student rows never leave. The counseling group never leaves. While a counseling
+authorization is recorded, the Chief of Staff may receive the one counseling count,
+and only when it is 10 or more. A smaller count reaches the model as a marker with
+no number in it. The Financial Aid
 review queue never leaves either. Its rows, its facts, and the office's notes are never
 sent to a model.
 

@@ -3,7 +3,9 @@
 
 Recomputes M1-M4 straight from the fixture by the ROADMAP.md section 4
 formulas, plus the M8 support indicators (CONTRACTS.md M8: the named rules
-I1-I4, unioned with no weighting or ordering), prints the values and the
+I1-I4, unioned with no weighting or ordering) and the raw count behind the
+authorized counseling aggregate M9 (CONTRACTS.md M9, which the product
+withholds below the minimum group size), prints the values and the
 row-ID lists, and exits non-zero if any value differs from the planted value
 or from the ID lists in data/VERIFY.md. This is independent evidence for the
 reviewer, not the product metric code.
@@ -34,7 +36,13 @@ EXPECTED = {
     "I3": 0,
     "I4": 0,
     "M8": 22,
+    # M9's raw recount. Below MINIMUM_CELL_SIZE, so the product shows
+    # "fewer than 10" and never this number.
+    "M9": 2,
 }
+
+# M9's minimum group size (CONTRACTS.md M9): a smaller count is withheld.
+MINIMUM_CELL_SIZE = 10
 
 # I4's window: registration closing this many days out (or fewer) counts.
 CLOSING_SOON_DAYS = 14
@@ -126,6 +134,18 @@ def compute(fixture):
                 if sid(s) in m2_set and 0 <= days_to_close <= CLOSING_SOON_DAYS)
     m8 = sorted(set(i1) | set(i2) | set(i3) | set(i4))
 
+    # M9: of M2, any counseling contact this term (a note with text, or a
+    # chaplain contact). Only the count is ever shown, and only at or above
+    # the minimum group size; this checker lists the rows for the reviewer.
+    def counseling_contact(record):
+        counseling = record.get("counseling") or {}
+        notes = counseling.get("counseling_notes")
+        return (isinstance(notes, str) and notes.strip() != "") or (
+            counseling.get("chaplain_contact") is True)
+
+    m9 = sorted(sid(s) for s in students
+                if sid(s) in m2_set and counseling_contact(s))
+
     return {
         "as_of": as_of,
         "equiv": equiv,
@@ -142,6 +162,7 @@ def compute(fixture):
         "I3": i3,
         "I4": i4,
         "M8": m8,
+        "M9": m9,
         "days_to_close": days_to_close,
         "future_advising": future_advising,
         "bad_status": bad_status,
@@ -208,7 +229,18 @@ def main():
     check("I2 population is M4's", result["I2"], result["M4"])
     print()
 
-    for key in ("M1_NUM", "M1_DEN", "M2", "M3", "M4", "M8"):
+    # M9, the authorized counseling aggregate: the raw count, and whether
+    # the product withholds it (it does below the minimum group size).
+    m9_count = len(result["M9"])
+    suppressed = m9_count < MINIMUM_CELL_SIZE
+    print("M9 = %d (raw), shown as %s" % (
+        m9_count,
+        "fewer than %d" % MINIMUM_CELL_SIZE if suppressed else str(m9_count)))
+    check("M9 recount 2", m9_count, EXPECTED["M9"])
+    check("M9 withheld below %d" % MINIMUM_CELL_SIZE, suppressed, True)
+    print()
+
+    for key in ("M1_NUM", "M1_DEN", "M2", "M3", "M4", "M8", "M9"):
         computed = result[key]
         print("%s (%d rows): %s%s" % (
             key, len(computed), " ".join(computed[:8]),

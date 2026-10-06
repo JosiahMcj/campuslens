@@ -135,6 +135,14 @@ deletes datasets from the Institution screen.
 We pin approvals to the dataset they were computed from. A newly activated
 dataset starts with no briefing and no approvals.
 
+Counseling data stays refused to every role and every AI employee. The one
+exception is a count, and only with the institution's written consent. When the
+counseling director authorizes it and an admin records that authorization in
+Institution settings, the briefing shows how many students not yet registered have
+had any counseling contact this term (M9). It shows no rows, names the person who
+authorized it, and withholds any count under 10 as "fewer than 10". `RUNBOOK.md`
+covers recording and revoking it.
+
 ## UI states
 
 The dashboard's three states can be induced on demand with query switches on

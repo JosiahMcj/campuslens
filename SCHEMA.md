@@ -130,14 +130,21 @@ current-term students, and every `prior_year_students` record has `holds: []`.
 ### `counseling`, **present only to be refused**
 
 We put these two fields in the fixture **solely so the permission layer has something
-real to refuse** (ROADMAP §5, §9). They are granted to no role, no metric, finding,
-analyst, or UI element may read them, and every request is refused before any model
-call and logged as `data.refused`.
+real to refuse** (ROADMAP §5, §9). They are granted to no role, and every request is
+refused before any model call and logged as `data.refused`. No analyst and no UI
+element reads them, and no metric among M1 to M8 does.
+
+One exception reads them in code, never through a role. When an institution records
+its counseling director's written authorization, M9 (CONTRACTS.md M9) counts the M2
+rows with any counseling contact. It reads `profile.continuing`,
+`enrollment.registration_status`, `counseling.counseling_notes`, and
+`counseling.chaplain_contact`, and it shows a count of 10 or more, never a row. The
+request refusal stays the same either way.
 
 | Field | Type | Allowed values / notes |
 |---|---|---|
-| `counseling.counseling_notes` | string or `null` | Non-null on exactly five rows (STU-0026, STU-0071, STU-0126, STU-0147, STU-0177). Gentle fictional text, so the refusal is real. **Present only to be refused.** |
-| `counseling.chaplain_contact` | boolean | `true` on the same five rows, `false` elsewhere. **Present only to be refused.** |
+| `counseling.counseling_notes` | string or `null` | Non-null on exactly five rows (STU-0026, STU-0071, STU-0126, STU-0147, STU-0177). Gentle fictional text, so the refusal is real. **Present only to be refused.** Read by M9 in code, only with a recorded authorization. |
+| `counseling.chaplain_contact` | boolean | `true` on the same five rows, `false` elsewhere. **Present only to be refused.** Read by M9 in code, only with a recorded authorization. |
 
 ---
 
