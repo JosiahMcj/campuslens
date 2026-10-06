@@ -5,7 +5,7 @@
 // carry the session's X-CSRF-Token, and a 401 anywhere signs the UI out.
 
 import type { AidQueueSummary } from './aid'
-import { ApiError, SessionEndedError, apiDetail, apiFetch } from './auth'
+import { ApiError, SessionEndedError, apiDetail, apiFetch, retryAfterFrom } from './auth'
 import {
   analystFromResponse,
   cabinetBriefingFrom,
@@ -195,6 +195,7 @@ async function apiGet<T>(path: string): Promise<T> {
     throw new ApiError(
       response.status,
       await apiDetail(response, `GET ${path} failed: HTTP ${response.status}`),
+      retryAfterFrom(response),
     )
   }
   return (await response.json()) as T
@@ -210,6 +211,7 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
     throw new ApiError(
       response.status,
       await apiDetail(response, `POST ${path} failed: HTTP ${response.status}`),
+      retryAfterFrom(response),
     )
   }
   return (await response.json()) as T
@@ -293,6 +295,7 @@ export function fetchCabinetBriefingOnce(
         throw new ApiError(
           response.status,
           await apiDetail(response, `GET /briefing failed: HTTP ${response.status}`),
+      retryAfterFrom(response),
         )
       }
       const body: unknown = await response.json().catch(() => null)

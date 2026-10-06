@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest'
 import {
   APPROVED_QUESTION,
   analystSource,
+  analystSourceDetail,
   analystSourceLabel,
+  documentTitle,
+  friendlyTime,
+  nextPollDelay,
+  normalizeRoute,
   describeState,
   analystFromResponse,
   cabinetBriefingFrom,
@@ -195,26 +200,26 @@ describe('analystSource — honest labeling of the analyst text', () => {
   it('labels a live model run', () => {
     expect(analystSource({ provider: 'live', recorded: false })).toBe('live')
     expect(analystSourceLabel('live', 'the Enrollment Analyst')).toBe(
-      'Written by the Enrollment Analyst (live model)',
+      'Written by the Enrollment Analyst',
     )
   })
 
   it('labels a recorded (replay) run, never stacking a second parenthetical', () => {
     expect(analystSource({ provider: 'live', recorded: true })).toBe('recorded')
     expect(analystSourceLabel('recorded', 'the Enrollment Analyst')).toBe(
-      'Written by the Enrollment Analyst (recorded live run)',
+      'Written by the Enrollment Analyst',
     )
     expect(analystSourceLabel('recorded', 'the Enrollment Analyst', 'live model')).toBe(
-      'Written by the Enrollment Analyst (recorded live run)',
+      'Written by the Enrollment Analyst',
     )
   })
 
   it('uses a configured model label for a live run only when it differs', () => {
     expect(analystSourceLabel('live', 'the Chief of Staff', 'campus GPT')).toBe(
-      'Written by the Chief of Staff (campus GPT)',
+      'Written by the Chief of Staff',
     )
     expect(analystSourceLabel('live', 'the Chief of Staff', 'live model')).toBe(
-      'Written by the Chief of Staff (live model)',
+      'Written by the Chief of Staff',
     )
   })
 
@@ -227,10 +232,10 @@ describe('analystSource — honest labeling of the analyst text', () => {
 
   it('names the Student Success Analyst for its own section', () => {
     expect(analystSourceLabel('live', 'the Student Success Analyst')).toBe(
-      'Written by the Student Success Analyst (live model)',
+      'Written by the Student Success Analyst',
     )
     expect(analystSourceLabel('recorded', 'the Student Success Analyst')).toBe(
-      'Written by the Student Success Analyst (recorded live run)',
+      'Written by the Student Success Analyst',
     )
   })
 })
@@ -567,5 +572,57 @@ describe('dispatchTasks — the Beat 2 task cards from the audit events', () => 
     expect(latestQuestionEventId(eventsAfter([asked, later], 25))).toBe(30)
     expect(latestQuestionEventId(eventsAfter([asked, later], 30))).toBeNull()
     expect(latestQuestionEventId([])).toBeNull()
+  })
+})
+
+describe('analystSourceDetail', () => {
+  it('keeps the replay and live distinction honest in the detail', () => {
+    expect(analystSourceDetail('recorded')).toContain('earlier live run')
+    expect(analystSourceDetail('live')).toContain('just now')
+    expect(analystSourceDetail('live', 'campus GPT')).toContain('campus GPT')
+    expect(analystSourceDetail('fake')).toContain('test stub')
+  })
+})
+
+describe('documentTitle', () => {
+  it('puts the screen before the product name', () => {
+    expect(documentTitle(null)).toBe('Golden Eagle AI Cabinet')
+    expect(documentTitle('Sign in')).toBe('Sign in · Golden Eagle AI Cabinet')
+    expect(documentTitle('Audit log')).toBe('Audit log · Golden Eagle AI Cabinet')
+  })
+})
+
+describe('normalizeRoute', () => {
+  it('keeps known routes and sends anything else to the conversation', () => {
+    expect(normalizeRoute('/')).toBe('/')
+    expect(normalizeRoute('/login')).toBe('/login')
+    expect(normalizeRoute('/institution/')).toBe('/institution')
+    expect(normalizeRoute('/nowhere')).toBe('/')
+    expect(normalizeRoute('/institution/users')).toBe('/')
+  })
+})
+
+describe('nextPollDelay', () => {
+  it('polls every 3 s, waits out a 429, and backs off on failures', () => {
+    expect(nextPollDelay({ ok: true })).toBe(3000)
+    expect(
+      nextPollDelay({ ok: false, rateLimited: true, retryAfterSeconds: 20, failures: 1 }),
+    ).toBe(20_000)
+    expect(
+      nextPollDelay({ ok: false, rateLimited: true, retryAfterSeconds: null, failures: 1 }),
+    ).toBe(60_000)
+    expect(
+      nextPollDelay({ ok: false, rateLimited: false, retryAfterSeconds: null, failures: 1 }),
+    ).toBe(6000)
+    expect(
+      nextPollDelay({ ok: false, rateLimited: false, retryAfterSeconds: null, failures: 9 }),
+    ).toBe(30_000)
+  })
+})
+
+describe('friendlyTime', () => {
+  it('formats a timestamp for a reader, or null', () => {
+    expect(friendlyTime('2026-10-05T14:02:00Z', 'UTC')).toBe('Oct 5, 2:02 PM')
+    expect(friendlyTime('not a time')).toBeNull()
   })
 })

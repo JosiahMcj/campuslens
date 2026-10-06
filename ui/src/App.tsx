@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import {
   fetchCabinetBriefingOnce,
@@ -32,6 +32,7 @@ import {
   canSeeAuditLog,
   canSeeInstitution,
   fetchMe,
+  ApiError,
   logout,
   onSessionEnded,
   type Session,
@@ -59,24 +60,86 @@ import { DecisionPanel, type DispatchUiState } from './components/DecisionPanel'
 import { EvidenceDrawer } from './components/EvidenceDrawer'
 import { Institution, type ActiveDatasetMeta } from './components/Institution'
 import { LoginScreen } from './components/LoginScreen'
-import { Masthead } from './components/Masthead'
-import { type AskState } from './components/QuestionBar'
 import { SidePanel } from './components/SidePanel'
 import { AscentMark } from './components/AscentMark'
 import { MenuIcon } from './components/icons'
 import { StatRow } from './components/StatRow'
+import { friendlyError, friendlyLoadError, isRateLimited, retryAfterSeconds } from './errors'
 import {
   APPROVED_QUESTION,
-  errorMessage,
+  documentTitle,
   evidenceUrl,
   eventsAfter,
+  friendlyTime,
   latestQuestionEventId,
   maxEventId,
+  nextPollDelay,
+  normalizeRoute,
   parseFlags,
+  PANEL_MOTION_MS,
+  POLL_BASE_MS,
+  prefersReducedMotion,
   type LoadState,
   type ModelSection,
   type UiFlags,
 } from './states'
+
+/** One question's progress in the chat. */
+type AskState =
+  | { kind: 'idle' }
+  | { kind: 'sending' }
+  | { kind: 'accepted'; response: Extract<AskResponse, { accepted: true }> }
+  | { kind: 'refused'; refusal: string; eventId: number | null }
+  | { kind: 'error'; message: string; question: string }
+
+/** Whether a background list (the audit log, the decisions) has loaded. */
+type ResourceStatus = { kind: 'loading' } | { kind: 'ready' } | { kind: 'error'; message: string }
+
+/**
+ * Keep a closing panel on screen for its exit animation: `shown` is what to
+ * render (the last open value while closing) and `closing` marks the exit.
+ */
+function usePanelPresence<T>(value: T | null): { shown: T | null; closing: boolean } {
+  const [shown, setShown] = useState<T | null>(value)
+  const [closing, setClosing] = useState(false)
+  useEffect(() => {
+    if (value !== null) {
+      // Opening (or switching) shows the new value at once.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setShown(value)
+      setClosing(false)
+      return
+    }
+    if (prefersReducedMotion()) {
+      setShown(null)
+      setClosing(false)
+      return
+    }
+    setClosing(true)
+    const timer = window.setTimeout(() => {
+      setShown(null)
+      setClosing(false)
+    }, PANEL_MOTION_MS)
+    return () => window.clearTimeout(timer)
+  }, [value])
+  return { shown: value ?? shown, closing: value === null && closing }
+}
+
+/** True below 900 px, where the sidebar is an off-canvas drawer. */
+function useSmallScreen(): boolean {
+  const query = '(max-width: 899px)'
+  const [small, setSmall] = useState(
+    () => typeof window.matchMedia === 'function' && window.matchMedia(query).matches,
+  )
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const list = window.matchMedia(query)
+    const onChange = () => setSmall(list.matches)
+    list.addEventListener?.('change', onChange)
+    return () => list.removeEventListener?.('change', onChange)
+  }, [])
+  return small
+}
 
 type AuthState =
   | { kind: 'checking' }
@@ -95,18 +158,29 @@ function App() {
   const flags = useMemo(() => parseFlags(window.location.search), [])
   const [auth, setAuth] = useState<AuthState>({ kind: 'checking' })
   const [authError, setAuthError] = useState<string | null>(null)
-  const [route, setRoute] = useState(() => window.location.pathname)
+  const [route, setRoute] = useState(() => normalizeRoute(window.location.pathname))
+  const retryTimer = useRef<number | null>(null)
+  // Bumped to run the session check again (Retry, or after a 429's wait).
+  const [checkRun, setCheckRun] = useState(0)
 
   const checkSession = useCallback(async () => {
     try {
       const session = await fetchMe()
+      setAuthError(null)
       setAuth(
         session !== null
           ? { kind: 'signed-in', session }
           : { kind: 'signed-out', notice: null },
       )
     } catch (error) {
-      setAuthError(errorMessage(error))
+      setAuthError(friendlyLoadError(error))
+      // Too many requests: try again on our own once the server allows it.
+      if (isRateLimited(error)) {
+        retryTimer.current = window.setTimeout(
+          () => setCheckRun((run) => run + 1),
+          retryAfterSeconds(error) * 1000,
+        )
+      }
     }
   }, [])
 
@@ -114,7 +188,10 @@ function App() {
     // The session check's setState calls all land after an await.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void checkSession()
-  }, [checkSession])
+    return () => {
+      if (retryTimer.current !== null) window.clearTimeout(retryTimer.current)
+    }
+  }, [checkSession, checkRun])
 
   useEffect(() => {
     onSessionEnded(() => {
@@ -127,67 +204,83 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const onPopState = () => setRoute(window.location.pathname)
+    const onPopState = () => setRoute(normalizeRoute(window.location.pathname))
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
   const navigate = useCallback((path: string) => {
-    window.history.pushState(null, '', path)
-    setRoute(path)
+    const next = normalizeRoute(path)
+    if (next !== normalizeRoute(window.location.pathname)) {
+      window.history.pushState(null, '', next)
+    }
+    setRoute(next)
   }, [])
 
-  const signedIn = useCallback(
-    (session: Session) => {
-      resetBriefingOnce()
-      setAuth({ kind: 'signed-in', session })
-      navigate('/')
-    },
-    [navigate],
-  )
+  const signedIn = useCallback((session: Session) => {
+    resetBriefingOnce()
+    setAuth({ kind: 'signed-in', session })
+    window.history.replaceState(null, '', '/')
+    setRoute('/')
+  }, [])
 
   const signOut = useCallback(() => {
     void logout().then(() => {
       resetBriefingOnce()
       setAuth({ kind: 'signed-out', notice: null })
-      navigate('/login')
+      // Replace, so Back never shows the workspace's address over sign-in.
+      window.history.replaceState(null, '', '/login')
+      setRoute('/login')
     })
-  }, [navigate])
+  }, [])
 
-  // A signed-in user landing on /login is sent to the briefing.
+  // The address always matches the screen: an unknown path goes to the
+  // conversation, a signed-in user on /login goes to the conversation, and
+  // a signed-out user anywhere sees /login.
   useEffect(() => {
-    if (auth.kind === 'signed-in' && window.location.pathname === '/login') {
-      window.history.replaceState(null, '', '/')
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setRoute('/')
+    if (auth.kind === 'checking') return
+    const want =
+      auth.kind === 'signed-out' ? '/login' : route === '/login' ? '/' : route
+    if (window.location.pathname !== want) {
+      window.history.replaceState(null, '', want + window.location.search + window.location.hash)
     }
+    if (want !== route) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- keeps the route in step with the address
+      setRoute(want)
+    }
+  }, [auth.kind, route])
+
+  useEffect(() => {
+    if (auth.kind === 'checking') document.title = documentTitle(null)
+    if (auth.kind === 'signed-out') document.title = documentTitle('Sign in')
   }, [auth.kind])
 
   if (auth.kind === 'checking') {
     return (
-      <main className="page auth-check">
-        {authError !== null ? (
-          <div className="state-panel error-panel" role="alert">
-            <h2>The session could not be checked</h2>
-            <p>{authError}</p>
-            <p>
-              Check that <code>make api</code> is running on 127.0.0.1:8910.
+      <main className="login-page auth-check">
+        <div className="login-panel">
+          {authError !== null ? (
+            <div className="state-error" role="alert">
+              <h1>We couldn't check your sign-in</h1>
+              <p>{authError}</p>
+              <button
+                type="button"
+                className="primary-button btn-primary"
+                onClick={() => {
+                  if (retryTimer.current !== null) window.clearTimeout(retryTimer.current)
+                  setAuthError(null)
+                  setCheckRun((run) => run + 1)
+                }}
+              >
+                Try again
+              </button>
+            </div>
+          ) : (
+            <p className="status-line" role="status">
+              Checking your sign-in…
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                setAuthError(null)
-                void checkSession()
-              }}
-            >
-              Retry
-            </button>
-          </div>
-        ) : (
-          <p className="status-line" role="status">
-            Checking your session…
-          </p>
-        )}
+          )}
+        </div>
       </main>
     )
   }
@@ -216,9 +309,10 @@ interface ShellProps {
 }
 
 /**
- * The signed-in app: the findings load once here (the masthead, the briefing
- * page, and the Institution area all read them), and the route picks between
- * the briefing and the Institution area.
+ * The signed-in app: the findings load once here (the conversation, the
+ * panels and the Institution area all read them). One layout for every
+ * route: the sidebar, and a main column that shows the conversation or,
+ * at /institution, the Institution area.
  */
 function Shell({ session, flags, route, navigate, onSignOut }: ShellProps) {
   const [findingsState, setFindingsState] = useState<LoadState<Findings>>({
@@ -230,7 +324,7 @@ function Shell({ session, flags, route, navigate, onSignOut }: ShellProps) {
       const data = await fetchFindings(flags)
       setFindingsState({ kind: 'ready', data })
     } catch (error) {
-      setFindingsState({ kind: 'error', message: errorMessage(error) })
+      setFindingsState({ kind: 'error', message: friendlyLoadError(error) })
     }
   }, [flags])
 
@@ -258,46 +352,6 @@ function Shell({ session, flags, route, navigate, onSignOut }: ShellProps) {
     meta?.dataset !== null && meta?.dataset !== undefined
       ? { id: meta.dataset.id, fictional }
       : null
-  const institutionName = session.user.institution?.name ?? 'your institution'
-
-  if (route === '/institution') {
-    return (
-      <main className="page">
-        <header className="page-header">
-          <h1>Institution settings</h1>
-          <p className="lede">
-            The datasets the briefing is computed from, for {institutionName}.
-          </p>
-        </header>
-        <aside className="rail" aria-label="Instruments">
-          <div className="rail-inner">
-            <Masthead
-              session={session}
-              datasetName={datasetName}
-              route={route}
-              onNavigate={navigate}
-              onSignOut={onSignOut}
-            />
-          </div>
-        </aside>
-        <div className="doc institution-doc">
-          {canSeeInstitution(session.user.role) ? (
-            <Institution
-              institutionName={institutionName}
-              activeDataset={activeDataset}
-              currentUserEmail={session.user.email}
-              onDataChanged={reloadFindings}
-            />
-          ) : (
-            <div className="state-panel error-panel" role="alert">
-              <h2>Institution settings are not available</h2>
-              <p>Only an administrator can open Institution settings.</p>
-            </div>
-          )}
-        </div>
-      </main>
-    )
-  }
 
   return (
     <BriefingPage
@@ -310,7 +364,53 @@ function Shell({ session, flags, route, navigate, onSignOut }: ShellProps) {
       navigate={navigate}
       onSignOut={onSignOut}
       onRetryFindings={retryFindings}
+      institution={
+        <InstitutionPage
+          session={session}
+          activeDataset={activeDataset}
+          onDataChanged={reloadFindings}
+        />
+      }
     />
+  )
+}
+
+/** The Institution area, inside the same sidebar layout as the conversation. */
+function InstitutionPage({
+  session,
+  activeDataset,
+  onDataChanged,
+}: {
+  session: Session
+  activeDataset: ActiveDatasetMeta | null
+  onDataChanged: () => void
+}) {
+  const institutionName = session.user.institution?.name ?? 'your institution'
+  return (
+    <div className="chat-center doc institution-doc">
+      <header className="page-header">
+        <h1 id="main-heading" tabIndex={-1}>
+          Institution settings
+        </h1>
+        <p className="lede">
+          People, office mailboxes, counseling permission and the data the briefing
+          is computed from, for {institutionName}.
+        </p>
+      </header>
+      {canSeeInstitution(session.user.role) ? (
+        <Institution
+          institutionName={institutionName}
+          activeDataset={activeDataset}
+          currentUserEmail={session.user.email}
+          onDataChanged={onDataChanged}
+        />
+      ) : (
+        <div className="state-panel error-panel state-error" role="alert">
+          <h2>Only an administrator can open Institution settings</h2>
+          <p>Ask your administrator if something here needs to change.</p>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -337,6 +437,8 @@ interface BriefingPageProps {
   navigate: (path: string) => void
   onSignOut: () => void
   onRetryFindings: () => void
+  /** The Institution area, shown in the main column at /institution. */
+  institution: ReactNode
 }
 
 /** The briefing page: Ask and the instruments for the roles that may use
@@ -353,19 +455,31 @@ function BriefingPage({
   navigate,
   onSignOut,
   onRetryFindings,
+  institution,
 }: BriefingPageProps) {
   const role = session.user.role
   const act = canAct(role)
   const audit = canSeeAuditLog(role)
   const aidQueue = canSeeAidQueue(role)
 
-  const [events, setEventsState] = useState<AuditEvent[] | null>(null)
+  const [events, setEventsState] = useState<AuditEvent[] | null>(audit ? null : [])
+  const [eventsStatus, setEventsStatus] = useState<ResourceStatus>(
+    audit ? { kind: 'loading' } : { kind: 'ready' },
+  )
   const setEvents = useCallback((next: AuditEvent[]) => {
     setEventsState(next)
+    setEventsStatus({ kind: 'ready' })
   }, [])
   const [decisions, setDecisions] = useState<Decision[] | null>(null)
+  const [decisionsStatus, setDecisionsStatus] = useState<ResourceStatus>({ kind: 'loading' })
+  // A decision's message state (draft, sent, the office mailbox) that could
+  // not be loaded: the decision card is replaced by a Retry line, so it never
+  // offers to prepare a message that may already exist.
+  const [dispatchLoadError, setDispatchLoadError] = useState<string | null>(null)
   const [questions, setQuestions] = useState<ApprovedQuestion[] | null>(null)
   const [askState, setAskState] = useState<AskState>({ kind: 'idle' })
+  // The last briefing this API process produced (GET /briefing on load).
+  const [briefingStatus, setBriefingStatus] = useState<ResourceStatus>({ kind: 'loading' })
   // The briefing one /ask produced (or the last one this API process made,
   // from GET /briefing on load). Null until then: the computed page renders,
   // and no analyst or chief run happens before the question is asked.
@@ -401,30 +515,52 @@ function BriefingPage({
   const [thread, setThread] = useState<Exchange[]>([])
   const nextExchangeId = useRef(1)
   const [viewFrom, setViewFrom] = useState(0)
+  // The exchange restored on load (GET /briefing). Someone who may ask
+  // starts on the empty screen with the question front and centre, unless a
+  // decision is still waiting on them: then the restored answer stays open.
+  // Settled for good once they choose anything (ask, New question, history).
+  const [restoredId, setRestoredId] = useState<number | null>(null)
+  const [restoredSettled, setRestoredSettled] = useState(false)
+  // Decided ONCE, when both the restored briefing and the decisions have
+  // loaded: 'show' keeps the restored answer open (a decision waits, or the
+  // decisions could not be checked), 'hide' starts on the empty screen.
+  // Approving later never hides the answer the person is looking at.
+  const [restoredView, setRestoredView] = useState<'pending' | 'show' | 'hide'>('pending')
   // The Financial Aid role's work is the review queue, so it lands there.
   const [panel, setPanel] = useState<PanelId | null>(() => (role === 'aid' ? 'aid' : null))
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const threadEndRef = useRef<HTMLDivElement>(null)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const small = useSmallScreen()
+  // The audit-log entry to bring into view when the log next renders.
+  const [auditFocusId, setAuditFocusId] = useState<number | null>(null)
 
   const loadEvents = useCallback(async () => {
     if (!audit) return
     try {
       setEvents(await fetchEvents(flags))
-    } catch {
-      // The findings error state already covers an unreachable API.
+    } catch (error) {
+      setEventsStatus({ kind: 'error', message: friendlyLoadError(error) })
     }
   }, [audit, flags, setEvents])
 
+  const retryEvents = useCallback(() => {
+    setEventsStatus({ kind: 'loading' })
+    void loadEvents()
+  }, [loadEvents])
+
+  /** Load one decision's message state; false when it could not be loaded. */
   const loadDispatch = useCallback(
-    async (decisionId: string) => {
+    async (decisionId: string): Promise<boolean> => {
       try {
         const info = await fetchDispatch(decisionId, flags)
         setDispatches((previous) => ({
           ...previous,
           [decisionId]: { info, busy: null, error: null },
         }))
-      } catch {
-        // Non-critical; the decision panel works without the dispatch state.
+        return true
+      } catch (error) {
+        setDispatchLoadError(friendlyLoadError(error))
+        return false
       }
     },
     [flags],
@@ -433,20 +569,28 @@ function BriefingPage({
   const loadDecisions = useCallback(async () => {
     try {
       const next = await fetchDecisions(flags)
-      setDecisions(next)
       // Each decision's dispatch state (draft, sent, the office mailbox)
       // rides along so the panel renders the whole governed step on load.
-      await Promise.all(next.map((decision) => loadDispatch(decision.id)))
-    } catch {
-      // Non-critical; the decision panel shows its own loading note.
+      const loaded = await Promise.all(next.map((decision) => loadDispatch(decision.id)))
+      setDecisions(next)
+      setDecisionsStatus({ kind: 'ready' })
+      if (loaded.every(Boolean)) setDispatchLoadError(null)
+    } catch (error) {
+      setDecisionsStatus({ kind: 'error', message: friendlyLoadError(error) })
     }
   }, [flags, loadDispatch])
+
+  const retryDecisions = useCallback(() => {
+    setDispatchLoadError(null)
+    setDecisionsStatus({ kind: 'loading' })
+    void loadDecisions()
+  }, [loadDecisions])
 
   const loadQuestions = useCallback(async () => {
     try {
       setQuestions(await fetchQuestions(flags))
     } catch {
-      // Non-critical; the chooser buttons simply never appear.
+      // The question field still works without the starter cards.
     }
   }, [flags])
 
@@ -455,6 +599,7 @@ function BriefingPage({
   const loadBriefing = useCallback(async () => {
     try {
       const briefing = await fetchCabinetBriefingOnce(flags)
+      setBriefingStatus({ kind: 'ready' })
       if (briefing !== null) {
         setCabinetBriefing(briefing)
         const id = nextExchangeId.current++
@@ -463,15 +608,22 @@ function BriefingPage({
             ? [{ id, question: briefing.question, state: { kind: 'restored' } }]
             : previous,
         )
-        // Someone who may ask starts on the empty screen, question front and
-        // centre; the restored briefing waits in the sidebar's history. A
-        // role that may only read sees it straight away.
-        if (act) setViewFrom(id + 1)
+        // Only matters while nothing else has happened (restoredSettled).
+        setRestoredId(id)
       }
-    } catch {
-      // Non-critical; the computed page already renders.
+    } catch (error) {
+      setBriefingStatus({
+        kind: 'error',
+        message: friendlyLoadError(error),
+      })
     }
-  }, [act, flags])
+  }, [flags])
+
+  const retryBriefing = useCallback(() => {
+    resetBriefingOnce()
+    setBriefingStatus({ kind: 'loading' })
+    void loadBriefing()
+  }, [loadBriefing])
 
   useEffect(() => {
     // Initial data fetch on mount: the audit log (for the roles that may
@@ -496,9 +648,28 @@ function BriefingPage({
     window.history.replaceState(null, '', evidenceUrl(window.location.search, null))
   }, [])
 
+  // Whether the restored answer is hidden behind the empty home screen.
+  useEffect(() => {
+    if (restoredView !== 'pending' || restoredId === null) return
+    if (decisionsStatus.kind === 'loading') return
+    const waiting =
+      decisionsStatus.kind === 'error' ||
+      (decisions ?? []).some((decision) => !decision.approved)
+    setRestoredView(waiting ? 'show' : 'hide')
+  }, [restoredView, restoredId, decisionsStatus, decisions])
+  const restoredOpenable = act && restoredId !== null && !restoredSettled
+  const restoredHidden = restoredOpenable && restoredView !== 'show'
+  // Both loads still settling: a skeleton, not an empty screen that then
+  // swaps for the answer.
+  const restoredPending = restoredOpenable && restoredView === 'pending'
+  const firstShown = restoredHidden && restoredId !== null ? Math.max(viewFrom, restoredId + 1) : viewFrom
+
   const ask = useCallback(
     async (question: string) => {
       setAskState({ kind: 'sending' })
+      if (route !== '/') navigate('/')
+      if (restoredHidden && restoredId !== null) setViewFrom((current) => Math.max(current, restoredId + 1))
+      setRestoredSettled(true)
       const exchangeId = nextExchangeId.current++
       const settle = (state: ExchangeState) =>
         setThread((previous) =>
@@ -516,16 +687,25 @@ function BriefingPage({
         // not read the audit log skip this; their dispatch view comes from
         // the /ask response itself.
         if (audit) {
-          const latest = await fetchEvents(flags)
-          setEvents(latest)
-          setRunBaseEventId(maxEventId(latest))
+          try {
+            const latest = await fetchEvents(flags)
+            setEvents(latest)
+            setRunBaseEventId(maxEventId(latest))
+          } catch {
+            // The log read is only bookkeeping: ask anyway, from what is known.
+            setRunBaseEventId(maxEventId(events ?? []))
+          }
         }
         setStillWorking(false)
         setRunInFlight(true)
         const response = await postAsk(question, flags)
         const settled: AskState = response.accepted
           ? { kind: 'accepted', response }
-          : { kind: 'refused', refusal: response.refusal }
+          : {
+              kind: 'refused',
+              refusal: response.refusal,
+              eventId: response.event_ids.length > 0 ? Math.max(...response.event_ids) : null,
+            }
         setAskState(settled)
         settle(settled)
         if (response.accepted) setCabinetBriefing(response.briefing)
@@ -533,14 +713,19 @@ function BriefingPage({
         // can carry a different decision (each question has its own id).
         await Promise.all([loadEvents(), loadDecisions()])
       } catch (error) {
-        const failed: AskState = { kind: 'error', message: errorMessage(error) }
-        setAskState(failed)
-        settle(failed)
+        // A failed ask leaves no row behind: the question goes back above
+        // the composer with a plain sentence and "Ask again".
+        setThread((previous) => previous.filter((item) => item.id !== exchangeId))
+        setAskState({
+          kind: 'error',
+          message: friendlyLoadError(error),
+          question,
+        })
       } finally {
         setRunInFlight(false)
       }
     },
-    [audit, flags, loadEvents, loadDecisions, setEvents],
+    [audit, flags, loadEvents, loadDecisions, setEvents, route, navigate, restoredHidden, restoredId, events],
   )
 
   // "Check again" in a model-unavailable section re-runs the question that
@@ -552,47 +737,60 @@ function BriefingPage({
     void ask(cabinetBriefing?.question ?? APPROVED_QUESTION)
   }, [flags, ask, cabinetBriefing])
 
-  // Beat 2: while a run is in flight, poll the audit log every second so the
+  // Beat 2: while a run is in flight, poll the audit log every 3 s so the
   // dispatch panel's task cards show each grant as it lands and resolve when
   // the run completes. Only roles that may read the log poll; the executive's
   // dispatch view renders from the /ask response instead. Polling stops when
-  // this run's briefing.produced appears or after 200 s; a slow fetch never
-  // overlaps the next tick.
+  // the run ends (this run's briefing.produced appears, the ask returns, or
+  // 200 s pass). A 429 waits out the server's Retry-After and other failures
+  // back off, so the poll never spends the whole request budget.
   useEffect(() => {
     if (!runInFlight || !audit) return
     const startedAt = Date.now()
-    let fetchInFlight = false
-    const interval = window.setInterval(() => {
-      if (fetchInFlight) return
-      fetchInFlight = true
-      void (async () => {
-        try {
-          const latest = await fetchEvents(flags)
-          setEvents(latest)
-          const questionEventId = latestQuestionEventId(
-            eventsAfter(latest, runBaseEventId),
+    let stopped = false
+    let failures = 0
+    let timer: number | undefined
+    const tick = async () => {
+      let delay = POLL_BASE_MS
+      try {
+        const latest = await fetchEvents(flags)
+        if (stopped) return
+        failures = 0
+        setEvents(latest)
+        const questionEventId = latestQuestionEventId(eventsAfter(latest, runBaseEventId))
+        const produced =
+          questionEventId !== null &&
+          latest.some(
+            (event) =>
+              event.type === 'briefing.produced' &&
+              event.payload.question_event_id === questionEventId,
           )
-          const produced =
-            questionEventId !== null &&
-            latest.some(
-              (event) =>
-                event.type === 'briefing.produced' &&
-                event.payload.question_event_id === questionEventId,
-            )
-          if (Date.now() - startedAt > 60_000) {
-            setStillWorking(true)
-          }
-          if (produced || Date.now() - startedAt > 200_000) {
-            setRunInFlight(false)
-          }
-        } catch {
-          // The API hiccuped; keep polling until the run resolves or times out.
-        } finally {
-          fetchInFlight = false
+        if (Date.now() - startedAt > 60_000) setStillWorking(true)
+        if (produced || Date.now() - startedAt > 200_000) {
+          setRunInFlight(false)
+          return
         }
-      })()
-    }, 1000)
-    return () => window.clearInterval(interval)
+      } catch (error) {
+        if (stopped) return
+        if (Date.now() - startedAt > 200_000) {
+          setRunInFlight(false)
+          return
+        }
+        failures += 1
+        delay = nextPollDelay({
+          ok: false,
+          rateLimited: isRateLimited(error),
+          retryAfterSeconds: error instanceof ApiError ? (error.retryAfter ?? null) : null,
+          failures,
+        })
+      }
+      if (!stopped) timer = window.setTimeout(() => void tick(), delay)
+    }
+    timer = window.setTimeout(() => void tick(), POLL_BASE_MS)
+    return () => {
+      stopped = true
+      window.clearTimeout(timer)
+    }
   }, [runInFlight, audit, flags, runBaseEventId, setEvents])
 
   const approve = useCallback(
@@ -607,7 +805,7 @@ function BriefingPage({
         }))
         await Promise.all([loadDecisions(), loadEvents()])
       } catch (error) {
-        setApproveError(errorMessage(error))
+        setApproveError(friendlyError(error, 'Your approval'))
       } finally {
         setApproving(false)
       }
@@ -637,7 +835,7 @@ function BriefingPage({
           [decisionId]: {
             info: previous[decisionId]?.info ?? null,
             busy: null,
-            error: `Could not prepare the message: ${errorMessage(error)}`,
+            error: friendlyError(error, 'The message'),
           },
         }))
       }
@@ -669,7 +867,7 @@ function BriefingPage({
           [decisionId]: {
             info: previous[decisionId]?.info ?? null,
             busy: null,
-            error: errorMessage(error),
+            error: friendlyError(error, 'The message'),
           },
         }))
       }
@@ -692,7 +890,7 @@ function BriefingPage({
           ...previous,
           [decisionId]: {
             busy: false,
-            error: `Could not prepare the review queue: ${errorMessage(error)}`,
+            error: friendlyError(error, 'The review queue'),
           },
         }))
       }
@@ -711,8 +909,8 @@ function BriefingPage({
         setDeniedRequest({
           kind: 'error',
           message:
-            'The gate granted the request, but this demo expects a refusal. ' +
-            'Check that the API is running the current build.',
+            'The request was allowed, but this test expects a refusal. ' +
+            'Ask your administrator to check the Cabinet is up to date.',
         })
         return
       }
@@ -722,11 +920,9 @@ function BriefingPage({
         eventId: response.event.id,
       })
       await loadEvents()
-      document
-        .getElementById(`event-${response.event.id}`)
-        ?.scrollIntoView({ block: 'center' })
+      setAuditFocusId(response.event.id)
     } catch (error) {
-      setDeniedRequest({ kind: 'error', message: errorMessage(error) })
+      setDeniedRequest({ kind: 'error', message: friendlyLoadError(error) })
     }
   }, [flags, loadEvents])
 
@@ -741,7 +937,7 @@ function BriefingPage({
     }
   }, [act, audit, flags, showDeniedRequest])
 
-  // A #audit-log deep link scrolls the log into view once it has loaded.
+  // A #audit-log deep link opens the log once it has loaded.
   const auditLinkScrolled = useRef(false)
   useEffect(() => {
     if (
@@ -773,7 +969,7 @@ function BriefingPage({
   // unavailable state (section 7 keeps its static fallback).
   const modelDownSection: ModelSection = {
     kind: 'unavailable',
-    reason: 'Forced by the ?model=down demo switch.',
+    reason: 'The AI analysts are switched off for this demonstration.',
   }
   const chiefSummary: ModelSection | null = flags.modelDown
     ? modelDownSection
@@ -845,7 +1041,7 @@ function BriefingPage({
         aggregate: event.payload.level === 'aggregate',
       }))
   })()
-  const visible = thread.filter((item) => item.id >= viewFrom)
+  const visible = thread.filter((item) => item.id >= firstShown)
   const history: HistoryItem[] = thread.map((item) => ({
     id: item.id,
     question: item.question,
@@ -854,46 +1050,178 @@ function BriefingPage({
   }))
   const sending = askState.kind === 'sending'
   const ready = findingsState.kind === 'ready'
+  const onInstitution = route === '/institution'
 
-  // Each new exchange (and each reply landing) scrolls the thread to its end.
+  // A new exchange brings the START of that exchange into view (the
+  // question, then the answer from its top), never the end of the answer.
   const threadLength = thread.length
+  const lastExchangeId = thread.at(-1)?.id
   const lastStateKind = thread.at(-1)?.state.kind
   useEffect(() => {
-    threadEndRef.current?.scrollIntoView({ block: 'end' })
-  }, [threadLength, lastStateKind])
+    if (lastExchangeId === undefined) return
+    document
+      .getElementById(`exchange-${lastExchangeId}`)
+      ?.scrollIntoView({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
+  }, [threadLength, lastExchangeId, lastStateKind])
+
+  // The browser tab names the screen or the open panel.
+  const panelTitle: Record<PanelId, string> = {
+    briefing: 'Full briefing',
+    figures: 'Key figures',
+    evidence: 'Evidence & sources',
+    actions: 'Staff actions',
+    decision: 'Decision',
+    agents: 'AI employees',
+    access: 'Data access',
+    audit: 'Audit log',
+    aid: 'Financial Aid review',
+    profile: 'Profile',
+    settings: 'Settings',
+  }
+  const screenTitle =
+    panel !== null ? panelTitle[panel] : onInstitution ? 'Institution settings' : 'Briefing'
+  useEffect(() => {
+    document.title = documentTitle(screenTitle)
+  }, [screenTitle])
+
+  // The audit-log entry to show (a refusal reply's "See the refusal", or
+  // the refusal test): scrolled into view once the log has rendered it.
+  useEffect(() => {
+    if (auditFocusId === null || panel !== 'audit' || events === null) return
+    const element = document.getElementById(`event-${auditFocusId}`)
+    if (element === null) return
+    element.scrollIntoView({ block: 'center' })
+    setAuditFocusId(null)
+  }, [auditFocusId, panel, events])
+
+  const closePanel = useCallback(() => setPanel(null), [])
+  const { shown: shownPanel, closing: panelClosing } = usePanelPresence(panel)
+
+  // Leaving the phone drawer: focus goes back to the button that opened it
+  // (never left on a row inside the now hidden, inert drawer).
+  const closeSidebar = useCallback(() => {
+    setSidebarOpen(false)
+    window.setTimeout(() => {
+      if (menuButtonRef.current?.getClientRects().length) menuButtonRef.current.focus()
+    }, 0)
+  }, [])
 
   const openPanel = (next: PanelId) => {
     setPanel(next)
+    // The panel takes focus; on close it falls back to the main column.
     setSidebarOpen(false)
   }
 
+  const focusQuestion = () =>
+    window.setTimeout(() => document.getElementById('question-input')?.focus(), 0)
+
   const newQuestion = () => {
+    if (onInstitution) navigate('/')
     setViewFrom(nextExchangeId.current)
+    setRestoredSettled(true)
+    setAskState((current) => (current.kind === 'error' ? { kind: 'idle' } : current))
     setPanel(null)
     setSidebarOpen(false)
-    window.setTimeout(() => document.getElementById('question-input')?.focus(), 0)
+    focusQuestion()
   }
 
   const selectHistory = (id: number) => {
-    setViewFrom((current) => Math.min(current, id))
-    setSidebarOpen(false)
+    if (onInstitution) navigate('/')
+    setViewFrom((current) => Math.min(firstShown, current, id))
+    setRestoredSettled(true)
+    if (sidebarOpen) closeSidebar()
     window.setTimeout(
       () => document.getElementById(`exchange-${id}`)?.scrollIntoView({ block: 'start' }),
       0,
     )
   }
 
+  const seeRefusal = (eventId: number | null) => {
+    if (eventId !== null) {
+      setAuditFocusId(eventId)
+      const refusal = thread.find(
+        (item) => item.state.kind === 'refused' && item.state.eventId === eventId,
+      )
+      if (refusal !== undefined && refusal.state.kind === 'refused') {
+        // The log highlights the entry and opens its detail.
+        setDeniedRequest({ kind: 'shown', reason: refusal.state.refusal, eventId })
+      }
+    }
+    openPanel('audit')
+    void loadEvents()
+  }
+
   const workLine = (state: ExchangeState) => {
     if (state.kind === 'accepted') {
       const count = state.response.tasks.length
-      return `${count} AI employees worked on this. Every grant is in the audit log.`
+      return `${count} AI employees worked on this. Every step is in the audit log.`
     }
-    return 'The briefing this cabinet last produced, restored without re-running.'
+    const produced =
+      cabinetBriefing !== null
+        ? (events ?? []).find((event) => event.id === cabinetBriefing.question_event_id)
+        : undefined
+    const when = produced !== undefined ? friendlyTime(produced.ts) : null
+    return when !== null
+      ? `Showing your last briefing, from ${when}.`
+      : 'Showing your last briefing.'
   }
+
+  // The skeleton or the error a panel shows while its data is not ready.
+  const notReady = (status: ResourceStatus, onRetry: () => void, what: string) =>
+    status.kind === 'error' ? (
+      <div className="state-panel error-panel state-error" role="alert">
+        <p>
+          Couldn't load {what}. {status.message}
+        </p>
+        <button type="button" className="secondary btn-secondary" onClick={onRetry}>
+          Retry
+        </button>
+      </div>
+    ) : (
+      <div role="status" aria-busy="true" className="panel-skeleton">
+        <span className="visually-hidden">Loading {what}…</span>
+        <div className="skeleton skeleton-line skeleton-heading" />
+        <div className="skeleton skeleton-line" />
+        <div className="skeleton skeleton-line short" />
+      </div>
+    )
+  const findingsStatus: ResourceStatus =
+    findingsState.kind === 'error'
+      ? { kind: 'error', message: findingsState.message }
+      : findingsState.kind === 'loading'
+        ? { kind: 'loading' }
+        : { kind: 'ready' }
+  const decisionStatus: ResourceStatus =
+    dispatchLoadError !== null ? { kind: 'error', message: dispatchLoadError } : decisionsStatus
+
+  const decisionPanel = (title: string | undefined) =>
+    decisionStatus.kind !== 'ready' ? (
+      notReady(decisionStatus, retryDecisions, 'the decision')
+    ) : (
+      <DecisionPanel
+        {...(title !== undefined ? { title } : { headingId: null })}
+        decisions={decisions}
+        events={events ?? []}
+        canApprove={act}
+        role={role}
+        userEmail={session.user.email}
+        approving={approving}
+        approveError={approveError}
+        approvedTasks={approvedTasks}
+        dispatches={dispatches}
+        onApprove={(id) => void approve(id)}
+        onPrepareDispatch={(id) => void prepareDispatch(id)}
+        onSendDispatch={(id) => void sendDispatch(id)}
+        onOpenEvidence={openEvidence}
+        aidQueues={aidQueues}
+        onPrepareAidQueue={(id) => void prepareAidQueue(id)}
+        onOpenAidQueue={aidQueue ? () => openPanel('aid') : null}
+      />
+    )
 
   const reply = (item: Exchange) => {
     const state = item.state
-    if (state.kind === 'sending' || state.kind === 'idle') {
+    if (state.kind === 'sending' || state.kind === 'idle' || state.kind === 'error') {
       return (
         <div className="reply-working" role="status">
           <span className="typing" aria-hidden="true">
@@ -913,18 +1241,14 @@ function BriefingPage({
           <h3>Refused</h3>
           <p>{state.refusal}</p>
           {audit && (
-            <button type="button" className="link-button" onClick={() => openPanel('audit')}>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => seeRefusal(state.eventId)}
+            >
               See the refusal in the audit log
             </button>
           )}
-        </div>
-      )
-    }
-    if (state.kind === 'error') {
-      return (
-        <div className="refusal-card" role="alert">
-          <h3>The cabinet could not answer</h3>
-          <p>{state.message}</p>
         </div>
       )
     }
@@ -954,40 +1278,11 @@ function BriefingPage({
         {current && (
           <>
             <StatRow findings={findings} onOpenEvidence={openEvidence} />
-            <DecisionPanel
-              title="Your decision"
-              decisions={decisions}
-              events={events ?? []}
-              canApprove={act}
-              role={role}
-              userEmail={session.user.email}
-              approving={approving}
-              approveError={approveError}
-              approvedTasks={approvedTasks}
-              dispatches={dispatches}
-              onApprove={(id) => void approve(id)}
-              onPrepareDispatch={(id) => void prepareDispatch(id)}
-              onSendDispatch={(id) => void sendDispatch(id)}
-              onOpenEvidence={openEvidence}
-              aidQueues={aidQueues}
-              onPrepareAidQueue={(id) => void prepareAidQueue(id)}
-              onOpenAidQueue={aidQueue ? () => openPanel('aid') : null}
-            />
+            {decisionPanel('Your decision')}
             <div className="reply-actions">
-              <button type="button" className="chip" onClick={() => openPanel('briefing')}>
+              <button type="button" className="link-button" onClick={() => openPanel('briefing')}>
                 Read the full briefing
               </button>
-              <button type="button" className="chip" onClick={() => openPanel('evidence')}>
-                Evidence & sources
-              </button>
-              <button type="button" className="chip" onClick={() => openPanel('actions')}>
-                Staff actions
-              </button>
-              {audit && (
-                <button type="button" className="chip" onClick={() => openPanel('audit')}>
-                  Audit log
-                </button>
-              )}
             </div>
           </>
         )}
@@ -995,280 +1290,272 @@ function BriefingPage({
     )
   }
 
-  const panelTitle: Record<PanelId, string> = {
-    briefing: 'Full briefing',
-    figures: 'Key figures',
-    evidence: 'Evidence & sources',
-    actions: 'Staff actions',
-    decision: 'Decision',
-    agents: 'AI employees',
-    access: 'Data access',
-    audit: 'Audit log',
-    aid: 'Financial Aid review',
-    profile: 'Profile',
-    settings: 'Settings',
-  }
+  const composer = (starters: boolean) =>
+    act ? (
+      <ChatComposer
+        questions={questions}
+        sending={sending}
+        starters={starters}
+        onAsk={(question) => void ask(question)}
+        error={askState.kind === 'error' ? askState.message : null}
+        onAskAgain={
+          askState.kind === 'error' ? () => void ask(askState.question) : null
+        }
+      />
+    ) : null
 
-  // "Test a refusal": send the Enrollment Analyst's out-of-role request to
-  // the gate and show the logged refusal in the audit log.
-  const testRefusal = () => {
-    setPanel('audit')
-    setSidebarOpen(false)
-    void showDeniedRequest()
-  }
+  const findingsPanel = (content: () => ReactNode) =>
+    ready ? content() : notReady(findingsStatus, onRetryFindings, 'the briefing')
 
-  // One-click ways into every capability, shown under the composer.
-  const explore: { label: string; panel: PanelId | 'refusal' }[] = [
-    { label: 'Key figures', panel: 'figures' },
-    { label: 'Evidence & sources', panel: 'evidence' },
-    { label: 'Staff actions', panel: 'actions' },
-    { label: 'Data access', panel: 'access' },
-    ...(aidQueue ? [{ label: 'Financial Aid review', panel: 'aid' as const }] : []),
-    ...(audit ? [{ label: 'Audit log', panel: 'audit' as const }] : []),
-    ...(act && audit ? [{ label: 'Test a refusal', panel: 'refusal' as const }] : []),
-  ]
+  const blocked = shownPanel !== null || (sidebarOpen && small)
 
   return (
     <div className="chat-app">
-      <ChatSidebar
-        session={session}
-        datasetName={datasetName}
-        fictional={fictional}
-        history={history}
-        panels={panels}
-        activePanel={panel}
-        open={sidebarOpen}
-        onNewQuestion={act ? newQuestion : null}
-        onSelectHistory={selectHistory}
-        onOpenPanel={openPanel}
-        onTestRefusal={act && audit ? testRefusal : null}
-        onNavigate={navigate}
-        onSignOut={onSignOut}
-        onClose={() => setSidebarOpen(false)}
-      />
-      {sidebarOpen && (
-        <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
-      )}
+      <a
+        href={act && !onInstitution ? '#question-input' : '#main-content'}
+        className="skip-link visually-hidden"
+        onFocus={(event) => event.currentTarget.classList.remove('visually-hidden')}
+        onBlur={(event) => event.currentTarget.classList.add('visually-hidden')}
+        onClick={(event) => {
+          event.preventDefault()
+          const question = act && !onInstitution ? document.getElementById('question-input') : null
+          if (question !== null && !question.closest('[inert]')) question.focus()
+          else document.getElementById('main-content')?.focus()
+        }}
+      >
+        {act && !onInstitution ? 'Skip to question' : 'Skip to main content'}
+      </a>
+      <div className="chat-layer" inert={shownPanel !== null} style={{ display: 'contents' }}>
+        <ChatSidebar
+          session={session}
+          datasetName={datasetName}
+          fictional={fictional}
+          history={history}
+          historyError={briefingStatus.kind === 'error' ? briefingStatus.message : null}
+          onRetryHistory={retryBriefing}
+          route={route}
+          panels={panels}
+          activePanel={panel}
+          open={sidebarOpen}
+          onNewQuestion={act ? newQuestion : null}
+          onSelectHistory={selectHistory}
+          onOpenPanel={openPanel}
+          onNavigate={(path) => {
+            setPanel(null)
+            if (sidebarOpen) closeSidebar()
+            navigate(path)
+          }}
+          onSignOut={onSignOut}
+          onClose={closeSidebar}
+        />
+        {sidebarOpen && <div className="sidebar-backdrop" onClick={closeSidebar} />}
 
-      <main className="chat-main" data-route={route}>
-        <header className="chat-topbar">
-          <button
-            type="button"
-            className="icon-button menu-button"
-            aria-label="Open sidebar"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <MenuIcon />
-          </button>
-          <span className="topbar-title">Student success briefing</span>
-          {fictional && <span className="topbar-badge">Demo data</span>}
-        </header>
+        <main
+          className="chat-main"
+          data-route={route}
+          id="main-content"
+          tabIndex={-1}
+          inert={blocked}
+        >
+          <header className="chat-topbar">
+            <button
+              ref={menuButtonRef}
+              type="button"
+              className="icon-button menu-button"
+              aria-label="Open menu"
+              aria-expanded={sidebarOpen}
+              aria-controls="cabinet-sidebar"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <MenuIcon />
+            </button>
+            <span className="topbar-title">
+              {onInstitution ? 'Institution settings' : 'Student success briefing'}
+            </span>
+            {fictional && <span className="topbar-badge">Fictional data</span>}
+          </header>
 
-        {findingsState.kind === 'loading' && (
-          <div className="chat-center" role="status" aria-busy="true" aria-live="polite">
-            <span className="visually-hidden">Loading the briefing…</span>
-            <div className="skeleton skeleton-heading" />
-            <div className="skeleton" />
-            <div className="skeleton short" />
-          </div>
-        )}
+          {onInstitution && institution}
 
-        {findingsState.kind === 'error' && (
-          <div className="chat-center">
-            <div className="state-panel error-panel" role="alert">
-              <h2>The briefing could not be loaded</h2>
-              <p>{findingsState.message}</p>
-              <p>
-                The metrics, the evidence drawer, and the audit log all come from
-                the API. Check that <code>make api</code> is running on
-                127.0.0.1:8910.
-              </p>
-              <button type="button" onClick={onRetryFindings}>
-                Retry
-              </button>
-            </div>
-          </div>
-        )}
-
-        {ready && visible.length === 0 && (
-          <div className="chat-empty">
-            <AscentMark className="empty-mark" />
-            <h1>What should the cabinet look into?</h1>
-            <p className="empty-lede">
-              {act
-                ? 'Ask an approved question. Three AI employees answer with numbers checked against the data, and you make the call.'
-                : 'Briefings appear here once an executive asks the cabinet a question.'}
-            </p>
-            {act && (
-              <ChatComposer
-                questions={questions}
-                sending={sending}
-                starters
-                onAsk={(question) => void ask(question)}
-              />
-            )}
-            <div className="explore">
-              <p className="explore-label">Or open</p>
-              <div className="explore-chips">
-                {explore.map((item) => (
-                  <button
-                    key={item.label}
-                    type="button"
-                    className="chip"
-                    onClick={() =>
-                      item.panel === 'refusal' ? testRefusal() : openPanel(item.panel)
-                    }
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {ready && visible.length > 0 && (
-          <>
-            <div className="chat-thread" aria-live="polite">
-              {visible.map((item) => (
-                <div key={item.id} id={`exchange-${item.id}`} className="exchange">
-                  <div className="msg msg-user">
-                    <p>{item.question}</p>
-                  </div>
-                  <div className="msg msg-cabinet">
-                    <AscentMark className="msg-avatar" />
-                    <div className="msg-body">
-                      <p className="msg-author">Cabinet</p>
-                      {reply(item)}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              <div ref={threadEndRef} className="thread-end" />
-            </div>
-            {act && (
-              <div className="chat-dock">
-                <ChatComposer
-                  questions={questions}
-                  sending={sending}
-                  starters={false}
-                  onAsk={(question) => void ask(question)}
-                />
-              </div>
-            )}
-          </>
-        )}
-      </main>
-
-      {panel !== null && (
-        <SidePanel title={panelTitle[panel]} onClose={() => setPanel(null)}>
-          {panel === 'briefing' && ready && (
-            <div className="doc">
-              <BriefingSections
-                findings={findingsState.data}
-                fictional={fictional}
-                enrollment={enrollmentSection}
-                studentSuccess={studentSuccessSection}
-                chiefSummary={chiefSummary}
-                onCheckAgain={act ? checkAgain : null}
-                onOpenEvidence={openEvidence}
-                counselingFigure={briefingCounseling}
-              />
-              <section aria-labelledby="s-decision-note">
-                <h2 id="s-decision-note">6. Leadership decisions</h2>
-                <p>
-                  The decision and its approval live in the conversation, under
-                  the cabinet's latest answer.{' '}
-                  <button type="button" className="link-button" onClick={() => setPanel(null)}>
-                    Back to the conversation
-                  </button>
-                </p>
-              </section>
-              <Limitations
-                findings={findingsState.data}
-                fictional={fictional}
-                chiefLimitations={chiefLimitations}
-                onOpenEvidence={openEvidence}
-              />
+          {!onInstitution && findingsState.kind === 'loading' && (
+            <div className="chat-center" role="status" aria-busy="true" aria-live="polite">
+              <span className="visually-hidden">Loading the briefing…</span>
+              <div className="skeleton skeleton-heading" />
+              <div className="skeleton" />
+              <div className="skeleton short" />
             </div>
           )}
-          {panel === 'agents' &&
+
+          {!onInstitution && findingsState.kind === 'error' && (
+            <div className="chat-center">
+              <div className="state-panel error-panel state-error" role="alert">
+                <h2>We couldn't load the briefing</h2>
+                <p>{findingsState.message}</p>
+                <button type="button" className="primary-button btn-primary" onClick={onRetryFindings}>
+                  Retry
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!onInstitution && ready && visible.length === 0 && restoredPending && (
+            <div className="chat-center" role="status" aria-busy="true">
+              <span className="visually-hidden">Loading your last briefing…</span>
+              <div className="skeleton skeleton-heading" />
+              <div className="skeleton" />
+              <div className="skeleton short" />
+            </div>
+          )}
+
+          {!onInstitution && ready && visible.length === 0 && !restoredPending && (
+            <div className="chat-empty">
+              <AscentMark className="empty-mark" />
+              <h1>What should the Cabinet look into?</h1>
+              <p className="empty-lede">
+                {act
+                  ? 'Ask an approved question. Three AI employees answer with numbers checked against the data, and you make the call.'
+                  : briefingStatus.kind === 'error'
+                    ? "We couldn't load the last briefing."
+                    : 'Briefings appear here once an executive asks the Cabinet a question.'}
+              </p>
+              {!act && briefingStatus.kind === 'error' && (
+                <button type="button" className="secondary btn-secondary" onClick={retryBriefing}>
+                  Retry
+                </button>
+              )}
+              {composer(true)}
+            </div>
+          )}
+
+          {!onInstitution && ready && visible.length > 0 && (
+            <>
+              <div className="chat-thread" aria-live="polite">
+                {visible.map((item) => (
+                  <div key={item.id} id={`exchange-${item.id}`} className="exchange">
+                    <div className="msg msg-user">
+                      <p>{item.question}</p>
+                    </div>
+                    <div className="msg msg-cabinet">
+                      <AscentMark className="msg-avatar" />
+                      <div className="msg-body">
+                        <p className="msg-author">Cabinet</p>
+                        {reply(item)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <div className="thread-end" />
+              </div>
+              {act && <div className="chat-dock">{composer(false)}</div>}
+            </>
+          )}
+        </main>
+      </div>
+
+      {shownPanel !== null && (
+        <SidePanel title={panelTitle[shownPanel]} onClose={closePanel} closing={panelClosing}>
+          {shownPanel === 'briefing' &&
+            findingsPanel(() =>
+              ready ? (
+                <div className="doc">
+                  <BriefingSections
+                    findings={findingsState.data}
+                    fictional={fictional}
+                    enrollment={enrollmentSection}
+                    studentSuccess={studentSuccessSection}
+                    chiefSummary={chiefSummary}
+                    onCheckAgain={act ? checkAgain : null}
+                    onOpenEvidence={openEvidence}
+                    counselingFigure={briefingCounseling}
+                  />
+                  <section aria-labelledby="s-decision-note">
+                    <h2 id="s-decision-note">6. Leadership decisions</h2>
+                    <p>
+                      The decision and its approval live in the conversation, under
+                      the Cabinet's latest answer.{' '}
+                      <button type="button" className="link-button" onClick={closePanel}>
+                        Back to the conversation
+                      </button>
+                    </p>
+                  </section>
+                  <Limitations
+                    findings={findingsState.data}
+                    fictional={fictional}
+                    chiefLimitations={chiefLimitations}
+                    onOpenEvidence={openEvidence}
+                  />
+                </div>
+              ) : null,
+            )}
+          {shownPanel === 'agents' &&
             (audit ? (
-              <DispatchPanel
-                events={events ?? []}
-                minEventId={runBaseEventId}
-                inFlight={runInFlight}
-                stillWorking={stillWorking}
-              />
+              eventsStatus.kind !== 'ready' ? (
+                notReady(eventsStatus, retryEvents, 'the AI employees’ work')
+              ) : (
+                <DispatchPanel
+                  events={events ?? []}
+                  minEventId={runBaseEventId}
+                  inFlight={runInFlight}
+                  stillWorking={stillWorking}
+                />
+              )
             ) : lastAccepted !== null ? (
               <AskDispatch tasks={lastAccepted.tasks} briefing={lastAccepted.briefing} />
             ) : (
               <p className="hint">The AI employees' task cards appear after you ask a question.</p>
             ))}
-          {panel === 'figures' && ready && (
-            <div className="panel-figures">
-              <p className="panel-text">
-                The five headline measures. Open any one to see its formula and
-                the records behind it.
-              </p>
-              <StatRow findings={findingsState.data} onOpenEvidence={openEvidence} />
-              {fictional && (
-                <p className="demo-note">
-                  Demonstration data. An admin can upload the institution's
-                  own export in Institution settings.
-                </p>
-              )}
-            </div>
+          {shownPanel === 'figures' &&
+            findingsPanel(() =>
+              ready ? (
+                <div className="panel-figures">
+                  <p className="panel-text">
+                    The five headline measures. Open any one to see how it is
+                    worked out and the records behind it.
+                  </p>
+                  <StatRow findings={findingsState.data} onOpenEvidence={openEvidence} />
+                </div>
+              ) : null,
+            )}
+          {shownPanel === 'evidence' &&
+            findingsPanel(() =>
+              ready ? (
+                <div className="doc panel-solo">
+                  <EvidenceSources
+                    findings={findingsState.data}
+                    fictional={fictional}
+                    onOpenEvidence={openEvidence}
+                    headingId={null}
+                    counselingFigure={briefingCounseling}
+                  />
+                </div>
+              ) : null,
+            )}
+          {shownPanel === 'actions' &&
+            findingsPanel(() =>
+              ready ? (
+                <div className="doc panel-solo">
+                  <StaffActions
+                    findings={findingsState.data}
+                    onOpenEvidence={openEvidence}
+                    headingId={null}
+                  />
+                </div>
+              ) : null,
+            )}
+          {shownPanel === 'decision' && (
+            <div className="doc panel-solo">{decisionPanel(undefined)}</div>
           )}
-          {panel === 'evidence' && ready && (
-            <div className="doc panel-solo">
-              <EvidenceSources
-                findings={findingsState.data}
-                fictional={fictional}
-                onOpenEvidence={openEvidence}
-                headingId={null}
-                counselingFigure={briefingCounseling}
-              />
-            </div>
-          )}
-          {panel === 'actions' && ready && (
-            <div className="doc panel-solo">
-              <StaffActions
-                findings={findingsState.data}
-                onOpenEvidence={openEvidence}
-                headingId={null}
-              />
-            </div>
-          )}
-          {panel === 'decision' && (
-            <div className="doc panel-solo">
-              <DecisionPanel
-                headingId={null}
-                decisions={decisions}
-                events={events ?? []}
-                canApprove={act}
-                role={role}
-                userEmail={session.user.email}
-                approving={approving}
-                approveError={approveError}
-                approvedTasks={approvedTasks}
-                dispatches={dispatches}
-                onApprove={(id) => void approve(id)}
-                onPrepareDispatch={(id) => void prepareDispatch(id)}
-                onSendDispatch={(id) => void sendDispatch(id)}
-                onOpenEvidence={openEvidence}
-                aidQueues={aidQueues}
-                onPrepareAidQueue={(id) => void prepareAidQueue(id)}
-                onOpenAidQueue={aidQueue ? () => openPanel('aid') : null}
-              />
-            </div>
-          )}
-          {panel === 'access' && <DataAccessPanel grants={grants} />}
-          {panel === 'aid' && aidQueue && <AidQueuePanel canEdit={canEditAidQueue(role)} />}
-          {panel === 'profile' && (
+          {shownPanel === 'access' &&
+            (lastAccepted === null && eventsStatus.kind !== 'ready' ? (
+              notReady(eventsStatus, retryEvents, 'what each AI employee could see')
+            ) : (
+              <DataAccessPanel grants={grants} />
+            ))}
+          {shownPanel === 'aid' && aidQueue && <AidQueuePanel canEdit={canEditAidQueue(role)} />}
+          {shownPanel === 'profile' && (
             <ProfilePanel session={session} datasetName={datasetName} onSignOut={onSignOut} />
           )}
-          {panel === 'settings' && (
+          {shownPanel === 'settings' && (
             <SettingsPanel
               isAdmin={canSeeInstitution(session.user.role)}
               onOpenInstitution={() => {
@@ -1277,17 +1564,21 @@ function BriefingPage({
               }}
             />
           )}
-          {panel === 'audit' && audit && (
-            <div className="panel-solo">
-              <AuditLog
-                events={events}
-                readOnly={!act}
-                onRefresh={() => void loadEvents()}
-                deniedRequest={deniedRequest}
-                onShowDeniedRequest={() => void showDeniedRequest()}
-              />
-            </div>
-          )}
+          {shownPanel === 'audit' &&
+            audit &&
+            (eventsStatus.kind === 'error' ? (
+              notReady(eventsStatus, retryEvents, 'the audit log')
+            ) : (
+              <div className="panel-solo">
+                <AuditLog
+                  events={events}
+                  readOnly={!act}
+                  onRefresh={() => void loadEvents()}
+                  deniedRequest={deniedRequest}
+                  onShowDeniedRequest={() => void showDeniedRequest()}
+                />
+              </div>
+            ))}
         </SidePanel>
       )}
 
