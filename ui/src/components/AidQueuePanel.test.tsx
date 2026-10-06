@@ -84,7 +84,7 @@ function stubApi(patchStatus = 200) {
     const match = /^\/api\/aid-queue\/(\d+)$/.exec(url)
     if (match !== null && method === 'PATCH') {
       if (patchStatus !== 200) {
-        return jsonResponse({ detail: 'the note is 1,001 characters; the limit is 1,000' }, patchStatus)
+        return jsonResponse({ detail: 'note_length 1001 > limit 1000 (HTTP 422)' }, patchStatus)
       }
       const index = rows.findIndex((row) => row.id === Number(match[1]))
       rows[index] = {
@@ -108,11 +108,18 @@ beforeEach(() => {
       email: 'aid@example.edu',
       role: 'aid',
       institution_id: 1,
-      institution: { slug: 'bootstrap', name: 'Bootstrap Institution' },
+      institution: { slug: 'bootstrap', name: 'Demonstration University' },
     },
     csrfToken: 'csrf-token-1',
   })
 })
+
+/** Find a student's row and open it (rows start folded to one line). */
+async function openRow(name: string): Promise<HTMLElement> {
+  const row = await screen.findByRole('listitem', { name })
+  fireEvent.click(within(row).getByRole('button', { expanded: false }))
+  return row
+}
 
 afterEach(() => {
   cleanup()
@@ -124,13 +131,15 @@ describe('AidQueuePanel', () => {
   it('lists every row with its facts and no ranking or label', async () => {
     stubApi()
     render(<AidQueuePanel canEdit />)
-    const first = await screen.findByRole('listitem', { name: 'Student STU-0007' })
+    const first = await openRow('Student STU-0007')
     expect(within(first).getByText('$412.50, placed 2026-10-02, held by Bursar')).toBeTruthy()
     expect(within(first).getByText('not registered')).toBeTruthy()
     expect(within(first).getByText('completed, last appointment 2026-09-01')).toBeTruthy()
-    const second = screen.getByRole('listitem', { name: 'Student STU-0120' })
+    // One row open at a time: opening the second folds the first.
+    const second = await openRow('Student STU-0120')
     expect(within(second).getByText('none, no appointment on record')).toBeTruthy()
-    expect(screen.getByText(/2 students, demonstration data\. Open 1, In review 0, Closed 1/)).toBeTruthy()
+    expect(within(first).queryByText('not registered')).toBeNull()
+    expect(screen.getByText(/2 students, demonstration data: 1 open, 0 in review, 1 closed/)).toBeTruthy()
     const text = document.body.textContent ?? ''
     for (const word of ['eligible', 'ineligible', 'approve', 'deny', 'recommend', 'likely', 'score']) {
       expect(text.toLowerCase()).not.toContain(word)
@@ -140,7 +149,7 @@ describe('AidQueuePanel', () => {
   it('saves a status and a note exactly as typed, with the CSRF token', async () => {
     const { calls } = stubApi()
     render(<AidQueuePanel canEdit />)
-    const row = await screen.findByRole('listitem', { name: 'Student STU-0007' })
+    const row = await openRow('Student STU-0007')
     const save = within(row).getByRole('button', { name: 'Save' }) as HTMLButtonElement
     expect(save.disabled).toBe(true) // nothing changed yet
     fireEvent.change(within(row).getByLabelText('Status'), { target: { value: 'in_review' } })
@@ -164,18 +173,91 @@ describe('AidQueuePanel', () => {
   it('shows the API refusal on the row and keeps the typed note', async () => {
     stubApi(422)
     render(<AidQueuePanel canEdit />)
-    const row = await screen.findByRole('listitem', { name: 'Student STU-0007' })
+    const row = await openRow('Student STU-0007')
     fireEvent.change(within(row).getByLabelText('Note'), { target: { value: 'x' } })
     fireEvent.click(within(row).getByRole('button', { name: 'Save' }))
     const alert = await within(row).findByRole('alert')
-    expect(alert.textContent).toContain('the limit is 1,000')
+    // A technical server sentence never reaches the screen as is.
+    expect(alert.textContent).toBe("That didn't work. The review was not saved.")
     expect((within(row).getByLabelText('Note') as HTMLTextAreaElement).value).toBe('x')
+    // Editing again clears the error.
+    fireEvent.change(within(row).getByLabelText('Note'), { target: { value: 'xy' } })
+    expect(within(row).queryByRole('alert')).toBeNull()
+  })
+
+  it('says a network failure plainly, never "Failed to fetch"', async () => {
+    stubApi()
+    render(<AidQueuePanel canEdit />)
+    const row = await openRow('Student STU-0007')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch')
+      }),
+    )
+    fireEvent.change(within(row).getByLabelText('Note'), { target: { value: 'x' } })
+    fireEvent.click(within(row).getByRole('button', { name: 'Save' }))
+    const alert = await within(row).findByRole('alert')
+    expect(alert.textContent).toContain("We couldn't reach the Cabinet")
+    expect(alert.textContent).not.toContain('Failed to fetch')
+  })
+
+  it('moves focus to the Saved line after a save, never to the page', async () => {
+    stubApi()
+    render(<AidQueuePanel canEdit />)
+    const row = await openRow('Student STU-0007')
+    fireEvent.change(within(row).getByLabelText('Note'), { target: { value: 'Called.' } })
+    fireEvent.click(within(row).getByRole('button', { name: 'Save' }))
+    const saved = await within(row).findByText('Saved')
+    await waitFor(() => expect(document.activeElement).toBe(saved))
+  })
+
+  it('filters by status, with the count in each option', async () => {
+    stubApi()
+    render(<AidQueuePanel canEdit={false} />)
+    await screen.findByRole('listitem', { name: 'Student STU-0007' })
+    const show = screen.getByLabelText('Show') as HTMLSelectElement
+    expect([...show.options].map((option) => option.textContent)).toEqual([
+      'All (2)',
+      'Open (1)',
+      'In review (0)',
+      'Closed (1)',
+    ])
+    fireEvent.change(show, { target: { value: 'closed' } })
+    expect(screen.queryByRole('listitem', { name: 'Student STU-0007' })).toBeNull()
+    expect(screen.getByRole('listitem', { name: 'Student STU-0120' })).toBeTruthy()
+    fireEvent.change(show, { target: { value: 'in_review' } })
+    expect(screen.getByText(/No students with this status/)).toBeTruthy()
+  })
+
+  it('folds each student to one line: id, hold, status', async () => {
+    stubApi()
+    render(<AidQueuePanel canEdit />)
+    const row = await screen.findByRole('listitem', { name: 'Student STU-0007' })
+    const head = within(row).getByRole('button', { expanded: false })
+    expect(head.textContent).toContain('STU-0007')
+    expect(head.textContent).toContain('$412.50, Bursar')
+    expect(head.textContent).toContain('Open')
+    expect(within(row).queryByLabelText('Note')).toBeNull()
+  })
+
+  it('shows a failed load with Retry, never the empty text', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ detail: 'boom' }, 500)),
+    )
+    render(<AidQueuePanel canEdit />)
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain("Couldn't load the review queue")
+    expect(alert.textContent).toContain('Something went wrong on our side')
+    expect(within(alert).getByRole('button', { name: 'Retry' })).toBeTruthy()
+    expect(screen.queryByText(/No students are queued yet/)).toBeNull()
   })
 
   it('sends only the fields that changed, with the updated_at it opened', async () => {
     const { calls } = stubApi()
     render(<AidQueuePanel canEdit />)
-    const row = await screen.findByRole('listitem', { name: 'Student STU-0120' })
+    const row = await openRow('Student STU-0120')
     fireEvent.change(within(row).getByLabelText('Status'), { target: { value: 'in_review' } })
     fireEvent.click(within(row).getByRole('button', { name: 'Save' }))
     await within(row).findByText('Saved')
@@ -189,7 +271,7 @@ describe('AidQueuePanel', () => {
   it('counts characters as the server does, so an emoji counts once', async () => {
     const { calls } = stubApi()
     render(<AidQueuePanel canEdit />)
-    const row = await screen.findByRole('listitem', { name: 'Student STU-0007' })
+    const row = await openRow('Student STU-0007')
     const box = within(row).getByLabelText('Note') as HTMLTextAreaElement
     expect(within(row).getByText('0 of 1,000 characters')).toBeTruthy()
     // No maxLength: the browser counts UTF-16 units and would cut an emoji.
@@ -207,7 +289,7 @@ describe('AidQueuePanel', () => {
   it('refuses a note over 1,000 characters before sending it', async () => {
     const { calls } = stubApi()
     render(<AidQueuePanel canEdit />)
-    const row = await screen.findByRole('listitem', { name: 'Student STU-0007' })
+    const row = await openRow('Student STU-0007')
     fireEvent.change(within(row).getByLabelText('Note'), {
       target: { value: `${'a'.repeat(1000)}\u{1F600}` },
     })
@@ -272,7 +354,7 @@ describe('AidQueuePanel', () => {
       }),
     )
     render(<AidQueuePanel canEdit />)
-    const row = await screen.findByRole('listitem', { name: 'Student STU-0007' })
+    const row = await openRow('Student STU-0007')
     const box = within(row).getByLabelText('Note') as HTMLTextAreaElement
     fireEvent.change(box, { target: { value: 'My note.' } })
     fireEvent.click(within(row).getByRole('button', { name: 'Save' }))
@@ -308,8 +390,9 @@ describe('AidQueuePanel', () => {
   it('is read only without edit rights: no controls, the note as text', async () => {
     const { calls } = stubApi()
     render(<AidQueuePanel canEdit={false} />)
-    const row = await screen.findByRole('listitem', { name: 'Student STU-0120' })
-    expect(screen.queryByRole('combobox')).toBeNull()
+    const row = await openRow('Student STU-0120')
+    // The only select is the status filter; no row has a form.
+    expect(screen.queryAllByRole('combobox')).toHaveLength(1)
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
     expect(within(row).getByText('Paid at the window.')).toBeTruthy()
@@ -349,20 +432,23 @@ function notice(
 describe('AidQueueNotice gating', () => {
   it('shows the queued line and the open button once the queue exists', () => {
     const html = notice(QUEUED)
-    expect(html).toContain('Queued 18 students for Financial Aid review')
+    expect(html).toContain('Queued 18 students')
     expect(html).toContain('Open the review queue')
   })
 
   it('gives staff the line but no button, since staff cannot read the rows', () => {
     const html = notice(QUEUED, { canOpen: false })
-    expect(html).toContain('Queued 18 students for Financial Aid review')
+    expect(html).toContain('Queued 18 students')
     expect(html).not.toContain('Open the review queue')
   })
 
   it('offers to prepare the queue only after sign-off and only to roles that may', () => {
-    expect(notice(NOT_YET)).toContain('Prepare the Financial Aid review queue')
+    expect(notice(NOT_YET)).toContain('Prepare the review queue')
     expect(notice(NOT_YET, { authorized: false })).toBe('')
-    expect(notice(NOT_YET, { canPrepare: false })).toBe('')
+    // A role that may not prepare reads where it stands, with no button.
+    const readOnly = notice(NOT_YET, { canPrepare: false })
+    expect(readOnly).toContain('Not prepared yet')
+    expect(readOnly).not.toContain('<button')
   })
 
   it('renders nothing for a decision that opens no queue', () => {
@@ -413,7 +499,7 @@ describe('DecisionPanel with the queue block', () => {
 
   it('tells the executive how many students were queued, with a way in', () => {
     const html = panel('executive', true)
-    expect(html).toContain('Queued 18 students for Financial Aid review')
+    expect(html).toContain('Queued 18 students')
     expect(html).toContain('Open the review queue')
   })
 
@@ -462,9 +548,9 @@ describe('DecisionPanel with the queue block', () => {
       />,
     )
     // The earlier dataset's task is not shown: this dataset's decision is not approved yet.
-    expect(html).not.toContain('Follow-up task')
-    expect(html).not.toContain('Prepare the Financial Aid review queue')
-    expect(html).not.toContain('Prepare the message to Financial Aid')
+    expect(html).not.toContain('Next steps')
+    expect(html).not.toContain('Prepare the review queue')
+    expect(html).not.toContain('Prepare the message')
   })
 
   it('offers a first approval, not "Approve again", after a dataset switch', () => {
@@ -501,8 +587,9 @@ describe('DecisionPanel with the queue block', () => {
         onOpenEvidence={() => {}}
       />,
     )
-    expect(html).toContain('Approve the review')
+    expect(html).toContain('>Approve</button>')
     expect(html).not.toContain('Approve again')
+    expect(html).not.toContain('Approved by')
   })
 
   it('stays hidden when the caller passes no queue handlers', () => {

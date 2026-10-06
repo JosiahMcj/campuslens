@@ -1,16 +1,17 @@
 import type { Findings } from '../api'
 import { getFinding } from '../api'
+import { findingLabel } from '../findingLabels'
 import { findingDisplay } from '../states'
 import { FindingLink } from './FindingLink'
 
+/** The five headline figures. M9 (the counseling aggregate) is never a card. */
 const STAT_IDS = ['M1', 'M2', 'M3', 'M4', 'M8'] as const
 
 /**
  * The five headline measures, room-scale for the projector. Each figure IS
- * a FindingLink — it opens the evidence drawer — and shows the finding's
- * `display` string verbatim (no arithmetic in the UI) with tabular figures,
- * the finding's title beneath. They sit as a row of cards above the
- * document: one row across from 1200 px, two across below.
+ * a FindingLink (it opens the evidence) and shows the finding's `display`
+ * string verbatim (no arithmetic in the UI) with tabular figures, the
+ * figure's display label beneath.
  */
 export function StatRow({
   findings,
@@ -35,7 +36,7 @@ export function StatRow({
             <span className={display.missing ? 'stat-display missing' : 'stat-display'}>
               {display.text}
             </span>
-            <span className="stat-title">{finding.title}</span>
+            <span className="stat-title">{findingLabel(id, finding.title)}</span>
           </FindingLink>
         )
       })}

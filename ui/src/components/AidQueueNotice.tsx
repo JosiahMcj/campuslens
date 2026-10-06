@@ -1,4 +1,7 @@
+import { useRef } from 'react'
+
 import { queuedLine, type AidQueueSummary } from '../aid'
+import { plainSentence } from '../errors'
 
 /** What the decision panel tracks while a queue is being prepared. */
 export interface AidQueueUiState {
@@ -7,13 +10,13 @@ export interface AidQueueUiState {
 }
 
 /**
- * The Financial Aid review queue's line in the decision card. Before the
- * decision is signed off nothing shows. Once it is, a role that may prepare
- * the queue (staff, executive, admin) gets the button; once the queue
- * exists every role reads "Queued N students for Financial Aid review", and
- * a role that may read the rows gets a button that opens them. Staff can
- * prepare the queue but never read it, so they get the line without the
- * button.
+ * The Financial Aid review queue as one "Next steps" row in the decision
+ * card, shown once the decision is approved. A role that may prepare the
+ * queue (staff, executive, admin) gets Prepare; once the queue exists every
+ * role reads "Queued N students", and a role that may read the rows gets
+ * Open. Staff can prepare the queue but never read it, so they get the line
+ * without Open. While Prepare works the button stays focusable (aria-busy),
+ * and when the queue lands focus moves to the result line.
  */
 export function AidQueueNotice({
   summary,
@@ -30,37 +33,60 @@ export function AidQueueNotice({
   onPrepare: () => void
   onOpen: (() => void) | null
 }) {
-  if (summary === undefined || !summary.supported) return null
-  if (summary.count !== null) {
-    return (
-      <div className="aid-queued" role="status">
-        <p>{queuedLine(summary.count)}</p>
-        {onOpen !== null && (
-          <button type="button" className="dispatch-prepare" onClick={onOpen}>
-            Open the review queue
-          </button>
-        )}
-      </div>
-    )
-  }
-  if (!authorized || !canPrepare) return null
+  const focusResult = useRef(false)
+  if (summary === undefined || !summary.supported || !authorized) return null
+  const busy = state?.busy === true
+  const error =
+    state?.error != null
+      ? (plainSentence(state.error) ?? "That didn't work. The review queue was not prepared.")
+      : null
   return (
-    <>
-      <button
-        type="button"
-        className="dispatch-prepare"
-        disabled={state?.busy === true}
-        onClick={onPrepare}
-      >
-        {state?.busy === true
-          ? 'Preparing the review queue…'
-          : 'Prepare the Financial Aid review queue'}
-      </button>
-      {state?.error != null && (
+    <li className="next-step aid-queued">
+      <p className="next-step-head">
+        <strong className="next-step-name">Financial Aid review queue:</strong>{' '}
+        {summary.count !== null ? (
+          <span
+            className="next-step-status done"
+            tabIndex={-1}
+            ref={(element) => {
+              if (element !== null && focusResult.current) {
+                focusResult.current = false
+                element.focus()
+              }
+            }}
+          >
+            {queuedLine(summary.count).replace(' for Financial Aid review', '')}
+          </span>
+        ) : (
+          <span className="next-step-status">Not prepared yet</span>
+        )}
+      </p>
+      {summary.count !== null
+        ? onOpen !== null && (
+            <button type="button" className="btn-secondary secondary" onClick={onOpen}>
+              Open the review queue
+            </button>
+          )
+        : canPrepare && (
+            <button
+              type="button"
+              className="btn-secondary secondary"
+              aria-busy={busy}
+              onClick={() => {
+                if (busy) return
+                focusResult.current = true
+                onPrepare()
+              }}
+            >
+              {busy && <span className="spinner" aria-hidden="true" />}
+              {busy ? 'Preparing the review queue…' : 'Prepare the review queue'}
+            </button>
+          )}
+      {error !== null && (
         <p className="error-line" role="alert">
-          {state.error}
+          {error}
         </p>
       )}
-    </>
+    </li>
   )
 }

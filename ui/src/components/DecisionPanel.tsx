@@ -1,10 +1,12 @@
-import type { ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 
 import type { AuditEvent, Decision, DispatchInfo, SimulatedTask } from '../api'
 import type { Role } from '../auth'
-import { formatTimestamp, taskFromEvents, type TaskRecord } from '../states'
+import { plainSentence } from '../errors'
+import { formatTimestamp } from '../states'
 import { AidQueueNotice, type AidQueueUiState } from './AidQueueNotice'
 import { FindingLink } from './FindingLink'
+import { ApprovedIcon, ChevronIcon, SentIcon } from './icons'
 
 /** What the panel knows about one decision's dispatch: the API's dispatch
  * state, plus whether a Prepare or Send is in flight and its error. */
@@ -18,7 +20,7 @@ interface DecisionPanelProps {
   decisions: Decision[] | null
   events: AuditEvent[]
   /** False for staff and reviewer: the API refuses their approval (403), so
-   * the panel says who can approve instead of showing a button. */
+   * the panel says leadership approves instead of showing a button. */
   canApprove: boolean
   /** The signed-in user's role and address: composing is open to staff,
    * executive, and admin; sending is staff and admin only. */
@@ -36,14 +38,19 @@ interface DecisionPanelProps {
   onPrepareDispatch: (decisionId: string) => void
   onSendDispatch: (decisionId: string) => void
   onOpenEvidence: (findingId: string) => void
-  /** The Financial Aid review queue (optional: omitted, the block is
+  /** The Financial Aid review queue (optional: omitted, the row is
    * hidden). onOpenAidQueue is null for a role that may not read the rows. */
   aidQueues?: Record<string, AidQueueUiState>
   onPrepareAidQueue?: (decisionId: string) => void
   onOpenAidQueue?: (() => void) | null
+  /** The decisions could not be loaded: a plain sentence, shown with Retry
+   * instead of "Loading" forever. */
+  loadError?: string | null
+  onRetry?: () => void
 }
 
 const COMPOSE_ROLES: readonly Role[] = ['staff', 'executive', 'admin']
+const SEND_ROLES: readonly Role[] = ['staff', 'admin']
 
 /** Institution settings, scrolled to its Offices section. */
 const OFFICES_HREF = '/institution#inst-offices'
@@ -55,11 +62,17 @@ function openOfficesSettings(): void {
   window.history.pushState(null, '', OFFICES_HREF)
   window.dispatchEvent(new PopStateEvent('popstate'))
 }
-const SEND_ROLES: readonly Role[] = ['staff', 'admin']
+
+/** The approval facts the API may carry once it sends them (read defensively:
+ * today GET /decisions says only approved true or false). */
+interface ApprovalFacts {
+  approved_by?: unknown
+  approved_at?: unknown
+}
 
 /** The finding ids in the message body render as evidence links, exactly
  * like numbers in the briefing: the reader can check every figure before
- * anyone sends it. */
+ * anyone sends it. The text itself is the message as it will be sent. */
 function linkifiedBody(
   body: string,
   onOpenEvidence: (findingId: string) => void,
@@ -70,11 +83,7 @@ function linkifiedBody(
       <p key={lineIndex}>
         {parts.map((part, partIndex) =>
           /^M[1-7]$/.test(part) ? (
-            <FindingLink
-              key={partIndex}
-              findingId={part}
-              onOpen={onOpenEvidence}
-            >
+            <FindingLink key={partIndex} findingId={part} onOpen={onOpenEvidence}>
               {part}
             </FindingLink>
           ) : (
@@ -86,21 +95,43 @@ function linkifiedBody(
   })
 }
 
+/** The time of the latest approval of this decision in the audit log. */
+function approvalTime(events: AuditEvent[], decisionId: string): string | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event.type === 'decision.approved' && event.payload.decision_id === decisionId) {
+      return event.ts
+    }
+  }
+  return null
+}
+
+function text(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value : null
+}
+
+/** A busy button keeps focus (aria-busy, not disabled) and shows a spinner. */
+function BusyLabel({ busy, working, idle }: { busy: boolean; working: string; idle: string }) {
+  return (
+    <>
+      {busy && <span className="spinner" aria-hidden="true" />}
+      {busy ? working : idle}
+    </>
+  )
+}
+
 /**
- * The leadership decisions (Beat 5, PROPOSAL.md section 6), visually separate
- * from the operational actions. Approve calls POST /decisions/approve; the
- * follow-up task is recorded, and a second click shows the same task, not a
- * new one. A role the API would refuse (staff, reviewer) reads the decision
- * with "Only an executive can approve this" in place of the button; the
- * decision itself is never hidden.
- *
- * After approval, the dispatch block is the governed execution step: Prepare
- * composes the message to the responsible office in code (shown read-only,
- * finding links intact), and Send — visible only to staff and admin — sends
- * it through the configured provider. The executive sees the draft and the
- * note that a staff member sends it. Once sent, the block says who sent it,
- * when, and through which provider, and Send is gone: a sent message is never
- * resent.
+ * The leadership decision (Beat 5, PROPOSAL.md section 6). One line says who
+ * decides, the decision appears once, and Approve (gold) records the
+ * approval. Once approved, a gold "Approved by …" line replaces the button,
+ * and a short "Next steps" list follows: the message to the responsible
+ * office (Prepare, then To and Subject with the message behind "Show
+ * message", then Send behind an inline confirmation, staff and admin only)
+ * and the Financial Aid review queue (Prepare, then Open). Status words come
+ * from the dispatch state. A role that may not approve reads "Waiting for
+ * leadership approval", then "Approved by leadership". Focus never falls to
+ * the page while a button works: busy buttons stay focusable (aria-busy) and
+ * focus moves to the result line when it appears.
  */
 export function DecisionPanel({
   decisions,
@@ -121,9 +152,21 @@ export function DecisionPanel({
   aidQueues = {},
   onPrepareAidQueue,
   onOpenAidQueue = null,
+  loadError = null,
+  onRetry,
 }: DecisionPanelProps) {
   const canCompose = COMPOSE_ROLES.includes(role)
   const canSend = SEND_ROLES.includes(role)
+  const [confirmSend, setConfirmSend] = useState<string | null>(null)
+  // The result line that takes focus when it appears, e.g. "D-1:approved".
+  const pendingFocus = useRef<string | null>(null)
+  const focusWhen = (key: string, ready = true) => (element: HTMLElement | null) => {
+    if (element !== null && ready && pendingFocus.current === key) {
+      pendingFocus.current = null
+      element.focus()
+    }
+  }
+
   return (
     <section
       aria-labelledby={headingId ?? undefined}
@@ -131,188 +174,280 @@ export function DecisionPanel({
       className="decision-panel"
     >
       <h2 id={headingId ?? undefined}>{title}</h2>
-      <p className="panel-note">
-        This decision belongs to leadership. The cabinet advises, a person
-        decides. Approving records a <code>decision.approved</code> event and
-        creates one follow-up task. After approval, a named staff member can
-        send the office its message. Nothing is ever sent on its own.
-      </p>
-      {decisions === null && <p className="status-line">Loading the decision…</p>}
+      <p className="panel-note">The Cabinet advises. You decide. Nothing is sent on its own.</p>
+      {decisions === null &&
+        (loadError !== null ? (
+          <div className="state-error state-panel error-panel" role="alert">
+            <p>Couldn't load the decision. {loadError}</p>
+            {onRetry !== undefined && (
+              <button type="button" className="btn-secondary secondary" onClick={onRetry}>
+                Retry
+              </button>
+            )}
+          </div>
+        ) : (
+          <p className="status-line">Loading the decision…</p>
+        ))}
+      {decisions !== null && decisions.length === 0 && (
+        <p className="state-empty hint">
+          No leadership decision is waiting. Ask an approved question to get one.
+        </p>
+      )}
       {decisions?.map((decision) => {
-        const approved = approvedTasks[decision.id]
-        const recovered: TaskRecord | undefined = taskFromEvents(events, decision.id)
-        const task = approved?.task ?? recovered
         // Approval for the active dataset only (GET /decisions), the state the
-        // API acts on. An approval in the audit log from an earlier dataset
-        // still shows its task, but the button offers a first approval and
-        // no Prepare is offered (the API would answer 409).
-        const alreadyApproved = decision.approved
+        // API acts on.
+        const approved = decision.approved
+        const facts = decision as Decision & ApprovalFacts
+        const approvedHere = approvedTasks[decision.id]?.created === true
+        const approverName =
+          text(facts.approved_by) ?? (approvedHere && canApprove ? 'you' : null)
+        const approvedAt = text(facts.approved_at) ?? approvalTime(events, decision.id)
         const dispatchState = dispatches[decision.id]
         const dispatch = dispatchState?.info?.dispatch ?? null
         const officeContact = dispatchState?.info?.office_contact ?? null
+        const office = decision.follow_up.office
+        const composeBusy = dispatchState?.busy === 'compose'
+        const sendBusy = dispatchState?.busy === 'send'
+        const dispatchError =
+          dispatchState?.error != null
+            ? (plainSentence(dispatchState.error) ??
+              "That didn't work. The message was not saved.")
+            : null
+        const approveFailure =
+          approveError !== null
+            ? (plainSentence(approveError) ?? "That didn't work. The approval was not saved.")
+            : null
         return (
           <div key={decision.id} className="decision-card">
             <h3>{decision.title}</h3>
             <p>{decision.text}</p>
-            <p className="follow-up">
-              Follow-up on approval: {decision.follow_up.office}.{' '}
-              {decision.follow_up.description}
-            </p>
-            {canApprove ? (
-              <button
-                type="button"
-                className="approve-button"
-                disabled={approving}
-                onClick={() => onApprove(decision.id)}
-              >
-                {approving
-                  ? 'Approving the review…'
-                  : alreadyApproved
-                    ? 'Approve again (shows the same task)'
-                    : 'Approve the review'}
-              </button>
+
+            {!approved ? (
+              canApprove ? (
+                <button
+                  type="button"
+                  className="btn-approve approve-button"
+                  aria-busy={approving}
+                  onClick={() => {
+                    if (approving) return
+                    pendingFocus.current = `${decision.id}:approved`
+                    onApprove(decision.id)
+                  }}
+                >
+                  <BusyLabel busy={approving} working="Approving…" idle="Approve" />
+                </button>
+              ) : (
+                <p className="hint">Waiting for leadership approval.</p>
+              )
             ) : (
-              <p className="hint">Only an executive can approve this.</p>
-            )}
-            {approveError !== null && (
-              <p className="error-line" role="alert">
-                Approval failed: {approveError}
+              <p
+                className="approved-line"
+                role="status"
+                tabIndex={-1}
+                ref={focusWhen(`${decision.id}:approved`)}
+              >
+                <ApprovedIcon />{' '}
+                {canApprove
+                  ? `Approved by ${approverName ?? 'leadership'}`
+                  : 'Approved by leadership'}
+                {approvedAt !== null && ` at ${formatTimestamp(approvedAt)}`}.
               </p>
             )}
-            {task !== undefined && alreadyApproved && (
-              <div className="simulated-task" role="status">
-                <h4>Follow-up task</h4>
-                <dl>
-                  <dt>Task</dt>
-                  <dd>
-                    <code>{task.id}</code>
-                  </dd>
-                  <dt>Office</dt>
-                  <dd>{task.office}</dd>
-                  <dt>Description</dt>
-                  <dd>{task.description}</dd>
-                  <dt>Status</dt>
-                  <dd>
-                    <strong>{task.status}</strong>
-                  </dd>
-                </dl>
-                <p className="hint">
-                  {approved?.created === true
-                    ? 'Task created and recorded in the audit log.'
-                    : 'This decision was already approved. The same follow-up task is shown, and no duplicate was created.'}
-                </p>
-              </div>
+            {!approved && approveFailure !== null && (
+              <p className="error-line" role="alert">
+                {approveFailure}
+              </p>
             )}
-            {alreadyApproved && dispatch === null && canCompose && (
-              <button
-                type="button"
-                className="dispatch-prepare"
-                disabled={dispatchState?.busy === 'compose'}
-                onClick={() => onPrepareDispatch(decision.id)}
-              >
-                {dispatchState?.busy === 'compose'
-                  ? 'Preparing the message…'
-                  : `Prepare the message to ${decision.follow_up.office}`}
-              </button>
-            )}
-            {dispatch !== null && (
-              <div className="dispatch-draft">
-                <h4>
-                  {dispatch.status === 'sent'
-                    ? 'Message sent'
-                    : 'Message to the office, not yet sent'}
-                </h4>
-                <dl>
-                  <dt>To</dt>
-                  <dd>
-                    {dispatch.to_office}
-                    {officeContact !== null
-                      ? ` <${officeContact}>`
-                      : ' (no mailbox configured)'}
-                  </dd>
-                  <dt>Subject</dt>
-                  <dd>{dispatch.subject}</dd>
-                </dl>
-                <div className="dispatch-body">
-                  {linkifiedBody(dispatch.body, onOpenEvidence)}
-                </div>
-                {dispatch.status === 'sent' ? (
-                  <p className="dispatch-sent" role="status">
-                    Sent by {dispatch.sent_by} at{' '}
-                    {dispatch.sent_at !== null
-                      ? formatTimestamp(dispatch.sent_at)
-                      : 'an unknown time'}{' '}
-                    through {dispatch.provider}.
-                  </p>
-                ) : (
-                  <>
-                    {dispatch.status === 'failed' && (
-                      <p className="error-line" role="alert">
-                        The last send did not go through: {dispatch.error}
-                      </p>
-                    )}
-                    {officeContact === null &&
-                      (role === 'admin' ? (
-                        <p className="hint">
-                          No mailbox is configured for {dispatch.to_office}. Add
-                          one in{' '}
-                          <a
-                            href={OFFICES_HREF}
-                            onClick={(event) => {
-                              event.preventDefault()
-                              openOfficesSettings()
-                            }}
-                          >
-                            Institution settings, Offices
-                          </a>{' '}
-                          before anything can be sent.
-                        </p>
-                      ) : (
-                        <p className="hint">
-                          No mailbox is configured for {dispatch.to_office}. An
-                          administrator adds one in Institution settings,
-                          Offices, before anything can be sent.
-                        </p>
-                      ))}
-                    {canSend ? (
+
+            {approved && (
+              <div className="next-steps">
+                <h4>Next steps</h4>
+                <ol className="next-step-list">
+                  <li className="next-step">
+                    <p className="next-step-head">
+                      <strong className="next-step-name">Message to {office}:</strong>{' '}
+                      <span
+                        className={
+                          dispatch?.status === 'sent' ? 'next-step-status done' : 'next-step-status'
+                        }
+                        tabIndex={-1}
+                        ref={focusWhen(`${decision.id}:prepared`, dispatch !== null)}
+                      >
+                        {dispatch === null
+                          ? 'Not prepared yet'
+                          : dispatch.status === 'sent'
+                            ? 'Sent'
+                            : dispatch.status === 'failed'
+                              ? 'Not sent yet'
+                              : 'Prepared, not sent'}
+                      </span>
+                    </p>
+
+                    {dispatch === null && canCompose && (
                       <button
                         type="button"
-                        className="dispatch-send"
-                        disabled={dispatchState?.busy === 'send'}
-                        onClick={() => onSendDispatch(decision.id)}
+                        className="btn-secondary secondary"
+                        aria-busy={composeBusy}
+                        onClick={() => {
+                          if (composeBusy) return
+                          pendingFocus.current = `${decision.id}:prepared`
+                          onPrepareDispatch(decision.id)
+                        }}
                       >
-                        {dispatchState?.busy === 'send'
-                          ? 'Sending…'
-                          : `Send as ${userEmail}`}
+                        <BusyLabel
+                          busy={composeBusy}
+                          working="Preparing the message…"
+                          idle="Prepare the message"
+                        />
                       </button>
-                    ) : role === 'executive' ? (
-                      <p className="hint">
-                        A staff member sends this message. The executive
-                        approves. Sending is not the executive's step.
-                      </p>
-                    ) : (
-                      <p className="hint">
-                        Only staff and administrators can send this message.
+                    )}
+
+                    {dispatch !== null && (
+                      <div className="dispatch-draft">
+                        <dl className="kv">
+                            <dt>To</dt>
+                            <dd>
+                              {dispatch.to_office}
+                              {officeContact !== null
+                                ? `, ${officeContact}`
+                                : ' (no mailbox set up yet)'}
+                            </dd>
+                            <dt>Subject</dt>
+                            <dd>{dispatch.subject}</dd>
+                        </dl>
+                        <details className="fold technical-detail">
+                          <summary>
+                            <ChevronIcon />
+                            Show message
+                          </summary>
+                          <div className="dispatch-body">
+                            {linkifiedBody(dispatch.body, onOpenEvidence)}
+                          </div>
+                        </details>
+
+                        {dispatch.status === 'sent' ? (
+                          <p
+                            className="dispatch-sent"
+                            role="status"
+                            tabIndex={-1}
+                            ref={focusWhen(`${decision.id}:sent`)}
+                          >
+                            <SentIcon /> Sent by {dispatch.sent_by ?? 'a staff member'}
+                            {dispatch.sent_at !== null &&
+                              ` at ${formatTimestamp(dispatch.sent_at)}`}
+                            .
+                          </p>
+                        ) : (
+                          <>
+                            {dispatch.status === 'failed' && (
+                              <div className="error-line" role="alert">
+                                <p>The last send did not go through. Nothing was delivered.</p>
+                                {dispatch.error !== null && (
+                                  <details className="fold technical-detail">
+                                    <summary>
+                                      <ChevronIcon />
+                                      Technical detail
+                                    </summary>
+                                    <p>{dispatch.error}</p>
+                                  </details>
+                                )}
+                              </div>
+                            )}
+                            {officeContact === null &&
+                              (role === 'admin' ? (
+                                <p className="hint">
+                                  {dispatch.to_office} has no mailbox yet. Add one in{' '}
+                                  <a
+                                    href={OFFICES_HREF}
+                                    onClick={(event) => {
+                                      event.preventDefault()
+                                      openOfficesSettings()
+                                    }}
+                                  >
+                                    Institution settings, Offices
+                                  </a>{' '}
+                                  before it can be sent.
+                                </p>
+                              ) : (
+                                <p className="hint">
+                                  {dispatch.to_office} has no mailbox yet. An administrator
+                                  adds one in Institution settings before it can be sent.
+                                </p>
+                              ))}
+                            {canSend && officeContact !== null ? (
+                              confirmSend === decision.id ? (
+                                <div
+                                  className="confirm-inline"
+                                  role="alertdialog"
+                                  aria-label="Confirm sending"
+                                  tabIndex={-1}
+                                  ref={focusWhen(`${decision.id}:confirm`)}
+                                >
+                                  <p>
+                                    Send to {dispatch.to_office} at {officeContact}? It goes
+                                    from {userEmail}.
+                                  </p>
+                                  <div className="confirm-actions">
+                                    <button
+                                      type="button"
+                                      className="btn-primary primary-button"
+                                      aria-busy={sendBusy}
+                                      onClick={() => {
+                                        if (sendBusy) return
+                                        pendingFocus.current = `${decision.id}:sent`
+                                        onSendDispatch(decision.id)
+                                      }}
+                                    >
+                                      <BusyLabel busy={sendBusy} working="Sending…" idle="Send" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn-secondary secondary"
+                                      onClick={() => setConfirmSend(null)}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="btn-primary primary-button dispatch-send"
+                                  onClick={() => {
+                                    pendingFocus.current = `${decision.id}:confirm`
+                                    setConfirmSend(decision.id)
+                                  }}
+                                >
+                                  Send…
+                                </button>
+                              )
+                            ) : (
+                              !canSend && (
+                                <p className="hint">A staff member sends this message.</p>
+                              )
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                    {dispatchError !== null && (
+                      <p className="error-line" role="alert">
+                        {dispatchError}
                       </p>
                     )}
-                  </>
-                )}
-                {dispatchState?.error != null && (
-                  <p className="error-line" role="alert">
-                    {dispatchState.error}
-                  </p>
-                )}
+                  </li>
+                  {onPrepareAidQueue !== undefined && (
+                    <AidQueueNotice
+                      summary={dispatchState?.info?.aid_queue}
+                      authorized={approved}
+                      canPrepare={canCompose}
+                      state={aidQueues[decision.id]}
+                      onPrepare={() => onPrepareAidQueue(decision.id)}
+                      onOpen={onOpenAidQueue}
+                    />
+                  )}
+                </ol>
               </div>
-            )}
-            {onPrepareAidQueue !== undefined && (
-              <AidQueueNotice
-                summary={dispatchState?.info?.aid_queue}
-                authorized={alreadyApproved}
-                canPrepare={canCompose}
-                state={aidQueues[decision.id]}
-                onPrepare={() => onPrepareAidQueue(decision.id)}
-                onOpen={onOpenAidQueue}
-              />
             )}
           </div>
         )

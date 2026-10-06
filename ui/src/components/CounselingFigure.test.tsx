@@ -94,7 +94,7 @@ describe('M9 in briefing section 3', () => {
   it('is absent when the briefing does not carry it', () => {
     const html = briefing(findings())
     expect(html).not.toContain('counseling')
-    expect(html).not.toContain('Open the evidence for finding M9')
+    expect(html).not.toContain('open the evidence: Students not yet registered who have had counseling contact (aggregate)')
   })
 
   it('never borrows the current findings: a Q2 or older briefing shows no M9', () => {
@@ -102,39 +102,44 @@ describe('M9 in briefing section 3', () => {
     // briefing on screen was not produced with it.
     const html = briefing(findings({ M9: m9(true) }), null)
     expect(html).not.toContain('counseling')
-    expect(html).not.toContain('Open the evidence for finding M9')
+    expect(html).not.toContain('open the evidence: Students not yet registered who have had counseling contact (aggregate)')
   })
 
   it('says a withheld count plainly, with the authorization as its source', () => {
     const html = briefing(findings(), m9(true))
     const section3 = html.slice(html.indexOf('id="s-groups"'), html.indexOf('id="s-evidence"'))
     expect(section3).toContain(
-      'Source: aggregate, authorized by Dr. Example, Director of Counseling',
+      '>Aggregate, authorized by Dr. Example, Director of Counseling</p>',
     )
-    expect(section3).toContain('Open the evidence for finding M9')
+    expect(section3).toContain('open the evidence: Students not yet registered who have had counseling contact (aggregate)')
     expect(section3).toContain('fewer than 10')
     expect(section3).toContain('The count is withheld below 10 so no one can be identified.')
   })
 
   it('shows the number when it is at or above the minimum group size', () => {
     const html = briefing(findings(), m9(false))
-    expect(html).toContain('Open the evidence for finding M9')
+    expect(html).toContain('open the evidence: Students not yet registered who have had counseling contact (aggregate)')
     expect(html).toMatch(/<span class="num">12<\/span>/)
+    // The M9 line says "Of those students" style plain words, no code.
+    expect(html).not.toMatch(/\bM9\b/)
     expect(html).not.toContain('withheld')
   })
 
   it('lists M9 in section 4 as an authorized aggregate with no rows', () => {
     const html = briefing(findings(), m9(true))
     const section4 = html.slice(html.indexOf('id="s-evidence"'), html.indexOf('5. Operational'))
-    expect(section4).toContain('<span class="finding-row-id">M9</span>')
     expect(section4).toContain(
-      'aggregate, authorized by Dr. Example, Director of Counseling. No rows are shown for this figure.',
+      'Students not yet registered who have had counseling contact (aggregate)',
     )
+    expect(section4).toContain(
+      'Aggregate, authorized by Dr. Example, Director of Counseling. No list of students is shown for this figure.',
+    )
+    expect(section4).not.toMatch(/\bM[1-9]\b/)
     expect(section4).toContain('fewer than 10')
     expect(section4).not.toContain('STU-')
     // Without the briefing's copy, section 4 stays at M1 to M8.
     const without = briefing(findings({ M9: m9(true) }), null)
-    expect(without.slice(without.indexOf('id="s-evidence"'))).not.toContain('>M9<')
+    expect(without.slice(without.indexOf('id="s-evidence"'))).not.toContain('counseling contact')
   })
 
   it('never adds M9 to the stat rail', () => {
@@ -152,11 +157,19 @@ describe('M9 in the evidence drawer', () => {
     )
     expect(html).toContain('Fewer than 10 students')
     expect(html).toContain('The count is withheld below 10 so no one can be identified.')
-    expect(html).toContain('Authorized by Dr. Example, Director of Counseling')
-    expect(html).toContain('Document: memo 2026-09-26')
-    expect(html).toContain('Recorded by admin@example.edu')
-    expect(html).toContain('counseling.chaplain_contact')
-    expect(html).toContain('No rows are shown for this figure.')
+    // The panel is titled with the display label, never the code.
+    expect(html).toContain(
+      '<h2>Students not yet registered who have had counseling contact (aggregate)</h2>',
+    )
+    expect(html).toContain('<dt>Authorized by</dt><dd>Dr. Example, Director of Counseling</dd>')
+    expect(html).toContain('<dt>Document</dt><dd>memo 2026-09-26</dd>')
+    expect(html).toContain('<dt>Recorded by</dt><dd>admin@example.edu')
+    // Plain field names under "How it is computed"; raw names only in the
+    // Technical detail fold inside it.
+    expect(html).toContain('<li>Chaplain contact</li>')
+    expect(html).toMatch(/Technical detail(?:(?!<\/details>).)*counseling\.chaplain_contact/s)
+    expect(html).toContain('No records are shown for this figure.')
+    expect(html).not.toContain('Show the records')
     expect(html).not.toContain('row-list')
     expect(html).not.toContain('STU-')
     expect(html).not.toContain('data/VERIFY.md lists them')
@@ -165,9 +178,12 @@ describe('M9 in the evidence drawer', () => {
   it('keeps the row list for every other finding', () => {
     const m2 = { ...finding('M2', 'Continuing students not yet registered', '42'), row_ids: ['STU-0120'] }
     const html = renderToStaticMarkup(<EvidenceDrawer finding={m2} fictional onClose={() => {}} />)
-    expect(html).toContain('STU-0120')
-    expect(html).not.toContain('No rows are shown for this figure.')
-    expect(html).not.toContain('Authorization')
+    expect(html).toMatch(/Show the records \(1\)(?:(?!<\/details>).)*STU-0120/s)
+    expect(html).not.toContain('No records are shown for this figure.')
+    expect(html).not.toContain('Authorized by')
+    // Plain definition first; no set notation outside the Technical detail.
+    expect(html).toContain('Students who are eligible to continue but have not registered')
+    expect(html).not.toContain('data/VERIFY.md')
   })
 })
 

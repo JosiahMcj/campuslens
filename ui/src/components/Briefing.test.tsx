@@ -1,0 +1,139 @@
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it } from 'vitest'
+
+import type { Decision, Finding, Findings } from '../api'
+import type { ModelSection } from '../states'
+import { BriefingSections, DecisionSection, Limitations } from './Briefing'
+
+function finding(id: string, display: string, extra: Partial<Finding> = {}): Finding {
+  return {
+    id,
+    title: `Backend title ${id}`,
+    value: 0,
+    display,
+    reason: null,
+    comparison: null,
+    source_fields: ['enrollment.registration_status'],
+    row_ids: [],
+    definition: 'x',
+    ...extra,
+  }
+}
+
+const FINDINGS = {
+  meta: { as_of: '2026-11-20', fixture: 'test', terms: {} },
+  M1: finding('M1', '−4.8 %', {
+    comparison: { prior_year_registered_continuing: 125, prior_year_equivalent_date: '2025-11-20' },
+  }),
+  M2: finding('M2', '42'),
+  M3: finding('M3', '18', { comparison: { threshold_usd: 1000 } }),
+  M4: finding('M4', '12'),
+  M5: { ...finding('M5', '28 unresolved holds'), value: [{ office: 'Bursar', count: 24, hold_row_ids: [] }] },
+  M6: finding('M6', '28'),
+  M7: finding('M7', '−2.7 %', {
+    comparison: { prior_year_registered_credit_hours: 1872, prior_year_equivalent_date: '2025-11-20' },
+  }),
+  M8: finding('M8', '22'),
+} as unknown as Findings
+
+const PROVENANCE = { source: 'chief', provider: 'chat', model_label: 'live model', recorded: true }
+
+const CHIEF: ModelSection = {
+  kind: 'available',
+  text: 'raw [M1]',
+  provenance: PROVENANCE,
+  claims: [
+    {
+      text: 'Spring registration among continuing students is down 4.8% versus the same point last year',
+      finding_ids: ['M1'],
+    },
+  ],
+}
+
+function full(onOpenStaffActions?: () => void): string {
+  return renderToStaticMarkup(
+    <BriefingSections
+      findings={FINDINGS}
+      fictional
+      enrollment={CHIEF}
+      studentSuccess={null}
+      chiefSummary={CHIEF}
+      onCheckAgain={null}
+      onOpenEvidence={() => {}}
+      onOpenStaffActions={onOpenStaffActions}
+    />,
+  )
+}
+
+describe('the full briefing', () => {
+  it('never shows a bracketed finding code; the number itself is the link', () => {
+    const html = full()
+    expect(html).not.toMatch(/\[M\d\]/)
+    expect(html).toMatch(/<button[^>]*class="finding-link"[^>]*><span class="num">4\.8%<\/span>/)
+  })
+
+  it('names the writer in one line and moves the replay fact into "About this answer"', () => {
+    const html = full()
+    expect(html).toContain('>Written by the Chief of Staff</p>')
+    expect(html).not.toContain('(recorded live run)')
+    expect(html).toMatch(/About this answer(?:(?!<\/details>).)*recorded live run of the Cabinet/s)
+  })
+
+  it('section 2 adds the comparison table and folds the analyst text', () => {
+    const html = full()
+    const s2 = html.slice(html.indexOf('id="s-measure"'), html.indexOf('id="s-groups"'))
+    expect(s2).toContain('125 students (2025-11-20)')
+    expect(s2).toContain('1,872 credit hours (2025-11-20)')
+    expect(s2).toMatch(/<details[^>]*>.*Show the Enrollment Analyst&#x27;s explanation/s)
+  })
+
+  it('section 4 lists figures by display label and plain field names', () => {
+    const html = full()
+    const s4 = html.slice(html.indexOf('id="s-evidence"'))
+    expect(s4).toContain('Not yet registered, with a hold under $1,000')
+    expect(s4).toContain('Reads: Registration status')
+    expect(s4).not.toContain('enrollment.registration_status')
+    expect(s4).not.toContain('Backend title')
+  })
+
+  it('section 5 links to Staff actions instead of repeating them', () => {
+    const linked = full(() => {})
+    const s5 = linked.slice(linked.indexOf('id="s-actions"'))
+    expect(s5).toContain('Open Staff actions')
+    expect(s5).not.toContain('Bursar')
+    expect(full()).toContain('They are listed under Staff actions in the sidebar.')
+  })
+})
+
+describe('sections 6 and 7', () => {
+  const decision: Decision = {
+    id: 'D-1',
+    title: 'Emergency-aid review',
+    text: 'Authorize the review.',
+    follow_up: { office: 'Financial Aid', description: 'x' },
+    approved: false,
+  }
+
+  it('section 6 shows the decision title, its status, and one way to it', () => {
+    const waiting = renderToStaticMarkup(
+      <DecisionSection decisions={[decision]} onOpenDecision={() => {}} />,
+    )
+    expect(waiting).toContain('Emergency-aid review')
+    expect(waiting).toContain('Waiting for leadership approval.')
+    expect(waiting).toContain('Open the decision')
+    expect(waiting).not.toContain('in the conversation')
+    const approved = renderToStaticMarkup(
+      <DecisionSection decisions={[{ ...decision, approved: true }]} onOpenDecision={() => {}} />,
+    )
+    expect(approved).toContain('Approved.')
+  })
+
+  it('section 7 is folded and names figures by label', () => {
+    const html = renderToStaticMarkup(
+      <Limitations findings={FINDINGS} fictional chiefLimitations={null} onOpenEvidence={() => {}} />,
+    )
+    expect(html).toMatch(/<details[^>]*>.*Show the known limitations/s)
+    expect(html).toContain('Registered credit hours vs. last year is an optional measure.')
+    expect(html).not.toMatch(/\bM7\b/)
+  })
+})

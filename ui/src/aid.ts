@@ -103,7 +103,7 @@ async function failure(response: Response, fallback: string): Promise<ApiError> 
 export async function fetchAidQueue(): Promise<AidQueue> {
   const response = await apiFetch('/aid-queue')
   if (!response.ok) {
-    throw await failure(response, `The review queue could not be loaded (HTTP ${response.status}).`)
+    throw await failure(response, 'The review queue could not be loaded.')
   }
   return (await response.json()) as AidQueue
 }
@@ -128,7 +128,7 @@ export async function patchAidReview(
     body: JSON.stringify(change),
   })
   if (!response.ok) {
-    throw await failure(response, `The row could not be saved (HTTP ${response.status}).`)
+    throw await failure(response, 'The review could not be saved.')
   }
   const body = (await response.json()) as { row: AidReviewRow }
   return body.row
@@ -146,7 +146,7 @@ export async function postAidQueue(
   if (!response.ok) {
     throw await failure(
       response,
-      `The review queue could not be prepared (HTTP ${response.status}).`,
+      'The review queue could not be prepared.',
     )
   }
   return (await response.json()) as { count: number; created: boolean }
