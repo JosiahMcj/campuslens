@@ -59,8 +59,11 @@ Endpoints:
   executive, reviewer).
 - ``PATCH /aid-queue/{id}`` — a person in the aid role (or an admin) sets a
   row's status (open, in_review, closed) and note (free text, at most 1,000
-  characters, stored as typed, never sent to a model). Logs ``aid.updated``
-  with the acting user.
+  characters, stored as typed, never sent to a model). Rows of the active
+  dataset only. ``expected_updated_at`` (the row's updated_at as read) is
+  required (422 without it), and a save against a row that changed since it
+  was opened is a 409. Logs ``aid.updated`` with the acting
+  user, the row id, and the status transition, never the student id.
 - ``GET  /admin/offices`` / ``PUT /admin/offices`` (admin role) — the
   institution's office address book, the only source of dispatch
   recipients. Offices, never student addresses.
@@ -215,7 +218,7 @@ from cabinet.security import (
     CabinetSecurityMiddleware,
     LoginLockout,
 )
-from cabinet.store import CabinetStore, StoreError
+from cabinet.store import AidReviewConflict, CabinetStore, StoreError
 from cabinet.webui import ApiPrefixMiddleware, SpaStaticFiles, ui_dist_from_env
 
 ENV_FIXTURE = "CABINET_FIXTURE"
@@ -274,10 +277,38 @@ class OfficesPutRequest(BaseModel):
 
 class AidReviewPatchRequest(BaseModel):
     """A person's update to one Financial Aid review row. Either field may
-    be omitted (left unchanged); the note is stored exactly as typed."""
+    be omitted (left unchanged); the note is stored exactly as typed.
+
+    ``expected_updated_at`` is required: the row's ``updated_at`` as the
+    person opened it (null for a row nobody has saved yet). A save without it
+    is a 422, and a save against a row that changed since is a 409, so no
+    one overwrites work they have not seen."""
 
     status: str | None = None
     note: str | None = None
+    expected_updated_at: str | None = None
+
+
+# SQLite stores integers as signed 64-bit values. A path id outside that
+# range cannot name a row, and binding it raises OverflowError (a 500).
+SQLITE_MAX_ROW_ID = 2**63 - 1
+
+AID_REVIEW_MISSING_VERSION_MESSAGE = (
+    "Reload the row and send its updated_at as expected_updated_at "
+    "(null for a row nobody has saved yet)."
+)
+
+AID_REVIEW_STALE_MESSAGE = (
+    "This row changed since you opened it. Reload to see the latest."
+)
+
+
+def require_row_id(value: int, detail: str) -> int:
+    """The path id when it can name a row, otherwise a 404 with ``detail``
+    (the same answer as an id that names no row)."""
+    if not 1 <= value <= SQLITE_MAX_ROW_ID:
+        raise HTTPException(status_code=404, detail=detail)
+    return value
 
 
 # Office mailboxes: a deliberately simple shape check (local@domain.tld).
@@ -1790,12 +1821,17 @@ def create_app(
         note. The note is stored exactly as typed, capped at 1,000
         characters, never interpreted and never shown to a model. One
         aid.updated event per change, naming the acting user; the note text
-        stays out of the audit payload."""
+        and the student id stay out of the audit payload. Only rows of the
+        active dataset are editable (404 otherwise). Every save carries
+        ``expected_updated_at`` (422 without it) and is refused with 409 when
+        the row changed since the person opened it."""
         institution_id = request_institution(request)
         user = request.scope["cabinet_user"]
         errors: list[str] = []
         if body.status is None and body.note is None:
             errors.append("send a status, a note, or both")
+        if "expected_updated_at" not in body.model_fields_set:
+            errors.append(AID_REVIEW_MISSING_VERSION_MESSAGE)
         if body.status is not None and body.status not in AID_STATUSES:
             errors.append(
                 f"status {body.status!r} is not one of {', '.join(AID_STATUSES)}"
@@ -1810,31 +1846,39 @@ def create_app(
                 status_code=422,
                 content={"detail": "; ".join(errors), "errors": errors},
             )
-        before = store.aid_review_by_id(institution_id, review_id)
-        if before is None:
-            raise HTTPException(
-                status_code=404, detail=f"no Financial Aid review row {review_id}"
+        not_found = f"no Financial Aid review row {review_id}"
+        require_row_id(review_id, not_found)
+        try:
+            change = store.update_aid_review(
+                institution_id,
+                review_id,
+                status=body.status,
+                note=body.note,
+                updated_by=str(user["email"]),
+                expected_updated_at=body.expected_updated_at,
             )
-        updated = store.update_aid_review(
-            institution_id,
-            review_id,
-            status=body.status,
-            note=body.note,
-            updated_by=str(user["email"]),
-        )
-        assert updated is not None  # the row was just read in this institution
+        except AidReviewConflict as conflict:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "detail": AID_REVIEW_STALE_MESSAGE,
+                    "row": aid_review_body(conflict.current),
+                },
+            )
+        if change is None:
+            # Not in this institution, or not in its active dataset.
+            raise HTTPException(status_code=404, detail=not_found)
+        before, updated = change
         event = store.audit_append(
             institution_id,
             "aid.updated",
             actor=str(user["email"]),
             payload={
                 "aid_review_id": review_id,
-                "student_id": updated["student_id"],
                 "decision_id": updated["decision_id"],
                 "status_from": before["status"],
                 "status_to": updated["status"],
-                "note_changed": body.note is not None
-                and body.note != before["note"],
+                "note_changed": updated["note"] != before["note"],
             },
         )
         return JSONResponse(
@@ -2008,6 +2052,7 @@ def create_app(
         """Make one of the institution's datasets active: the findings,
         briefings, decisions, and caches recompute from it on the next
         request. The previously active dataset stays until deleted."""
+        require_row_id(dataset_id, f"unknown dataset id {dataset_id}")
         institution_id = request_institution(request)
         user = request.scope["cabinet_user"]
         dataset = store.dataset_row(institution_id, dataset_id)
@@ -2037,6 +2082,7 @@ def create_app(
         """Soft-delete a dataset. The row stays for the retention window
         (30 days; ``make purge-deleted`` hard-deletes after it); the active
         dataset cannot be deleted — activate another first."""
+        require_row_id(dataset_id, f"unknown dataset id {dataset_id}")
         institution_id = request_institution(request)
         user = request.scope["cabinet_user"]
         dataset = store.dataset_row(institution_id, dataset_id)
@@ -2153,6 +2199,7 @@ def create_app(
         and no new audit event. An admin cannot disable their own account,
         and the institution's last enabled admin cannot be disabled — both
         are 409."""
+        require_row_id(user_id, f"unknown user id {user_id}")
         institution_id = request_institution(request)
         admin = request.scope["cabinet_user"]
         target = store.user_in_institution(institution_id, user_id)
@@ -2208,6 +2255,7 @@ def create_app(
         """Change one user's role. Idempotent (the current role answers 200
         with changed=false); the institution's last enabled admin cannot be
         demoted — 409."""
+        require_row_id(user_id, f"unknown user id {user_id}")
         institution_id = request_institution(request)
         admin = request.scope["cabinet_user"]
         if body.role not in USER_ROLES:

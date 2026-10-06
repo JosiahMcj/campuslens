@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 
+import { ApiError } from '../auth'
 import {
   AID_NOTE_MAX_CHARS,
+  AID_ROW_CHANGED_MESSAGE,
   AID_STATUSES,
   aidStatusLabel,
   fetchAidQueue,
   formatAmount,
+  noteLength,
   patchAidReview,
   plainValue,
   type AidQueue,
+  type AidReviewChange,
   type AidReviewRow,
   type AidStatus,
 } from '../aid'
@@ -49,33 +53,73 @@ function RowFacts({ row }: { row: AidReviewRow }) {
   )
 }
 
-/** One row the aid office can edit: a status and a note, saved together. */
+/**
+ * One row the aid office can edit: a status and a note. A save sends only
+ * the fields that changed, with the row's updated_at as it was opened. When
+ * someone else saved the row in the meantime the API refuses (409): the row
+ * reloads and shows the saved version under the box, while the person's own
+ * edits stay in place to compare and save again. A field they did not touch
+ * takes the saved value, so a second save never undoes someone else's change.
+ */
 function EditableRow({
   row,
   onSaved,
+  onStale,
 }: {
   row: AidReviewRow
   onSaved: (row: AidReviewRow) => void
+  /** Reload this row from the API. Resolves to the fresh row, or null when
+   * it could not be read. */
+  onStale: (id: number) => Promise<AidReviewRow | null>
 }) {
   const [status, setStatus] = useState<AidStatus>(row.status)
   const [note, setNote] = useState(row.note)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  // The row as saved by someone else, after a refused (409) save.
+  const [savedVersion, setSavedVersion] = useState<AidReviewRow | null>(null)
   const changed = status !== row.status || note !== row.note
+  const length = noteLength(note)
+  const over = length - AID_NOTE_MAX_CHARS
   const noteId = `aid-note-${row.id}`
+  const countId = `aid-note-count-${row.id}`
+  const overId = `aid-note-over-${row.id}`
   const statusId = `aid-status-${row.id}`
+  const savedVersionId = `aid-saved-version-${row.id}`
+  const describedBy = [
+    countId,
+    ...(over > 0 ? [overId] : []),
+    ...(savedVersion !== null ? [savedVersionId] : []),
+  ].join(' ')
 
   const save = async () => {
+    if (!changed || over > 0) return
+    const change: AidReviewChange = { expected_updated_at: row.updated_at }
+    if (status !== row.status) change.status = status
+    if (note !== row.note) change.note = note
     setSaving(true)
     setError(null)
     setSaved(false)
     try {
-      const updated = await patchAidReview(row.id, { status, note })
+      const updated = await patchAidReview(row.id, change)
       onSaved(updated)
+      setSavedVersion(null)
       setSaved(true)
     } catch (caught) {
-      setError(errorMessage(caught))
+      if (caught instanceof ApiError && caught.status === 409) {
+        setError(AID_ROW_CHANGED_MESSAGE)
+        // `row` here is the version this save was based on: a field equal to
+        // it is one the person did not edit, so it follows the saved value.
+        const fresh = await onStale(row.id)
+        if (fresh !== null) {
+          setSavedVersion(fresh)
+          if (status === row.status) setStatus(fresh.status)
+          if (note === row.note) setNote(fresh.note)
+        }
+      } else {
+        setError(errorMessage(caught))
+      }
     } finally {
       setSaving(false)
     }
@@ -105,22 +149,41 @@ function EditableRow({
         ))}
       </select>
       <label htmlFor={noteId}>Note</label>
+      {/* No maxLength: the browser counts UTF-16 units and would cut an
+          emoji in half. The count below is the API's own (characters). */}
       <textarea
         id={noteId}
         value={note}
-        maxLength={AID_NOTE_MAX_CHARS}
         rows={3}
+        aria-describedby={describedBy}
+        aria-invalid={over > 0}
         onChange={(event) => {
           setNote(event.target.value)
           setSaved(false)
         }}
       />
-      <p className="aid-count">
-        {note.length.toLocaleString('en-US')} of{' '}
+      <p className="aid-count" id={countId}>
+        {length.toLocaleString('en-US')} of{' '}
         {AID_NOTE_MAX_CHARS.toLocaleString('en-US')} characters
       </p>
+      {over > 0 && (
+        <p className="field-error" id={overId}>
+          {over.toLocaleString('en-US')} character{over === 1 ? '' : 's'} over the
+          limit. Shorten the note to save it.
+        </p>
+      )}
+      {savedVersion !== null && (
+        <p className="hint aid-saved-version" id={savedVersionId}>
+          Saved version: {aidStatusLabel(savedVersion.status)}.{' '}
+          {savedVersion.note !== '' ? `Note: ${savedVersion.note}` : 'No note.'}
+        </p>
+      )}
       <div className="aid-edit-actions">
-        <button type="submit" className="dispatch-prepare" disabled={!changed || saving}>
+        <button
+          type="submit"
+          className="dispatch-prepare"
+          disabled={!changed || saving || over > 0}
+        >
           {saving ? 'Saving…' : 'Save'}
         </button>
         {saved && !changed && (
@@ -162,6 +225,17 @@ export function AidQueuePanel({ canEdit }: { canEdit: boolean }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load()
   }, [load])
+
+  /** Read the queue again and replace one row with the API's copy. */
+  const reloadRow = async (id: number): Promise<AidReviewRow | null> => {
+    try {
+      const fresh = (await fetchAidQueue()).rows.find((row) => row.id === id) ?? null
+      if (fresh !== null) replaceRow(fresh)
+      return fresh
+    } catch {
+      return null
+    }
+  }
 
   const replaceRow = (updated: AidReviewRow) =>
     setState((previous) =>
@@ -234,7 +308,7 @@ export function AidQueuePanel({ canEdit }: { canEdit: boolean }) {
                 </div>
                 <RowFacts row={row} />
                 {canEdit ? (
-                  <EditableRow row={row} onSaved={replaceRow} />
+                  <EditableRow row={row} onSaved={replaceRow} onStale={reloadRow} />
                 ) : (
                   <p className="aid-note-read">
                     {row.note !== '' ? row.note : 'No note yet.'}

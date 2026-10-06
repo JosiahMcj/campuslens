@@ -153,7 +153,7 @@ describe('AidQueuePanel', () => {
     expect(patch).toEqual({
       url: '/api/aid-queue/1',
       method: 'PATCH',
-      body: { status: 'in_review', note },
+      body: { status: 'in_review', note, expected_updated_at: null },
       csrf: 'csrf-token-1',
     })
     expect(row.querySelector('.aid-status')?.textContent).toBe('In review')
@@ -172,12 +172,137 @@ describe('AidQueuePanel', () => {
     expect((within(row).getByLabelText('Note') as HTMLTextAreaElement).value).toBe('x')
   })
 
-  it('caps the note box at 1,000 characters', async () => {
-    stubApi()
+  it('sends only the fields that changed, with the updated_at it opened', async () => {
+    const { calls } = stubApi()
+    render(<AidQueuePanel canEdit />)
+    const row = await screen.findByRole('listitem', { name: 'Student STU-0120' })
+    fireEvent.change(within(row).getByLabelText('Status'), { target: { value: 'in_review' } })
+    fireEvent.click(within(row).getByRole('button', { name: 'Save' }))
+    await within(row).findByText('Saved')
+    const patch = calls.find((call) => call.method === 'PATCH')
+    expect(patch?.body).toEqual({
+      status: 'in_review',
+      expected_updated_at: '2026-10-05T13:00:00+00:00',
+    })
+  })
+
+  it('counts characters as the server does, so an emoji counts once', async () => {
+    const { calls } = stubApi()
     render(<AidQueuePanel canEdit />)
     const row = await screen.findByRole('listitem', { name: 'Student STU-0007' })
-    expect((within(row).getByLabelText('Note') as HTMLTextAreaElement).maxLength).toBe(1000)
+    const box = within(row).getByLabelText('Note') as HTMLTextAreaElement
     expect(within(row).getByText('0 of 1,000 characters')).toBeTruthy()
+    // No maxLength: the browser counts UTF-16 units and would cut an emoji.
+    expect(box.hasAttribute('maxlength')).toBe(false)
+    const atCap = `${'a'.repeat(998)}\u{1F600}\u{1F600}`
+    fireEvent.change(box, { target: { value: atCap } })
+    expect(within(row).getByText('1,000 of 1,000 characters')).toBeTruthy()
+    const save = within(row).getByRole('button', { name: 'Save' }) as HTMLButtonElement
+    expect(save.disabled).toBe(false)
+    fireEvent.click(save)
+    await within(row).findByText('Saved')
+    expect(calls.find((call) => call.method === 'PATCH')?.body).toMatchObject({ note: atCap })
+  })
+
+  it('refuses a note over 1,000 characters before sending it', async () => {
+    const { calls } = stubApi()
+    render(<AidQueuePanel canEdit />)
+    const row = await screen.findByRole('listitem', { name: 'Student STU-0007' })
+    fireEvent.change(within(row).getByLabelText('Note'), {
+      target: { value: `${'a'.repeat(1000)}\u{1F600}` },
+    })
+    expect(within(row).getByText('1,001 of 1,000 characters')).toBeTruthy()
+    expect(within(row).getByText(/1 character over the limit/)).toBeTruthy()
+    const save = within(row).getByRole('button', { name: 'Save' }) as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+    fireEvent.submit(save.closest('form')!)
+    expect(calls.some((call) => call.method === 'PATCH')).toBe(false)
+  })
+
+  it('keeps the draft on a 409 and shows the saved version to compare', async () => {
+    const message =
+      'This row changed since you opened it. Your text is kept. Compare it with the saved version and save again.'
+    const current: AidReviewRow = {
+      ...ROWS[0],
+      status: 'in_review',
+      note: 'Another person saved this.',
+      updated_by: 'other@example.edu',
+      updated_at: '2026-10-05T15:00:00+00:00',
+    }
+    let gets = 0
+    let patches = 0
+    const calls: Call[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        const method = (init?.method ?? 'GET').toUpperCase()
+        const body = typeof init?.body === 'string' ? JSON.parse(init.body) : null
+        calls.push({ url, method, body, csrf: null })
+        if (url === '/api/aid-queue' && method === 'GET') {
+          gets += 1
+          return jsonResponse({
+            dataset_id: 1,
+            fictional: true,
+            rows: gets === 1 ? ROWS : [current, ROWS[1]],
+          })
+        }
+        if (url === '/api/aid-queue/1' && method === 'PATCH') {
+          patches += 1
+          if (patches === 1) {
+            return jsonResponse(
+              {
+                detail: 'This row changed since you opened it. Reload to see the latest.',
+                row: current,
+              },
+              409,
+            )
+          }
+          return jsonResponse({
+            row: {
+              ...current,
+              ...(body as Partial<AidReviewRow>),
+              updated_by: 'aid@example.edu',
+              updated_at: '2026-10-05T16:00:00+00:00',
+            },
+            event_id: 10,
+          })
+        }
+        return jsonResponse({ detail: `unhandled ${method} ${url}` }, 500)
+      }),
+    )
+    render(<AidQueuePanel canEdit />)
+    const row = await screen.findByRole('listitem', { name: 'Student STU-0007' })
+    const box = within(row).getByLabelText('Note') as HTMLTextAreaElement
+    fireEvent.change(box, { target: { value: 'My note.' } })
+    fireEvent.click(within(row).getByRole('button', { name: 'Save' }))
+
+    const alert = await within(row).findByRole('alert')
+    expect(alert.textContent).toBe(message)
+    const savedLine = await within(row).findByText(/^Saved version:/)
+    expect(savedLine.textContent).toBe(
+      'Saved version: In review. Note: Another person saved this.',
+    )
+    // The person's draft stays in the box; the reloaded row is the new base,
+    // and a field they did not touch (the status) takes the saved value.
+    expect(box.value).toBe('My note.')
+    expect((within(row).getByLabelText('Status') as HTMLSelectElement).value).toBe('in_review')
+    expect(row.querySelector('.aid-status')?.textContent).toBe('In review')
+    expect(within(row).getByText(/Last updated by other@example\.edu/)).toBeTruthy()
+    expect(gets).toBe(2)
+
+    // Saving again sends the draft against the version just shown.
+    const save = within(row).getByRole('button', { name: 'Save' }) as HTMLButtonElement
+    expect(save.disabled).toBe(false)
+    fireEvent.click(save)
+    await within(row).findByText('Saved')
+    const patchBodies = calls.filter((call) => call.method === 'PATCH').map((call) => call.body)
+    expect(patchBodies).toEqual([
+      { note: 'My note.', expected_updated_at: null },
+      { note: 'My note.', expected_updated_at: '2026-10-05T15:00:00+00:00' },
+    ])
+    expect(within(row).queryByText(/^Saved version:/)).toBeNull()
+    expect(within(row).queryByRole('alert')).toBeNull()
   })
 
   it('is read only without edit rights: no controls, the note as text', async () => {
@@ -290,6 +415,94 @@ describe('DecisionPanel with the queue block', () => {
     const html = panel('executive', true)
     expect(html).toContain('Queued 18 students for Financial Aid review')
     expect(html).toContain('Open the review queue')
+  })
+
+  it('offers no Prepare when the approval belongs to an earlier dataset', () => {
+    // The audit log still holds the earlier approval and its task, but GET
+    // /decisions says the decision is not approved for the active dataset.
+    const earlier = {
+      id: 41,
+      ts: '2026-10-01T12:00:00+00:00',
+      type: 'task.created',
+      actor: 'executive',
+      payload: {
+        decision_id: decision.id,
+        task: {
+          id: `TASK-${decision.id}`,
+          decision_id: decision.id,
+          office: 'Financial Aid',
+          description: 'Conduct the review.',
+          status: 'open',
+        },
+      },
+    }
+    const html = renderToStaticMarkup(
+      <DecisionPanel
+        decisions={[{ ...decision, approved: false }]}
+        events={[earlier]}
+        canApprove
+        role="executive"
+        userEmail="exec@example.edu"
+        approving={false}
+        approveError={null}
+        approvedTasks={{}}
+        dispatches={{
+          [decision.id]: {
+            info: { ...info, approved: false, aid_queue: NOT_YET },
+            busy: null,
+            error: null,
+          },
+        }}
+        onApprove={() => {}}
+        onPrepareDispatch={() => {}}
+        onSendDispatch={() => {}}
+        onOpenEvidence={() => {}}
+        onPrepareAidQueue={() => {}}
+        onOpenAidQueue={() => {}}
+      />,
+    )
+    // The earlier dataset's task is not shown: this dataset's decision is not approved yet.
+    expect(html).not.toContain('Follow-up task')
+    expect(html).not.toContain('Prepare the Financial Aid review queue')
+    expect(html).not.toContain('Prepare the message to Financial Aid')
+  })
+
+  it('offers a first approval, not "Approve again", after a dataset switch', () => {
+    const earlier = {
+      id: 41,
+      ts: '2026-10-01T12:00:00+00:00',
+      type: 'task.created',
+      actor: 'executive',
+      payload: {
+        decision_id: decision.id,
+        task: {
+          id: `TASK-${decision.id}`,
+          decision_id: decision.id,
+          office: 'Financial Aid',
+          description: 'Conduct the review.',
+          status: 'open',
+        },
+      },
+    }
+    const html = renderToStaticMarkup(
+      <DecisionPanel
+        decisions={[{ ...decision, approved: false }]}
+        events={[earlier]}
+        canApprove
+        role="executive"
+        userEmail="exec@example.edu"
+        approving={false}
+        approveError={null}
+        approvedTasks={{}}
+        dispatches={{}}
+        onApprove={() => {}}
+        onPrepareDispatch={() => {}}
+        onSendDispatch={() => {}}
+        onOpenEvidence={() => {}}
+      />,
+    )
+    expect(html).toContain('Approve the review')
+    expect(html).not.toContain('Approve again')
   })
 
   it('stays hidden when the caller passes no queue handlers', () => {

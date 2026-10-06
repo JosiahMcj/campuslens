@@ -77,8 +77,9 @@ EVENT_TYPES: tuple[str, ...] = (
     # person prepared the queue for an authorized emergency-aid review
     # (payload: decision_id, dataset_id, count; never a student id).
     # aid.updated: a person in the aid role (or an admin) changed one row's
-    # status or note (payload: aid_review_id, student_id, decision_id,
-    # status_from, status_to, note_changed; never the note text). The actor
+    # status or note (payload: aid_review_id, decision_id, status_from,
+    # status_to, note_changed). Never the note text and never a student id,
+    # since this log outlives the dataset purge that removes the row. The actor
     # of both is the acting user's email.
     "aid.queued",
     "aid.updated",

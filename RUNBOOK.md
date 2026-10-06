@@ -467,7 +467,8 @@ curl -b /tmp/cookies -X POST http://127.0.0.1:8910/decisions/D-spring-registrati
 curl -b /tmp/cookies http://127.0.0.1:8910/aid-queue    # aid, admin, executive, reviewer
 curl -b /tmp/cookies -X PATCH http://127.0.0.1:8910/aid-queue/<row id> \
   -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
-  -d '{"status": "in_review", "note": "Called the student."}'   # aid and admin
+  -d '{"status": "in_review", "note": "Called the student.",
+       "expected_updated_at": null}'   # aid and admin
 ```
 
 Preparing the queue twice returns the same rows with `"created": false`.
@@ -476,8 +477,16 @@ dataset shows that dataset's queue (empty until someone prepares it), and
 purging a dataset purges its queue. A note holds at most 1,000 characters,
 we store it exactly as typed, and no model ever receives it. We audit the
 queue as `aid.queued` (decision, dataset, and count) and every change as
-`aid.updated` with the acting user. The note text stays out of the audit
-log.
+`aid.updated` with the acting user, the row id, and the status before and
+after. The note text and the student id stay out of the audit log.
+
+Every save must carry `expected_updated_at`, the row's `updated_at` as it was
+read (`null` for a row nobody has saved yet). A save without it is refused
+with 422 and asks you to reload the row and send its `updated_at`. When the row
+changed since it was read, the save is refused with 409 and the message "This
+row changed since you opened it. Reload to see the latest." Read the row again
+with GET /aid-queue and send its current `updated_at`. Only rows of the active
+dataset can be changed. A row of an inactive or deleted dataset is a 404.
 
 ## Replay and the golden run
 
