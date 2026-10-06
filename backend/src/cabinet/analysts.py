@@ -200,6 +200,12 @@ def build_prompt(findings: dict[str, Any], role: str) -> tuple[str, str]:
     "The president asked: …" — carried under ``QUESTION_KEY``; the default
     question's prompt bytes are exactly the pre-registry ones, so its golden
     recordings still match."""
+    if role.startswith("explore_"):
+        # Explore's planner and writer (cabinet.explore.prompts): imported
+        # here, lazily, because explore imports this module's validator.
+        from cabinet.explore.prompts import build_explore_prompt
+
+        return build_explore_prompt(findings, role)
     system = SYSTEM_PROMPTS.get(role)
     if system is None:
         raise ValueError(f"no system prompt for role {role!r}")
@@ -825,8 +831,25 @@ def check_numerals(text: str, findings: dict[str, Any]) -> None:
       need support, never risk scores.
     """
     numbers, dates = allowed_numerals(findings)
-    prose = _strip_dates(_PROSE_ID_RE.sub("", text), dates)
-    student_id = _STUDENT_ID_RE.search(prose)
+    cited = ", ".join(sorted(findings)) or "none"
+    check_numbers_against(_PROSE_ID_RE.sub("", text), numbers, dates, cited)
+
+
+def check_numbers_against(
+    text: str,
+    numbers: set[AllowedNumber],
+    dates: set[date],
+    cited: str,
+    *,
+    student_id_re: re.Pattern[str] = _STUDENT_ID_RE,
+) -> None:
+    """The rules of ``check_numerals`` against an explicit allowed set.
+
+    Explore uses it with the numbers of its computed tables (and its own
+    student-id pattern); ``check_numerals`` with the cited findings'.
+    """
+    prose = _strip_dates(text, dates)
+    student_id = student_id_re.search(prose)
     if student_id:
         raise OutputRejected(
             f"student ID {student_id.group(0)!r} in the output; the analyst "
@@ -838,7 +861,6 @@ def check_numerals(text: str, findings: dict[str, Any]) -> None:
             f"{risk.group(0)!r} language about students is not allowed; "
             "students are people who may need support, never risk scores"
         )
-    cited = ", ".join(sorted(findings)) or "none"
 
     anchors: list[_NumberAnchor] = []
     for match in _NUMERAL_RE.finditer(prose):

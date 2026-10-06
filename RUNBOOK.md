@@ -608,6 +608,30 @@ the same rows (the canonical hash in `VERIFY.md` proves it). The data is
 synthetic, students are pseudonymous ids with no names, and instructor names are
 fictional. Tables are documented in `data/school/SCHEMA.md`.
 
+### Explore (questions over the school data)
+
+Explore needs `var/school/school.db` (`make school-data`). Without it, `POST /explore`
+and `GET /explore/catalog` answer 503 with "The demonstration university data is not
+installed. Run make school-data." It runs inside the API process, so starting, stopping,
+and restarting the API covers it. `make explore-check` runs the full-scale check (the
+owner's example and five more planted facts) and prints the owner's example with its
+three tables. With the API running, ask as a signed-in executive:
+
+```sh
+curl -s -b cookies.txt -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
+  -d '{"question": "Which major has the lowest GPA? In that major, what is historically the hardest class, and which instructor has historically taught it?"}' \
+  http://127.0.0.1:8910/explore
+# -> {"refused": false, "answer": [{"text": ..., "claims": [...]}, ...],
+#     "steps": [...three tables...], "source": "Written from computed tables (no model)"}
+```
+
+`.venv/bin/python -m cabinet.explore "<question>"` answers offline from the same code and
+writes nothing. Each question writes `question.asked`, then `data.refused` (refused
+questions) or one `data.granted` per step and `explore.answered`, on the asker's
+institution chain. Replay and fake modes use the rule planner and the template answer.
+A live provider may plan and reword, and `CABINET_RECORD=1` records validated plans under
+`var/replay/explore/` (details in `docs/EXPLORE.md`).
+
 ## Known issues
 
 - **Live-model latency can reach ~55 s** (the client timeout, and the endpoint

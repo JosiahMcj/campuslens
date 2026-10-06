@@ -55,6 +55,17 @@ into a weighting or sum, no model ever sees the per-student detail, and the
 evidence drawer shows exactly which rules fired for each pseudonymous id, with the
 rule's reason.
 
+Explore answers specific questions over Demonstration University, the synthetic school
+in `data/school/` ("Which major has the lowest GPA? In that major, what is historically
+the hardest class, and which instructor has historically taught it?"). The question
+becomes a plan of reviewed analyses, code computes every table, and the answer cites the
+cells its numbers came from. The model sees only the analysis catalog and the finished
+aggregate tables, never a student row. Counseling questions and questions about one
+student are refused before any planning, groups under 10 students are withheld, and
+instructor rows go to the executive and admin roles only (`POST /explore`,
+`GET /explore/catalog`, `make school-data` then `make explore-check`, and
+`docs/EXPLORE.md`).
+
 What is left is rehearsal. The demo script and the offline deck in
 `docs/backup-demo.html` are frozen, and the remaining items are the timed
 rehearsals, the backup video, and the pitch.

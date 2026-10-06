@@ -187,6 +187,7 @@ from cabinet.auth import (
 )
 from cabinet.counseling import M9_ID, authorization_block, m9_finding
 from cabinet.datasets import UploadError, validate_upload
+from cabinet.explore.api import router as explore_router
 from cabinet.fixture import parse_fixture
 from cabinet.metrics import findings as compute_findings
 from cabinet.migrations import (
@@ -2497,6 +2498,8 @@ def create_app(
         assert updated is not None
         admin_changed(institution_id, "role_changed", updated, admin)
         return JSONResponse(content={"user": admin_user_body(updated), "changed": True})
+
+    app.include_router(explore_router)  # POST /explore, GET /explore/catalog
 
     # The built UI, served by the same process. Mounted after every API
     # route so an API path always wins over the static mount; a missing

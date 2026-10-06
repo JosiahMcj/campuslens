@@ -13,7 +13,7 @@ PYBIN := $(VENV)/bin
 	typecheck typecheck-python typecheck-ui \
 	test test-python test-ui \
 	check audit check-config bootstrap-admin institution user import-ethos api ui stop record-golden \
-	migrate backup restore purge-deleted build serve school-data school-check
+	migrate backup restore purge-deleted build serve school-data school-check explore-check
 
 setup: setup-python setup-ui
 
@@ -316,3 +316,11 @@ school-data:
 
 school-check:
 	$(PYBIN)/python data/school/check.py --db var/school/school.db
+
+# Explore's full-scale check (docs/EXPLORE.md), after make school-data: the
+# owner's example and five more planted facts asked in plain English must
+# come back with the VERIFY.md values, then the owner's example is printed
+# (answer sentences and the three tables) from the same code, offline.
+explore-check:
+	cd backend && CABINET_EXPLORE_FULL=1 CABINET_PROVIDER=replay ../$(PYBIN)/pytest -q tests/test_explore.py -k full_scale
+	CABINET_SCHOOL_DB=var/school/school.db $(PYBIN)/python -m cabinet.explore "Which major has the lowest GPA? In that major, what is historically the hardest class, and which instructor has historically taught it?"

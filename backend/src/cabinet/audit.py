@@ -83,6 +83,10 @@ EVENT_TYPES: tuple[str, ...] = (
     # of both is the acting user's email.
     "aid.queued",
     "aid.updated",
+    # Explore (cabinet.explore): one answer to a governed question over the
+    # school data. Payload: task_id, question_event_id, the analysis ids of
+    # the steps, their row counts, the planner and writer used. Never a value.
+    "explore.answered",
 )
 
 ENV_VAR = "CABINET_AUDIT_PATH"
