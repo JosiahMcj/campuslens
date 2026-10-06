@@ -1,7 +1,15 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from 'react'
 import { createPortal } from 'react-dom'
 
 import { canSeeInstitution, roleDisplayName, type Session } from '../auth'
+import { trapTab } from '../states'
 import { effectiveTheme, setPrefs, usePrefs } from '../theme'
 import { AscentMark } from './AscentMark'
 import { GlideGroup } from './GlideGroup'
@@ -14,7 +22,6 @@ import {
   DecisionNavIcon,
   EvidenceNavIcon,
   FiguresNavIcon,
-  RefusalNavIcon,
   CheckSmallIcon,
   ChevronDownIcon,
   CrossSmallIcon,
@@ -54,6 +61,12 @@ interface ChatSidebarProps {
   datasetName: string | null
   fictional: boolean
   history: HistoryItem[]
+  /** The last briefing could not be loaded: the questions list says so and
+   * offers Retry instead of looking empty. */
+  historyError: string | null
+  onRetryHistory: () => void
+  /** The current route: '/institution' marks the Institution row. */
+  route: string
   /** The panels this role may open (the audit log only for roles that may
    * read it; the AI employees once a run exists). */
   panels: PanelId[]
@@ -63,8 +76,6 @@ interface ChatSidebarProps {
   onNewQuestion: (() => void) | null
   onSelectHistory: (id: number) => void
   onOpenPanel: (panel: PanelId) => void
-  /** Run the refusal demo (roles that may act); null hides the row. */
-  onTestRefusal: (() => void) | null
   onNavigate: (path: string) => void
   onSignOut: () => void
   onClose: () => void
@@ -94,6 +105,19 @@ const SMALL_SCREEN = '(max-width: 899px)'
 
 function isSmallScreen(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia(SMALL_SCREEN).matches
+}
+
+/** True below 900 px, where the sidebar is an off-canvas drawer. */
+function useSmallScreen(): boolean {
+  const [small, setSmall] = useState(isSmallScreen)
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia(SMALL_SCREEN)
+    const onChange = () => setSmall(query.matches)
+    query.addEventListener?.('change', onChange)
+    return () => query.removeEventListener?.('change', onChange)
+  }, [])
+  return small
 }
 
 /** One primary navigation row: icon, label, optional trailing note. */
@@ -156,6 +180,11 @@ function WorkspaceMenu({
     menu.style.left = `${rect.left}px`
   }, [anchor])
 
+  // Focus moves to the first item when the menu opens.
+  useEffect(() => {
+    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+  }, [])
+
   useEffect(() => {
     const close = (event: PointerEvent) => {
       const target = event.target as Element
@@ -163,21 +192,70 @@ function WorkspaceMenu({
         onClose()
       }
     }
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
     document.addEventListener('pointerdown', close)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', close)
-      window.removeEventListener('keydown', onKey)
-    }
+    return () => document.removeEventListener('pointerdown', close)
   }, [onClose])
 
+  // Arrow keys move between the items; Escape and Tab close the menu, and
+  // Escape returns focus to the trigger.
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = [
+      ...(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []),
+    ]
+    const index = items.indexOf(document.activeElement as HTMLElement)
+    const move = (next: number) => {
+      event.preventDefault()
+      items[(next + items.length) % items.length]?.focus()
+    }
+    switch (event.key) {
+      case 'ArrowDown':
+        move(index + 1)
+        break
+      case 'ArrowUp':
+        move(index - 1)
+        break
+      case 'Home':
+        move(0)
+        break
+      case 'End':
+        move(items.length - 1)
+        break
+      case 'Escape':
+        event.preventDefault()
+        event.stopPropagation()
+        onClose()
+        anchor.focus()
+        break
+      case 'Tab':
+        // Closing unmounts the menu; keep focus on its trigger, not <body>.
+        event.preventDefault()
+        onClose()
+        anchor.focus()
+        break
+    }
+  }
+
   return createPortal(
-    <div ref={menuRef} className="workspace-menu" data-workspace-menu role="menu">
+    <div
+      ref={menuRef}
+      className="workspace-menu"
+      data-workspace-menu
+      role="menu"
+      aria-label="Workspace"
+      onKeyDown={onKeyDown}
+    >
       <GlideGroup className="menu-glide">
-        <button data-row type="button" role="menuitem" className="menu-row menu-row-tall" onClick={onClose}>
+        <button
+          data-row
+          type="button"
+          role="menuitem"
+          tabIndex={-1}
+          className="menu-row menu-row-tall"
+          onClick={() => {
+            onClose()
+            anchor.focus()
+          }}
+        >
           <AscentMark className="menu-monogram" />
           <span className="menu-label menu-label-strong">{institutionName}</span>
           <span className="menu-check">
@@ -194,6 +272,7 @@ function WorkspaceMenu({
             data-row
             type="button"
             role="menuitem"
+            tabIndex={-1}
             className="menu-row"
             onClick={() => {
               onClose()
@@ -211,6 +290,7 @@ function WorkspaceMenu({
           data-row
           type="button"
           role="menuitem"
+          tabIndex={-1}
           className="menu-row"
           onClick={() => {
             onClose()
@@ -241,13 +321,15 @@ export function ChatSidebar({
   datasetName,
   fictional,
   history,
+  historyError,
+  onRetryHistory,
+  route,
   panels,
   activePanel,
   open,
   onNewQuestion,
   onSelectHistory,
   onOpenPanel,
-  onTestRefusal,
   onNavigate,
   onSignOut,
   onClose,
@@ -261,6 +343,13 @@ export function ChatSidebar({
   const prefs = usePrefs()
   const theme = effectiveTheme(prefs.theme)
   const searchRef = useRef<HTMLInputElement>(null)
+  const searchButtonRef = useRef<HTMLButtonElement>(null)
+  const expandRef = useRef<HTMLButtonElement>(null)
+  const collapseRef = useRef<HTMLButtonElement>(null)
+  const asideRef = useRef<HTMLElement>(null)
+  const small = useSmallScreen()
+  const drawer = small && open
+  const admin = canSeeInstitution(session.user.role)
 
   const nextTheme = theme === 'dark' ? 'light' : 'dark'
   const initial = session.user.email.trim().charAt(0).toUpperCase()
@@ -273,9 +362,24 @@ export function ChatSidebar({
     if (searchOpen) searchRef.current?.focus()
   }, [searchOpen])
 
-  const closeSearch = () => {
+  // The phone drawer: focus moves in when it opens. The drawer only becomes
+  // focusable once its slide starts (it is visibility: hidden while shut),
+  // so try again on the next frames until focus has landed inside.
+  useEffect(() => {
+    if (!drawer) return
+    const timers = [0, 60, 240].map((delay) =>
+      window.setTimeout(() => {
+        if (!asideRef.current?.contains(document.activeElement)) collapseRef.current?.focus()
+      }, delay),
+    )
+    return () => timers.forEach((timer) => window.clearTimeout(timer))
+  }, [drawer])
+
+  const closeSearch = (refocus: boolean) => {
     setSearchOpen(false)
     setQuery('')
+    // The search field hides; focus goes back to the button that opened it.
+    if (refocus) window.setTimeout(() => searchButtonRef.current?.focus(), 0)
   }
 
   const collapse = () => {
@@ -285,14 +389,39 @@ export function ChatSidebar({
     }
     setCollapsed(true)
     setMenuAnchor(null)
-    closeSearch()
+    closeSearch(false)
+    // Every control but the expand button hides; focus moves onto it.
+    window.setTimeout(() => expandRef.current?.focus(), 0)
+  }
+
+  const expand = () => {
+    setCollapsed(false)
+    window.setTimeout(() => collapseRef.current?.focus(), 0)
+  }
+
+  const onDrawerKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (!drawer) return
+    if (event.key === 'Escape' && !event.defaultPrevented) {
+      event.preventDefault()
+      event.stopPropagation()
+      onClose()
+      return
+    }
+    if (asideRef.current !== null) trapTab(event, asideRef.current)
   }
 
   return (
     <aside
+      ref={asideRef}
+      id="cabinet-sidebar"
       className={`chat-sidebar${open ? ' open' : ''}`}
       data-collapsed={collapsed ? 'true' : 'false'}
       aria-label="Cabinet navigation"
+      role={drawer ? 'dialog' : undefined}
+      aria-modal={drawer ? 'true' : undefined}
+      // Off screen on a phone while closed: out of the tab order too.
+      inert={small && !open}
+      onKeyDown={onDrawerKeyDown}
     >
       <div className="sidebar-inner">
         <div className="sidebar-head">
@@ -301,16 +430,19 @@ export function ChatSidebar({
             data-workspace-trigger
             className="workspace-control"
             aria-haspopup="menu"
+            aria-label="Golden Eagle AI Cabinet: workspace menu"
             aria-expanded={menuAnchor !== null}
-            aria-hidden={collapsed}
-            tabIndex={collapsed ? -1 : 0}
+            aria-hidden={collapsed && !small}
+            tabIndex={collapsed && !small ? -1 : 0}
             onClick={(event) => {
               const trigger = event.currentTarget
               setMenuAnchor((current) => (current === null ? trigger : null))
             }}
           >
             <AscentMark className="workspace-logo" />
-            <span className="sidebar-copy workspace-name">Golden Eagle</span>
+            <span className="sidebar-copy workspace-name" title="Golden Eagle AI Cabinet">
+              Cabinet
+            </span>
             <span className="sidebar-copy workspace-chevron">
               <ChevronDownIcon />
             </span>
@@ -325,12 +457,13 @@ export function ChatSidebar({
             />
           )}
           <button
+            ref={collapseRef}
             type="button"
             className="head-button collapse-control"
-            aria-label="Collapse sidebar"
-            title="Collapse sidebar"
-            aria-hidden={collapsed}
-            tabIndex={collapsed ? -1 : 0}
+            aria-label={small ? 'Close menu' : 'Collapse sidebar'}
+            title={small ? 'Close menu' : 'Collapse sidebar'}
+            aria-hidden={collapsed && !small}
+            tabIndex={collapsed && !small ? -1 : 0}
             onClick={collapse}
           >
             <span className="collapse-icon-wide">
@@ -341,13 +474,14 @@ export function ChatSidebar({
             </span>
           </button>
           <button
+            ref={expandRef}
             type="button"
             className="head-button expand-control"
             aria-label="Expand sidebar"
             title="Expand sidebar"
             aria-hidden={!collapsed}
             tabIndex={collapsed ? 0 : -1}
-            onClick={() => setCollapsed(false)}
+            onClick={expand}
           >
             <SidebarToggleIcon />
           </button>
@@ -362,8 +496,8 @@ export function ChatSidebar({
         <div className="sidebar-body">
           {NAV_GROUPS.map((group) => {
             const rows = group.panels.filter((panel) => panels.includes(panel))
-            const refusal = group.label === 'Governance' && onTestRefusal !== null
-            if (rows.length === 0 && !refusal) return null
+            const institutionRow = group.label === 'Governance' && admin
+            if (rows.length === 0 && !institutionRow) return null
             return (
               <div key={group.label} className="nav-group">
                 <p className="sidebar-copy nav-group-label">{group.label}</p>
@@ -377,11 +511,12 @@ export function ChatSidebar({
                       onClick={() => onOpenPanel(panel)}
                     />
                   ))}
-                  {refusal && (
+                  {institutionRow && (
                     <RailButton
-                      icon={<RefusalNavIcon />}
-                      label="Test a refusal"
-                      onClick={onTestRefusal}
+                      icon={<GearIcon />}
+                      label="Institution"
+                      active={route === '/institution'}
+                      onClick={() => onNavigate('/institution')}
                     />
                   )}
                 </GlideGroup>
@@ -405,6 +540,7 @@ export function ChatSidebar({
               Questions
             </button>
             <button
+              ref={searchButtonRef}
               type="button"
               className={`head-button recents-search${searchOpen ? ' is-hidden' : ''}`}
               aria-label="Search questions"
@@ -426,7 +562,12 @@ export function ChatSidebar({
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === 'Escape') closeSearch()
+                  if (event.key === 'Escape') {
+                    // The search closes, not the drawer around it.
+                    event.preventDefault()
+                    event.stopPropagation()
+                    closeSearch(true)
+                  }
                 }}
                 placeholder="Search questions"
                 aria-label="Search this session's questions"
@@ -437,7 +578,7 @@ export function ChatSidebar({
                 className="head-button"
                 aria-label="Close search"
                 tabIndex={searchOpen ? 0 : -1}
-                onClick={closeSearch}
+                onClick={() => closeSearch(true)}
               >
                 <CrossSmallIcon />
               </button>
@@ -460,7 +601,15 @@ export function ChatSidebar({
                   {item.restored && <span className="sidebar-copy rail-note">Last</span>}
                 </button>
               ))}
-              {history.length === 0 && (
+              {historyError !== null && (
+                <div className="sidebar-copy recents-empty" role="alert">
+                  <p>{historyError}</p>
+                  <button type="button" className="link-button" onClick={onRetryHistory}>
+                    Retry
+                  </button>
+                </div>
+              )}
+              {history.length === 0 && historyError === null && (
                 <p className="sidebar-copy recents-empty">Questions you ask appear here.</p>
               )}
               {history.length > 0 && needle !== '' && visibleHistory.length === 0 && (
@@ -473,10 +622,10 @@ export function ChatSidebar({
         </div>
 
         <div className="sidebar-copy sidebar-foot">
-          {datasetName !== null && (
-            <p className="foot-dataset">
-              {fictional ? 'Demo data' : 'Dataset'}: {datasetName}
-            </p>
+          {/* The fictional set is marked once, in the top bar; a real
+              institution's dataset is named here. */}
+          {datasetName !== null && !fictional && (
+            <p className="foot-dataset">Dataset: {datasetName}</p>
           )}
           <div className="foot-row">
             <button

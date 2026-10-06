@@ -8,19 +8,33 @@ interface ChatComposerProps {
   /** The approved questions from GET /questions; null until loaded. */
   questions: ApprovedQuestion[] | null
   sending: boolean
-  /** True on the empty screen: the approved questions show as starter cards. */
+  /** True on the empty screen (before the first answer): the approved
+   * questions show as starter cards. */
   starters: boolean
   onAsk: (question: string) => void
+  /** The last ask failed: a plain sentence, shown above the field. */
+  error?: string | null
+  /** Re-send the failed question ("Ask again"); null hides the button. */
+  onAskAgain?: (() => void) | null
 }
 
 /**
  * The chat composer: one question field (id question-input, as the demo
- * script and verification expect) with the send button inside it, and the
- * approved questions as one-click prompts. The field accepts only the
+ * script and verification expect) with the send button inside it. On the
+ * empty screen (before the first answer) the approved questions show as
+ * one-click starter cards; after that the composer is the field alone, so
+ * the answer keeps the screen. The field accepts only the
  * approved questions; anything else is still submitted, so the API refuses
  * it and records the refusal as a data.refused audit event (Beat 6).
  */
-export function ChatComposer({ questions, sending, starters, onAsk }: ChatComposerProps) {
+export function ChatComposer({
+  questions,
+  sending,
+  starters,
+  onAsk,
+  error = null,
+  onAskAgain = null,
+}: ChatComposerProps) {
   const [question, setQuestion] = useState('')
   const approved = questions ?? []
   const approvedTexts = questions?.map((q) => q.text) ?? [APPROVED_QUESTION]
@@ -57,9 +71,30 @@ export function ChatComposer({ questions, sending, starters, onAsk }: ChatCompos
           ))}
         </div>
       )}
+      {error !== null && (
+        <div
+          className="ask-error state-error"
+          role="alert"
+          // Opaque, so the sentence never sits over the answer scrolling
+          // behind the docked composer.
+          style={{ background: 'var(--paper)', paddingBlock: 'var(--space-2)' }}
+        >
+          <p className="error-line">{error}</p>
+          {onAskAgain !== null && (
+            <button
+              type="button"
+              className="secondary btn-secondary"
+              disabled={sending}
+              onClick={onAskAgain}
+            >
+              Ask again
+            </button>
+          )}
+        </div>
+      )}
       <form className="composer" onSubmit={submit}>
         <label htmlFor="question-input" className="visually-hidden">
-          Ask the cabinet an approved question
+          Ask the Cabinet an approved question
         </label>
         <input
           id="question-input"
@@ -67,7 +102,7 @@ export function ChatComposer({ questions, sending, starters, onAsk }: ChatCompos
           autoComplete="off"
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
-          placeholder="Ask the cabinet an approved question…"
+          placeholder="Ask an approved question…"
           disabled={sending}
         />
         <button
@@ -80,25 +115,10 @@ export function ChatComposer({ questions, sending, starters, onAsk }: ChatCompos
           <SendIcon />
         </button>
       </form>
-      {!starters && approved.length > 0 && (
-        <div className="quick-questions">
-          {approved.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className="chip"
-              disabled={sending}
-              onClick={() => send(item.text)}
-            >
-              {item.text}
-            </button>
-          ))}
-        </div>
-      )}
       <p className="composer-note" role={offScope ? 'note' : undefined}>
         {offScope
-          ? 'This question is outside the approved use case. Sending it will be refused, and the refusal is recorded in the audit log.'
-          : 'The cabinet answers approved questions only. Every number is checked against the data.'}
+          ? 'Not an approved question: it will be refused and logged.'
+          : 'Approved questions only. Every number is checked.'}
       </p>
     </div>
   )
