@@ -78,6 +78,26 @@ identifiers only.
 
 We can see the data ourselves for maintenance and backups. That is the full list.
 
+## Explore and the demonstration university
+
+Explore answers questions over Demonstration University, a fictional university that
+exists only as a generated database on our server. No institution's data is in it. The
+same rules we apply to real data hold there.
+
+- **Aggregates only.** Every answer is built from tables of counts, rates, and averages.
+  No answer, table, or audit event carries a student id, and a question about one student
+  is refused before anything runs.
+- **Small groups are withheld.** Any figure about fewer than 10 students reads "fewer than
+  10" and is left out of every ranking.
+- **Counseling is refused.** The database holds no counseling or spiritual-care data, and
+  a question about either is refused before any planning or model call and recorded.
+- **Instructor rows are narrower.** Results about individual instructors go to the
+  executive and admin roles only. Staff and reviewers see the course as a whole. Every
+  instructor name is generated and fictional, and answers say so.
+- **What a model sees.** When a model is configured, it receives the list of approved
+  analyses and the question (to plan), and the finished aggregate tables (to reword the
+  answer). It never receives a student row and never computes a number.
+
 ## The counseling figure
 
 Per-student counseling and spiritual-care data is refused to every role and every AI
@@ -103,10 +123,11 @@ The count is computed in code. Its source label names the person who authorized 
 
 ## What leaves the server
 
-Only two things leave the server for the configured model endpoint, namely the aggregate
-findings computed in code from the active dataset and the analysts' validated texts.
-Student rows never leave. The counseling group never leaves. While a counseling
-authorization is recorded, the Chief of Staff may receive the one counseling count,
+For briefings, only two things leave the server for the configured model endpoint,
+namely the aggregate findings computed in code from the active dataset and the analysts'
+validated texts. For Explore, only the analysis catalog, the question, and the computed
+aggregate tables leave, as described above. Student rows never leave. The counseling
+group never leaves. While a counseling authorization is recorded, the Chief of Staff may receive the one counseling count,
 and only when it is 10 or more. A smaller count reaches the model as a marker with
 no number in it. The Financial Aid
 review queue never leaves either. Its rows, its facts, and the office's notes are never

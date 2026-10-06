@@ -84,6 +84,13 @@ in `cabinet/security.py` (`ROUTE_ROLES`). No session is a 401, and the wrong
 role is a 403. We write both to the audit log as `data.refused` events, with the
 actor set to the user id, or to `anonymous` when there is no session.
 
+Explore (`docs/EXPLORE.md`) adds `POST /explore` and `GET /explore/catalog` for the
+executive, admin, staff, and reviewer roles, and the aid role gets a 403. Inside the route,
+instructor-level rows go to the executive and admin roles only. Staff and reviewers get
+the course as a whole, and the withheld rows are a `data.refused` event. Explore reads the
+school database through a read-only connection, its SQL is fixed and parameterized, and a
+question only ever chooses an analysis and values from lists.
+
 **CSRF.** Every POST must carry `X-CSRF-Token` equal to the session's token,
 which the UI reads from `GET /auth/me`, and anything else is a 403. In
 production we added a second layer that checks an Origin or Referer header, when
@@ -94,7 +101,7 @@ requests per minute across all routes, including the public `/health`,
 `/ready`, and `/auth/login`. That is generous on purpose, because everyone on
 a campus network can reach us from one shared address. Each signed-in session
 then has its own bucket of 120 requests per minute, which is what paces one
-person. `POST /ask` and the dispatch Send are capped at 5 per minute per
+person. `POST /ask`, `POST /explore` and the dispatch Send are capped at 5 per minute per
 session and per IP, because they spend model calls or send a message, and the
 login throttling above applies on top. Over the limit is a 429 with
 `Retry-After` and the plain message "The Cabinet is busy. Wait a minute and try
@@ -128,7 +135,7 @@ modification of retained events, but it cannot detect deletion of whole
 trailing events, so the moved-aside and `.torn-*` files matter and the app
 never deletes them. The torn-tail repair removes only bytes that were never a
 complete event, namely a killed process's partial final line, so it cannot
-break the chain. The vocabulary is seventeen frozen event types, where the
+break the chain. The vocabulary is eighteen frozen event types, where the
 original eight are `question.asked`, `task.assigned`, `data.granted`,
 `data.refused`, `finding.produced`, `briefing.produced`, `decision.approved`,
 and `task.created`, and dataset administration added `dataset.uploaded`,
@@ -146,7 +153,13 @@ and student count, never a student id) and `aid.updated` (row id, decision,
 the status before and after, and whether the note changed, never a student id
 and never the note text), and their actor is the acting user's email. The
 audit log is append-only and outlives the dataset purge, so neither event names
-a student.
+a student. Explore added `explore.answered`, which closes each answered question with
+the task id, the question event id, the analysis ids of its steps, their row counts, and
+which planner and writer ran, never a value. Explore also writes the existing
+`question.asked` (any student-id-shaped token in the question is replaced first),
+`data.refused` (counseling, one student, or a prediction, refused before planning, and
+withheld instructor rows), and one `data.granted` per step with the analysis id, the fields
+it read, and `aggregate_only: true`.
 
 **User administration.** Institution admins manage their institution's users
 from the Institution screen or `/admin/users`, which requires the admin role

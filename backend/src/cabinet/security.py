@@ -149,6 +149,10 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     # institution always comes from the session, never from the client.
     ("GET", "/admin/users"): (ROLE_ADMIN,),
     ("POST", "/admin/users"): (ROLE_ADMIN,),
+    # Explore (cabinet.explore): aggregate questions over the school data;
+    # every role but aid.
+    ("POST", "/explore"): (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF, ROLE_REVIEWER),
+    ("GET", "/explore/catalog"): AUDIT_ROLES + (ROLE_STAFF,),
 }
 
 # Prefix rules, checked when the exact table misses (routes with path
@@ -660,7 +664,7 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
         # The tighter ask bucket covers POST /ask (it spends model calls)
         # and the dispatch Send (it can make a message leave the machine);
         # both are consequential enough to pace per session and per IP.
-        if (method, path) == ("POST", "/ask") or (
+        if (method, path) in (("POST", "/ask"), ("POST", "/explore")) or (
             method == "POST" and path.endswith("/dispatch/send")
         ):
             for key in (f"ask:session:{session['id']}", f"ask:ip:{client_ip}"):

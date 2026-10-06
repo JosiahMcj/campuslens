@@ -56,6 +56,17 @@ into a weighting or sum, no model ever sees the per-student detail, and the
 evidence drawer shows exactly which rules fired for each pseudonymous id, with the
 rule's reason.
 
+Explore answers specific questions over Demonstration University, the synthetic school
+in `data/school/` ("Which major has the lowest GPA? In that major, what is historically
+the hardest class, and which instructor has historically taught it?"). The question
+becomes a plan of reviewed analyses, code computes every table, and the answer cites the
+cells its numbers came from. The model sees only the analysis catalog and the finished
+aggregate tables, never a student row. Counseling questions and questions about one
+student are refused before any planning, groups under 10 students are withheld, and
+instructor rows go to the executive and admin roles only (`POST /explore`,
+`GET /explore/catalog`, `make school-data` then `make explore-check`, and
+`docs/EXPLORE.md`).
+
 What is left is rehearsal. The demo script and the offline deck in
 `docs/backup-demo.html` are frozen, and the remaining items are the timed
 rehearsals, the backup video, and the pitch.
@@ -143,6 +154,15 @@ Institution settings, the briefing shows how many students not yet registered ha
 had any counseling contact this term (M9). It shows no rows, names the person who
 authorized it, and withholds any count under 10 as "fewer than 10". `RUNBOOK.md`
 covers recording and revoking it.
+
+For questions that need a whole school's history, we also ship Demonstration
+University in `data/school/`. It is a synthetic, Ellucian-shaped SQLite database
+covering Fall 2020 to Spring 2026, with 40 programs, 906 courses, 220 fictional
+instructors, about 6,200 pseudonymous students, and about 140,000 graded
+registrations. `make school-data` builds it into `var/school/school.db` in a few
+seconds, and `make school-check` recomputes every GPA and every planted fact in
+`data/school/VERIFY.md` from the raw rows. Nothing in the cabinet reads it yet, and
+a governed question engine will. `data/school/README.md` explains the rest.
 
 ## UI states
 
