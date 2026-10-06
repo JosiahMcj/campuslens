@@ -89,12 +89,19 @@ which the UI reads from `GET /auth/me`, and anything else is a 403. In
 production we added a second layer that checks an Origin or Referer header, when
 present, against the request's own host.
 
-**Rate limits.** We run in-process token buckets. Every client IP gets 60
+**Rate limits.** We run in-process token buckets. Every client IP gets 600
 requests per minute across all routes, including the public `/health`,
-`/ready`, and `/auth/login`. `POST /ask` is capped at 5 per minute per session,
-because it spends model calls, and the login throttling above applies on top.
-Over the limit is a 429 with `Retry-After`, and these are single-process
-limits, which the "What is NOT covered" section explains.
+`/ready`, and `/auth/login`. That is generous on purpose, because everyone on
+a campus network can reach us from one shared address. Each signed-in session
+then has its own bucket of 120 requests per minute, which is what paces one
+person. `POST /ask` and the dispatch Send are capped at 5 per minute per
+session and per IP, because they spend model calls or send a message, and the
+login throttling above applies on top. Over the limit is a 429 with
+`Retry-After` and the plain message "The Cabinet is busy. Wait a minute and try
+again." The variables `CABINET_RATE_GENERAL_PER_MIN`,
+`CABINET_RATE_SESSION_PER_MIN` and `CABINET_RATE_ASK_PER_MIN` change the three
+limits. These are single-process limits, which the "What is NOT covered"
+section explains.
 
 **Headers and payload hygiene.** Every response carries
 `Content-Security-Policy` (`default-src 'self'; connect-src 'self'; img-src

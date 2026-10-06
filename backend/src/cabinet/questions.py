@@ -182,6 +182,21 @@ def _q1_actions(findings_obj: dict[str, Any]) -> list[dict[str, Any]]:
     return actions
 
 
+# The decision text the president reads ends with what approving does NOT
+# do, including "and nothing is sent." That is true of the approval, but it
+# reads as false inside the very message being sent, so the dispatch quotes
+# the decision without that clause. The decision text itself is unchanged:
+# the briefing, the decision card and every recorded answer keep it.
+_NOTHING_SENT_CLAUSE = ", and nothing is sent."
+
+
+def _dispatch_decision_text(text: str) -> str:
+    """The decision text as quoted in a dispatch: the closing
+    "…, and nothing is sent." becomes a full stop, so a message that is
+    being sent never says that nothing is sent."""
+    return text.replace(_NOTHING_SENT_CLAUSE, ".")
+
+
 def _dispatch_body(
     decision: dict[str, Any], approved_by: str, evidence_lines: list[str]
 ) -> str:
@@ -199,7 +214,7 @@ def _dispatch_body(
         "asked to act on it.",
         "",
         f"Decision: {decision['title']} ({decision['id']})",
-        f"Decision text: {decision['text']}",
+        f"Decision text: {_dispatch_decision_text(decision['text'])}",
         f"Approved by: {approved_by}",
         "",
         f"Requested follow-up: {decision['follow_up']['description']}",

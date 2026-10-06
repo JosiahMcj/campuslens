@@ -847,10 +847,10 @@ def test_version_1_2_database_migrates_to_5_keeping_every_approval_and_briefing(
         )
     conn.close()
 
-    store = CabinetStore(db)  # applies migrations 3 through 7 on open
+    store = CabinetStore(db)  # applies migrations 3 through 8 on open
     from cabinet.migrations import recorded_versions
 
-    assert recorded_versions(store._conn) == [1, 2, 3, 4, 5, 6, 7]
+    assert recorded_versions(store._conn) == [1, 2, 3, 4, 5, 6, 7, 8]
     assert store.approved_decision_ids(1, dataset_id=1) == {"d1", "d2"}
     # The briefing row survived the rebuild, still pinned to dataset 1.
     assert store.latest_briefing(1, dataset_id=1) == {"question_id": "q1"}

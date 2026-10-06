@@ -447,7 +447,7 @@ def test_double_approve_creates_exactly_one_task(client: TestClient) -> None:
     first_body = first.json()
     assert first_body["created"] is True
     task = first_body["task"]
-    assert task["status"] == "simulated, nothing sent"
+    assert task["status"] == "Waiting for the message to be sent"
     assert task["office"] == "Financial Aid"
     assert task["id"]
 

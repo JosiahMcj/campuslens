@@ -94,6 +94,7 @@ def _isolated_security_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     # Rate limits are per app instance; raise them so functional tests never
     # trip them. The rate-limit tests set their own values before create_app.
     monkeypatch.setenv("CABINET_RATE_GENERAL_PER_MIN", "100000")
+    monkeypatch.setenv("CABINET_RATE_SESSION_PER_MIN", "100000")
     monkeypatch.setenv("CABINET_RATE_ASK_PER_MIN", "100000")
     # A stand-in built UI: /ready requires an index.html and the static
     # mount serves whatever this directory holds, so tests never depend on a
