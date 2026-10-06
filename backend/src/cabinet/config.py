@@ -55,6 +55,7 @@ KNOWN_VARIABLES: tuple[str, ...] = (
     "CABINET_LLM_API_KEY",
     "CABINET_LLM_API_KEY_FILE",
     "CABINET_LLM_API_KEY_VAR",
+    "CABINET_VALIDATION_RETRIES",
     # the Ethos import (cabinet.ellucian)
     "CABINET_ETHOS_BASE_URL",
     "CABINET_ETHOS_API_KEY_FILE",

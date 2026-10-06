@@ -233,6 +233,25 @@ values redacted. Outside production, a missing secret degrades to an ephemeral k
 sessions do not survive restarts, with a stderr warning rather than a silent
 default.
 
+**The model's output and the corrective retry.** The model sees only the
+findings its role received, and we show nothing it writes until the validator
+passes it. Every claim must cite a finding the role received, and every
+number and date must come from the findings that claim cites. When an answer
+fails, the runner asks the model once more with the same inputs plus one short
+correction that states the validator's reason in plain words, for example
+"Your previous answer cited M7, which you did not receive. Use only the
+findings you were given." The correction names finding IDs and the rule, and
+it never adds a finding value or any other data. We do not send the rejected
+answer back. The second answer goes through the same validator, and a second
+failure leaves the section unavailable, exactly as before. Only a validated
+answer is shown or recorded, and a recording is always keyed to the original
+inputs, never to the correction. `CABINET_VALIDATION_RETRIES` sets the number
+of corrective tries (default 1, capped at 3), and 0 turns the retry off. A
+replayed recording never takes this path, because it was validated when it
+was made. The audit trail carries the count as `validation_retries` on the
+existing `finding.produced` and `briefing.produced` events, with no new event
+type.
+
 **Dependency audits.** `make audit` runs `pip-audit` over the pinned runtime
 requirements and `npm audit --omit=dev` for the UI, and both are currently
 clean, with no advisories and none accepted.

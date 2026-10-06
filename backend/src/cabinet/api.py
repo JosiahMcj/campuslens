@@ -801,9 +801,11 @@ def create_app(
         force_refresh: bool,
         runtime: InstitutionRuntime,
         question: Question = DEFAULT_QUESTION,
-    ) -> tuple[dict[str, Any] | None, str | None]:
+    ) -> tuple[dict[str, Any] | None, str | None, int]:
         """One analyst's validated explanation as a response body, or
-        (None, reason) when the provider cannot answer.
+        (None, reason) when the provider cannot answer, plus the number of
+        corrective tries the run made after a validation failure (0 for a
+        cache hit).
 
         The provider is chosen per call from the environment
         (``CABINET_PROVIDER``), so ``make api REPLAY=1`` takes effect without
@@ -820,7 +822,7 @@ def create_app(
         try:
             provider = provider_from_env()
         except ValueError as exc:
-            return None, str(exc)
+            return None, str(exc), 0
         received = received_for(question, role, runtime.findings)
         received_sha = hashlib.sha256(
             canonical_findings_json(received).encode("utf-8")
@@ -834,12 +836,12 @@ def create_app(
             received_sha,
         )
         if not force_refresh and cache_key in runtime.briefing_cache:
-            return runtime.briefing_cache[cache_key], None
+            return runtime.briefing_cache[cache_key], None, 0
         result = run_analyst(
             role, runtime.findings, provider, audit, task_id=task_id, question=question
         )
         if not result.available:
-            return None, str(result.reason)
+            return None, str(result.reason), result.validation_retries
         body = {
             "available": True,
             "text": result.text,
@@ -872,7 +874,7 @@ def create_app(
                 "question_id": question.id,
             },
         )
-        return body, None
+        return body, None, result.validation_retries
 
     def analyst_section(
         role: str, body: dict[str, Any] | None, reason: str | None
@@ -979,12 +981,17 @@ def create_app(
         # this question's task.
         analyst_bodies: dict[str, dict[str, Any] | None] = {}
         analyst_reasons: dict[str, str | None] = {}
+        # Corrective tries after a validation failure, per role; recorded on
+        # briefing.produced (a cache hit made none).
+        validation_retries: dict[str, int] = {}
         for role in ANALYST_ROLES:
-            body_out, reason = analyst_body(
+            body_out, reason, retries = analyst_body(
                 role, analyst_task_ids[role], False, runtime, question
             )
             analyst_bodies[role] = body_out
             analyst_reasons[role] = reason
+            validation_retries[role] = retries
+        validation_retries[CHIEF_OF_STAFF] = 0
 
         # The Chief of Staff merges the analysts' validated findings into
         # sections 1 and 7. It runs only when both analysts produced; if one
@@ -1046,6 +1053,7 @@ def create_app(
                         chief_task_id,
                         question,
                     )
+                    validation_retries[CHIEF_OF_STAFF] = result.validation_retries
                     if result.available:
                         chief_body = {
                             "executive_summary": result.executive_summary,
@@ -1191,6 +1199,7 @@ def create_app(
                 },
                 "analyst_task_ids": analyst_task_ids,
                 "chief_task_id": chief_task_id,
+                "validation_retries": validation_retries,
             },
         )
         store.save_briefing(
@@ -1373,7 +1382,7 @@ def create_app(
                 },
             )
         try:
-            body, reason = analyst_body(
+            body, reason, _retries = analyst_body(
                 role, analyst_task_id(role, runtime), force_refresh, runtime
             )
         finally:

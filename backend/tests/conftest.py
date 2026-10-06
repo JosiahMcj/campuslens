@@ -103,8 +103,9 @@ def _isolated_security_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     ui_dist.mkdir()
     (ui_dist / "index.html").write_text("<html>test build</html>\n")
     monkeypatch.setenv("CABINET_UI_DIST", str(ui_dist))
-    # Never let a developer's shell leak production mode into the test run.
-    for name in ("CABINET_ENV", "CABINET_BIND"):
+    # Never let a developer's shell leak production mode, or a non-default
+    # validation retry count, into the test run.
+    for name in ("CABINET_ENV", "CABINET_BIND", "CABINET_VALIDATION_RETRIES"):
         monkeypatch.delenv(name, raising=False)
 
 

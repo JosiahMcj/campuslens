@@ -50,6 +50,14 @@ Other environment configuration:
 - ``CABINET_REPLAY_DIR`` — extra replay cache directory, searched first
   (default write target for recordings: ``var/replay/``).
 
+Validation retry: a provider may also offer ``correct(findings, role,
+correction)``, the same call plus one extra user message stating why its
+previous answer failed validation. The analyst and Chief of Staff runners use
+it for at most ``CABINET_VALIDATION_RETRIES`` corrective tries (see
+``cabinet.analysts``). :class:`ChatProvider` and :class:`FakeProvider` offer it.
+:class:`ReplayProvider` does not, by design: a recording was validated when it
+was made, so replay never takes the retry path.
+
 Adding a provider (the D5 seam): write a class that satisfies
 :class:`Provider` — a ``name``/``model_label`` pair plus
 ``explain(findings, role)`` that raises :class:`ProviderUnavailable` instead of
@@ -260,6 +268,20 @@ class ChatProvider:
         return os.environ.get(ENV_LLM_LABEL, DEFAULT_LABEL)
 
     def explain(self, findings: dict[str, Any], role: str) -> Explanation:
+        return self._complete(findings, role, correction=None)
+
+    def correct(
+        self, findings: dict[str, Any], role: str, correction: str
+    ) -> Explanation:
+        """The corrective second try: the same system and user messages as
+        :meth:`explain`, plus one more user message carrying ``correction``
+        (the validator's reason in plain words). The rejected answer is not
+        sent back, and nothing but the correction is added."""
+        return self._complete(findings, role, correction=correction)
+
+    def _complete(
+        self, findings: dict[str, Any], role: str, *, correction: str | None
+    ) -> Explanation:
         base_url = os.environ.get(ENV_LLM_BASE_URL, "").strip()
         model = os.environ.get(ENV_LLM_MODEL, "").strip()
         key = self._resolve_key()
@@ -286,12 +308,15 @@ class ChatProvider:
         from cabinet.analysts import build_prompt
 
         system, user = build_prompt(findings, role)
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+        if correction is not None:
+            messages.append({"role": "user", "content": correction})
         payload = {
             "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            "messages": messages,
             "temperature": 0.2,
             **_reasoning_effort_field(),
             "max_tokens": 2048,
@@ -502,6 +527,13 @@ class FakeProvider:
             text=" ".join(sentences), provider=self.name, model_label=self.model_label
         )
 
+    def correct(
+        self, findings: dict[str, Any], role: str, correction: str
+    ) -> Explanation:
+        """The corrective second try. The stub's answers are valid by
+        construction, so it answers exactly as :meth:`explain` does."""
+        return self.explain(findings, role)
+
     @staticmethod
     def _chief_text(received: dict[str, Any]) -> str:
         """The Chief of Staff's two-section JSON, built from the aggregate
@@ -621,6 +653,26 @@ class RecordingProvider:
 
     def explain(self, findings: dict[str, Any], role: str) -> Explanation:
         return self.inner.explain(findings, role)
+
+    @property
+    def can_correct(self) -> bool:
+        """Whether the wrapped provider takes a corrective second try."""
+        return callable(getattr(self.inner, "correct", None))
+
+    def correct(
+        self, findings: dict[str, Any], role: str, correction: str
+    ) -> Explanation:
+        """Forward the corrective try. Like :meth:`explain`, it never
+        records: the runner saves only the answer that passed validation,
+        keyed to ``findings`` without the correction."""
+        inner_correct = getattr(self.inner, "correct", None)
+        if not callable(inner_correct):
+            raise ProviderUnavailable(
+                f"provider {self.inner.name!r} takes no corrective try",
+                provider=self.inner.name,
+            )
+        result: Explanation = inner_correct(findings, role, correction)
+        return result
 
     def save(
         self, findings: dict[str, Any], role: str, explanation: Explanation
