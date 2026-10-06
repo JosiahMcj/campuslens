@@ -142,7 +142,11 @@ export function DecisionPanel({
         const approved = approvedTasks[decision.id]
         const recovered: TaskRecord | undefined = taskFromEvents(events, decision.id)
         const task = approved?.task ?? recovered
-        const alreadyApproved = decision.approved || task !== undefined
+        // Approval for the active dataset only (GET /decisions), the state the
+        // API acts on. An approval in the audit log from an earlier dataset
+        // still shows its task, but the button offers a first approval and
+        // no Prepare is offered (the API would answer 409).
+        const alreadyApproved = decision.approved
         const dispatchState = dispatches[decision.id]
         const dispatch = dispatchState?.info?.dispatch ?? null
         const officeContact = dispatchState?.info?.office_contact ?? null
@@ -175,7 +179,7 @@ export function DecisionPanel({
                 Approval failed: {approveError}
               </p>
             )}
-            {task !== undefined && (
+            {task !== undefined && alreadyApproved && (
               <div className="simulated-task" role="status">
                 <h4>Follow-up task</h4>
                 <dl>

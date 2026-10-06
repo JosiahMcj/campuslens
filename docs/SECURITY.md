@@ -132,9 +132,11 @@ and now office address book changes, with the payload `action`, target user id,
 `task.send_failed` (a provider refusal or failure, with the error and never the
 message body), and their actor is the named person who composed or sent the
 message. The Financial Aid review queue added `aid.queued` (decision, dataset,
-and student count, never a student id) and `aid.updated` (row id, pseudonymous
-student id, the status before and after, and whether the note changed, never
-the note text), and their actor is the acting user's email.
+and student count, never a student id) and `aid.updated` (row id, decision,
+the status before and after, and whether the note changed, never a student id
+and never the note text), and their actor is the acting user's email. The
+audit log is append-only and outlives the dataset purge, so neither event names
+a student.
 
 **User administration.** Institution admins manage their institution's users
 from the Institution screen or `/admin/users`, which requires the admin role

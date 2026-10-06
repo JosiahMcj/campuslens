@@ -63,6 +63,27 @@ def _sign_off(client: TestClient, decision_id: str = DEMO_DECISION_ID) -> None:
     assert response.status_code == 200, response.text
 
 
+def _opened(client: TestClient, review_id: int) -> str | None:
+    """The row's updated_at as this client reads it now (None when the row
+    was never saved, or when the client cannot see it)."""
+    response = client.get("/aid-queue")
+    if response.status_code != 200:
+        return None
+    for row in response.json()["rows"]:
+        if row["id"] == review_id:
+            return row["updated_at"]  # type: ignore[no-any-return]
+    return None
+
+
+def _save(client: TestClient, review_id: int, **fields: Any) -> Any:
+    """PATCH one row the way the panel does: the changed fields plus the
+    updated_at the row had when it was read."""
+    return client.patch(
+        f"/aid-queue/{review_id}",
+        json={**fields, "expected_updated_at": _opened(client, review_id)},
+    )
+
+
 @pytest.fixture
 def app() -> FastAPI:
     return create_app()
@@ -290,16 +311,16 @@ def test_who_reads_the_queue(queued: FastAPI, role: str, status: int) -> None:
 )
 def test_who_updates_a_row(queued: FastAPI, role: str, status: int) -> None:
     client = make_authenticated_client(queued, role=role)
-    response = client.patch("/aid-queue/1", json={"status": "in_review"})
+    response = client.patch(
+        "/aid-queue/1", json={"status": "in_review", "expected_updated_at": None}
+    )
     assert response.status_code == status
 
 
 def test_aid_user_updates_a_row_and_the_event_names_them(queued: FastAPI) -> None:
     aid = make_authenticated_client(queued, role="aid", email="aid@test.example")
     note = "  Called the student.\nWaiting on the FAFSA correction.  "
-    response = aid.patch(
-        "/aid-queue/1", json={"status": "in_review", "note": note}
-    )
+    response = _save(aid, 1, status="in_review", note=note)
     assert response.status_code == 200, response.text
     row = response.json()["row"]
     assert row["status"] == "in_review"
@@ -310,14 +331,13 @@ def test_aid_user_updates_a_row_and_the_event_names_them(queued: FastAPI) -> Non
     executive = make_authenticated_client(queued, role="executive")
     rows = executive.get("/aid-queue").json()["rows"]
     assert rows[0]["note"] == note
-    assert executive.patch("/aid-queue/1", json={"note": "x"}).status_code == 403
+    assert _save(executive, 1, note="x").status_code == 403
     updated = _events(executive, "aid.updated")
     assert len(updated) == 1
     event = updated[0]
     assert event["actor"] == "aid@test.example"
     assert event["payload"] == {
         "aid_review_id": 1,
-        "student_id": rows[0]["student_id"],
         "decision_id": DEMO_DECISION_ID,
         "status_from": "open",
         "status_to": "in_review",
@@ -330,25 +350,25 @@ def test_status_alone_leaves_the_note_and_note_alone_leaves_the_status(
     queued: FastAPI,
 ) -> None:
     aid = make_authenticated_client(queued, role="aid")
-    aid.patch("/aid-queue/2", json={"note": "first note"})
-    row = aid.patch("/aid-queue/2", json={"status": "closed"}).json()["row"]
+    _save(aid, 2, note="first note")
+    row = _save(aid, 2, status="closed").json()["row"]
     assert (row["status"], row["note"]) == ("closed", "first note")
-    row = aid.patch("/aid-queue/2", json={"note": ""}).json()["row"]
+    row = _save(aid, 2, note="").json()["row"]
     assert (row["status"], row["note"]) == ("closed", "")
 
 
 def test_patch_validation(queued: FastAPI) -> None:
     aid = make_authenticated_client(queued, role="aid")
     at_cap = "n" * AID_NOTE_MAX_CHARS
-    assert aid.patch("/aid-queue/1", json={"note": at_cap}).status_code == 200
-    over = aid.patch("/aid-queue/1", json={"note": at_cap + "n"})
+    assert _save(aid, 1, note=at_cap).status_code == 200
+    over = _save(aid, 1, note=at_cap + "n")
     assert over.status_code == 422
     assert "limit is 1,000" in over.json()["detail"]
-    bad = aid.patch("/aid-queue/1", json={"status": "done"})
+    bad = _save(aid, 1, status="done")
     assert bad.status_code == 422
     assert "open, in_review, closed" in bad.json()["detail"]
-    assert aid.patch("/aid-queue/1", json={}).status_code == 422
-    assert aid.patch("/aid-queue/9999", json={"status": "open"}).status_code == 404
+    assert _save(aid, 1).status_code == 422
+    assert _save(aid, 9999, status="open").status_code == 404
     # A rejected update changes nothing.
     assert aid.get("/aid-queue").json()["rows"][0]["note"] == at_cap
 
@@ -356,7 +376,7 @@ def test_patch_validation(queued: FastAPI) -> None:
 def test_patch_without_csrf_token_is_403(queued: FastAPI) -> None:
     aid = make_authenticated_client(queued, role="aid")
     del aid.headers["X-CSRF-Token"]
-    assert aid.patch("/aid-queue/1", json={"status": "closed"}).status_code == 403
+    assert _save(aid, 1, status="closed").status_code == 403
 
 
 def test_dispatch_state_carries_the_queue_count(app: FastAPI) -> None:
@@ -406,7 +426,7 @@ def test_queue_does_not_leak_across_institutions(queued: FastAPI) -> None:
     client.headers["X-CSRF-Token"] = login.json()["csrf_token"]
     assert client.get("/aid-queue").json()["rows"] == []
     # Another institution's row id is a 404, the same as no row at all.
-    assert client.patch("/aid-queue/1", json={"status": "closed"}).status_code == 404
+    assert _save(client, 1, status="closed").status_code == 404
 
 
 def test_queue_is_pinned_to_its_dataset_and_purged_with_it(tmp_path: Path) -> None:
@@ -463,9 +483,7 @@ def test_model_never_receives_the_queue_or_the_notes(
     aid = make_authenticated_client(queued, role="aid")
     sentinel = "SENTINEL-NOTE-7f3a"
     assert (
-        aid.patch(
-            "/aid-queue/1", json={"status": "in_review", "note": sentinel}
-        ).status_code
+        _save(aid, 1, status="in_review", note=sentinel).status_code
         == 200
     )
     executive = make_authenticated_client(queued, role="executive")
@@ -504,3 +522,207 @@ def test_model_side_modules_never_reach_the_queue() -> None:
         source = (SRC / module).read_text(encoding="utf-8")
         assert "aidqueue" not in source, module
         assert "aid_reviews" not in source, module
+
+
+# --- concurrent edits, the audit payload, the active dataset, path ids -----------
+
+STALE_MESSAGE = "This row changed since you opened it. Reload to see the latest."
+
+
+def _read_events(app: FastAPI, event_type: str) -> list[dict[str, Any]]:
+    """The events of one type, read as an executive (the aid role does not
+    read the audit log)."""
+    return _events(make_authenticated_client(app, role="executive"), event_type)
+
+
+def test_two_stale_saves_on_one_row_never_lose_a_note(queued: FastAPI) -> None:
+    """Two aid users open the same row, then both save: one sets a note, the
+    other a status, each carrying the updated_at it opened. The second save
+    is refused with 409 instead of overwriting the first, the note survives,
+    and the audit chain records only the transition that happened."""
+    first = make_authenticated_client(queued, role="aid", email="aid-a@test.example")
+    second = make_authenticated_client(queued, role="aid", email="aid-b@test.example")
+    opened = first.get("/aid-queue").json()["rows"][0]
+    assert opened["updated_at"] is None
+    one = first.patch(
+        f"/aid-queue/{opened['id']}",
+        json={"note": "Called the student.", "expected_updated_at": None},
+    )
+    two = second.patch(
+        f"/aid-queue/{opened['id']}",
+        json={"status": "closed", "expected_updated_at": opened["updated_at"]},
+    )
+    assert one.status_code == 200, one.text
+    assert two.status_code == 409, two.text
+    assert two.json()["detail"] == STALE_MESSAGE
+    row = first.get("/aid-queue").json()["rows"][0]
+    assert (row["status"], row["note"]) == ("open", "Called the student.")
+    events = _read_events(queued, "aid.updated")
+    assert len(events) == 1
+    assert events[0]["actor"] == "aid-a@test.example"
+    assert events[0]["payload"]["status_from"] == "open"
+    assert events[0]["payload"]["status_to"] == "open"
+    assert events[0]["payload"]["note_changed"] is True
+    # Reloaded, the second user saves against the current row and succeeds.
+    retry = second.patch(
+        f"/aid-queue/{opened['id']}",
+        json={"status": "closed", "expected_updated_at": row["updated_at"]},
+    )
+    assert retry.status_code == 200, retry.text
+    assert retry.json()["row"]["note"] == "Called the student."
+    events = _read_events(queued, "aid.updated")
+    assert len(events) == 2
+    latest = max(events, key=lambda event: int(event["id"]))
+    assert (latest["payload"]["status_from"], latest["payload"]["status_to"]) == (
+        "open",
+        "closed",
+    )
+    assert latest["payload"]["note_changed"] is False
+
+
+def test_concurrent_saves_on_one_row_one_wins_one_409(queued: FastAPI) -> None:
+    """The same race on real threads: both saves carry the row's opening
+    updated_at, so exactly one lands and the other is a 409."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    clients = [
+        make_authenticated_client(queued, role="aid", email=f"aid-{n}@test.example")
+        for n in range(2)
+    ]
+    opened = clients[0].get("/aid-queue").json()["rows"][0]
+    bodies: list[dict[str, Any]] = [
+        {"note": "note from A", "expected_updated_at": opened["updated_at"]},
+        {"status": "closed", "expected_updated_at": opened["updated_at"]},
+    ]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(
+            pool.map(
+                lambda pair: pair[0].patch(f"/aid-queue/{opened['id']}", json=pair[1]),
+                zip(clients, bodies, strict=True),
+            )
+        )
+    codes = sorted(response.status_code for response in responses)
+    assert codes == [200, 409], [response.text for response in responses]
+    winner = responses[0] if responses[0].status_code == 200 else responses[1]
+    row = clients[0].get("/aid-queue").json()["rows"][0]
+    assert row == winner.json()["row"]
+    events = _read_events(queued, "aid.updated")
+    assert len(events) == 1
+    payload = events[0]["payload"]
+    assert payload["status_from"] == "open"
+    assert payload["status_to"] == row["status"]
+    assert payload["note_changed"] is (row["note"] != "")
+
+
+def test_an_unchanged_field_is_not_an_audited_change(queued: FastAPI) -> None:
+    aid = make_authenticated_client(queued, role="aid")
+    assert _save(aid, 1, note="same").status_code == 200
+    assert _save(aid, 1, status="open", note="same").status_code == 200
+    events = _read_events(queued, "aid.updated")
+    latest = max(events, key=lambda event: int(event["id"]))
+    assert latest["payload"]["note_changed"] is False
+    assert latest["payload"]["status_from"] == latest["payload"]["status_to"] == "open"
+
+
+def test_no_aid_event_payload_carries_a_student_id(queued: FastAPI) -> None:
+    """The audit log is append-only and outlives the dataset purge, so the
+    aid events name the row, never the student."""
+    aid = make_authenticated_client(queued, role="aid")
+    rows = aid.get("/aid-queue").json()["rows"]
+    for row in rows[:3]:
+        response = _save(aid, row["id"], status="in_review", note="n")
+        assert response.status_code == 200, response.text
+    executive = make_authenticated_client(queued, role="executive")
+    events = [
+        event
+        for event in executive.get("/events").json()["events"]
+        if str(event["type"]).startswith("aid.")
+    ]
+    assert {event["type"] for event in events} == {"aid.queued", "aid.updated"}
+    student_ids = {row["student_id"] for row in rows}
+    for event in events:
+        dumped = json.dumps(event["payload"])
+        assert "student_id" not in event["payload"]
+        assert "STU-" not in dumped
+        for student_id in student_ids:
+            assert student_id not in dumped
+    updated = [event for event in events if event["type"] == "aid.updated"]
+    assert set(updated[0]["payload"]) == {
+        "aid_review_id",
+        "decision_id",
+        "status_from",
+        "status_to",
+        "note_changed",
+    }
+
+
+def test_rows_of_an_inactive_or_deleted_dataset_are_not_editable(
+    queued: FastAPI,
+) -> None:
+    """A row id from a dataset that is no longer active (or was deleted) is
+    a 404, the same as no row at all, and nothing changes."""
+    store: CabinetStore = queued.state.auth
+    store._conn.execute(
+        "INSERT INTO datasets (id, institution_id, name, uploaded_by,"
+        " uploaded_at, sha256, row_counts, is_active, deleted_at)"
+        " VALUES (2, 1, 'old', 'admin', '2026-01-01', 'x', '{}', 0, NULL),"
+        " (3, 1, 'gone', 'admin', '2026-01-01', 'x', '{}', 0,"
+        " '2026-01-02T00:00:00+00:00')"
+    )
+    store._conn.commit()
+    for dataset_id in (2, 3):
+        assert store.create_aid_queue(
+            1,
+            decision_id=DEMO_DECISION_ID,
+            dataset_id=dataset_id,
+            rows=[("STU-0001", {})],
+        )
+    aid = make_authenticated_client(queued, role="aid")
+    for dataset_id in (2, 3):
+        (row,) = store.aid_reviews_for(1, dataset_id=dataset_id)
+        response = aid.patch(
+            f"/aid-queue/{row['id']}",
+            json={"status": "closed", "expected_updated_at": None},
+        )
+        assert response.status_code == 404, response.text
+        (after,) = store.aid_reviews_for(1, dataset_id=dataset_id)
+        assert (after["status"], after["updated_by"]) == ("open", None)
+    assert _read_events(queued, "aid.updated") == []
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("PATCH", "/aid-queue/{id}", {"status": "closed", "expected_updated_at": None}),
+        ("POST", "/admin/datasets/{id}/activate", None),
+        ("DELETE", "/admin/datasets/{id}", None),
+        ("POST", "/admin/users/{id}/disable", None),
+        ("POST", "/admin/users/{id}/enable", None),
+        ("PATCH", "/admin/users/{id}", {"role": "staff"}),
+    ],
+)
+@pytest.mark.parametrize(
+    "row_id", ["99999999999999999999999", str(2**63), "-99999999999999999999999"]
+)
+def test_integer_path_ids_beyond_sqlite_range_are_404(
+    queued: FastAPI, method: str, path: str, body: dict[str, Any] | None, row_id: str
+) -> None:
+    admin = make_authenticated_client(queued, role="admin")
+    response = admin.request(method, path.format(id=row_id), json=body)
+    assert response.status_code == 404, response.text
+
+
+def test_a_save_without_expected_updated_at_is_422_and_changes_nothing(
+    queued: FastAPI,
+) -> None:
+    """The row's updated_at as it was read is required on every save, so no
+    client can overwrite a row it has not read."""
+    aid = make_authenticated_client(queued, role="aid")
+    response = aid.patch("/aid-queue/1", json={"status": "closed", "note": "x"})
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert "Reload the row" in detail
+    assert "expected_updated_at" in detail
+    row = aid.get("/aid-queue").json()["rows"][0]
+    assert (row["status"], row["note"], row["updated_at"]) == ("open", "", None)
+    assert _read_events(queued, "aid.updated") == []

@@ -86,6 +86,16 @@ class StoreError(RuntimeError):
     """A storage-level failure (integrity, missing rows)."""
 
 
+class AidReviewConflict(Exception):
+    """A queue row changed since the person saving it opened it. Not a
+    StoreError: the API answers 409, never the 503 of an integrity failure.
+    ``current`` is the row as it stands."""
+
+    def __init__(self, current: dict[str, Any]) -> None:
+        super().__init__("the Financial Aid review row changed")
+        self.current = current
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -1313,18 +1323,6 @@ class CabinetStore:
             rows = self._conn.execute(sql, params).fetchall()
         return [self._aid_review_dict(row) for row in rows]
 
-    def aid_review_by_id(
-        self, institution_id: int, review_id: int
-    ) -> dict[str, Any] | None:
-        """One queue row, or None when it does not exist in this institution
-        (a row id from another institution is indistinguishable from none)."""
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT * FROM aid_reviews WHERE id = ? AND institution_id = ?",
-                (review_id, institution_id),
-            ).fetchone()
-        return self._aid_review_dict(row) if row is not None else None
-
     def update_aid_review(
         self,
         institution_id: int,
@@ -1333,28 +1331,53 @@ class CabinetStore:
         status: str | None,
         note: str | None,
         updated_by: str,
-    ) -> dict[str, Any] | None:
+        expected_updated_at: str | None,
+    ) -> tuple[dict[str, Any], dict[str, Any]] | None:
         """Set a row's status and/or note as a person typed them (None leaves
-        a field unchanged) and stamp who and when. Returns the updated row, or
-        None when the row is not in this institution."""
-        assignments = ["updated_by = ?", "updated_at = ?"]
-        params: list[Any] = [updated_by, _now()]
-        if status is not None:
-            assignments.append("status = ?")
-            params.append(status)
-        if note is not None:
-            assignments.append("note = ?")
-            params.append(note)
-        params.extend([review_id, institution_id])
+        a field unchanged) and stamp who and when.
+
+        Only a row of the institution's active dataset is editable: a row id
+        from another institution, an inactive dataset, or a deleted one
+        answers None, the same as no row at all. The row's current
+        ``updated_at`` must equal ``expected_updated_at`` (None for a row
+        nobody has saved yet), otherwise nothing is written and
+        :class:`AidReviewConflict` is raised. The read, the check, the
+        write, and the read back share one transaction under the store lock,
+        so the returned ``(before, after)`` pair is the true transition even
+        when two people save the same row at once."""
         with self._lock, self._conn:
-            cursor = self._conn.execute(
+            row = self._conn.execute(
+                "SELECT * FROM aid_reviews WHERE id = ? AND institution_id = ?"
+                " AND dataset_id IN (SELECT id FROM datasets"
+                " WHERE institution_id = ? AND is_active = 1"
+                " AND deleted_at IS NULL)",
+                (review_id, institution_id, institution_id),
+            ).fetchone()
+            if row is None:
+                return None
+            before = self._aid_review_dict(row)
+            if before["updated_at"] != expected_updated_at:
+                raise AidReviewConflict(before)
+            assignments = ["updated_by = ?", "updated_at = ?"]
+            params: list[Any] = [updated_by, _now()]
+            if status is not None:
+                assignments.append("status = ?")
+                params.append(status)
+            if note is not None:
+                assignments.append("note = ?")
+                params.append(note)
+            params.extend([review_id, institution_id])
+            self._conn.execute(
                 f"UPDATE aid_reviews SET {', '.join(assignments)}"
                 " WHERE id = ? AND institution_id = ?",
                 params,
             )
-            if cursor.rowcount != 1:
-                return None
-        return self.aid_review_by_id(institution_id, review_id)
+            after_row = self._conn.execute(
+                "SELECT * FROM aid_reviews WHERE id = ? AND institution_id = ?",
+                (review_id, institution_id),
+            ).fetchone()
+            after = self._aid_review_dict(after_row)
+        return before, after
 
     # -- recordings ---------------------------------------------------------------
 
@@ -1386,6 +1409,7 @@ class CabinetStore:
 
 
 __all__ = [
+    "AidReviewConflict",
     "CabinetStore",
     "ScopedAudit",
     "StoreError",

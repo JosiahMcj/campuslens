@@ -15,6 +15,17 @@ export const AID_STATUSES: readonly AidStatus[] = ['open', 'in_review', 'closed'
 
 export const AID_NOTE_MAX_CHARS = 1000
 
+/** The note's length as the API counts it: characters (code points), so an
+ * emoji counts once, never the two UTF-16 units `String.length` sees. */
+export function noteLength(note: string): number {
+  return [...note].length
+}
+
+/** What the panel says when a save is refused (409) because someone else
+ * saved the row first: the person's typed text stays in the box. */
+export const AID_ROW_CHANGED_MESSAGE =
+  'This row changed since you opened it. Your text is kept. Compare it with the saved version and save again.'
+
 export interface AidHoldFact {
   amount: number
   hold_date: string
@@ -97,10 +108,19 @@ export async function fetchAidQueue(): Promise<AidQueue> {
   return (await response.json()) as AidQueue
 }
 
-/** Save one row's status and note. The note goes exactly as typed. */
+/** One save: only the fields the person changed, plus the row's updated_at
+ * as it was opened, so the API refuses (409) a save over someone else's. */
+export interface AidReviewChange {
+  status?: AidStatus
+  note?: string
+  expected_updated_at: string | null
+}
+
+/** Save the changed fields of one row. The note goes exactly as typed. A row
+ * that changed since it was opened throws an ApiError with status 409. */
 export async function patchAidReview(
   id: number,
-  change: { status: AidStatus; note: string },
+  change: AidReviewChange,
 ): Promise<AidReviewRow> {
   const response = await apiFetch(`/aid-queue/${id}`, {
     method: 'PATCH',

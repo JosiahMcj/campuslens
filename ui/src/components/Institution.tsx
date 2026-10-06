@@ -184,7 +184,8 @@ export function Institution({
 
   useEffect(() => {
     if (focusKey.current === null) return
-    const input = document.getElementById(`office-name-${focusKey.current}`)
+    const index = officeRows.findIndex((row) => row.key === focusKey.current)
+    const input = document.getElementById(`office-name-${index}`)
     focusKey.current = null
     input?.focus()
   }, [officeRows])
@@ -642,8 +643,10 @@ export function Institution({
                     const errors = officeErrors[row.key] ?? {}
                     const isNew = row.key.startsWith('new:')
                     const label = row.office.trim() !== '' ? row.office.trim() : `new office ${index + 1}`
-                    const officeErrorId = `office-name-error-${row.key}`
-                    const emailErrorId = `office-email-error-${row.key}`
+                    // Ids from the row index: row keys carry office names with
+                    // spaces, and aria-describedby splits on whitespace.
+                    const officeErrorId = `office-name-error-${index}`
+                    const emailErrorId = `office-email-error-${index}`
                     const busy = officeSave.kind === 'saving'
                     return (
                       <tr key={row.key}>
@@ -651,7 +654,7 @@ export function Institution({
                           {isNew ? (
                             <>
                               <input
-                                id={`office-name-${row.key}`}
+                                id={`office-name-${index}`}
                                 type="text"
                                 autoComplete="off"
                                 aria-label={`Office name, row ${index + 1}`}

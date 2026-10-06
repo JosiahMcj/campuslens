@@ -107,7 +107,9 @@ records because they are the proof that a person, not the software, sent each me
 
 Deleting a dataset is a soft delete, and the data is purged after 30 days. The
 Financial Aid review queue belongs to the dataset it was read from, so its rows and
-notes are purged with that dataset. Backups are made with the database's own backup API and rotate on our
+notes are purged with that dataset. The audit log keeps that a queue row changed, by
+its row number, with the status before and after. It never keeps the student id or
+the note text, so nothing in it points back to a student once the queue is purged. Backups are made with the database's own backup API and rotate on our
 schedule. You may ask us for full deletion of your institution's data at any time, and
 the audit log then retains only the fact of deletion.
 

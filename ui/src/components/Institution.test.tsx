@@ -366,6 +366,34 @@ describe('Institution Offices — validation', () => {
     expect(screen.queryByText('Enter a mailbox address like office@example.edu.')).toBeNull()
   })
 
+  it('points each field at its error by an id a screen reader can resolve', async () => {
+    stubApi({
+      offices: [{ office: 'Student Accounts', email: 'accounts@example.edu' }],
+      decisionOffices: ['Financial Aid'],
+    })
+    renderInstitution()
+    await waitFor(() => screen.getByLabelText('Mailbox for Financial Aid'))
+
+    fireEvent.change(screen.getByLabelText('Mailbox for Student Accounts'), {
+      target: { value: 'not a mailbox' },
+    })
+    fireEvent.change(screen.getByLabelText('Mailbox for Financial Aid'), {
+      target: { value: 'financial-aid' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save the office contacts' }))
+    await waitFor(() => screen.getAllByText('Enter a mailbox address like office@example.edu.'))
+
+    for (const office of ['Student Accounts', 'Financial Aid']) {
+      const input = screen.getByLabelText(`Mailbox for ${office}`)
+      const ids = (input.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean)
+      expect(ids.length).toBe(1)
+      const described = document.getElementById(ids[0])
+      expect(described).not.toBeNull()
+      expect(described!.textContent).toBe('Enter a mailbox address like office@example.edu.')
+      expect(input.closest('td')!.contains(described)).toBe(true)
+    }
+  })
+
   it('flags a duplicate office under the office name and sends nothing', async () => {
     const { puts } = stubApi({ offices: [{ office: 'Bursar', email: 'bursar@example.edu' }] })
     renderInstitution()
