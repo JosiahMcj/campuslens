@@ -38,6 +38,13 @@ Tables (created and versioned by ``cabinet.migrations``):
   (migration 5): one message per approved task per dataset (the UNIQUE
   constraint anchors that), composed in code and sent only on a named
   staff member's click. ``status`` is draft, sent, or failed.
+- ``aid_reviews(id, institution_id, dataset_id, decision_id, student_id,
+  facts_json, status, note, updated_by, updated_at, created_at)`` — the
+  Financial Aid review queue (migration 6): one row per M3 student, created
+  once per authorized emergency-aid review decision per dataset (the UNIQUE
+  constraint anchors it). ``facts_json`` holds the facts the office needs to
+  start its own review (``cabinet.aidqueue``); ``status`` and ``note`` are
+  set only by a person in the aid role. Purged with its dataset.
 - ``recordings(institution_id, role, key, json)`` — validated model outputs
   per institution; the key is the sha256 of the canonical received findings
   (which covers the dataset content and the question).
@@ -727,6 +734,14 @@ class CabinetStore:
                 path = self.dataset_path(row)
                 with contextlib.suppress(FileNotFoundError):
                     path.unlink()
+                # The aid review queue lives and dies with its dataset: its
+                # rows are facts read from that dataset plus the office's
+                # notes about those students.
+                self._conn.execute(
+                    "DELETE FROM aid_reviews WHERE dataset_id = ?"
+                    " AND institution_id = ?",
+                    (row["id"], row["institution_id"]),
+                )
                 self._conn.execute("DELETE FROM datasets WHERE id = ?", (row["id"],))
             self._conn.commit()
         return rows
@@ -1227,6 +1242,119 @@ class CabinetStore:
             if cursor.rowcount != 1:
                 return None
         return self.dispatch_by_id(institution_id, dispatch_id)
+
+    # -- the Financial Aid review queue ------------------------------------------
+
+    @staticmethod
+    def _aid_review_dict(row: sqlite3.Row) -> dict[str, Any]:
+        result = dict(row)
+        result["id"] = int(result["id"])
+        result["dataset_id"] = int(result["dataset_id"])
+        result["facts"] = json.loads(result.pop("facts_json"))
+        return result
+
+    def create_aid_queue(
+        self,
+        institution_id: int,
+        *,
+        decision_id: str,
+        dataset_id: int,
+        rows: list[tuple[str, dict[str, Any]]],
+    ) -> bool:
+        """Create the queue for one decision on one dataset: one row per
+        ``(student_id, facts)``. True when this call created it; False when a
+        queue already exists for that decision and dataset (nothing is
+        inserted, so a second request can never add or duplicate students).
+        The existence check and the inserts share one transaction under the
+        store lock, so two concurrent requests create the queue once."""
+        created_at = _now()
+        with self._lock, self._conn:
+            existing = self._conn.execute(
+                "SELECT 1 FROM aid_reviews WHERE institution_id = ?"
+                " AND decision_id = ? AND dataset_id = ? LIMIT 1",
+                (institution_id, decision_id, dataset_id),
+            ).fetchone()
+            if existing is not None:
+                return False
+            self._conn.executemany(
+                "INSERT INTO aid_reviews (institution_id, dataset_id,"
+                " decision_id, student_id, facts_json, status, note,"
+                " created_at) VALUES (?, ?, ?, ?, ?, 'open', '', ?)",
+                [
+                    (
+                        institution_id,
+                        dataset_id,
+                        decision_id,
+                        student_id,
+                        json.dumps(facts, ensure_ascii=False, sort_keys=True),
+                        created_at,
+                    )
+                    for student_id, facts in rows
+                ],
+            )
+        return True
+
+    def aid_reviews_for(
+        self,
+        institution_id: int,
+        *,
+        dataset_id: int,
+        decision_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """One institution's queue rows for one dataset, in student id order
+        (the evidence drawer's order; the queue has no other ordering)."""
+        sql = "SELECT * FROM aid_reviews WHERE institution_id = ? AND dataset_id = ?"
+        params: list[Any] = [institution_id, dataset_id]
+        if decision_id is not None:
+            sql += " AND decision_id = ?"
+            params.append(decision_id)
+        sql += " ORDER BY decision_id, student_id"
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return [self._aid_review_dict(row) for row in rows]
+
+    def aid_review_by_id(
+        self, institution_id: int, review_id: int
+    ) -> dict[str, Any] | None:
+        """One queue row, or None when it does not exist in this institution
+        (a row id from another institution is indistinguishable from none)."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM aid_reviews WHERE id = ? AND institution_id = ?",
+                (review_id, institution_id),
+            ).fetchone()
+        return self._aid_review_dict(row) if row is not None else None
+
+    def update_aid_review(
+        self,
+        institution_id: int,
+        review_id: int,
+        *,
+        status: str | None,
+        note: str | None,
+        updated_by: str,
+    ) -> dict[str, Any] | None:
+        """Set a row's status and/or note as a person typed them (None leaves
+        a field unchanged) and stamp who and when. Returns the updated row, or
+        None when the row is not in this institution."""
+        assignments = ["updated_by = ?", "updated_at = ?"]
+        params: list[Any] = [updated_by, _now()]
+        if status is not None:
+            assignments.append("status = ?")
+            params.append(status)
+        if note is not None:
+            assignments.append("note = ?")
+            params.append(note)
+        params.extend([review_id, institution_id])
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                f"UPDATE aid_reviews SET {', '.join(assignments)}"
+                " WHERE id = ? AND institution_id = ?",
+                params,
+            )
+            if cursor.rowcount != 1:
+                return None
+        return self.aid_review_by_id(institution_id, review_id)
 
     # -- recordings ---------------------------------------------------------------
 

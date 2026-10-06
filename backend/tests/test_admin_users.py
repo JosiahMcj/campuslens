@@ -67,13 +67,13 @@ def test_list_users_admin_sees_their_institutions_users(admin: TestClient) -> No
     assert "one_time_password" not in users[0]
 
 
-@pytest.mark.parametrize("role", ["executive", "staff", "reviewer"])
+@pytest.mark.parametrize("role", ["executive", "staff", "reviewer", "aid"])
 def test_list_users_other_roles_are_403(app: FastAPI, role: str) -> None:
     client = make_authenticated_client(app, role=role)
     assert client.get("/admin/users").status_code == 403
 
 
-@pytest.mark.parametrize("role", ["executive", "staff", "reviewer"])
+@pytest.mark.parametrize("role", ["executive", "staff", "reviewer", "aid"])
 def test_create_user_other_roles_are_403(app: FastAPI, role: str) -> None:
     client = make_authenticated_client(app, role=role)
     response = client.post(
@@ -98,7 +98,7 @@ def test_user_routes_anonymous_are_401(app: FastAPI) -> None:
     )
 
 
-@pytest.mark.parametrize("role", ["executive", "staff", "reviewer"])
+@pytest.mark.parametrize("role", ["executive", "staff", "reviewer", "aid"])
 def test_disable_enable_patch_other_roles_are_403(app: FastAPI, role: str) -> None:
     make_authenticated_client(app, role="admin")
     actor = make_authenticated_client(app, role=role)

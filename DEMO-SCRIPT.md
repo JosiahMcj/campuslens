@@ -175,6 +175,14 @@ panel says a staff member sends it.
 > to the office, never to a student, and the record will show exactly whose click sent
 > it."
 
+**Optional sentence (only with time to spare).** After the sign-off, the presenter
+clicks "Prepare the Financial Aid review queue" and the panel reads "Queued 18 students
+for Financial Aid review".
+
+> "The office gets a queue of those eighteen students with the facts it needs to start
+> its own review. The cabinet makes no determination about any student. Financial Aid
+> staff record their own status and notes."
+
 ## Beat 6, 3:40 to 4:00 · The audit log and the refusal
 
 **On screen.** The audit log view. Reading the audit log belongs to the executive

@@ -4,6 +4,7 @@
 // Every call goes through apiFetch (ui/src/auth.ts): state-changing requests
 // carry the session's X-CSRF-Token, and a 401 anywhere signs the UI out.
 
+import type { AidQueueSummary } from './aid'
 import { ApiError, SessionEndedError, apiDetail, apiFetch } from './auth'
 import {
   analystFromResponse,
@@ -328,6 +329,8 @@ export interface DispatchInfo {
   office_contact: string | null
   approved: boolean
   dispatch: DispatchRecord | null
+  /** The Financial Aid review queue for this decision: counts only. */
+  aid_queue?: AidQueueSummary
 }
 
 export async function fetchDispatch(

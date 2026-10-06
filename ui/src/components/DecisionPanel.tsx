@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { AuditEvent, Decision, DispatchInfo, SimulatedTask } from '../api'
 import type { Role } from '../auth'
 import { formatTimestamp, taskFromEvents, type TaskRecord } from '../states'
+import { AidQueueNotice, type AidQueueUiState } from './AidQueueNotice'
 import { FindingLink } from './FindingLink'
 
 /** What the panel knows about one decision's dispatch: the API's dispatch
@@ -35,6 +36,11 @@ interface DecisionPanelProps {
   onPrepareDispatch: (decisionId: string) => void
   onSendDispatch: (decisionId: string) => void
   onOpenEvidence: (findingId: string) => void
+  /** The Financial Aid review queue (optional: omitted, the block is
+   * hidden). onOpenAidQueue is null for a role that may not read the rows. */
+  aidQueues?: Record<string, AidQueueUiState>
+  onPrepareAidQueue?: (decisionId: string) => void
+  onOpenAidQueue?: (() => void) | null
 }
 
 const COMPOSE_ROLES: readonly Role[] = ['staff', 'executive', 'admin']
@@ -112,6 +118,9 @@ export function DecisionPanel({
   onPrepareDispatch,
   onSendDispatch,
   onOpenEvidence,
+  aidQueues = {},
+  onPrepareAidQueue,
+  onOpenAidQueue = null,
 }: DecisionPanelProps) {
   const canCompose = COMPOSE_ROLES.includes(role)
   const canSend = SEND_ROLES.includes(role)
@@ -290,6 +299,16 @@ export function DecisionPanel({
                   </p>
                 )}
               </div>
+            )}
+            {onPrepareAidQueue !== undefined && (
+              <AidQueueNotice
+                summary={dispatchState?.info?.aid_queue}
+                authorized={alreadyApproved}
+                canPrepare={canCompose}
+                state={aidQueues[decision.id]}
+                onPrepare={() => onPrepareAidQueue(decision.id)}
+                onOpen={onOpenAidQueue}
+              />
             )}
           </div>
         )

@@ -8,12 +8,16 @@ import {
   LoginError,
   SessionEndedError,
   apiFetch,
+  canAct,
+  canEditAidQueue,
+  canSeeAidQueue,
   canSeeAuditLog,
   clearSession,
   fetchMe,
   getSession,
   login,
   onSessionEnded,
+  roleDisplayName,
   setSession,
   type Role,
   type Session,
@@ -204,8 +208,8 @@ describe('apiFetch — a 401 anywhere ends the session', () => {
   })
 })
 
-describe('canSeeAuditLog — the audit-log gate for all four roles', () => {
-  it('shows the audit log to admin, reviewer, and executive, never staff', () => {
+describe('canSeeAuditLog — the audit-log gate for every role', () => {
+  it('shows the audit log to admin, reviewer, and executive, never staff or aid', () => {
     // The demo signs in as the executive (Beat 6 is the audit walkthrough),
     // so the executive must see the log the API already lets it read.
     const expected: Record<Role, boolean> = {
@@ -213,9 +217,28 @@ describe('canSeeAuditLog — the audit-log gate for all four roles', () => {
       reviewer: true,
       executive: true,
       staff: false,
+      aid: false,
     }
     for (const role of Object.keys(expected) as Role[]) {
       expect(canSeeAuditLog(role)).toBe(expected[role])
     }
+  })
+})
+
+describe('the Financial Aid review queue gates, matching the API table', () => {
+  it('reads for aid, admin, executive, reviewer; edits for aid and admin only', () => {
+    const expected: Record<Role, { read: boolean; edit: boolean; act: boolean }> = {
+      aid: { read: true, edit: true, act: false },
+      admin: { read: true, edit: true, act: true },
+      executive: { read: true, edit: false, act: true },
+      reviewer: { read: true, edit: false, act: false },
+      staff: { read: false, edit: false, act: false },
+    }
+    for (const role of Object.keys(expected) as Role[]) {
+      expect(canSeeAidQueue(role)).toBe(expected[role].read)
+      expect(canEditAidQueue(role)).toBe(expected[role].edit)
+      expect(canAct(role)).toBe(expected[role].act)
+    }
+    expect(roleDisplayName('aid')).toBe('Financial Aid')
   })
 })

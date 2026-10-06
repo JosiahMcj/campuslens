@@ -270,6 +270,11 @@ dispatches(id INTEGER PRIMARY KEY, institution_id, task_id, dataset_id,
            status CHECK (status IN ('draft', 'sent', 'failed')),
            created_by, created_at, sent_by, sent_at, provider, provider_ref, error,
            UNIQUE (institution_id, task_id, dataset_id))
+aid_reviews(id INTEGER PRIMARY KEY, institution_id, dataset_id, decision_id,
+            student_id, facts_json,
+            status CHECK (status IN ('open', 'in_review', 'closed')),
+            note, updated_by, updated_at, created_at,
+            UNIQUE (institution_id, decision_id, dataset_id, student_id))
 ```
 
 Notes on the tables.
@@ -315,6 +320,17 @@ Notes on the tables.
   the message. A sent row is never resent. With the default `outbox` provider
   the same content also sits in `var/outbox/<institution slug>/<dispatch id>.eml`
   (0600), and nothing leaves the machine.
+- `aid_reviews` is the Financial Aid review queue (migration 6). We create it
+  once per authorized emergency-aid review decision per dataset, with one row for
+  each student in the M3 finding (the UNIQUE constraint anchors it). `student_id`
+  is the pseudonymous `profile.student_id`. `facts_json` holds only
+  `enrollment.registration_status`, the qualifying holds' `amount`, `hold_date`,
+  and `responsible_office`, and the advising group's `appointment_status` and
+  `last_appointment_date`, and it never holds a counseling field. `status` starts
+  at `open`, and only a person in the aid role (or an admin) changes it or the
+  free-text `note` (at most 1,000 characters, stored as typed). `updated_by` and
+  `updated_at` record who changed the row and when. The rows are purged with
+  their dataset, and no model ever receives them.
 - `make backup` snapshots the database through the SQLite backup API, plus
   the dataset files and a sha256 manifest, and verifies the copy into
   `var/backups/<timestamp>/`. `make restore FROM=<dir>` runs after `make

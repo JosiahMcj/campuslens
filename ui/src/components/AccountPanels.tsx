@@ -8,17 +8,27 @@ const ROLE_ABILITIES: Record<Role, string[]> = {
     'Approve leadership decisions',
     'Read the audit log',
     'Manage datasets and users in Institution settings',
+    'Work the Financial Aid review queue',
   ],
   executive: [
     'Ask the approved questions',
     'Approve leadership decisions',
     'Read the audit log',
+    'Read the Financial Aid review queue',
   ],
   staff: ['Read the briefing, the figures and their evidence'],
-  reviewer: ['Read the briefing, the figures and their evidence', 'Read the audit log'],
+  reviewer: [
+    'Read the briefing, the figures and their evidence',
+    'Read the audit log',
+    'Read the Financial Aid review queue',
+  ],
+  aid: [
+    'Read the briefing, the figures and their evidence',
+    'Work the Financial Aid review queue, with a status and a note for each student',
+  ],
 }
 
-const ROLE_ORDER: Role[] = ['admin', 'executive', 'staff', 'reviewer']
+const ROLE_ORDER: Role[] = ['admin', 'executive', 'staff', 'reviewer', 'aid']
 
 /**
  * The Profile panel: who is signed in, where, what their role allows, and

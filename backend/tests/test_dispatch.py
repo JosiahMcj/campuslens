@@ -72,8 +72,10 @@ def test_migration_5_is_idempotent_and_upgrades_a_real_1_to_4_database(
             )
             conn.commit()
         assert recorded_versions(conn) == [1, 2, 3, 4]
-        assert migrate(conn) == [5]
-        assert recorded_versions(conn) == [1, 2, 3, 4, 5]
+        # Migration 5 applies; later migrations (6, the aid review queue)
+        # follow in the same call.
+        assert migrate(conn)[0] == 5
+        assert recorded_versions(conn)[:5] == [1, 2, 3, 4, 5]
         # Idempotent: nothing pending, nothing applied.
         assert migrate(conn) == []
         tables = {

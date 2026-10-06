@@ -4,7 +4,7 @@
 // state-changing request sends it back as X-CSRF-Token, and a 401 anywhere
 // ends the session in the UI and returns the app to the sign-in screen.
 
-export type Role = 'admin' | 'executive' | 'staff' | 'reviewer'
+export type Role = 'admin' | 'executive' | 'staff' | 'reviewer' | 'aid'
 
 export interface SessionUser {
   id: number
@@ -232,6 +232,19 @@ export function canSeeAuditLog(role: Role): boolean {
   return role === 'admin' || role === 'reviewer' || role === 'executive'
 }
 
+/** The Financial Aid review queue: the aid office works it, the admin
+ * manages it, and the executive and reviewer may read it. Staff may prepare
+ * it from the decision panel but never read the rows. Matches
+ * AID_QUEUE_READ_ROLES in the API. */
+export function canSeeAidQueue(role: Role): boolean {
+  return role === 'aid' || role === 'admin' || role === 'executive' || role === 'reviewer'
+}
+
+/** Status and note on a queue row: the aid role and the admin only. */
+export function canEditAidQueue(role: Role): boolean {
+  return role === 'aid' || role === 'admin'
+}
+
 /** The Institution area: admin only. */
 export function canSeeInstitution(role: Role): boolean {
   return role === 'admin'
@@ -247,5 +260,7 @@ export function roleDisplayName(role: Role): string {
       return 'Staff'
     case 'reviewer':
       return 'Reviewer'
+    case 'aid':
+      return 'Financial Aid'
   }
 }

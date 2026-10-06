@@ -22,7 +22,7 @@ from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
-from cabinet.fixture import Fixture, StudentRecord
+from cabinet.fixture import Fixture, Hold, StudentRecord
 from cabinet.indicators import SMALL_BALANCE_LIMIT, evaluate_indicators, m8_finding
 
 MINUS_SIGN = "\u2212"
@@ -175,19 +175,25 @@ def m3_financial_hold_under_1000(fixture: Fixture) -> CountResult:
         )
     m2_ids = set(m2.row_ids)
     rows = [
-        s
-        for s in fixture.students
-        if _sid(s) in m2_ids
-        and any(
-            h.category == "financial" and not h.resolved and h.amount < M3_AMOUNT_LIMIT
-            for h in s.holds
-        )
+        s for s in fixture.students if _sid(s) in m2_ids and m3_qualifying_holds(s)
     ]
     return CountResult(
         value=len(rows),
         reason=None,
         row_ids=sorted(_sid(s) for s in rows),
     )
+
+
+def m3_qualifying_holds(record: StudentRecord) -> list[Hold]:
+    """The holds that put a student in M3: financial, unresolved, and strictly
+    under the M3 amount limit. One named predicate shared by M3 itself and the
+    Financial Aid review queue (``cabinet.aidqueue``), so the queue's facts can
+    never describe a different hold than the one the finding counted."""
+    return [
+        h
+        for h in record.holds
+        if h.category == "financial" and not h.resolved and h.amount < M3_AMOUNT_LIMIT
+    ]
 
 
 def m4_no_advising_this_term(fixture: Fixture) -> CountResult:

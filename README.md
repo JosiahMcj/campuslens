@@ -18,7 +18,7 @@ governance API, and the dashboard. We built all three AI employees with output
 validation. The Enrollment Analyst covers M1, M2 and M7. The Student Success
 Analyst covers M3, M4 and M5. The Chief of Staff dispatches the tasks and merges
 the seven-section briefing. The golden replay runs for both approved questions and
-all three roles are committed in `data/golden/`. Sign-in with four roles and
+all three roles are committed in `data/golden/`. Sign-in with five roles and
 institution accounts with validated dataset upload are live as well. The human panel approves the leadership decision and
 records it, and the audit log shows every grant and every refusal, including both
 refusal demos. Beside the briefing, five figures show M1 to M4 and M8, and each
@@ -35,6 +35,15 @@ findings, never the model and never with a student identifier. A staff member
 reviews it and clicks Send, and the default outbound provider writes it to a local
 outbox file, so nothing leaves the machine. Real SMTP delivery stays off unless
 someone configures it on purpose (`RUNBOOK.md`, "Sending an approved follow-up").
+
+The emergency-aid review decision can also open a Financial Aid review queue.
+Once leadership signs off, a person prepares the queue, and the Financial Aid office
+gets one row for each of the students M3 counts, with the facts it needs to start its
+own review (the qualifying hold's amount, date, and office, the registration status,
+and the advising status). The software makes no determination about any student. A
+fifth role, `aid`, works the queue by setting each row's status and keeping a note,
+and the executive and the reviewer can read it. No row, fact, or note ever reaches a
+model (`RUNBOOK.md`, "The Financial Aid review queue").
 
 The briefing also reports M8, students with one or more support indicators
 (`backend/src/cabinet/indicators.py`, contract in `CONTRACTS.md`). Each indicator
@@ -191,8 +200,8 @@ never by code changes.
 | `CABINET_LOCAL_ENV` | path of the env file to load, where service managers point | `cabinet.local.env` at the repo root |
 
 **Security.** Every route except `/health` and `/ready` requires a logged-in
-user with the right role. The four roles are admin, executive, staff, and
-reviewer, and the executive reads the institution's audit log. Sessions are
+user with the right role. The five roles are admin, executive, staff, reviewer,
+and aid (Financial Aid staff), and the executive reads the institution's audit log. Sessions are
 server-side and HMAC-signed, passwords are scrypt-hashed, and every POST needs
 the session's CSRF token. Sign-in throttling hard-locks an IP, or an IP and
 email pair, after 5 failures in 15 minutes, answering 429 with a `Retry-After`

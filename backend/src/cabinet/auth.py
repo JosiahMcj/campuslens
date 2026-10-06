@@ -57,7 +57,16 @@ ROLE_ADMIN = "admin"
 ROLE_EXECUTIVE = "executive"
 ROLE_STAFF = "staff"
 ROLE_REVIEWER = "reviewer"
-USER_ROLES: tuple[str, ...] = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF, ROLE_REVIEWER)
+# Financial Aid office staff: they read the briefing like staff and work the
+# aid review queue, and nothing else (no ask, no sign-off, no audit log).
+ROLE_AID = "aid"
+USER_ROLES: tuple[str, ...] = (
+    ROLE_ADMIN,
+    ROLE_EXECUTIVE,
+    ROLE_STAFF,
+    ROLE_REVIEWER,
+    ROLE_AID,
+)
 
 ENV_SESSION_TTL_HOURS = "CABINET_SESSION_TTL_HOURS"
 DEFAULT_SESSION_TTL_HOURS = 12

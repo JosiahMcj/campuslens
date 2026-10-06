@@ -23,8 +23,11 @@ import {
   type Findings,
   type SimulatedTask,
 } from './api'
+import { postAidQueue } from './aid'
 import {
   canAct,
+  canEditAidQueue,
+  canSeeAidQueue,
   canSeeAuditLog,
   canSeeInstitution,
   fetchMe,
@@ -32,6 +35,8 @@ import {
   onSessionEnded,
   type Session,
 } from './auth'
+import { AidQueuePanel } from './components/AidQueuePanel'
+import { type AidQueueUiState } from './components/AidQueueNotice'
 import { AskDispatch, DispatchPanel } from './components/DispatchPanel'
 import { AuditLog, type DeniedRequestState } from './components/AuditLog'
 import {
@@ -351,6 +356,7 @@ function BriefingPage({
   const role = session.user.role
   const act = canAct(role)
   const audit = canSeeAuditLog(role)
+  const aidQueue = canSeeAidQueue(role)
 
   const [events, setEventsState] = useState<AuditEvent[] | null>(null)
   const setEvents = useCallback((next: AuditEvent[]) => {
@@ -382,6 +388,9 @@ function BriefingPage({
   // The dispatch state per decision id (the governed execution step):
   // fetched with the decisions, refreshed after every compose or send.
   const [dispatches, setDispatches] = useState<Record<string, DispatchUiState>>({})
+  // Preparing the Financial Aid review queue, per decision id: in flight and
+  // the last error. The queue's count itself rides on the dispatch state.
+  const [aidQueues, setAidQueues] = useState<Record<string, AidQueueUiState>>({})
   const [deniedRequest, setDeniedRequest] = useState<DeniedRequestState>({
     kind: 'idle',
   })
@@ -391,7 +400,8 @@ function BriefingPage({
   const [thread, setThread] = useState<Exchange[]>([])
   const nextExchangeId = useRef(1)
   const [viewFrom, setViewFrom] = useState(0)
-  const [panel, setPanel] = useState<PanelId | null>(null)
+  // The Financial Aid role's work is the review queue, so it lands there.
+  const [panel, setPanel] = useState<PanelId | null>(() => (role === 'aid' ? 'aid' : null))
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const threadEndRef = useRef<HTMLDivElement>(null)
 
@@ -666,6 +676,29 @@ function BriefingPage({
     [flags, loadDispatch, loadEvents],
   )
 
+  // The Financial Aid review queue: prepared on the API from the record
+  // (never the model), then the decision card shows its count from the
+  // refreshed dispatch state.
+  const prepareAidQueue = useCallback(
+    async (decisionId: string) => {
+      setAidQueues((previous) => ({ ...previous, [decisionId]: { busy: true, error: null } }))
+      try {
+        await postAidQueue(decisionId)
+        await Promise.all([loadDispatch(decisionId), loadEvents()])
+        setAidQueues((previous) => ({ ...previous, [decisionId]: { busy: false, error: null } }))
+      } catch (error) {
+        setAidQueues((previous) => ({
+          ...previous,
+          [decisionId]: {
+            busy: false,
+            error: `Could not prepare the review queue: ${errorMessage(error)}`,
+          },
+        }))
+      }
+    },
+    [loadDispatch, loadEvents],
+  )
+
   // Beat 6(a): send the Enrollment Analyst's out-of-role request to the
   // field-request gate, show its refusal sentence, and highlight the new
   // data.refused event in the log.
@@ -772,6 +805,7 @@ function BriefingPage({
     'decision',
     ...(hasRun ? (['agents'] as PanelId[]) : []),
     'access',
+    ...(aidQueue ? (['aid'] as PanelId[]) : []),
     ...(audit ? (['audit'] as PanelId[]) : []),
   ]
   // What each AI employee was granted on the latest run: from the ask
@@ -926,6 +960,9 @@ function BriefingPage({
               onPrepareDispatch={(id) => void prepareDispatch(id)}
               onSendDispatch={(id) => void sendDispatch(id)}
               onOpenEvidence={openEvidence}
+              aidQueues={aidQueues}
+              onPrepareAidQueue={(id) => void prepareAidQueue(id)}
+              onOpenAidQueue={aidQueue ? () => openPanel('aid') : null}
             />
             <div className="reply-actions">
               <button type="button" className="chip" onClick={() => openPanel('briefing')}>
@@ -958,6 +995,7 @@ function BriefingPage({
     agents: 'AI employees',
     access: 'Data access',
     audit: 'Audit log',
+    aid: 'Financial Aid review',
     profile: 'Profile',
     settings: 'Settings',
   }
@@ -976,6 +1014,7 @@ function BriefingPage({
     { label: 'Evidence & sources', panel: 'evidence' },
     { label: 'Staff actions', panel: 'actions' },
     { label: 'Data access', panel: 'access' },
+    ...(aidQueue ? [{ label: 'Financial Aid review', panel: 'aid' as const }] : []),
     ...(audit ? [{ label: 'Audit log', panel: 'audit' as const }] : []),
     ...(act && audit ? [{ label: 'Test a refusal', panel: 'refusal' as const }] : []),
   ]
@@ -1207,10 +1246,14 @@ function BriefingPage({
                 onPrepareDispatch={(id) => void prepareDispatch(id)}
                 onSendDispatch={(id) => void sendDispatch(id)}
                 onOpenEvidence={openEvidence}
+                aidQueues={aidQueues}
+                onPrepareAidQueue={(id) => void prepareAidQueue(id)}
+                onOpenAidQueue={aidQueue ? () => openPanel('aid') : null}
               />
             </div>
           )}
           {panel === 'access' && <DataAccessPanel grants={grants} />}
+          {panel === 'aid' && aidQueue && <AidQueuePanel canEdit={canEditAidQueue(role)} />}
           {panel === 'profile' && (
             <ProfilePanel session={session} datasetName={datasetName} onSignOut={onSignOut} />
           )}

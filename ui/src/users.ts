@@ -25,7 +25,7 @@ export type AddUserResult = { ok: true; user: CreatedUser } | { ok: false; error
 
 export type UserActionResult = { ok: true } | { ok: false; message: string }
 
-const ROLES: readonly string[] = ['admin', 'executive', 'staff', 'reviewer']
+const ROLES: readonly string[] = ['admin', 'executive', 'staff', 'reviewer', 'aid']
 
 function userFrom(value: unknown): UserRow | null {
   if (typeof value !== 'object' || value === null) return null

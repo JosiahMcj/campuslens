@@ -81,6 +81,7 @@ from cabinet.auth import (
     COOKIE_NAME,
     CSRF_HEADER,
     ROLE_ADMIN,
+    ROLE_AID,
     ROLE_EXECUTIVE,
     ROLE_REVIEWER,
     ROLE_STAFF,
@@ -101,12 +102,18 @@ BODY_CAP_OVERRIDES: tuple[tuple[str, int], ...] = (
     ("/admin/datasets", UPLOAD_BODY_BYTES),
 )
 
-ALL_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF, ROLE_REVIEWER)
+ALL_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF, ROLE_REVIEWER, ROLE_AID)
 READ_ROLES = ALL_ROLES  # every logged-in role may read
 ACT_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE)  # ask / approve / refresh
 # The audit log itself: admin and reviewer, and the executive (the
 # president runs the Beat 6 audit walkthrough; staff still may not).
 AUDIT_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_REVIEWER)
+# The Financial Aid review queue holds per-student rows, so it is narrower
+# than READ_ROLES: the aid office works it, the admin manages it, and the
+# executive and reviewer may watch it. Staff may create it from the decision
+# panel but never read the rows.
+AID_QUEUE_READ_ROLES = (ROLE_AID, ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_REVIEWER)
+AID_QUEUE_EDIT_ROLES = (ROLE_AID, ROLE_ADMIN)
 
 # (method, path) -> roles allowed. Anything not listed here (and not
 # public) is denied to every role: the table is the allow-list.
@@ -125,6 +132,7 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     ("POST", "/briefing/student-success/refresh"): ACT_ROLES,
     ("POST", "/governance/request"): ACT_ROLES,
     ("POST", "/decisions/approve"): ACT_ROLES,
+    ("GET", "/aid-queue"): AID_QUEUE_READ_ROLES,
     # The dispatch address book: the institution's admin manages the
     # office mailboxes messages may be sent to (never a student address).
     ("GET", "/admin/offices"): (ROLE_ADMIN,),
@@ -152,6 +160,9 @@ ROUTE_ROLE_PREFIXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     # with a data.refused event, not a silent drop.
     ("GET", "/decisions/", READ_ROLES),
     ("POST", "/decisions/", (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF)),
+    # One Financial Aid review row by id: the office records its own status
+    # and note. The aid role and the admin only; everyone else is a 403.
+    ("PATCH", "/aid-queue/", AID_QUEUE_EDIT_ROLES),
 )
 
 # No session needed: liveness, readiness, and login itself.

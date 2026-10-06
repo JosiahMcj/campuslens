@@ -50,6 +50,17 @@ Endpoints:
   delivers for real and refuses to start in production when its settings
   are incomplete. A sent dispatch is never resent (409 with the earlier
   record). Logs ``task.sent`` with provider and reference.
+- ``POST /decisions/{id}/aid-queue`` — prepares the Financial Aid review
+  queue for the emergency-aid review decision once it is signed off for the
+  active dataset (executive, staff, admin): one row per M3 student with the
+  facts the office needs (``cabinet.aidqueue``). Idempotent per decision and
+  dataset; 409 before sign-off. Logs ``aid.queued``.
+- ``GET  /aid-queue`` — the queue rows for the active dataset (aid, admin,
+  executive, reviewer).
+- ``PATCH /aid-queue/{id}`` — a person in the aid role (or an admin) sets a
+  row's status (open, in_review, closed) and note (free text, at most 1,000
+  characters, stored as typed, never sent to a model). Logs ``aid.updated``
+  with the acting user.
 - ``GET  /admin/offices`` / ``PUT /admin/offices`` (admin role) — the
   institution's office address book, the only source of dispatch
   recipients. Offices, never student addresses.
@@ -133,6 +144,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from cabinet.accesslog import RequestLogMiddleware
+from cabinet.aidqueue import (
+    AID_NOTE_MAX_CHARS,
+    AID_QUEUE_DECISION_IDS,
+    AID_STATUSES,
+    queue_rows,
+)
 from cabinet.analysts import (
     CHIEF_OF_STAFF,
     ENROLLMENT_ANALYST,
@@ -253,6 +270,14 @@ class OfficeContactEntry(BaseModel):
 
 class OfficesPutRequest(BaseModel):
     offices: list[OfficeContactEntry]
+
+
+class AidReviewPatchRequest(BaseModel):
+    """A person's update to one Financial Aid review row. Either field may
+    be omitted (left unchanged); the note is stored exactly as typed."""
+
+    status: str | None = None
+    note: str | None = None
 
 
 # Office mailboxes: a deliberately simple shape check (local@domain.tld).
@@ -1388,6 +1413,23 @@ def create_app(
         dataset_id = int(runtime.dataset["id"])
         return runtime, question, decision, dataset_id, f"TASK-{decision_id}"
 
+    def aid_queue_summary(
+        institution_id: int, decision_id: str, dataset_id: int
+    ) -> dict[str, Any]:
+        """Whether this decision opens a Financial Aid review queue and, once
+        prepared, how many students it holds. Counts only: the per-student
+        rows are behind GET /aid-queue, which staff may not read."""
+        if decision_id not in AID_QUEUE_DECISION_IDS:
+            return {"supported": False, "count": None, "created_at": None}
+        rows = store.aid_reviews_for(
+            institution_id, dataset_id=dataset_id, decision_id=decision_id
+        )
+        return {
+            "supported": True,
+            "count": len(rows) if rows else None,
+            "created_at": rows[0]["created_at"] if rows else None,
+        }
+
     @app.get("/decisions/{decision_id}/dispatch")
     def get_decision_dispatch(decision_id: str, request: Request) -> JSONResponse:
         """The dispatch state for one decision: whether it is approved,
@@ -1412,6 +1454,9 @@ def create_app(
                 "approved": decision_id
                 in store.approved_decision_ids(institution_id, dataset_id=dataset_id),
                 "dispatch": dispatch_body(row) if row is not None else None,
+                "aid_queue": aid_queue_summary(
+                    institution_id, decision_id, dataset_id
+                ),
             }
         )
 
@@ -1636,6 +1681,165 @@ def create_app(
             return JSONResponse(
                 content={"dispatch": dispatch_body(sent), "event_id": event["id"]}
             )
+
+    # -- the Financial Aid review queue -----------------------------------------
+    #
+    # Facts for the aid office, never a determination. Once leadership has
+    # authorized the emergency-aid review, a person prepares the queue: one
+    # row per M3 student with the facts the office needs to start its own
+    # review (cabinet.aidqueue). The office records a status from a fixed
+    # list and a free-text note; the system computes nothing about any
+    # student. No route here calls a model, and nothing here is ever passed
+    # to one.
+
+    def aid_review_body(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "decision_id": row["decision_id"],
+            "dataset_id": row["dataset_id"],
+            "student_id": row["student_id"],
+            "facts": row["facts"],
+            "status": row["status"],
+            "note": row["note"],
+            "updated_by": row["updated_by"],
+            "updated_at": row["updated_at"],
+            "created_at": row["created_at"],
+        }
+
+    @app.post("/decisions/{decision_id}/aid-queue")
+    def post_decision_aid_queue(decision_id: str, request: Request) -> JSONResponse:
+        """Prepare the Financial Aid review queue for an authorized decision
+        (executive, staff, admin; the middleware's /decisions/ prefix rule).
+        Idempotent per decision and dataset: a second request answers the
+        existing queue with created=false. 409, loudly, when the decision
+        has not been signed off for the active dataset."""
+        institution_id = request_institution(request)
+        user = request.scope["cabinet_user"]
+        if decision_id not in AID_QUEUE_DECISION_IDS:
+            raise HTTPException(
+                status_code=404,
+                detail=f"decision {decision_id!r} does not open a Financial "
+                "Aid review queue",
+            )
+        runtime = runtime_for(institution_id)
+        dataset_id = int(runtime.dataset["id"])
+        signed_off = store.decision_row(
+            institution_id, decision_id, dataset_id=dataset_id
+        )
+        if signed_off is None:
+            return dispatch_refused(
+                request,
+                409,
+                f"decision {decision_id!r} has not been authorized for the "
+                "active dataset; leadership signs off on the review before "
+                "the Financial Aid queue is prepared",
+            )
+        created = store.create_aid_queue(
+            institution_id,
+            decision_id=decision_id,
+            dataset_id=dataset_id,
+            rows=queue_rows(runtime.fixture),
+        )
+        count = len(
+            store.aid_reviews_for(
+                institution_id, dataset_id=dataset_id, decision_id=decision_id
+            )
+        )
+        content: dict[str, Any] = {
+            "decision_id": decision_id,
+            "dataset_id": dataset_id,
+            "count": count,
+            "created": created,
+        }
+        if created:
+            event = store.audit_append(
+                institution_id,
+                "aid.queued",
+                actor=str(user["email"]),
+                payload={
+                    "decision_id": decision_id,
+                    "dataset_id": dataset_id,
+                    "count": count,
+                },
+            )
+            content["event_id"] = event["id"]
+        return JSONResponse(content=content)
+
+    @app.get("/aid-queue")
+    def get_aid_queue(request: Request) -> dict[str, Any]:
+        """The Financial Aid review rows for the active dataset (aid, admin,
+        executive, reviewer). Student ids are the pseudonymous ids the
+        evidence drawer shows; the order is student id order, nothing else."""
+        institution_id = request_institution(request)
+        runtime = runtime_for(institution_id)
+        dataset_id = int(runtime.dataset["id"])
+        rows = store.aid_reviews_for(institution_id, dataset_id=dataset_id)
+        return {
+            "dataset_id": dataset_id,
+            "fictional": runtime.fictional,
+            "statuses": list(AID_STATUSES),
+            "note_max_chars": AID_NOTE_MAX_CHARS,
+            "rows": [aid_review_body(row) for row in rows],
+        }
+
+    @app.patch("/aid-queue/{review_id}")
+    def patch_aid_queue_row(
+        review_id: int, body: AidReviewPatchRequest, request: Request
+    ) -> JSONResponse:
+        """A person in the aid role (or an admin) sets one row's status and
+        note. The note is stored exactly as typed, capped at 1,000
+        characters, never interpreted and never shown to a model. One
+        aid.updated event per change, naming the acting user; the note text
+        stays out of the audit payload."""
+        institution_id = request_institution(request)
+        user = request.scope["cabinet_user"]
+        errors: list[str] = []
+        if body.status is None and body.note is None:
+            errors.append("send a status, a note, or both")
+        if body.status is not None and body.status not in AID_STATUSES:
+            errors.append(
+                f"status {body.status!r} is not one of {', '.join(AID_STATUSES)}"
+            )
+        if body.note is not None and len(body.note) > AID_NOTE_MAX_CHARS:
+            errors.append(
+                f"the note is {len(body.note):,} characters; the limit is "
+                f"{AID_NOTE_MAX_CHARS:,}"
+            )
+        if errors:
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "; ".join(errors), "errors": errors},
+            )
+        before = store.aid_review_by_id(institution_id, review_id)
+        if before is None:
+            raise HTTPException(
+                status_code=404, detail=f"no Financial Aid review row {review_id}"
+            )
+        updated = store.update_aid_review(
+            institution_id,
+            review_id,
+            status=body.status,
+            note=body.note,
+            updated_by=str(user["email"]),
+        )
+        assert updated is not None  # the row was just read in this institution
+        event = store.audit_append(
+            institution_id,
+            "aid.updated",
+            actor=str(user["email"]),
+            payload={
+                "aid_review_id": review_id,
+                "student_id": updated["student_id"],
+                "decision_id": updated["decision_id"],
+                "status_from": before["status"],
+                "status_to": updated["status"],
+                "note_changed": body.note is not None
+                and body.note != before["note"],
+            },
+        )
+        return JSONResponse(
+            content={"row": aid_review_body(updated), "event_id": event["id"]}
+        )
 
         # -- institution admin: office contacts (the dispatch address book) ------
         #

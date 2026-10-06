@@ -62,11 +62,23 @@ returns the user and the session's CSRF token. We create the first user with
 `make bootstrap-admin EMAIL=…`, which prints a generated password exactly once
 and never logs it, and further users come from `make user EMAIL=… ROLE=…`.
 
-**Authorization.** There are four roles, where `admin` can do everything and
+**Authorization.** There are five roles, where `admin` can do everything and
 `executive` can ask, approve, read, and read the audit log, and the president
 runs the audit-log walkthrough. `staff` reads briefings and findings and prepares
 and sends approved office messages, with no approval and no audit log, and `reviewer` reads everything including the audit
-log and changes nothing. Every route except `GET /health`, `GET /ready`, and `POST
+log and changes nothing. `aid` is Financial Aid office staff. It reads the
+briefing and findings like staff and works the Financial Aid review queue, and
+it cannot ask, sign off on a decision, prepare or send a message, or read the audit log.
+
+| Role | Ask and sign off | Read briefing and findings | Audit log | Prepare the aid queue | Read the aid queue | Update aid queue rows | Manage users and datasets |
+|---|---|---|---|---|---|---|---|
+| `admin` | yes | yes | yes | yes | yes | yes | yes |
+| `executive` | yes | yes | yes | yes | yes | no | no |
+| `staff` | no | yes | no | yes | no | no | no |
+| `reviewer` | no | yes | yes | no | yes | no | no |
+| `aid` | no | yes | no | no | yes | yes | no |
+
+Every route except `GET /health`, `GET /ready`, and `POST
 /auth/login` requires a session, and each route has an explicit role allow-list
 in `cabinet/security.py` (`ROUTE_ROLES`). No session is a 401, and the wrong
 role is a 403. We write both to the audit log as `data.refused` events, with the
@@ -109,7 +121,7 @@ modification of retained events, but it cannot detect deletion of whole
 trailing events, so the moved-aside and `.torn-*` files matter and the app
 never deletes them. The torn-tail repair removes only bytes that were never a
 complete event, namely a killed process's partial final line, so it cannot
-break the chain. The vocabulary is fifteen frozen event types, where the
+break the chain. The vocabulary is seventeen frozen event types, where the
 original eight are `question.asked`, `task.assigned`, `data.granted`,
 `data.refused`, `finding.produced`, `briefing.produced`, `decision.approved`,
 and `task.created`, and dataset administration added `dataset.uploaded`,
@@ -119,7 +131,10 @@ and now office address book changes, with the payload `action`, target user id,
 `role`, and `by`. The dispatch events are `task.dispatched`, `task.sent`, and
 `task.send_failed` (a provider refusal or failure, with the error and never the
 message body), and their actor is the named person who composed or sent the
-message.
+message. The Financial Aid review queue added `aid.queued` (decision, dataset,
+and student count, never a student id) and `aid.updated` (row id, pseudonymous
+student id, the status before and after, and whether the note changed, never
+the note text), and their actor is the acting user's email.
 
 **User administration.** Institution admins manage their institution's users
 from the Institution screen or `/admin/users`, which requires the admin role
@@ -181,6 +196,23 @@ default.
 requirements and `npm audit --omit=dev` for the UI, and both are currently
 clean, with no advisories and none accepted.
 
+**The Financial Aid review queue.** The queue gives the Financial Aid office
+the facts it needs to start its own review of the students M3 counts, and the
+software makes no determination about any student. `POST
+/decisions/{id}/aid-queue` (executive, staff, and admin, through the
+`/decisions/` prefix rule) prepares it once per decision per dataset, only
+after the emergency-aid review decision is signed off for the active dataset,
+and it answers a loud 409 with a `data.refused` event before that. `GET
+/aid-queue` is open to aid, admin, executive, and reviewer, and staff cannot
+read the rows. `PATCH /aid-queue/{id}` is for aid and admin only, carries the
+CSRF token like every state-changing request, and accepts a status from a
+fixed list and a note of at most 1,000 characters, stored as typed. A row id
+from another institution is a 404. The rows never reach a model, because the
+model payloads are built from the findings alone and the modules that build
+them do not import the queue. A test runs both questions after a note is
+saved and checks that no payload carries a queued student id, a queue field,
+or the note.
+
 ## What is NOT covered
 
 - **Single-process rate limits.** The buckets live in the API process, so
@@ -207,7 +239,7 @@ clean, with no advisories and none accepted.
   still records the cabinet role as actor. The dispatch events are the exception
   and the direction of travel. `task.dispatched` and `task.sent` record the
   acting user's email, because a named person sending is the point of the
-  feature.
+  feature. `aid.queued` and `aid.updated` follow the same rule.
 
 ## Data-handling posture
 

@@ -38,7 +38,7 @@ PLATFORM_INSTITUTION_ID = 0
 BOOTSTRAP_SLUG = "bootstrap"
 BOOTSTRAP_NAME = "Bootstrap Institution"
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 class SchemaVersionError(RuntimeError):
@@ -363,12 +363,50 @@ def _migration_5(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _migration_6(conn: sqlite3.Connection) -> None:
+    """The Financial Aid review queue: ``aid_reviews``.
+
+    One row per student in the M3 population, created once per authorized
+    emergency-aid review decision per dataset. The UNIQUE constraint is the
+    idempotency anchor, so a second request (or a double click) cannot queue
+    a student twice. ``facts_json`` holds only the record fields the aid
+    office needs to start its own review (the M3 hold, registration status,
+    advising status), never a counseling field. ``status`` and ``note`` are
+    set by a person in the aid role; the system never fills them in.
+    ``dataset_id`` ties the rows to their dataset, so purging a dataset
+    purges its queue with it.
+    """
+    for statement in (
+        """
+        CREATE TABLE IF NOT EXISTS aid_reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            institution_id INTEGER NOT NULL REFERENCES institutions(id),
+            dataset_id INTEGER NOT NULL,
+            decision_id TEXT NOT NULL,
+            student_id TEXT NOT NULL,
+            facts_json TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open'
+                CHECK (status IN ('open', 'in_review', 'closed')),
+            note TEXT NOT NULL DEFAULT '',
+            updated_by TEXT,
+            updated_at TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE (institution_id, decision_id, dataset_id, student_id)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_aid_reviews_institution_dataset"
+        " ON aid_reviews (institution_id, dataset_id)",
+    ):
+        conn.execute(statement)
+
+
 MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (1, "h2 tenancy baseline", _migration_1),
     (2, "r3 dataset pinning and audit index", _migration_2),
     (3, "r3b decisions keyed per dataset", _migration_3),
     (4, "r4 briefings keyed per dataset", _migration_4),
-    (SCHEMA_VERSION, "dispatches and office contacts", _migration_5),
+    (5, "dispatches and office contacts", _migration_5),
+    (SCHEMA_VERSION, "financial aid review queue", _migration_6),
 ]
 
 
