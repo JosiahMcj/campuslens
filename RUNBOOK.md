@@ -381,8 +381,18 @@ mailbox. The executive prepares and approves but never sends, and we never
 compose, queue, or send anything without that click.
 
 The recipient must exist in the institution's office address book first, or
-Send refuses with a message naming the office. An admin manages the book with
-the same session and CSRF flow as the user routes above.
+Send refuses with a message naming the office. An admin manages the book in
+**Institution settings, Offices** (`/institution`). The table lists every
+office in the book and every office the current decision routes to, so an
+office still without a mailbox shows up as a gap. Add, change, or remove a
+mailbox in the row, add another office with "Add an office", then press
+"Save the office contacts". We check each mailbox and office name before
+anything is sent, and an error appears under the field it belongs to. When
+the decision panel finds no mailbox, it links an admin straight to that
+section and tells other roles that an administrator adds it.
+
+The same book is reachable from the command line, with the same session and
+CSRF flow as the user routes above.
 
 ```bash
 curl -b /tmp/cookies http://127.0.0.1:8910/admin/offices
@@ -392,7 +402,7 @@ curl -b /tmp/cookies -X PUT http://127.0.0.1:8910/admin/offices \
                    {"office": "Bursar", "email": "bursar@example.edu"}]}'
 ```
 
-Each PUT replaces the book whole, we validate every entry, and the change is
+Each Save (or PUT) replaces the book whole, we validate every entry, and the change is
 one `admin.changed` audit event. The table holds offices only. No student
 address belongs in it, and the dispatch routes have no other place to get a
 recipient from.
