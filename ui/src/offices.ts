@@ -5,16 +5,19 @@
 // recipient from. A PUT replaces the whole book, so removing a row is simply
 // leaving it out of the next Save.
 
-import { ApiError, SessionEndedError, apiDetail, apiFetch } from './auth'
+import { apiFailure, failureFrom } from './adminErrors'
+import { SessionEndedError, apiFetch } from './auth'
 
 export interface OfficeContact {
   office: string
   email: string
 }
 
+/** The saved book, or the API's validation lines (shown folded, as
+ * technical detail) when it refused the book. */
 export type SaveOfficesResult =
   | { ok: true; offices: OfficeContact[] }
-  | { ok: false; message: string; errors: string[] }
+  | { ok: false; errors: string[] }
 
 /** One editable row of the Offices section. `known` marks an office an
  * approved decision routes to, listed even before it has a mailbox. */
@@ -50,15 +53,7 @@ export function officesFrom(body: unknown): OfficeContact[] {
 
 export async function fetchOffices(): Promise<OfficeContact[]> {
   const response = await apiFetch('/admin/offices')
-  if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      await apiDetail(
-        response,
-        `The office contacts failed to load (HTTP ${response.status}).`,
-      ),
-    )
-  }
+  if (!response.ok) throw await apiFailure(response)
   return officesFrom(await response.json().catch(() => null))
 }
 
@@ -96,7 +91,8 @@ export async function fetchDecisionOffices(): Promise<string[]> {
 
 /**
  * PUT /api/admin/offices with the whole address book. A 422 carries the
- * API's validation lines; any other failure carries its detail.
+ * API's validation lines; any other failure throws (worded on screen by
+ * friendlyError).
  */
 export async function saveOffices(offices: OfficeContact[]): Promise<SaveOfficesResult> {
   const response = await apiFetch('/admin/offices', {
@@ -110,12 +106,8 @@ export async function saveOffices(offices: OfficeContact[]): Promise<SaveOffices
   const errors = Array.isArray(record.errors)
     ? record.errors.filter((line): line is string => typeof line === 'string')
     : []
-  const detail = typeof record.detail === 'string' ? record.detail : null
-  return {
-    ok: false,
-    message: detail ?? `The office contacts could not be saved (HTTP ${response.status}).`,
-    errors,
-  }
+  if (response.status === 422) return { ok: false, errors }
+  throw failureFrom(response.status, body)
 }
 
 /**

@@ -3,8 +3,11 @@
 // the Institution area's Users section renders. The one-time password of a
 // newly created user exists only in the creation response: it is held in
 // component state for the single callout and never written to storage.
+// Every failure throws an ApiError whose message is a plain sentence or
+// empty (ui/src/adminErrors.ts); the screen words it with friendlyError.
 
-import { ApiError, apiDetail, apiFetch, type Role } from './auth'
+import { failureFrom, apiFailure, type KnownDetails } from './adminErrors'
+import { apiFetch, type Role } from './auth'
 
 export interface UserRow {
   id: number
@@ -20,10 +23,6 @@ export interface CreatedUser {
   role: Role
   one_time_password: string
 }
-
-export type AddUserResult = { ok: true; user: CreatedUser } | { ok: false; errors: string[] }
-
-export type UserActionResult = { ok: true } | { ok: false; message: string }
 
 const ROLES: readonly string[] = ['admin', 'executive', 'staff', 'reviewer', 'aid']
 
@@ -41,44 +40,40 @@ function userFrom(value: unknown): UserRow | null {
   }
 }
 
-/** Map a creation response onto the two render branches; exported for tests. */
-export function addUserResultFrom(status: number, body: unknown): AddUserResult {
+/** The API's refusals that the screen can explain in its own words. */
+export const USER_REFUSALS: KnownDetails = [
+  ['already exists', 'Someone with that email can already sign in.'],
+  ['cannot disable their own account', "You can't disable your own account."],
+  [
+    'last enabled administrator',
+    'This is the last active administrator. Make someone else an administrator first.',
+  ],
+]
+
+/** Map a creation response to the new user, or throw; exported for tests. */
+export function createdUserFrom(status: number, body: unknown): CreatedUser {
   const record = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
-  if (status === 201) {
-    if (
-      typeof record.id === 'number' &&
-      typeof record.email === 'string' &&
-      typeof record.role === 'string' &&
-      ROLES.includes(record.role) &&
-      typeof record.one_time_password === 'string'
-    ) {
-      return {
-        ok: true,
-        user: {
-          id: record.id,
-          email: record.email,
-          role: record.role as Role,
-          one_time_password: record.one_time_password,
-        },
-      }
+  if (
+    status === 201 &&
+    typeof record.id === 'number' &&
+    typeof record.email === 'string' &&
+    typeof record.role === 'string' &&
+    ROLES.includes(record.role) &&
+    typeof record.one_time_password === 'string'
+  ) {
+    return {
+      id: record.id,
+      email: record.email,
+      role: record.role as Role,
+      one_time_password: record.one_time_password,
     }
-    return { ok: false, errors: ['The user was created but the answer was not understood.'] }
   }
-  const detail = typeof record.detail === 'string' ? record.detail : null
-  return {
-    ok: false,
-    errors: [detail ?? `The user could not be added (HTTP ${status}). Try again.`],
-  }
+  throw failureFrom(status === 201 ? 500 : status, body, USER_REFUSALS)
 }
 
 export async function fetchUsers(): Promise<UserRow[]> {
   const response = await apiFetch('/admin/users')
-  if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      await apiDetail(response, `The user list failed to load (HTTP ${response.status}).`),
-    )
-  }
+  if (!response.ok) throw await apiFailure(response)
   const body: unknown = await response.json().catch(() => null)
   if (!Array.isArray(body)) return []
   return body.map(userFrom).filter((user): user is UserRow => user !== null)
@@ -86,50 +81,46 @@ export async function fetchUsers(): Promise<UserRow[]> {
 
 /**
  * POST /api/admin/users — creates the user and answers 201 with the
- * one-time password (shown once, in the callout) or an error detail
- * (duplicate email, validation) rendered plainly.
+ * one-time password (shown once, in the callout). A refusal (an email that
+ * already has an account) throws with a plain sentence.
  */
-export async function addUser(email: string, role: Role): Promise<AddUserResult> {
+export async function addUser(email: string, role: Role): Promise<CreatedUser> {
   const response = await apiFetch('/admin/users', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, role }),
   })
   const body: unknown = await response.json().catch(() => null)
-  return addUserResultFrom(response.status, body)
+  return createdUserFrom(response.status, body)
 }
 
 /** POST /api/admin/users/<id>/disable or /enable. */
-export async function setUserDisabled(id: number, disabled: boolean): Promise<UserActionResult> {
+export async function setUserDisabled(id: number, disabled: boolean): Promise<void> {
   const response = await apiFetch(`/admin/users/${id}/${disabled ? 'disable' : 'enable'}`, {
     method: 'POST',
   })
-  if (!response.ok) {
-    return {
-      ok: false,
-      message: await apiDetail(
-        response,
-        `The user could not be ${disabled ? 'disabled' : 'enabled'} (HTTP ${response.status}).`,
-      ),
-    }
-  }
-  return { ok: true }
+  if (!response.ok) throw await apiFailure(response, USER_REFUSALS)
 }
 
 /** PATCH /api/admin/users/<id> — a role change. */
-export async function setUserRole(id: number, role: Role): Promise<UserActionResult> {
+export async function setUserRole(id: number, role: Role): Promise<void> {
   const response = await apiFetch(`/admin/users/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ role }),
   })
-  if (!response.ok) {
-    return {
-      ok: false,
-      message: await apiDetail(response, `The role could not be changed (HTTP ${response.status}).`),
-    }
-  }
-  return { ok: true }
+  if (!response.ok) throw await apiFailure(response, USER_REFUSALS)
+}
+
+// The API's own shape check for an email: local@domain.tld.
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+
+/** The Add-a-user email field's error, or null when it can be sent. */
+export function newUserEmailError(email: string): string | null {
+  const value = email.trim()
+  if (value === '') return 'Enter the email address of the person to add.'
+  if (!EMAIL_RE.test(value)) return 'Enter an email address like name@example.edu.'
+  return null
 }
 
 /** The status cell of a user row: "Active" or "Disabled". */
