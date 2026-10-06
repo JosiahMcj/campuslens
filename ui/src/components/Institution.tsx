@@ -828,7 +828,7 @@ export function Institution({
                               {row.office}
                               {row.known && row.email.trim() === '' && (
                                 <span className="dataset-flag office-gap">
-                                  No mailbox yet. Approved follow-ups go here.
+                                  No mailbox yet. Add one so approved follow-ups can be sent.
                                 </span>
                               )}
                               {errors.office !== undefined && (

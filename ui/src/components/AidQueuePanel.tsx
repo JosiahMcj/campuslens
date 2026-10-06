@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
-import { ApiError } from '../auth'
+import { ApiError, getSession } from '../auth'
 import {
   AID_NOTE_MAX_CHARS,
   AID_ROW_CHANGED_MESSAGE,
@@ -17,7 +17,7 @@ import {
   type AidStatus,
 } from '../aid'
 import { friendlyError } from '../errors'
-import { formatTimestamp } from '../states'
+import { formatTimestamp, personName } from '../states'
 import { ChevronIcon } from './icons'
 
 type QueueState =
@@ -27,12 +27,12 @@ type QueueState =
 
 type StatusFilter = 'all' | AidStatus
 
-/** The row's holds in one short phrase: "$412.50, Bursar". */
+/** The row's holds in one short phrase: "Bursar hold $160.73". */
 function holdSummary(row: AidReviewRow): string {
   const holds = row.facts.holds
   if (holds.length === 0) return 'No hold on record'
   if (holds.length === 1) {
-    return `${formatAmount(holds[0].amount)}, ${holds[0].responsible_office}`
+    return `${holds[0].responsible_office} hold ${formatAmount(holds[0].amount)}`
   }
   const offices = [...new Set(holds.map((hold) => hold.responsible_office))].join(', ')
   return `${holds.length} holds, ${offices}`
@@ -93,6 +93,9 @@ function EditableRow({
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const savedRef = useRef<HTMLSpanElement>(null)
+  // Set by a successful save: the "Saved" line takes focus once it is on
+  // screen, so focus never falls to the page when Save goes quiet.
+  const focusSaved = useRef(false)
   // The row as saved by someone else, after a refused (409) save.
   const [savedVersion, setSavedVersion] = useState<AidReviewRow | null>(null)
   const changed = status !== row.status || note !== row.note
@@ -109,6 +112,15 @@ function EditableRow({
     ...(savedVersion !== null ? [savedVersionId] : []),
   ].join(' ')
 
+  // After the re-render that shows "Saved" (the parent's new row and this
+  // form's state land together), before paint.
+  useLayoutEffect(() => {
+    if (saved && focusSaved.current && savedRef.current !== null) {
+      focusSaved.current = false
+      savedRef.current.focus()
+    }
+  })
+
   const save = async () => {
     if (saving || !changed || over > 0) return
     const change: AidReviewChange = { expected_updated_at: row.updated_at }
@@ -122,9 +134,7 @@ function EditableRow({
       onSaved(updated)
       setSavedVersion(null)
       setSaved(true)
-      // The Save button goes quiet once nothing has changed: focus moves to
-      // the "Saved" line so it never falls to the page.
-      window.setTimeout(() => savedRef.current?.focus(), 0)
+      focusSaved.current = true
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
         setError(AID_ROW_CHANGED_MESSAGE)
@@ -235,7 +245,14 @@ function EditableRow({
  * the reviewer read the same rows without controls. The rows come in student
  * id order, the evidence drawer's order, and the panel adds no other order.
  */
-export function AidQueuePanel({ canEdit }: { canEdit: boolean }) {
+export function AidQueuePanel({
+  canEdit,
+  viewerEmail = getSession()?.user.email ?? null,
+}: {
+  canEdit: boolean
+  /** Who is looking: their own updates read "you". */
+  viewerEmail?: string | null
+}) {
   const [state, setState] = useState<QueueState>({ kind: 'loading' })
   const [filter, setFilter] = useState<StatusFilter>('all')
   const [openRow, setOpenRow] = useState<number | null>(null)
@@ -325,6 +342,7 @@ export function AidQueuePanel({ canEdit }: { canEdit: boolean }) {
           canEdit={canEdit}
           onSaved={replaceRow}
           onStale={reloadRow}
+          viewerEmail={viewerEmail}
         />
       )}
     </div>
@@ -344,6 +362,7 @@ function QueueRows({
   canEdit,
   onSaved,
   onStale,
+  viewerEmail,
 }: {
   queue: AidQueue
   filter: StatusFilter
@@ -353,6 +372,7 @@ function QueueRows({
   canEdit: boolean
   onSaved: (row: AidReviewRow) => void
   onStale: (id: number) => Promise<AidReviewRow | null>
+  viewerEmail: string | null
 }) {
   const count = (status: AidStatus) => queue.rows.filter((row) => row.status === status).length
   const rows = filter === 'all' ? queue.rows : queue.rows.filter((row) => row.status === filter)
@@ -401,7 +421,9 @@ function QueueRows({
                 >
                   <span className="aid-row-id">{row.student_id}</span>
                   <span className="aid-row-hold">{holdSummary(row)}</span>
-                  <span className="aid-status">{aidStatusLabel(row.status)}</span>
+                  <span className={`aid-status aid-status-${row.status}`}>
+                    {aidStatusLabel(row.status)}
+                  </span>
                   <ChevronIcon />
                 </button>
                 {open && (
@@ -416,7 +438,8 @@ function QueueRows({
                     )}
                     {row.updated_by !== null && row.updated_at !== null && (
                       <p className="hint">
-                        Last updated by {row.updated_by} at {formatTimestamp(row.updated_at)}.
+                        Last updated by {personName(row.updated_by, viewerEmail)} at{' '}
+                        {formatTimestamp(row.updated_at)}.
                       </p>
                     )}
                   </div>

@@ -79,6 +79,18 @@ export function EvidenceDrawer({
     ([key]) => COMPARISON_LABELS[key] !== undefined,
   )
   const records = recordCount(finding)
+  // M1 compares two counts of continuing students: the one registered now
+  // (the numerator's records) sits beside last year's, and the records
+  // fold names the students it lists.
+  const registeredNow =
+    finding.comparison?.prior_year_registered_continuing !== undefined &&
+    isRatioRowIds(finding.row_ids)
+      ? finding.row_ids.numerator.length
+      : null
+  const recordsLabel =
+    registeredNow !== null
+      ? `All ${records.toLocaleString('en-US')} continuing students`
+      : `Show the records (${records.toLocaleString('en-US')})`
 
   return (
     <SidePanel
@@ -100,6 +112,12 @@ export function EvidenceDrawer({
 
         {comparison.length > 0 && (
           <dl className="kv evidence-comparison">
+            {registeredNow !== null && (
+              <>
+                <dt>Registered now</dt>
+                <dd>{registeredNow.toLocaleString('en-US')}</dd>
+              </>
+            )}
             {comparison.map(([key, value]) => (
               <Fragment key={key}>
                 <dt>{COMPARISON_LABELS[key]}</dt>
@@ -157,9 +175,7 @@ export function EvidenceDrawer({
           </p>
         ) : (
           <details className="fold technical-detail">
-            <summary>
-              Show the records ({records.toLocaleString('en-US')})
-            </summary>
+            <summary>{recordsLabel}</summary>
             <Records finding={finding} />
             <p className="hint">
               {fictional
@@ -182,8 +198,11 @@ function Records({ finding }: { finding: Finding }) {
   if (isRatioRowIds(finding.row_ids)) {
     return (
       <>
-        <RowList label="Counted now" rows={finding.row_ids.numerator} />
-        <RowList label="Compared with last year" rows={finding.row_ids.denominator} />
+        <RowList label="Registered now" rows={finding.row_ids.numerator} />
+        <RowList
+          label="Registered by the same date last year"
+          rows={finding.row_ids.denominator}
+        />
       </>
     )
   }

@@ -16,10 +16,13 @@ import {
   eventsAfter,
   filterEvents,
   findingDisplay,
+  formatClock,
   formatTimestamp,
+  formatTimestampFull,
   isApprovedQuestion,
   latestQuestionEventId,
   maxEventId,
+  personName,
   m3ThresholdLabel,
   modelSectionFrom,
   parseFlags,
@@ -286,23 +289,39 @@ describe('audit log helpers', () => {
     expect(taskFromEvents(events, 'D-2')).toBeUndefined()
   })
 
-  it('formats timestamps in the viewer\'s zone, named', () => {
+  it('formats timestamps as people read them, in the viewer\'s zone', () => {
     const recorded = '2026-09-24T22:24:46.535823+00:00'
-    expect(formatTimestamp(recorded, 'America/Chicago')).toBe(
-      '2026-09-24 17:24:46 CDT',
-    )
+    expect(formatTimestamp(recorded, 'America/Chicago')).toBe('Sep 24, 5:24 PM')
     expect(formatTimestamp('2026-12-24T22:24:46+00:00', 'America/Chicago')).toBe(
-      '2026-12-24 16:24:46 CST',
+      'Dec 24, 4:24 PM',
     )
-    expect(formatTimestamp(recorded, 'UTC')).toBe('2026-09-24 22:24:46 UTC')
-    // Midnight stays 00, never 24.
+    expect(formatTimestamp(recorded, 'UTC')).toBe('Sep 24, 10:24 PM')
+    // Midnight reads 12:00 AM, never 0:00 or 24:00.
     expect(formatTimestamp('2026-09-25T05:00:00+00:00', 'America/Chicago')).toBe(
+      'Sep 25, 12:00 AM',
+    )
+    expect(formatClock(recorded, 'America/Chicago')).toBe('5:24 PM')
+  })
+
+  it('keeps the full record time, to the second and zone named, for Details', () => {
+    const recorded = '2026-09-24T22:24:46.535823+00:00'
+    expect(formatTimestampFull(recorded, 'America/Chicago')).toBe('2026-09-24 17:24:46 CDT')
+    expect(formatTimestampFull(recorded, 'UTC')).toBe('2026-09-24 22:24:46 UTC')
+    expect(formatTimestampFull('2026-09-25T05:00:00+00:00', 'America/Chicago')).toBe(
       '2026-09-25 00:00:00 CDT',
     )
   })
 
   it('leaves an unparseable timestamp as it came', () => {
     expect(formatTimestamp('not a time')).toBe('not a time')
+    expect(formatClock('not a time')).toBe('not a time')
+    expect(formatTimestampFull('not a time')).toBe('not a time')
+  })
+
+  it('names the viewer "you" and anyone else by address', () => {
+    expect(personName('President@demo.test', 'president@demo.test')).toBe('you')
+    expect(personName('staff@demo.test', 'president@demo.test')).toBe('staff@demo.test')
+    expect(personName('staff@demo.test', null)).toBe('staff@demo.test')
   })
 })
 

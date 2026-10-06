@@ -70,7 +70,7 @@ export interface AidQueueSummary {
 export function aidStatusLabel(status: AidStatus): string {
   switch (status) {
     case 'open':
-      return 'Open'
+      return 'Not started'
     case 'in_review':
       return 'In review'
     case 'closed':

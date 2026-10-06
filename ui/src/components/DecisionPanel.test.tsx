@@ -68,6 +68,7 @@ function render(
     events?: AuditEvent[]
     approvedTasks?: Parameters<typeof DecisionPanel>[0]['approvedTasks']
     approveError?: string | null
+    userEmail?: string
   } = {},
 ): string {
   return renderToStaticMarkup(
@@ -76,7 +77,7 @@ function render(
       events={options.events ?? []}
       canApprove={canApprove}
       role={options.role ?? 'executive'}
-      userEmail="exec@example.edu"
+      userEmail={options.userEmail ?? 'exec@example.edu'}
       approving={false}
       approveError={options.approveError ?? null}
       approvedTasks={options.approvedTasks ?? {}}
@@ -106,9 +107,11 @@ describe('DecisionPanel — the decision and Approve', () => {
   })
 
   it('tells staff and reviewers leadership approves, with no "only an executive" hint', () => {
-    const html = render(false)
+    const html = render(false, { role: 'staff' })
 
     expect(html).toContain('Waiting for leadership approval.')
+    expect(html).toContain('Leadership decides. Nothing is sent on its own.')
+    expect(html).not.toContain('You decide')
     expect(html).not.toContain('btn-approve')
     expect(html).not.toContain('Only an executive')
     expect(html).toContain('Authorize the eligibility review')
@@ -125,7 +128,7 @@ describe('DecisionPanel — the decision and Approve', () => {
     const html = render(true, { decision: APPROVED, events: [approvedEvent] })
 
     expect(html).toContain('approved-line')
-    expect(html).toContain('Approved by leadership at 2026-09-26')
+    expect(html).toContain('Approved by leadership at Sep 26, ')
     expect(html).not.toContain('>Approve</button>')
     expect(html).not.toContain('Approve again')
   })
@@ -157,7 +160,31 @@ describe('DecisionPanel — the decision and Approve', () => {
         approved_at: '2026-09-26T11:00:00+00:00',
       },
     })
-    expect(html).toContain('Approved by president@example.edu at 2026-09-26')
+    expect(html).toContain('Approved by president@example.edu at Sep 26, ')
+  })
+
+  it('says "Approved by you" when the viewer is the approver, never their own address', () => {
+    const html = render(true, {
+      decision: {
+        ...APPROVED,
+        approved_by: 'President@Example.edu',
+        approved_at: '2026-09-26T11:00:00+00:00',
+      },
+      userEmail: 'president@example.edu',
+    })
+    expect(html).toContain('Approved by you at Sep 26, ')
+    expect(html).not.toContain('Approved by President@Example.edu')
+  })
+
+  it('reads the decision copy by role: the executive decides, others read leadership', () => {
+    for (const role of ['staff', 'reviewer'] as const) {
+      const html = render(false, { role })
+      expect(html).toContain('Leadership decides. Nothing is sent on its own.')
+      expect(html).not.toContain('The Cabinet advises. You decide.')
+    }
+    expect(render(true)).toContain('The Cabinet advises. You decide. Nothing is sent on its own.')
+    expect(render(true)).toContain('class="panel-intro"')
+    expect(render(true)).not.toContain('panel-note')
   })
 
   it('names the approver to staff too, from the decision or the dispatch state', () => {
@@ -175,7 +202,7 @@ describe('DecisionPanel — the decision and Approve', () => {
         approved_at: '2026-09-26T11:00:00+00:00',
       }),
     })
-    expect(fromDispatch).toContain('Approved by president@example.edu at 2026-09-26')
+    expect(fromDispatch).toContain('Approved by president@example.edu at Sep 26, ')
   })
 
   it('says "Approved by leadership" when the approver is not known yet', () => {
@@ -261,7 +288,14 @@ describe('DecisionPanel — next steps', () => {
     const html = render(false, { decision: APPROVED, role: 'staff', dispatches: ready(SENT) })
 
     expect(html).toContain('>Sent</span>')
-    expect(html).toContain('Sent by staff@example.edu at 2026-09-26')
+    expect(html).toContain('Sent by staff@example.edu at Sep 26, ')
+    const own = render(false, {
+      decision: APPROVED,
+      role: 'staff',
+      dispatches: ready(SENT),
+      userEmail: 'staff@example.edu',
+    })
+    expect(own).toContain('Sent by you at Sep 26, ')
     expect(html).not.toContain('outbox')
     expect(html).not.toContain('dispatch-send')
     expect(html).not.toContain('Prepare the message')
@@ -358,6 +392,23 @@ describe('DecisionPanel — Send confirmation and focus', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(screen.queryByRole('alertdialog')).toBeNull()
     expect(onSend).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Send…' }))
+  })
+
+  it('cancels the confirmation on Escape (not the panel around it) and returns focus to Send…', () => {
+    const onSend = vi.fn()
+    const outer = vi.fn()
+    mount(
+      <div onKeyDown={outer}>
+        <LivePanel onSend={onSend} />
+      </div>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Send…' }))
+    fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' })
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(outer).not.toHaveBeenCalled()
+    expect(onSend).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Send…' }))
   })
 
   it('sends once on Send, keeps the busy button focusable, then focuses the Sent line', async () => {

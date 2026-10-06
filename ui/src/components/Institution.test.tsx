@@ -332,7 +332,7 @@ describe('Institution Offices — the book', () => {
     expect(
       (screen.getByLabelText('Mailbox for Financial Aid') as HTMLInputElement).value,
     ).toBe('')
-    expect(screen.getByText('No mailbox yet. Approved follow-ups go here.')).toBeTruthy()
+    expect(screen.getByText('No mailbox yet. Add one so approved follow-ups can be sent.')).toBeTruthy()
   })
 
   it('adds an office and saves the whole book, then says so', async () => {

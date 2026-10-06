@@ -80,10 +80,8 @@ export function ProfilePanel({
       </ul>
 
       <h3 className="panel-subhead">Password and session</h3>
-      <p className="panel-text">
-        To change your password, ask your cabinet administrator. Sessions end
-        on their own after a set time, 12 hours by default.
-      </p>
+      <p className="panel-text">Need access? Ask your administrator.</p>
+      <p className="panel-text">You are signed out after 12 hours.</p>
 
       <button type="button" className="panel-danger" onClick={onSignOut}>
         Sign out
@@ -218,7 +216,7 @@ export function DataAccessPanel({
 }) {
   return (
     <div className="account-panel">
-      <p className="panel-text">
+      <p className="panel-intro">
         Each AI employee sees only the fields its task needs, and never a
         student's name or identifiers. A request outside those fields is
         refused before any model runs, and the refusal is logged.

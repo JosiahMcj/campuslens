@@ -96,6 +96,7 @@ export function BriefingSections({
         findings={findings}
         chiefSummary={chiefSummary}
         onOpenEvidence={onOpenEvidence}
+        about={false}
       />
 
       <section aria-labelledby="s-measure">
@@ -112,6 +113,7 @@ export function BriefingSections({
               analyst="the Enrollment Analyst"
               onOpen={onOpenEvidence}
               displayOf={displayOf}
+              about={false}
             />
           </details>
         )}
@@ -126,6 +128,7 @@ export function BriefingSections({
             analyst="the Student Success Analyst"
             onOpen={onOpenEvidence}
             displayOf={displayOf}
+            about={false}
           />
         ) : (
           <>
@@ -154,7 +157,7 @@ export function BriefingSections({
           m2={m2}
           onOpen={onOpenEvidence}
         />
-        <OfficeTable finding={m5} onOpen={onOpenEvidence} />
+        <OfficeTable finding={m5} />
       </section>
 
       <EvidenceSources
@@ -178,6 +181,8 @@ export function BriefingSections({
           )}
         </p>
       </section>
+
+      <AboutBriefing sections={[chiefSummary, enrollment, studentSuccess]} />
     </article>
   )
 }
@@ -351,12 +356,16 @@ export function ExecutiveSummary({
   onOpenEvidence,
   headingId = 's-summary',
   title = '1. Executive summary',
+  about = true,
 }: {
   findings: Findings
   chiefSummary: ModelSection | null
   onOpenEvidence: (findingId: string) => void
   headingId?: string | null
   title?: string
+  /** Its own "About this answer" fold (the chat answer). The full briefing
+   * passes false and shows one fold for the whole panel. */
+  about?: boolean
 }) {
   const m1 = getFinding(findings, 'M1')
   const m2 = getFinding(findings, 'M2')
@@ -374,6 +383,7 @@ export function ExecutiveSummary({
           analyst="the Chief of Staff"
           onOpen={onOpenEvidence}
           displayOf={displayLookup(findings)}
+          about={about}
         />
       ) : (
         <p className="headline-text">
@@ -449,6 +459,7 @@ export function Limitations({
             analyst="the Chief of Staff"
             onOpen={onOpenEvidence}
             displayOf={displayLookup(findings)}
+            about={false}
           />
         </details>
       </section>
@@ -503,6 +514,7 @@ function ModelClaims({
   analyst,
   onOpen,
   displayOf,
+  about = true,
 }: {
   claims: AnalystClaim[]
   provenance: {
@@ -514,23 +526,64 @@ function ModelClaims({
   analyst: string
   onOpen: (findingId: string) => void
   displayOf: DisplayOf
+  /** Its own "About this answer" fold; false where the panel has one. */
+  about?: boolean
 }) {
   const source = analystSource(provenance)
+  // A figure already linked by its number in an earlier sentence needs no
+  // extra "Evidence" link in a later one.
+  const linked = new Set<string>()
   return (
     <>
       <p className={source === 'fake' ? 'analyst-source stub-tag' : 'analyst-source'}>
         {analystSourceLabel(source, analyst)}
       </p>
-      {claims.map((claim, index) => (
-        <ClaimText key={index} claim={claim} onOpen={onOpen} displayOf={displayOf} />
-      ))}
-      <details className="fold technical-detail about-answer">
-        <summary>
-          About this answer
-        </summary>
-        <p>{analystSourceDetail(source, provenance.model_label)}</p>
-      </details>
+      {claims.map((claim, index) => {
+        const skip = new Set(linked)
+        for (const id of claim.finding_ids) linked.add(id)
+        return (
+          <ClaimText
+            key={index}
+            claim={claim}
+            onOpen={onOpen}
+            displayOf={displayOf}
+            alreadyLinked={skip}
+          />
+        )
+      })}
+      {about && (
+        <details className="fold technical-detail about-answer">
+          <summary>About this answer</summary>
+          <p>{analystSourceDetail(source, provenance.model_label)}</p>
+        </details>
+      )}
     </>
+  )
+}
+
+/**
+ * The full briefing's one "About this answer": who wrote what, and whether
+ * it was written just now or replayed, once for the whole panel (the same
+ * sentence is said once). Nothing when no section was model-written.
+ */
+function AboutBriefing({ sections }: { sections: (ModelSection | null)[] }) {
+  const details: string[] = []
+  for (const section of sections) {
+    if (section === null || section.kind !== 'available') continue
+    const detail = analystSourceDetail(
+      analystSource(section.provenance),
+      section.provenance.model_label,
+    )
+    if (!details.includes(detail)) details.push(detail)
+  }
+  if (details.length === 0) return null
+  return (
+    <details className="fold technical-detail about-answer">
+      <summary>About this answer</summary>
+      {details.map((detail) => (
+        <p key={detail}>{detail}</p>
+      ))}
+    </details>
   )
 }
 
@@ -543,15 +596,20 @@ function ClaimText({
   claim,
   onOpen,
   displayOf,
+  alreadyLinked,
 }: {
   claim: AnalystClaim
   onOpen: (findingId: string) => void
   displayOf: DisplayOf
+  /** Figures an earlier sentence already links: no extra Evidence link. */
+  alreadyLinked?: ReadonlySet<string>
 }) {
-  const { parts, unmatched } = linkClaimNumbers(
+  const linked = linkClaimNumbers(
     claim.text,
     claim.finding_ids.map((id) => ({ id, display: displayOf(id) })),
   )
+  const parts = linked.parts
+  const unmatched = linked.unmatched.filter((id) => alreadyLinked?.has(id) !== true)
   return (
     <p>
       {parts.map((part, index) =>
@@ -655,22 +713,16 @@ function CounselingAggregate({
   )
 }
 
-function OfficeTable({
-  finding,
-  onOpen,
-}: {
-  finding: Finding | undefined
-  onOpen: (findingId: string) => void
-}) {
+function OfficeTable({ finding }: { finding: Finding | undefined }) {
   const offices = officeRows(finding)
   if (offices.length === 0) {
     return <p className="hint">No unresolved holds.</p>
   }
   return (
     <table className="office-table">
-      <caption>
-        Unresolved holds by office: <Num finding={finding} id="M5" onOpen={onOpen} />
-      </caption>
+      {/* The total is linked in the text above and in section 4; the
+          caption only names the table. */}
+      <caption className="visually-hidden">Unresolved holds by office</caption>
       <thead>
         <tr>
           <th scope="col">Office</th>

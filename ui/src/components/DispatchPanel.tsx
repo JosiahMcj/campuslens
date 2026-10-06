@@ -4,12 +4,12 @@ import { findingLabel } from '../findingLabels'
 import {
   dispatchTasks,
   eventsAfter,
-  formatTimestamp,
+  formatClock,
   latestQuestionEventId,
   roleDisplayName,
   type DispatchTask,
 } from '../states'
-import { CheckIcon } from './icons'
+import { CheckIcon, RefusedIcon } from './icons'
 
 interface DispatchPanelProps {
   /** The audit events seen so far (polled every second while a run is in flight). */
@@ -48,6 +48,10 @@ function taskFacts(
     : []
   return { findings, finishedAt: (produced ?? delivered)?.ts ?? null }
 }
+
+/** The panel's one-line intro, shared by both views. */
+export const DISPATCH_INTRO =
+  'Each AI employee’s task, and exactly the data it was given to do it.'
 
 /** The status line on a task card — plain words, never a score. */
 const STATUS_LABELS: Record<DispatchTask['status'], string> = {
@@ -91,17 +95,23 @@ export function DispatchPanel({
   const tasks = questionEventId === null ? [] : dispatchTasks(events, questionEventId)
   if (tasks.length === 0) {
     return (
-      <p className="state-empty hint">
-        Ask an approved question and each AI employee's task appears here, with
-        exactly the data it was given.
-      </p>
+      <section className="dispatch" aria-label="The Cabinet's task dispatch">
+        <p className="panel-intro">{DISPATCH_INTRO}</p>
+        <p className="state-empty hint">
+          Nothing yet. Ask an approved question and each AI employee's task appears
+          here.
+        </p>
+      </section>
     )
   }
   const allDone = tasks.every((task) => task.status !== 'working') && !inFlight
 
   return (
-    <section className="dispatch" aria-label="The cabinet's task dispatch">
-      <h3>{allDone ? 'The cabinet has reported' : 'The cabinet is working'}</h3>
+    <section className="dispatch" aria-label="The Cabinet's task dispatch">
+      <p className="panel-intro">{DISPATCH_INTRO}</p>
+      <h3 className="dispatch-state">
+        {allDone ? 'The Cabinet has reported' : 'The Cabinet is working'}
+      </h3>
       <div className="task-cards">
         {tasks.map((task) => (
           <TaskCard
@@ -145,8 +155,9 @@ export function AskDispatch({
   briefing: CabinetBriefing
 }) {
   return (
-    <section className="dispatch" aria-label="The cabinet's task dispatch">
-      <h3>The cabinet has reported</h3>
+    <section className="dispatch" aria-label="The Cabinet's task dispatch">
+      <p className="panel-intro">{DISPATCH_INTRO}</p>
+      <h3 className="dispatch-state">The Cabinet has reported</h3>
       <div className="task-cards">
         {tasks.map((task) => {
           const sectionId = ASK_ROLE_SECTION[task.role]
@@ -199,10 +210,15 @@ function TaskCard({
     <div className="task-card" data-status={task.status}>
       <h4>{roleDisplayName(task.role)}</h4>
       <p className="task-status">
-        {task.status === 'done' && <CheckIcon />}
-        {task.status === 'done' && finishedAt !== null
-          ? `Finished at ${formatTimestamp(finishedAt)}`
-          : STATUS_LABELS[task.status]}
+        <span className="task-mark">
+          {task.status === 'done' && <CheckIcon />}
+          {task.status === 'unavailable' && <RefusedIcon />}
+          {task.status === 'working' && <span className="spinner" aria-hidden="true" />}
+          {STATUS_LABELS[task.status]}
+        </span>
+        {task.status === 'done' && finishedAt !== null && (
+          <span className="task-time">Finished {formatClock(finishedAt)}</span>
+        )}
       </p>
       {findings.length > 0 && (
         <p className="task-findings">

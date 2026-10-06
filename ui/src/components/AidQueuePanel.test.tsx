@@ -139,7 +139,7 @@ describe('AidQueuePanel', () => {
     const second = await openRow('Student STU-0120')
     expect(within(second).getByText('none, no appointment on record')).toBeTruthy()
     expect(within(first).queryByText('not registered')).toBeNull()
-    expect(screen.getByText(/2 students, demonstration data: 1 open, 0 in review, 1 closed/)).toBeTruthy()
+    expect(screen.getByText(/2 students, demonstration data: 1 not started, 0 in review, 1 closed/)).toBeTruthy()
     const text = document.body.textContent ?? ''
     for (const word of ['eligible', 'ineligible', 'approve', 'deny', 'recommend', 'likely', 'score']) {
       expect(text.toLowerCase()).not.toContain(word)
@@ -166,7 +166,8 @@ describe('AidQueuePanel', () => {
       csrf: 'csrf-token-1',
     })
     expect(row.querySelector('.aid-status')?.textContent).toBe('In review')
-    expect(within(row).getByText(/Last updated by aid@example\.edu/)).toBeTruthy()
+    // The signed-in aid officer saved it: their own update reads "you".
+    expect(within(row).getByText(/Last updated by you at/)).toBeTruthy()
     expect(save.disabled).toBe(true)
   })
 
@@ -209,7 +210,19 @@ describe('AidQueuePanel', () => {
     fireEvent.change(within(row).getByLabelText('Note'), { target: { value: 'Called.' } })
     fireEvent.click(within(row).getByRole('button', { name: 'Save' }))
     const saved = await within(row).findByText('Saved')
-    await waitFor(() => expect(document.activeElement).toBe(saved))
+    // Moved in the same commit that shows the line (a layout effect), not
+    // on a later timer that could lose the race with the re-render.
+    expect(document.activeElement).toBe(saved)
+  })
+
+  it('names the viewer "you" on their own update, anyone else by address', async () => {
+    stubApi()
+    render(<AidQueuePanel canEdit viewerEmail="aid@example.edu" />)
+    const row = await openRow('Student STU-0007')
+    fireEvent.change(within(row).getByLabelText('Note'), { target: { value: 'Called.' } })
+    fireEvent.click(within(row).getByRole('button', { name: 'Save' }))
+    await within(row).findByText('Saved')
+    expect(within(row).getByText(/Last updated by you at [A-Z][a-z]{2} \d{1,2}, \d{1,2}:\d{2} (AM|PM)\./)).toBeTruthy()
   })
 
   it('filters by status, with the count in each option', async () => {
@@ -219,7 +232,7 @@ describe('AidQueuePanel', () => {
     const show = screen.getByLabelText('Show') as HTMLSelectElement
     expect([...show.options].map((option) => option.textContent)).toEqual([
       'All (2)',
-      'Open (1)',
+      'Not started (1)',
       'In review (0)',
       'Closed (1)',
     ])
@@ -236,8 +249,8 @@ describe('AidQueuePanel', () => {
     const row = await screen.findByRole('listitem', { name: 'Student STU-0007' })
     const head = within(row).getByRole('button', { expanded: false })
     expect(head.textContent).toContain('STU-0007')
-    expect(head.textContent).toContain('$412.50, Bursar')
-    expect(head.textContent).toContain('Open')
+    expect(head.textContent).toContain('Bursar hold $412.50')
+    expect(head.querySelector('.aid-status')?.textContent).toBe('Not started')
     expect(within(row).queryByLabelText('Note')).toBeNull()
   })
 

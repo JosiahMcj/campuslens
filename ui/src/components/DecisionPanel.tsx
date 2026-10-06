@@ -3,7 +3,7 @@ import { useRef, useState, type ReactNode } from 'react'
 import type { AuditEvent, Decision, DispatchInfo, SimulatedTask } from '../api'
 import type { Role } from '../auth'
 import { plainSentence } from '../errors'
-import { formatTimestamp } from '../states'
+import { formatTimestamp, personName } from '../states'
 import { AidQueueNotice, type AidQueueUiState } from './AidQueueNotice'
 import { ApprovedIcon, SentIcon } from './icons'
 
@@ -136,6 +136,10 @@ export function DecisionPanel({
       element.focus()
     }
   }
+  const cancelConfirm = (decisionId: string) => {
+    pendingFocus.current = `${decisionId}:send`
+    setConfirmSend(null)
+  }
 
   return (
     <section
@@ -144,7 +148,11 @@ export function DecisionPanel({
       className="decision-panel"
     >
       <h2 id={headingId ?? undefined}>{title}</h2>
-      <p className="panel-note">The Cabinet advises. You decide. Nothing is sent on its own.</p>
+      <p className="panel-intro">
+        {role === 'executive'
+          ? 'The Cabinet advises. You decide. Nothing is sent on its own.'
+          : 'Leadership decides. Nothing is sent on its own.'}
+      </p>
       {decisions === null &&
         (loadError !== null ? (
           <div className="state-error state-panel error-panel" role="alert">
@@ -170,11 +178,16 @@ export function DecisionPanel({
         const dispatchState = dispatches[decision.id]
         const approvedHere = approvedTasks[decision.id]?.created === true
         // Who approved and when, from the API (the decision list, else the
-        // dispatch state); "you" for the approver before the list reloads.
+        // dispatch state); "you" when the viewer is the approver, including
+        // before the list reloads.
+        const approverEmail =
+          text(decision.approved_by) ?? text(dispatchState?.info?.approved_by)
         const approverName =
-          text(decision.approved_by) ??
-          text(dispatchState?.info?.approved_by) ??
-          (approvedHere && canApprove ? 'you' : null)
+          approverEmail !== null
+            ? personName(approverEmail, userEmail)
+            : approvedHere && canApprove
+              ? 'you'
+              : null
         const approvedAt =
           text(decision.approved_at) ??
           text(dispatchState?.info?.approved_at) ??
@@ -305,7 +318,10 @@ export function DecisionPanel({
                             tabIndex={-1}
                             ref={focusWhen(`${decision.id}:sent`)}
                           >
-                            <SentIcon /> Sent by {dispatch.sent_by ?? 'a staff member'}
+                            <SentIcon /> Sent by{' '}
+                            {dispatch.sent_by !== null
+                              ? personName(dispatch.sent_by, userEmail)
+                              : 'a staff member'}
                             {dispatch.sent_at !== null &&
                               ` at ${formatTimestamp(dispatch.sent_at)}`}
                             .
@@ -354,6 +370,15 @@ export function DecisionPanel({
                                   aria-label="Confirm sending"
                                   tabIndex={-1}
                                   ref={focusWhen(`${decision.id}:confirm`)}
+                                  onKeyDown={(event) => {
+                                    // Escape cancels the confirmation, not the
+                                    // panel around it; focus goes back to Send….
+                                    if (event.key === 'Escape' && !sendBusy) {
+                                      event.stopPropagation()
+                                      event.preventDefault()
+                                      cancelConfirm(decision.id)
+                                    }
+                                  }}
                                 >
                                   <p>
                                     Send to {dispatch.to_office} at {officeContact}? It goes
@@ -375,7 +400,8 @@ export function DecisionPanel({
                                     <button
                                       type="button"
                                       className="btn-secondary secondary"
-                                      onClick={() => setConfirmSend(null)}
+                                      disabled={sendBusy}
+                                      onClick={() => cancelConfirm(decision.id)}
                                     >
                                       Cancel
                                     </button>
@@ -385,6 +411,7 @@ export function DecisionPanel({
                                 <button
                                   type="button"
                                   className="btn-primary primary-button dispatch-send"
+                                  ref={focusWhen(`${decision.id}:send`)}
                                   onClick={() => {
                                     pendingFocus.current = `${decision.id}:confirm`
                                     setConfirmSend(decision.id)

@@ -546,6 +546,10 @@
   margin-top: var(--space-4);
 }
 
+.dispatch > .panel-intro {
+  margin-bottom: var(--space-4);
+}
+
 .side-panel-body .task-cards {
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
 }
@@ -664,11 +668,6 @@
 /* The thread scrolls its newest message clear of the docked composer. */
 .thread-end {
   scroll-margin-bottom: 180px;
-}
-
-.msg-body .panel-note {
-  font-size: var(--text-sm);
-  line-height: 1.55;
 }
 
 /* --- The empty screen's way into every capability ---------------------------------------*/
@@ -1007,8 +1006,9 @@
 /* The row's head is one full-width button (it also carries .finding-row,
    whose hairline, radius and padding are reset here). */
 .aid-row .aid-row-head {
-  display: flex;
-  flex-wrap: wrap;
+  /* id, hold, status pill, chevron on one line; only the hold wraps. */
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: var(--space-1) var(--space-3);
   width: 100%;
@@ -1039,7 +1039,6 @@
 }
 
 .aid-row-hold {
-  flex: 1 1 10rem;
   min-width: 0;
   color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
@@ -1048,9 +1047,24 @@
 
 .aid-row-head .aid-status {
   flex: none;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.aid-row-head .aid-status-in_review {
+  border-color: var(--navy);
+  color: var(--navy);
+}
+
+.aid-row-head .aid-status-closed {
+  background: var(--surface);
 }
 
 .aid-row-head .chevron {
+  flex: none;
   color: var(--ink-soft);
 }
 
