@@ -35,7 +35,12 @@ from cabinet.auth import (
     hash_password,
     sign_session_id,
 )
-from cabinet.security import GENERIC_LOGIN_ERROR, MAX_BODY_BYTES, ROUTE_ROLES
+from cabinet.security import (
+    GENERIC_LOGIN_ERROR,
+    MAX_BODY_BYTES,
+    ROUTE_ROLE_PREFIXES,
+    ROUTE_ROLES,
+)
 from conftest import TEST_PASSWORD, TEST_SECRET_KEY, make_authenticated_client
 
 
@@ -411,6 +416,9 @@ def test_every_protected_route_is_in_the_role_table() -> None:
         # in ROUTE_ROLE_PREFIXES).
         ("GET", "/admin/users"),
         ("POST", "/admin/users"),
+        # The Financial Aid review queue (the PATCH carries a row id and
+        # lives in ROUTE_ROLE_PREFIXES).
+        ("GET", "/aid-queue"),
     }
     assert set(ROUTE_ROLES) == expected
 
@@ -503,6 +511,91 @@ def test_all_roles_roundtrip(app: FastAPI) -> None:
         me = client.get("/auth/me")
         assert me.status_code == 200
         assert me.json()["user"]["role"] == role
+
+
+# Concrete paths for the routes that carry a path parameter (the prefix
+# rules), so the matrix below reaches every route the API serves.
+_PREFIX_SAMPLES: tuple[tuple[str, str], ...] = (
+    ("GET", "/admin/datasets"),
+    ("POST", "/admin/datasets/999/activate"),
+    ("DELETE", "/admin/datasets/999"),
+    ("POST", "/admin/users/999/disable"),
+    ("POST", "/admin/users/999/enable"),
+    ("PATCH", "/admin/users/999"),
+    ("GET", f"/decisions/{DEMO_DECISION_ID}/dispatch"),
+    ("POST", f"/decisions/{DEMO_DECISION_ID}/dispatch"),
+    ("POST", f"/decisions/{DEMO_DECISION_ID}/dispatch/send"),
+    ("POST", f"/decisions/{DEMO_DECISION_ID}/aid-queue"),
+    ("PATCH", "/aid-queue/999"),
+)
+
+# A route that is open to a role in the table but narrows itself inside
+# the handler: an executive's Send is a deliberate, logged 403.
+_HANDLER_NARROWED: frozenset[tuple[str, str, str]] = frozenset(
+    {("executive", "POST", f"/decisions/{DEMO_DECISION_ID}/dispatch/send")}
+)
+
+
+def _table_roles(method: str, path: str) -> tuple[str, ...]:
+    """The roles the middleware's tables allow for (method, path): the
+    exact table first, then the first matching prefix rule."""
+    if (method, path) in ROUTE_ROLES:
+        return ROUTE_ROLES[(method, path)]
+    for prefix_method, prefix, roles in ROUTE_ROLE_PREFIXES:
+        if method == prefix_method and path.startswith(prefix):
+            return roles
+    return ()
+
+
+def test_every_route_for_every_role_matrix(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every role against every route: a role the table does not list is a
+    403 before the handler runs; a listed role reaches the handler (any
+    answer but 401/403). Bodies are empty, so allowed POSTs stop at
+    validation and nothing real happens. Logout runs last per role, since
+    it ends the session."""
+    monkeypatch.setenv("CABINET_PROVIDER", "fake")
+    routes = sorted(
+        {*ROUTE_ROLES, *_PREFIX_SAMPLES},
+        key=lambda route: route == ("POST", "/auth/logout"),
+    )
+    for index, role in enumerate(USER_ROLES):
+        client = make_authenticated_client(
+            app, role=role, email=f"matrix{index}@test.example"
+        )
+        for method, path in routes:
+            if method in ("GET", "DELETE"):
+                status = client.request(method, path).status_code
+            else:
+                status = client.request(method, path, json={}).status_code
+            allowed = role in _table_roles(method, path)
+            if not allowed or (role, method, path) in _HANDLER_NARROWED:
+                assert status == 403, (role, method, path, status)
+            else:
+                assert status not in (401, 403), (role, method, path, status)
+
+
+def test_aid_role_reads_the_briefing_and_the_queue_and_nothing_else(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Financial Aid role: reads like staff, works the queue, and cannot
+    ask, sign off, prepare or send a dispatch, prepare the queue, or read
+    the audit log."""
+    monkeypatch.setenv("CABINET_PROVIDER", "fake")
+    aid = make_authenticated_client(app, role="aid")
+    assert aid.get("/findings").status_code == 200
+    assert aid.get("/questions").status_code == 200
+    assert aid.get("/decisions").status_code == 200
+    assert aid.get("/briefing").status_code == 404  # allowed; none produced yet
+    assert aid.get("/aid-queue").status_code == 200
+    assert aid.get("/events").status_code == 403
+    assert aid.post("/ask", json={"question": "anything"}).status_code == 403
+    sign_off = aid.post("/decisions/approve", json={"decision_id": DEMO_DECISION_ID})
+    assert sign_off.status_code == 403
+    assert aid.post(f"/decisions/{DEMO_DECISION_ID}/aid-queue").status_code == 403
+    assert aid.post(f"/decisions/{DEMO_DECISION_ID}/dispatch").status_code == 403
+    assert aid.get("/admin/users").status_code == 403
 
 
 # --- headers, body cap, content type --------------------------------------------

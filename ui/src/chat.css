@@ -866,3 +866,146 @@
 .event-list {
   grid-template-columns: minmax(0, 1fr);
 }
+
+/* --- Financial Aid review queue -----------------------------------------------------------*/
+
+/* The queue panel reuses the panel text, the id badge, and the dispatch
+   buttons; these rules only lay the rows out. Existing tokens only. */
+.aid-queue {
+  padding-top: 16px;
+}
+
+.aid-summary {
+  margin: 14px 0 0;
+  font-size: 0.92rem;
+  color: var(--ink);
+}
+
+.aid-rows {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.aid-row {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+  padding: 12px 14px;
+}
+
+.aid-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.aid-status {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.aid-facts {
+  margin: 10px 0 0;
+  display: grid;
+  gap: 4px;
+  font-size: 0.9rem;
+}
+
+.aid-fact {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr;
+  gap: 12px;
+}
+
+.aid-fact dt {
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.aid-fact dd {
+  margin: 0;
+}
+
+.aid-edit {
+  margin-top: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.aid-edit label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.aid-edit select,
+.aid-edit textarea {
+  font: inherit;
+  font-size: 0.92rem;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-control);
+  padding: 8px 10px;
+}
+
+.aid-edit select {
+  justify-self: start;
+  min-width: 10rem;
+}
+
+.aid-edit textarea {
+  resize: vertical;
+  min-height: 4.5rem;
+}
+
+.aid-edit select:focus-visible,
+.aid-edit textarea:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 1px;
+}
+
+.aid-count {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.aid-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.aid-edit-actions .dispatch-prepare {
+  margin-top: 0;
+}
+
+.aid-note-read {
+  margin: 10px 0 0;
+  white-space: pre-wrap;
+  font-size: 0.92rem;
+}
+
+.aid-queued {
+  margin-top: 16px;
+  border-top: 1px solid var(--rule);
+  padding-top: 12px;
+}
+
+.aid-queued p {
+  margin: 0;
+  font-weight: 600;
+}
+
+@media (max-width: 599px) {
+  .aid-fact {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}

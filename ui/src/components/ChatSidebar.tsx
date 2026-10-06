@@ -8,6 +8,7 @@ import { GlideGroup } from './GlideGroup'
 import {
   AccessNavIcon,
   ActionsNavIcon,
+  AidQueueNavIcon,
   AuditNavIcon,
   BriefingNavIcon,
   DecisionNavIcon,
@@ -36,6 +37,7 @@ export type PanelId =
   | 'agents'
   | 'access'
   | 'audit'
+  | 'aid'
   | 'profile'
   | 'settings'
 
@@ -79,12 +81,13 @@ const PANEL_ROWS: Record<NavPanel, { label: string; icon: ReactNode }> = {
   agents: { label: 'AI employees', icon: <TeamNavIcon /> },
   access: { label: 'Data access', icon: <AccessNavIcon /> },
   audit: { label: 'Audit log', icon: <AuditNavIcon /> },
+  aid: { label: 'Financial Aid review', icon: <AidQueueNavIcon /> },
 }
 
 /** The capability groups, in sidebar order. */
 const NAV_GROUPS: { label: string; panels: NavPanel[] }[] = [
   { label: 'Briefing', panels: ['briefing', 'figures', 'evidence', 'actions', 'decision'] },
-  { label: 'Governance', panels: ['agents', 'access', 'audit'] },
+  { label: 'Governance', panels: ['agents', 'access', 'aid', 'audit'] },
 ]
 
 const SMALL_SCREEN = '(max-width: 899px)'

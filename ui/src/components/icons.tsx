@@ -234,6 +234,16 @@ export function AuditNavIcon() {
   )
 }
 
+/** The Financial Aid review queue: a clipboard of rows to work through. */
+export function AidQueueNavIcon() {
+  return (
+    <NavGlyph>
+      <rect x="5" y="4" width="14" height="17" rx="2" />
+      <path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3" />
+    </NavGlyph>
+  )
+}
+
 export function GearIcon({ size = 16 }: { size?: number }) {
   return (
     <NavGlyph size={size}>

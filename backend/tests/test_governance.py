@@ -240,6 +240,12 @@ def test_findings_for_role_scoping() -> None:
         assert "row_rules" not in scoped
         assert "STU-" not in scoped
         assert "PRI-" not in scoped
+        # Nor any Financial Aid review queue field (the queue's rows, facts,
+        # and notes never reach a model; test_aid_queue.py runs both
+        # questions after a note is saved).
+        assert "facts" not in scoped
+        assert "aid_review" not in scoped
+        assert "advising_appointment_status" not in scoped
     with pytest.raises(ValueError, match="unknown role"):
         findings_for_role("nobody", obj)
 

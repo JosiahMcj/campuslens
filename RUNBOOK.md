@@ -424,6 +424,51 @@ the provider and its reference). A sent message is never resent, because the
 repeat click is a 409 returning the earlier record. A failed send is recorded
 on the dispatch row with the provider's error so it can be retried.
 
+## The Financial Aid review queue
+
+The emergency-aid review decision asks the Financial Aid office to review the
+students M3 counts. Once leadership signs off on that decision, a staff
+member, the executive, or an admin can prepare a review queue for the office
+from the decision panel ("Prepare the Financial Aid review queue"). The queue
+holds one row per M3 student, with the facts the office needs to start its
+own review. Those facts are the qualifying hold's amount, date, and office,
+the registration status, and the advising status. The cabinet makes no
+determination about any student. The office records its own status (open,
+in review, or closed) and a free-text note for each row.
+
+The queue is worked by a fifth role, `aid`, for Financial Aid staff. An aid
+user reads the briefing like staff and lands on the queue after sign-in. It
+cannot ask, sign off, prepare or send a message, or read the audit log.
+Create one with the CLI or the admin API.
+
+```bash
+make user EMAIL=aid@example.edu ROLE=aid   # INSTITUTION defaults to bootstrap
+curl -b /tmp/cookies -X POST http://127.0.0.1:8910/admin/users \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
+  -d '{"email": "aid@example.edu", "role": "aid"}'      # 201 + one_time_password
+```
+
+The routes, with the same session and CSRF flow as above.
+
+```bash
+curl -b /tmp/cookies -X POST http://127.0.0.1:8910/decisions/D-spring-registration-1/aid-queue \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF"
+# -> {"count": 18, "created": true, ...}, or 409 before sign-off
+curl -b /tmp/cookies http://127.0.0.1:8910/aid-queue    # aid, admin, executive, reviewer
+curl -b /tmp/cookies -X PATCH http://127.0.0.1:8910/aid-queue/<row id> \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
+  -d '{"status": "in_review", "note": "Called the student."}'   # aid and admin
+```
+
+Preparing the queue twice returns the same rows with `"created": false`.
+Each queue belongs to the dataset it was read from, so activating another
+dataset shows that dataset's queue (empty until someone prepares it), and
+purging a dataset purges its queue. A note holds at most 1,000 characters,
+we store it exactly as typed, and no model ever receives it. We audit the
+queue as `aid.queued` (decision, dataset, and count) and every change as
+`aid.updated` with the acting user. The note text stays out of the audit
+log.
+
 ## Replay and the golden run
 
 The golden run is a committed, reviewable recording in `data/golden/` that REPLAY
