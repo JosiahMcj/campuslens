@@ -69,7 +69,7 @@ type OfficeSaveState =
   | { kind: 'saved'; count: number }
   | { kind: 'failed'; message: string; errors: string[] }
 
-const USER_ROLES: readonly Role[] = ['admin', 'executive', 'staff', 'reviewer']
+const USER_ROLES: readonly Role[] = ['admin', 'executive', 'staff', 'reviewer', 'aid']
 
 /** The section anchor the decision panel links to. */
 export const OFFICES_SECTION_ID = 'inst-offices'

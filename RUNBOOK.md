@@ -52,7 +52,7 @@ permissions.
 `make bootstrap-admin` creates the bootstrap institution and its first admin,
 and the generated password prints exactly once and is never logged.
 `make institution` adds another tenant, and `make user` adds a login in one of
-four roles, which are admin, executive, staff, and reviewer. Every new
+five roles, which are admin, executive, staff, reviewer, and aid (the Financial Aid office). Every new
 institution is seeded with the fictional demonstration dataset ("Demonstration
 (fictional)"), so the demo and onboarding work from the first login.
 
