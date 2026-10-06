@@ -1,9 +1,13 @@
 // Typed client for the institution-admin dataset routes (GET/POST
 // /api/admin/datasets, activate, soft delete), plus the pure mappers the
 // Institution area renders. Upload validation errors come back from the API
-// as a list of sentences and are rendered line by line, verbatim.
+// as a list of technical lines; the screen summarises them in plain words
+// and keeps the lines verbatim inside a folded "Technical detail". Every
+// other failure throws an ApiError with a plain sentence or none
+// (ui/src/adminErrors.ts), worded on screen by friendlyError.
 
-import { ApiError, apiDetail, apiFetch } from './auth'
+import { apiFailure, failureFrom, type KnownDetails } from './adminErrors'
+import { apiFetch } from './auth'
 
 export interface DatasetRow {
   id: number
@@ -22,11 +26,16 @@ export interface UploadValidation {
   fictional: boolean
 }
 
+/** A stored upload, or the validation problems that kept it out. */
 export type UploadResult =
   | { ok: true; dataset: DatasetRow; validation: UploadValidation }
   | { ok: false; errors: string[] }
 
-export type ActionResult = { ok: true } | { ok: false; message: string }
+/** The API's refusals that the screen can explain in its own words. */
+export const DATASET_REFUSALS: KnownDetails = [
+  ['exceeds', 'The file is larger than 20 MB. Nothing was saved.'],
+  ['active dataset cannot be deleted', "The active data can't be deleted. Activate another upload first."],
+]
 
 function stringList(value: unknown): string[] {
   return Array.isArray(value)
@@ -57,7 +66,11 @@ function datasetFrom(value: unknown): DatasetRow | null {
   }
 }
 
-/** Map an upload response onto the two render branches; exported for tests. */
+/**
+ * Map an upload response onto the two render branches (stored, or refused
+ * by validation with its problem lines); any other failure throws.
+ * Exported for tests.
+ */
 export function uploadResultFrom(status: number, body: unknown): UploadResult {
   const record = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
   if (status === 201) {
@@ -85,24 +98,16 @@ export function uploadResultFrom(status: number, body: unknown): UploadResult {
         },
       }
     }
+    throw failureFrom(500, body)
   }
   const errors = stringList(record.errors)
-  if (errors.length > 0) return { ok: false, errors }
-  const detail = typeof record.detail === 'string' ? record.detail : null
-  return {
-    ok: false,
-    errors: [detail ?? `The upload did not work (HTTP ${status}). Try again.`],
-  }
+  if (status === 422 && errors.length > 0) return { ok: false, errors }
+  throw failureFrom(status, body, DATASET_REFUSALS)
 }
 
 export async function fetchDatasets(): Promise<DatasetRow[]> {
   const response = await apiFetch('/admin/datasets')
-  if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      await apiDetail(response, `The dataset list failed to load (HTTP ${response.status}).`),
-    )
-  }
+  if (!response.ok) throw await apiFailure(response)
   const body: unknown = await response.json().catch(() => null)
   const list =
     typeof body === 'object' && body !== null
@@ -115,9 +120,10 @@ export async function fetchDatasets(): Promise<DatasetRow[]> {
 }
 
 /**
- * POST /api/admin/datasets with the file's bytes as the JSON body (the API
- * validates the document before anything is stored and answers 422 with
- * every problem listed, or 201 with the row counts and the counseling flag).
+ * POST /api/admin/datasets with the file's bytes as the body (the API
+ * checks the document before anything is stored and answers 422 with
+ * every problem listed, or 201 with the record counts and the counseling
+ * flag).
  */
 export async function uploadDataset(bytes: ArrayBuffer): Promise<UploadResult> {
   const response = await apiFetch('/admin/datasets', {
@@ -126,45 +132,19 @@ export async function uploadDataset(bytes: ArrayBuffer): Promise<UploadResult> {
     body: bytes,
   })
   const body: unknown = await response.json().catch(() => null)
-  if (!response.ok && response.status !== 422) {
-    const detail =
-      typeof body === 'object' && body !== null
-        ? (body as Record<string, unknown>).detail
-        : null
-    return {
-      ok: false,
-      errors: [
-        typeof detail === 'string'
-          ? detail
-          : `The upload did not work (HTTP ${response.status}).`,
-      ],
-    }
-  }
   return uploadResultFrom(response.status, body)
 }
 
 /** POST /api/admin/datasets/<id>/activate — the briefing recomputes. */
-export async function activateDataset(id: number): Promise<ActionResult> {
+export async function activateDataset(id: number): Promise<void> {
   const response = await apiFetch(`/admin/datasets/${id}/activate`, { method: 'POST' })
-  if (!response.ok) {
-    return {
-      ok: false,
-      message: await apiDetail(response, `The dataset could not be activated (HTTP ${response.status}).`),
-    }
-  }
-  return { ok: true }
+  if (!response.ok) throw await apiFailure(response, DATASET_REFUSALS)
 }
 
 /** DELETE /api/admin/datasets/<id> — a soft delete inside the retention window. */
-export async function deleteDataset(id: number): Promise<ActionResult> {
+export async function deleteDataset(id: number): Promise<void> {
   const response = await apiFetch(`/admin/datasets/${id}`, { method: 'DELETE' })
-  if (!response.ok) {
-    return {
-      ok: false,
-      message: await apiDetail(response, `The dataset could not be deleted (HTTP ${response.status}).`),
-    }
-  }
-  return { ok: true }
+  if (!response.ok) throw await apiFailure(response, DATASET_REFUSALS)
 }
 
 /** A file size for the upload panel: "812 B", "41.2 KB", "1.1 MB". */
@@ -176,7 +156,7 @@ export function formatBytes(bytes: number): string {
   return `${(kb / 1024).toFixed(1)} MB`
 }
 
-/** The row counts line for a dataset: "185 current students, 135 prior year". */
+/** The record counts line for a dataset: "185 current students, 135 prior year". */
 export function rowCountLabel(rowCounts: Record<string, number>): string {
   const current = rowCounts.students
   const prior = rowCounts.prior_year_students
@@ -187,5 +167,5 @@ export function rowCountLabel(rowCounts: Record<string, number>): string {
   if (typeof prior === 'number') {
     parts.push(`${prior} prior year`)
   }
-  return parts.length > 0 ? parts.join(', ') : 'row counts not reported'
+  return parts.length > 0 ? parts.join(', ') : 'record counts not reported'
 }

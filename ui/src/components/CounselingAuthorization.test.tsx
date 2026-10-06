@@ -11,6 +11,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { CounselingAuthorizationSection } from './CounselingAuthorization'
 
+// friendlyError belongs to ui/src/errors.ts (group B); stubbed here so the
+// tests check that every failure goes through it, not its exact wording.
+vi.mock('../errors', () => ({
+  friendlyError: (_error: unknown, action: string) => `Friendly: ${action}`,
+}))
+
 const URL = '/api/admin/institution/counseling-authorization'
 
 interface Call {
@@ -33,7 +39,9 @@ const OFF = {
   recorded_at: null,
 }
 
-function stubApi(options: { getStatus?: number; putStatus?: number } = {}) {
+function stubApi(
+  options: { getStatus?: number; putStatus?: number; putRejects?: boolean } = {},
+) {
   let record: Record<string, unknown> = { ...OFF }
   const calls: Call[] = []
   vi.stubGlobal(
@@ -50,6 +58,7 @@ function stubApi(options: { getStatus?: number; putStatus?: number } = {}) {
         }
         return jsonResponse(record)
       }
+      if (options.putRejects === true) throw new TypeError('Failed to fetch')
       if (options.putStatus !== undefined) {
         return jsonResponse(
           {
@@ -170,16 +179,82 @@ describe('Institution settings, the counseling figure', () => {
       target: { value: 'memo 2026-09-26' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Record the authorization' }))
-    await waitFor(() => screen.getByText(/Nothing changed: the authorization was not recorded/))
-    expect(screen.getByText('enter the reference of the written authorization')).toBeTruthy()
+    await waitFor(() => screen.getByText('Nothing changed. Check both fields and try again.'))
+    // The server's own lines sit folded under "Technical detail".
+    const line = screen.getByText('enter the reference of the written authorization')
+    expect(line.closest('details')!.querySelector('summary')!.textContent).toBe(
+      'Technical detail',
+    )
+    expect(screen.queryByText(/the authorization was not recorded/)).toBeNull()
     expect(screen.getByText(/Not authorized/)).toBeTruthy()
     expect(onChanged).not.toHaveBeenCalled()
+  })
+
+  it('a network failure clears the busy button and says so under it', async () => {
+    stubApi({ putRejects: true })
+    render(<CounselingAuthorizationSection onChanged={() => {}} />)
+    await waitFor(() => screen.getByText(/Not authorized/))
+    fireEvent.change(screen.getByLabelText('Authorized by (name and title)'), {
+      target: { value: 'Dr. Example' },
+    })
+    fireEvent.change(screen.getByLabelText('Document reference'), {
+      target: { value: 'memo' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Record the authorization' }))
+    await waitFor(() => screen.getByText('Friendly: The authorization'))
+    const button = screen.getByRole('button', { name: 'Record the authorization' })
+    expect((button as HTMLButtonElement).disabled).toBe(false)
+    expect(document.body.textContent).not.toContain('Failed to fetch')
+  })
+
+  it('makes Record the main button only once both fields are filled', async () => {
+    stubApi()
+    render(<CounselingAuthorizationSection onChanged={() => {}} />)
+    await waitFor(() => screen.getByText(/Not authorized/))
+    const button = screen.getByRole('button', { name: 'Record the authorization' })
+    expect(button.className).toBe('btn-secondary')
+    fireEvent.change(screen.getByLabelText('Authorized by (name and title)'), {
+      target: { value: 'Dr. Example' },
+    })
+    expect(button.className).toBe('btn-secondary')
+    fireEvent.change(screen.getByLabelText('Document reference'), {
+      target: { value: 'memo' },
+    })
+    expect(button.className).toBe('btn-primary')
+    expect(
+      (screen.getByLabelText('Document reference') as HTMLInputElement).placeholder,
+    ).toMatch(/^e\.g\. /)
+  })
+
+  it('moves focus into the revoke confirmation, and Escape cancels it', async () => {
+    const api = stubApi()
+    render(<CounselingAuthorizationSection onChanged={() => {}} />)
+    await waitFor(() => screen.getByText(/Not authorized/))
+    fireEvent.change(screen.getByLabelText('Authorized by (name and title)'), {
+      target: { value: 'Dr. Example' },
+    })
+    fireEvent.change(screen.getByLabelText('Document reference'), {
+      target: { value: 'memo' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Record the authorization' }))
+    await waitFor(() => screen.getByText('Recorded. The briefing now shows the counseling count. The audit log records the change.'))
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke the authorization' }))
+    const dialog = screen.getByRole('alertdialog')
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Revoke the authorization' }),
+    )
+    expect(api.puts().length).toBe(1)
   })
 
   it('offers Retry when the authorization cannot be loaded', async () => {
     stubApi({ getStatus: 503 })
     render(<CounselingAuthorizationSection onChanged={() => {}} />)
-    await waitFor(() => screen.getByText('The authorization could not be loaded'))
+    await waitFor(() => screen.getByText('We couldn’t load the authorization'))
+    expect(screen.getByText('Friendly: The authorization')).toBeTruthy()
+    expect(screen.queryByText(/unavailable/)).toBeNull()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy()
   })
 })

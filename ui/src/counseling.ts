@@ -6,7 +6,8 @@
 // anyone. It lets the Cabinet compute one count (M9), shown with no rows and
 // withheld below the minimum group size.
 
-import { ApiError, apiDetail, apiFetch } from './auth'
+import { apiFailure, failureFrom } from './adminErrors'
+import { apiFetch } from './auth'
 import type { Finding } from './api'
 
 const URL = '/admin/institution/counseling-authorization'
@@ -21,7 +22,7 @@ export interface CounselingAuthorization {
 
 export type SaveAuthorizationResult =
   | { ok: true; authorization: CounselingAuthorization }
-  | { ok: false; message: string; errors: string[] }
+  | { ok: false; errors: string[] }
 
 function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value : null
@@ -42,15 +43,7 @@ export function authorizationFrom(body: unknown): CounselingAuthorization {
 
 export async function fetchCounselingAuthorization(): Promise<CounselingAuthorization> {
   const response = await apiFetch(URL)
-  if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      await apiDetail(
-        response,
-        `The counseling authorization failed to load (HTTP ${response.status}).`,
-      ),
-    )
-  }
+  if (!response.ok) throw await apiFailure(response)
   return authorizationFrom(await response.json().catch(() => null))
 }
 
@@ -67,12 +60,10 @@ async function put(body: Record<string, unknown>): Promise<SaveAuthorizationResu
   const errors = Array.isArray(record.errors)
     ? record.errors.filter((line): line is string => typeof line === 'string')
     : []
-  const detail = typeof record.detail === 'string' ? record.detail : null
-  return {
-    ok: false,
-    message: detail ?? `The authorization could not be saved (HTTP ${response.status}).`,
-    errors,
-  }
+  // A 422 is a refusal with its reasons; anything else throws for
+  // friendlyError to word.
+  if (response.status === 422) return { ok: false, errors }
+  throw failureFrom(response.status, parsed)
 }
 
 /** Record the director's written authorization, as typed. */
