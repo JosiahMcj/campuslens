@@ -1,18 +1,16 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/inter'
-import '@fontsource-variable/geist'
 import './index.css'
 import './theme-librechat.css'
 import './chat.css'
 import './sidebar-nav.css'
 import './landing.css'
 import App from './App.tsx'
-import { applyPrefs, watchSystemTheme } from './theme'
+import { applyPrefs } from './theme'
 
 // Before the first render, so the page never flashes the wrong theme.
 applyPrefs()
-watchSystemTheme()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

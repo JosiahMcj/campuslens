@@ -20,26 +20,43 @@ and approvals use the same marks everywhere.
 | `--rail` | `#F7F7F8` | `#171717` | the sidebar |
 | `--surface` | `#F7F7F8` | `#2F2F2F` | cards and panels on the page |
 | `--surface-hover` | `#ECECEC` | `#393939` | hover on surfaces and rows |
+| `--surface-pressed` | `#E3E3E3` | `#474747` | pressed secondary buttons (differs from hover in both themes) |
 | `--ink` | `#212121` | `#ECECEC` | text |
 | `--ink-soft` | `#595959` | `#B4B4B4` | secondary text (4.5:1 or better on its surface) |
 | `--rule` | `#E3E3E3` | `#393939` | hairlines |
 | `--rule-strong` | `#CDCDCD` | `#595959` | input borders, table rules |
 | `--navy` (accent) | `#126E6B` | `#41A79D` | links, focus rings, the main button |
+| `--navy-hover` / `--navy-pressed` | `#0F5D5B` / `#0C4D4B` | `#56B5AB` / `#6CC2B8` | the main button's hover and pressed fills |
+| `--on-navy` | `#FFFFFF` | `#171717` | text on a filled accent button (6.0:1 and 6.2:1) |
 | `--gold` | `#B45309` | `#F59E0B` | the leadership decision and its Approve, nothing else |
+| `--gold-hover` / `--gold-pressed` | `#9A4708` / `#823C07` | `#F7AD35` / `#F9BD5C` | Approve's hover and pressed fills |
+| `--on-gold` | `#FFFFFF` | `#171717` | text on the Approve button (5.0:1 and 8.4:1) |
 | `--gold-wash` | `#FFFBEB` | `#2A2419` | the decision card's ground |
 | `--alert` | `#B91C1C` | `#F87171` | refusals, errors, destructive actions |
+| `--alert-wash` | `#FEF2F2` | `#2E1F1F` | the ground of refusals and error panels |
+| `--scrim` | black 35 % | black 50 % | behind a slide-over panel or the phone drawer |
+
+Shadows are tokens too: `--shadow` (cards that float, the composer), `--shadow-float` (menus),
+`--shadow-panel` (the slide-over panel), `--shadow-drawer` (the phone drawer). Every token is
+declared once, in the token block at the top of `ui/src/index.css`; no other stylesheet declares
+one.
 
 Rules: one accent (`--navy`) for action; gold belongs only to the decision; red only to refusals,
-errors and destructive actions. No other hues. No raw hex in components: tokens only.
+errors and destructive actions. No other hues. No raw hex or rgb outside the token block.
 
 **Theme:** light is the default for everyone (the demo is projected in a lit room). Dark is
-available from the theme toggle and remembered per browser. The operating system's setting does
-not switch the theme on its own.
+available from Settings and the theme switch and remembered per browser. The operating system's
+setting does not switch the theme on its own, and there is no "System" option (an old stored
+"system" choice reads as light).
 
 ## Type
 
 One family: Inter Variable, with the system sans as fallback. Tabular numerals wherever digits
 line up (figures, tables, the audit log, counts).
+
+Sizes are in rem. The root is 16 px, rising to 18 px at 1200 px and wider for the projector
+(and to 18/20 px with Settings' large text), so every step below, every spacing step and the
+sidebar scale together. Pixel values in this file are at the 16 px root.
 
 | Step | Size | Use |
 |---|---|---|
@@ -56,7 +73,9 @@ measure 68ch.
 
 ## Space and shape
 
-- Spacing steps: 4, 8, 12, 16, 24, 32, 48 px (`--space-1` to `--space-7`). Nothing in between.
+- Spacing steps: `--space-1` to `--space-7` = 0.25, 0.5, 0.75, 1, 1.5, 2, 3 rem (4, 8, 12, 16,
+  24, 32, 48 px at the 16 px root). Nothing in between.
+- `--tap` = 2.75rem (44 px): the height of every field, and the smallest control on a phone.
 - Radii: `--radius-control` 8 px (buttons, inputs, selects, chips that are not pills),
   `--radius-surface` 12 px (cards, panels, the composer), 999 px for pills and avatars only.
 - Shadows: `--shadow` on floating things only (slide-over panels, menus, the composer). Cards on
@@ -64,33 +83,55 @@ measure 68ch.
 
 ## Components
 
-- **Buttons:** one main button per screen (filled `--navy`, white text). Secondary buttons are
-  outlined (`--rule-strong` border, `--ink` text). Destructive buttons are outlined in
-  `--alert` and always confirm inline. The Approve button is filled `--gold` with dark text.
-  Every button has hover, pressed, disabled and focus looks; a working button shows a spinner and
-  its working label ("Saving…").
-- **Inputs:** 44 px tall, `--radius-control`, label above, help text below, error text below in
-  `--alert` linked with `aria-describedby`. Placeholders start with "e.g.".
+- **Buttons:** exactly four looks, each a shared class (older class names are aliases of the
+  same look and keep working):
+  - `.btn-primary`: the main button, one per screen or panel. Filled `--navy`, `--on-navy` text.
+  - `.btn-secondary`: outlined, `--rule-strong` border, `--ink` text; hover `--surface-hover`,
+    pressed `--surface-pressed`.
+  - `.btn-danger`: outlined in `--alert`, `--alert` text. Always confirmed inline.
+  - `.btn-approve`: filled `--gold`, `--on-gold` text. The leadership decision only.
+
+  The text on a filled button is white in light and dark ink (`#171717`) in dark: dark text on
+  the light gold is 3.2:1 and white on the dark teal is 2.9:1, both under the 4.5:1 this file
+  requires, so these are the only foregrounds that pass on both fills. All four are at least
+  44 px tall, `--radius-control`, `--text-sm` weight 600. Every button has hover, pressed,
+  disabled and focus looks; a working button sets `aria-busy="true"` and shows
+  `<span class="spinner">` beside its working label ("Saving…").
+- **Inputs:** `.field`, 44 px tall, `--text-md`, `--rule-strong` border, `--radius-control`,
+  label above, help text below, error text below in `--alert` linked with `aria-describedby`
+  and `aria-invalid="true"` (red border). Placeholders start with "e.g.".
 - **Panels:** the slide-over panel is the one pattern for everything outside the conversation.
   Title, one-sentence intro, then content. Escape and the close button close it; focus returns.
-  Open and close with a 200 ms slide; none under reduced motion.
+  It slides in and out in 200 ms: closing adds `.is-closing` to `.panel-overlay` and
+  `.side-panel` and unmounts them 200 ms later; switching panels gives `.side-panel-body` a new
+  key so the content cross-fades. No motion under reduced motion (system setting or Settings).
 - **Figures:** a figure is a link to its evidence. Five figure cards (M1, M2, M3, M4, M8); M9,
   when authorized, appears only in the briefing text and the evidence list.
-- **States:** every list and panel has a loading line, an empty state that says what to do next,
-  and an error state that says what went wrong and offers Retry. A failed load never looks like
-  "nothing here".
+- **States:** every list and panel has a loading line (`.skeleton-line`), an empty state that
+  says what to do next (`.state-empty`), and an error state that says what went wrong and offers
+  Retry (`.state-error`, the Retry button inside it). A failed load never looks like "nothing
+  here".
+- **Shared layouts:** `.kv` is a `dl` of label/value pairs on a `7rem minmax(0,1fr)` grid; long
+  values wrap, and under 400 px each label sits above its value. `.stack-table` is a full-width
+  table that becomes one card per row under 640 px, each cell reading "label: value" from its
+  `data-label` (an empty `data-label` shows no label, for action cells). `.fold` is a
+  `details`/`summary` for long content behind "Show …", with a 44 px summary that draws its
+  own chevron.
 - **Governance marks:** granted (check in a circle), refused (no-entry circle, `--alert`),
   approved (check in a square, `--gold`), sent (arrow out of a tray). Always with a text label.
 
 ## Phones
 
-Below 768 px the sidebar becomes a menu button (44 × 44) and a drawer. Every tap target is at
-least 44 × 44 px. No sideways scrolling at 360 px, including with text enlarged to 150 %.
-Tables become stacked rows.
+Below 900 px the sidebar becomes a menu button (44 × 44) and a drawer. Every tap target is at
+least 44 × 44 px: buttons, fields, rows, chips, segments, summaries; a link inside a sentence
+keeps its size and gets an invisible 44 × 44 hit area. No sideways scrolling at 360 px, including with text enlarged to 150 %.
+Tables become stacked cards (`.stack-table`).
 
 ## Words
 
 Plain words for non-technical readers. Students are people who may need support, never scores.
 Never on screen: internal ids that mean nothing to a reader, file formats, "API", "JSON",
-"payload", model or vendor names, raw error text. Source labels stay honest: "(recorded live
-run)", "(live model)", "Test stub, not a live model".
+"payload", finding ids as bare codes, event type codes, raw field names outside a folded
+"Technical detail", model or vendor names, raw error text. Source labels stay honest without
+jargon: "Written by the Chief of Staff", with whether it was a replay or a live run in a small
+"About this answer" detail.
