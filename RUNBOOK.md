@@ -369,6 +369,18 @@ are in `deploy/checklist.md`, the full first-deploy walkthrough.
   keeps working. The endpoint key and the model id are never logged, recorded, or
   returned to the UI, because responses carry the label only.
 
+  When the model's answer fails validation (for example it cites a finding its
+  role did not receive), we ask it once more with the same inputs plus one
+  short correction that states the reason in plain words and adds no data.
+  The new answer is validated again, and a second failure leaves the section
+  unavailable. Set `CABINET_VALIDATION_RETRIES=0` to turn this off, or a
+  higher number for more tries (capped at 3). Each try can take up to about a
+  minute on a slow endpoint, so one retry can double a section's worst-case
+  time. This is separate from the provider's own single retry on HTTP 429,
+  5xx, and refused connections. The count of corrective tries appears as
+  `validation_retries` on the `finding.produced` and `briefing.produced`
+  events. Replay never retries.
+
 - **`replay`** serves recorded responses with no network. `make api REPLAY=1` is the
   shorthand, and the search order is `CABINET_REPLAY_DIR` if set, then `var/replay/`,
   then the committed golden run in `data/golden/`.
