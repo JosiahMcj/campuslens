@@ -594,6 +594,20 @@ institutions created afterwards. A malformed seed fixture fails startup with
 one clear line naming the problem, not a traceback, and an empty-but-valid
 fixture renders every metric as `--` per the contract.
 
+### Demonstration University (the synthetic school)
+
+`data/school/` generates a whole fictional university (Fall 2020 to Spring 2026)
+as an Ellucian-shaped SQLite database for specific historical questions. Build it
+with `make school-data`, which writes `var/school/school.db` (about 33 MB, about
+3 s) and then runs the checker. Re-check an existing database with
+`make school-check`, which exits non-zero if any GPA, standing, schedule,
+capacity, or planted fact in `data/school/VERIFY.md` disagrees with the raw rows.
+Nothing runs in the background, so there is nothing to stop. To reset, delete
+`var/school/school.db` and run `make school-data` again, and the same seed gives
+the same rows (the canonical hash in `VERIFY.md` proves it). The data is
+synthetic, students are pseudonymous ids with no names, and instructor names are
+fictional. Tables are documented in `data/school/SCHEMA.md`.
+
 ## Known issues
 
 - **Live-model latency can reach ~55 s** (the client timeout, and the endpoint

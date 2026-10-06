@@ -13,7 +13,7 @@ PYBIN := $(VENV)/bin
 	typecheck typecheck-python typecheck-ui \
 	test test-python test-ui \
 	check audit check-config bootstrap-admin institution user import-ethos api ui stop record-golden \
-	migrate backup restore purge-deleted build serve
+	migrate backup restore purge-deleted build serve school-data school-check
 
 setup: setup-python setup-ui
 
@@ -303,3 +303,16 @@ stop:
 			echo "port $$port is still held by pid $$pid ($$(ps -p $$pid -o command= 2>/dev/null || echo 'unknown command')) — not killed; it was not started from this directory's pid files"; \
 		done; \
 	done
+
+# Demonstration University, the synthetic school (data/school/README.md).
+# school-data generates the whole university at scale 1.0 into
+# var/school/school.db (seeded, deterministic, never committed) and then
+# runs the checker. school-check re-runs the checker alone: schema,
+# realism rules, and every planted fact in data/school/VERIFY.md.
+school-data:
+	@mkdir -p var/school
+	$(PYBIN)/python data/school/generate.py --out var/school/school.db
+	$(PYBIN)/python data/school/check.py --db var/school/school.db
+
+school-check:
+	$(PYBIN)/python data/school/check.py --db var/school/school.db

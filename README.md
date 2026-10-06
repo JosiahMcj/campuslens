@@ -143,6 +143,15 @@ had any counseling contact this term (M9). It shows no rows, names the person wh
 authorized it, and withholds any count under 10 as "fewer than 10". `RUNBOOK.md`
 covers recording and revoking it.
 
+For questions that need a whole school's history, we also ship Demonstration
+University in `data/school/`. It is a synthetic, Ellucian-shaped SQLite database
+covering Fall 2020 to Spring 2026, with 40 programs, 906 courses, 220 fictional
+instructors, about 6,200 pseudonymous students, and about 140,000 graded
+registrations. `make school-data` builds it into `var/school/school.db` in a few
+seconds, and `make school-check` recomputes every GPA and every planted fact in
+`data/school/VERIFY.md` from the raw rows. Nothing in the cabinet reads it yet, and
+a governed question engine will. `data/school/README.md` explains the rest.
+
 ## UI states
 
 The dashboard's three states can be induced on demand with query switches on
