@@ -29,7 +29,7 @@ const SESSION: Session = {
     email: 'admin@example.edu',
     role: 'admin',
     institution_id: 1,
-    institution: { slug: 'bootstrap', name: 'Bootstrap Institution' },
+    institution: { slug: 'bootstrap', name: 'Demonstration University' },
   },
   csrfToken: 'csrf-token-123',
 }
@@ -47,7 +47,7 @@ const loginBody = {
     email: 'admin@example.edu',
     role: 'admin',
     institution_id: 1,
-    institution: { slug: 'bootstrap', name: 'Bootstrap Institution' },
+    institution: { slug: 'bootstrap', name: 'Demonstration University' },
   },
   csrf_token: 'csrf-token-123',
 }

@@ -65,3 +65,44 @@ describe('ChatComposer after a failed ask', () => {
     expect(html).not.toContain('Failed to fetch')
   })
 })
+
+describe('ChatComposer — the approved questions failed to load', () => {
+  const failed = (starters: boolean, onRetry: (() => void) | null = () => {}) =>
+    renderToStaticMarkup(
+      <ChatComposer
+        questions={null}
+        sending={false}
+        starters={starters}
+        onAsk={() => {}}
+        questionsFailed
+        onRetryQuestions={onRetry}
+      />,
+    )
+
+  it('shows a quiet line with Retry in the starter cards’ place', () => {
+    const html = failed(true)
+    expect(html).toContain('questions-retry')
+    expect(html).toContain('The approved questions didn’t load.')
+    expect(html).toMatch(/<button[^>]*class="link-button"[^>]*>Retry<\/button>/)
+    // The field itself still works.
+    expect(html).toContain('id="question-input"')
+  })
+
+  it('says nothing about it once an answer is on screen', () => {
+    expect(failed(false)).not.toContain('questions-retry')
+  })
+
+  it('keeps the error block styled from the stylesheet, not inline', () => {
+    const html = renderToStaticMarkup(
+      <ChatComposer
+        questions={null}
+        sending={false}
+        starters={false}
+        onAsk={() => {}}
+        error="The Cabinet is busy. Wait a minute and try again."
+      />,
+    )
+    expect(html).toContain('class="ask-error state-error"')
+    expect(html).not.toContain('style=')
+  })
+})

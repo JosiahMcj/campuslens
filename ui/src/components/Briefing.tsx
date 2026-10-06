@@ -2,17 +2,17 @@ import type { Decision, Finding, Findings, OfficeHolds } from '../api'
 import { getFinding } from '../api'
 import {
   analystSource,
+  analystSourceDetail,
+  analystSourceLabel,
   findingDisplay,
   m3ThresholdLabel,
   type AnalystClaim,
-  type AnalystSource,
   type ModelSection,
 } from '../states'
 import { authorizedSourceLabel, suppressionNote } from '../counseling'
 import { fieldLabels } from '../fieldLabels'
 import { findingLabel, linkClaimNumbers } from '../findingLabels'
 import { FindingLink } from './FindingLink'
-import { ChevronIcon } from './icons'
 
 /** A figure's display text by id, for linking the numbers in model text. */
 type DisplayOf = (findingId: string) => string
@@ -21,29 +21,6 @@ function displayLookup(findings: Findings, counselingFigure: Finding | null = nu
   return (id) => {
     const finding = id === 'M9' ? (counselingFigure ?? undefined) : getFinding(findings, id)
     return findingDisplay(finding ?? {}).text
-  }
-}
-
-/**
- * Who wrote a model-written section, in one short line: "Written by the
- * Chief of Staff". The test stub never passes as a model. (Group B's
- * states.ts carries the same wording as analystSourceLabel after the merge.)
- */
-function sourceLine(source: AnalystSource, analyst: string): string {
-  return source === 'fake' ? 'Test stub, not a live model' : `Written by ${analyst}`
-}
-
-/** The replay or live fact, for the small "About this answer" detail. */
-function sourceDetail(source: AnalystSource, modelLabel: string | null): string {
-  switch (source) {
-    case 'fake':
-      return 'This text comes from a test stub, not a live model.'
-    case 'recorded':
-      return 'This text was written during a recorded live run of the Cabinet and is replayed here. Every number in it was checked against the data before it was shown.'
-    case 'live':
-      return `This text was written just now (${
-        modelLabel !== null && modelLabel !== '' ? modelLabel : 'live model'
-      }). Every number in it was checked against the data before it was shown.`
   }
 }
 
@@ -127,7 +104,6 @@ export function BriefingSections({
         {enrollment !== null && enrollment.kind === 'available' && (
           <details className="fold technical-detail">
             <summary>
-              <ChevronIcon />
               Show the Enrollment Analyst's explanation
             </summary>
             <ModelClaims
@@ -425,7 +401,6 @@ export function ExecutiveSummary({
           </p>
           <details className="fold technical-detail">
             <summary>
-              <ChevronIcon />
               Technical detail
             </summary>
             <p>{chiefSummary.reason}</p>
@@ -466,7 +441,6 @@ export function Limitations({
         {heading}
         <details className="fold technical-detail">
           <summary>
-            <ChevronIcon />
             Show the known limitations ({chiefLimitations.claims.length})
           </summary>
           <ModelClaims
@@ -485,7 +459,6 @@ export function Limitations({
       {heading}
       <details className="fold technical-detail">
         <summary>
-          <ChevronIcon />
           Show the known limitations (5)
         </summary>
       <ul className="limitations-list">
@@ -546,17 +519,16 @@ function ModelClaims({
   return (
     <>
       <p className={source === 'fake' ? 'analyst-source stub-tag' : 'analyst-source'}>
-        {sourceLine(source, analyst)}
+        {analystSourceLabel(source, analyst)}
       </p>
       {claims.map((claim, index) => (
         <ClaimText key={index} claim={claim} onOpen={onOpen} displayOf={displayOf} />
       ))}
       <details className="fold technical-detail about-answer">
         <summary>
-          <ChevronIcon />
           About this answer
         </summary>
-        <p>{sourceDetail(source, provenance.model_label)}</p>
+        <p>{analystSourceDetail(source, provenance.model_label)}</p>
       </details>
     </>
   )
@@ -739,7 +711,6 @@ function ModelUnavailable({
       )}
       <details className="fold technical-detail">
         <summary>
-          <ChevronIcon />
           Technical detail
         </summary>
         <p>{reason}</p>
@@ -824,14 +795,28 @@ function ComparisonTable({
 export function DecisionSection({
   decisions,
   onOpenDecision,
+  loadError = null,
+  onRetry,
 }: {
   decisions: Decision[] | null
   onOpenDecision: () => void
+  /** The decision could not be loaded: a plain sentence, shown with Retry. */
+  loadError?: string | null
+  onRetry?: () => void
 }) {
   return (
     <section aria-labelledby="s-decision-note">
       <h2 id="s-decision-note">6. Leadership decisions</h2>
-      {decisions === null ? (
+      {loadError !== null ? (
+        <div className="state-error state-panel error-panel" role="alert">
+          <p>Couldn't load the decision. {loadError}</p>
+          {onRetry !== undefined && (
+            <button type="button" className="btn-secondary secondary" onClick={onRetry}>
+              Retry
+            </button>
+          )}
+        </div>
+      ) : decisions === null ? (
         <p className="status-line">Loading the decision…</p>
       ) : decisions.length === 0 ? (
         <p>No leadership decision is waiting for this question.</p>
@@ -846,9 +831,11 @@ export function DecisionSection({
           ))}
         </ul>
       )}
-      <button type="button" className="btn-secondary secondary" onClick={onOpenDecision}>
-        Open the decision
-      </button>
+      {loadError === null && (
+        <button type="button" className="btn-secondary secondary" onClick={onOpenDecision}>
+          Open the decision
+        </button>
+      )}
     </section>
   )
 }

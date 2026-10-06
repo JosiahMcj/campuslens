@@ -9,7 +9,6 @@ import { findingLabel } from '../findingLabels'
 import { formatTimestamp } from '../states'
 import {
   ApprovedIcon,
-  ChevronIcon,
   GrantedIcon,
   RefreshIcon,
   RefusedIcon,
@@ -185,7 +184,8 @@ function describeEvent(event: AuditEvent): DescribedEvent {
       const question = str(payload.question)
       if (question !== null) {
         add('Question', question)
-        add('Reason', plainSentence(str(payload.reason)))
+        const reason = str(payload.reason)
+        add('Reason', reason === null ? null : plainSentence(reason))
         return {
           sentence: `A question outside the approved list was refused: “${question}”.`,
           mark: 'refused',
@@ -456,7 +456,6 @@ export function AuditLog({
                 {described.details.length > 0 && (
                   <details className="fold technical-detail" open={highlighted}>
                     <summary>
-                      <ChevronIcon />
                       Details
                     </summary>
                     <dl className="kv">

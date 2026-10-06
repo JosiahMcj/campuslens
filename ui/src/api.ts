@@ -135,6 +135,9 @@ export interface Decision {
   text: string
   follow_up: { office: string; description: string }
   approved: boolean
+  /** The approver's email and the approval time (ISO), once approved. */
+  approved_by?: string | null
+  approved_at?: string | null
 }
 
 export interface SimulatedTask {
@@ -348,6 +351,8 @@ export interface DispatchInfo {
   office: string
   office_contact: string | null
   approved: boolean
+  approved_by?: string | null
+  approved_at?: string | null
   dispatch: DispatchRecord | null
   /** The Financial Aid review queue for this decision: counts only. */
   aid_queue?: AidQueueSummary

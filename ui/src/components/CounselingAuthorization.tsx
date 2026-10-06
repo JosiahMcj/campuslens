@@ -7,7 +7,7 @@ import {
   type CounselingAuthorization,
   type SaveAuthorizationResult,
 } from '../counseling'
-import { friendlyError } from '../errors'
+import { friendlyError, friendlyLoadError } from '../errors'
 import { formatTimestamp, type LoadState } from '../states'
 import './Institution.css'
 
@@ -51,7 +51,7 @@ export function CounselingAuthorizationSection({ onChanged }: { onChanged: () =>
     try {
       setState({ kind: 'ready', data: await fetchCounselingAuthorization() })
     } catch (error) {
-      setState({ kind: 'error', message: friendlyError(error, 'The authorization') })
+      setState({ kind: 'error', message: friendlyLoadError(error) })
     }
   }, [])
 

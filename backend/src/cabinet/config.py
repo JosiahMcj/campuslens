@@ -24,7 +24,7 @@ from cabinet.auth import (
     session_ttl,
 )
 from cabinet.provider import load_local_env
-from cabinet.security import ENV_RATE_ASK, ENV_RATE_GENERAL
+from cabinet.security import ENV_RATE_ASK, ENV_RATE_GENERAL, ENV_RATE_SESSION
 
 # Every CABINET_* variable the code reads, grouped by concern.
 KNOWN_VARIABLES: tuple[str, ...] = (
@@ -71,6 +71,7 @@ KNOWN_VARIABLES: tuple[str, ...] = (
     "CABINET_SMTP_PASSWORD_FILE",
     # rate limits
     ENV_RATE_GENERAL,
+    ENV_RATE_SESSION,
     ENV_RATE_ASK,
 )
 

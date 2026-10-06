@@ -43,6 +43,7 @@ import { AskDispatch, DispatchPanel } from './components/DispatchPanel'
 import { AuditLog, type DeniedRequestState } from './components/AuditLog'
 import {
   BriefingSections,
+  DecisionSection,
   EvidenceSources,
   ExecutiveSummary,
   Limitations,
@@ -477,6 +478,7 @@ function BriefingPage({
   // offers to prepare a message that may already exist.
   const [dispatchLoadError, setDispatchLoadError] = useState<string | null>(null)
   const [questions, setQuestions] = useState<ApprovedQuestion[] | null>(null)
+  const [questionsFailed, setQuestionsFailed] = useState(false)
   const [askState, setAskState] = useState<AskState>({ kind: 'idle' })
   // The last briefing this API process produced (GET /briefing on load).
   const [briefingStatus, setBriefingStatus] = useState<ResourceStatus>({ kind: 'loading' })
@@ -589,8 +591,11 @@ function BriefingPage({
   const loadQuestions = useCallback(async () => {
     try {
       setQuestions(await fetchQuestions(flags))
+      setQuestionsFailed(false)
     } catch {
-      // The question field still works without the starter cards.
+      // The question field still works without the starter cards; a quiet
+      // line with Retry takes their place.
+      setQuestionsFailed(true)
     }
   }, [flags])
 
@@ -1084,18 +1089,19 @@ function BriefingPage({
     document.title = documentTitle(screenTitle)
   }, [screenTitle])
 
-  // The audit-log entry to show (a refusal reply's "See the refusal", or
-  // the refusal test): scrolled into view once the log has rendered it.
-  useEffect(() => {
-    if (auditFocusId === null || panel !== 'audit' || events === null) return
-    const element = document.getElementById(`event-${auditFocusId}`)
-    if (element === null) return
-    element.scrollIntoView({ block: 'center' })
+  const closePanel = useCallback(() => {
+    setPanel(null)
     setAuditFocusId(null)
-  }, [auditFocusId, panel, events])
-
-  const closePanel = useCallback(() => setPanel(null), [])
+  }, [])
   const { shown: shownPanel, closing: panelClosing } = usePanelPresence(panel)
+  const { shown: shownEvidence, closing: evidenceClosing } = usePanelPresence(
+    drawerFinding ?? null,
+  )
+  // The evidence is the top layer while it is open: the panel under it and
+  // the page are inert. A closing layer no longer covers anything, so focus
+  // can return to the number that opened it.
+  const evidenceOpen = drawerFinding !== undefined
+  const pageCovered = panel !== null || evidenceOpen
 
   // Leaving the phone drawer: focus goes back to the button that opened it
   // (never left on a row inside the now hidden, inert drawer).
@@ -1108,6 +1114,8 @@ function BriefingPage({
 
   const openPanel = (next: PanelId) => {
     setPanel(next)
+    // A refusal highlighted in the log belongs to the visit that showed it.
+    setAuditFocusId(null)
     // The panel takes focus; on close it falls back to the main column.
     setSidebarOpen(false)
   }
@@ -1137,7 +1145,9 @@ function BriefingPage({
   }
 
   const seeRefusal = (eventId: number | null) => {
+    openPanel('audit')
     if (eventId !== null) {
+      // The log scrolls to this entry and highlights it.
       setAuditFocusId(eventId)
       const refusal = thread.find(
         (item) => item.state.kind === 'refused' && item.state.eventId === eventId,
@@ -1147,7 +1157,6 @@ function BriefingPage({
         setDeniedRequest({ kind: 'shown', reason: refusal.state.refusal, eventId })
       }
     }
-    openPanel('audit')
     void loadEvents()
   }
 
@@ -1195,12 +1204,14 @@ function BriefingPage({
     dispatchLoadError !== null ? { kind: 'error', message: dispatchLoadError } : decisionsStatus
 
   const decisionPanel = (title: string | undefined) =>
-    decisionStatus.kind !== 'ready' ? (
+    decisionStatus.kind === 'loading' ? (
       notReady(decisionStatus, retryDecisions, 'the decision')
     ) : (
       <DecisionPanel
         {...(title !== undefined ? { title } : { headingId: null })}
-        decisions={decisions}
+        decisions={decisionStatus.kind === 'error' ? null : decisions}
+        loadError={decisionStatus.kind === 'error' ? decisionStatus.message : null}
+        onRetry={retryDecisions}
         events={events ?? []}
         canApprove={act}
         role={role}
@@ -1212,7 +1223,6 @@ function BriefingPage({
         onApprove={(id) => void approve(id)}
         onPrepareDispatch={(id) => void prepareDispatch(id)}
         onSendDispatch={(id) => void sendDispatch(id)}
-        onOpenEvidence={openEvidence}
         aidQueues={aidQueues}
         onPrepareAidQueue={(id) => void prepareAidQueue(id)}
         onOpenAidQueue={aidQueue ? () => openPanel('aid') : null}
@@ -1301,13 +1311,15 @@ function BriefingPage({
         onAskAgain={
           askState.kind === 'error' ? () => void ask(askState.question) : null
         }
+        questionsFailed={questionsFailed && questions === null}
+        onRetryQuestions={() => void loadQuestions()}
       />
     ) : null
 
   const findingsPanel = (content: () => ReactNode) =>
     ready ? content() : notReady(findingsStatus, onRetryFindings, 'the briefing')
 
-  const blocked = shownPanel !== null || (sidebarOpen && small)
+  const blocked = pageCovered || (sidebarOpen && small)
 
   return (
     <div className="chat-app">
@@ -1325,7 +1337,7 @@ function BriefingPage({
       >
         {act && !onInstitution ? 'Skip to question' : 'Skip to main content'}
       </a>
-      <div className="chat-layer" inert={shownPanel !== null} style={{ display: 'contents' }}>
+      <div className="chat-layer" inert={pageCovered} style={{ display: 'contents' }}>
         <ChatSidebar
           session={session}
           datasetName={datasetName}
@@ -1453,7 +1465,12 @@ function BriefingPage({
       </div>
 
       {shownPanel !== null && (
-        <SidePanel title={panelTitle[shownPanel]} onClose={closePanel} closing={panelClosing}>
+        <SidePanel
+          title={panelTitle[shownPanel]}
+          onClose={closePanel}
+          closing={panelClosing}
+          covered={evidenceOpen}
+        >
           {shownPanel === 'briefing' &&
             findingsPanel(() =>
               ready ? (
@@ -1467,17 +1484,14 @@ function BriefingPage({
                     onCheckAgain={act ? checkAgain : null}
                     onOpenEvidence={openEvidence}
                     counselingFigure={briefingCounseling}
+                    onOpenStaffActions={() => openPanel('actions')}
                   />
-                  <section aria-labelledby="s-decision-note">
-                    <h2 id="s-decision-note">6. Leadership decisions</h2>
-                    <p>
-                      The decision and its approval live in the conversation, under
-                      the Cabinet's latest answer.{' '}
-                      <button type="button" className="link-button" onClick={closePanel}>
-                        Back to the conversation
-                      </button>
-                    </p>
-                  </section>
+                  <DecisionSection
+                    decisions={decisionStatus.kind === 'error' ? null : decisions}
+                    loadError={decisionStatus.kind === 'error' ? decisionStatus.message : null}
+                    onRetry={retryDecisions}
+                    onOpenDecision={() => setPanel('decision')}
+                  />
                   <Limitations
                     findings={findingsState.data}
                     fictional={fictional}
@@ -1489,7 +1503,7 @@ function BriefingPage({
             )}
           {shownPanel === 'agents' &&
             (audit ? (
-              eventsStatus.kind !== 'ready' ? (
+              eventsStatus.kind === 'loading' && events === null ? (
                 notReady(eventsStatus, retryEvents, 'the AI employees’ work')
               ) : (
                 <DispatchPanel
@@ -1497,6 +1511,10 @@ function BriefingPage({
                   minEventId={runBaseEventId}
                   inFlight={runInFlight}
                   stillWorking={stillWorking}
+                  error={
+                    eventsStatus.kind === 'error' && events === null ? eventsStatus.message : null
+                  }
+                  onRetry={retryEvents}
                 />
               )
             ) : lastAccepted !== null ? (
@@ -1546,10 +1564,18 @@ function BriefingPage({
             <div className="doc panel-solo">{decisionPanel(undefined)}</div>
           )}
           {shownPanel === 'access' &&
-            (lastAccepted === null && eventsStatus.kind !== 'ready' ? (
+            (lastAccepted === null && events === null && eventsStatus.kind === 'loading' ? (
               notReady(eventsStatus, retryEvents, 'what each AI employee could see')
             ) : (
-              <DataAccessPanel grants={grants} />
+              <DataAccessPanel
+                grants={grants}
+                error={
+                  lastAccepted === null && events === null && eventsStatus.kind === 'error'
+                    ? eventsStatus.message
+                    : null
+                }
+                onRetry={retryEvents}
+              />
             ))}
           {shownPanel === 'aid' && aidQueue && <AidQueuePanel canEdit={canEditAidQueue(role)} />}
           {shownPanel === 'profile' && (
@@ -1564,29 +1590,28 @@ function BriefingPage({
               }}
             />
           )}
-          {shownPanel === 'audit' &&
-            audit &&
-            (eventsStatus.kind === 'error' ? (
-              notReady(eventsStatus, retryEvents, 'the audit log')
-            ) : (
-              <div className="panel-solo">
-                <AuditLog
-                  events={events}
-                  readOnly={!act}
-                  onRefresh={() => void loadEvents()}
-                  deniedRequest={deniedRequest}
-                  onShowDeniedRequest={() => void showDeniedRequest()}
-                />
-              </div>
-            ))}
+          {shownPanel === 'audit' && audit && (
+            <div className="panel-solo">
+              <AuditLog
+                events={events}
+                readOnly={!act}
+                onRefresh={eventsStatus.kind === 'error' ? retryEvents : () => void loadEvents()}
+                deniedRequest={deniedRequest}
+                onShowDeniedRequest={() => void showDeniedRequest()}
+                highlightEventId={auditFocusId}
+                loadError={eventsStatus.kind === 'error' ? eventsStatus.message : null}
+              />
+            </div>
+          )}
         </SidePanel>
       )}
 
-      {drawerFinding !== undefined && (
+      {shownEvidence !== null && (
         <EvidenceDrawer
-          finding={drawerFinding}
+          finding={shownEvidence}
           fictional={fictional}
           onClose={closeEvidence}
+          closing={evidenceClosing}
         />
       )}
     </div>

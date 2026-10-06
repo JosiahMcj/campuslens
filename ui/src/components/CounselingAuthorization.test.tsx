@@ -11,9 +11,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { CounselingAuthorizationSection } from './CounselingAuthorization'
 
-// friendlyError belongs to ui/src/errors.ts (group B); stubbed here so the
-// tests check that every failure goes through it, not its exact wording.
-vi.mock('../errors', () => ({
+// friendlyError (a failed save) is stubbed so the tests check that every
+// failure goes through it, not its exact wording. A failed LOAD uses the
+// real friendlyLoadError, which never says "was not saved".
+vi.mock('../errors', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../errors')>()),
   friendlyError: (_error: unknown, action: string) => `Friendly: ${action}`,
 }))
 
@@ -253,7 +255,10 @@ describe('Institution settings, the counseling figure', () => {
     stubApi({ getStatus: 503 })
     render(<CounselingAuthorizationSection onChanged={() => {}} />)
     await waitFor(() => screen.getByText('We couldn’t load the authorization'))
-    expect(screen.getByText('Friendly: The authorization')).toBeTruthy()
+    expect(
+      screen.getByText('Something went wrong on our side. Try again in a minute.'),
+    ).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/was not saved/)
     expect(screen.queryByText(/unavailable/)).toBeNull()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy()
   })

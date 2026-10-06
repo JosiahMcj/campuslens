@@ -2,7 +2,6 @@ import { roleDisplayName, type Role, type Session } from '../auth'
 import { fieldLabels } from '../fieldLabels'
 import { findingLabel } from '../findingLabels'
 import { setPrefs, usePrefs, type Motion, type TextSize } from '../theme'
-import { ChevronIcon } from './icons'
 
 /** What each human role may do, mirroring the API's role table (auth.ts). */
 const ROLE_ABILITIES: Record<Role, string[]> = {
@@ -254,7 +253,6 @@ export function DataAccessPanel({
               )}
               <details className="fold technical-detail">
                 <summary>
-                  <ChevronIcon />
                   {grant.aggregate ? 'Totals it was given' : 'Data it was given'} (
                   {grant.fields.length})
                 </summary>
@@ -265,7 +263,6 @@ export function DataAccessPanel({
                 </ul>
                 <details className="fold technical-detail">
                   <summary>
-                    <ChevronIcon />
                     Technical detail
                   </summary>
                   <ul className="field-list">

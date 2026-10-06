@@ -101,6 +101,16 @@ describe('the service worker', () => {
     expect(sw).toContain('cacheableStaticPath')
     expect(sw).toContain("'/assets/'")
     expect(sw).toContain('NEVER stored')
-    expect(sw).toContain('cabinet-shell-v2')
+    expect(sw).toContain('cabinet-shell-v3')
+    // Every icon the manifest and the page name is in the shell.
+    for (const icon of [
+      '/icons/icon-192.png',
+      '/icons/icon-512.png',
+      '/icons/icon-maskable-192.png',
+      '/icons/icon-maskable-512.png',
+      '/icons/apple-touch-icon.png',
+    ]) {
+      expect(sw).toContain(`'${icon}'`)
+    }
   })
 })

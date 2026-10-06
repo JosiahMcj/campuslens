@@ -176,6 +176,74 @@ describe('the conversation', () => {
   })
 })
 
+describe('wiring of the panels', () => {
+  it('shows a quiet Retry line when the approved questions fail to load', async () => {
+    let fail = true
+    mockApi({
+      '/questions': () =>
+        fail ? json({ detail: 'boom' }, 500) : json([{ id: 'spring-registration', text: QUESTION }]),
+    })
+    render(<App />)
+    expect(await screen.findByText(/The approved questions didn’t load/)).toBeTruthy()
+    fail = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText(QUESTION)).toBeTruthy()
+    expect(screen.queryByText(/The approved questions didn’t load/)).toBeNull()
+  })
+
+  it('lists the decision in the Full briefing and opens the Decision panel from it', async () => {
+    mockApi({
+      '/decisions': () =>
+        json({
+          question_id: 'spring-registration',
+          decisions: [
+            {
+              id: 'D-spring-registration-1',
+              title: 'Authorize the eligibility review',
+              text: 'Authorize a focused review.',
+              follow_up: { office: 'Financial Aid', description: 'Report back.' },
+              approved: true,
+              approved_by: 'president@demo.test',
+              approved_at: '2026-10-05T12:00:00+00:00',
+            },
+          ],
+        }),
+      '/decisions/D-spring-registration-1/dispatch': () =>
+        json({
+          decision_id: 'D-spring-registration-1',
+          task_id: 'TASK-D-spring-registration-1',
+          office: 'Financial Aid',
+          office_contact: null,
+          approved: true,
+          approved_by: 'president@demo.test',
+          approved_at: '2026-10-05T12:00:00+00:00',
+          dispatch: null,
+        }),
+    })
+    render(<App />)
+    await screen.findByText('Student success briefing')
+    fireEvent.click(screen.getByRole('button', { name: 'Full briefing' }))
+    const open = await screen.findByRole('button', { name: 'Open the decision' })
+    expect(screen.getByText('Authorize the eligibility review')).toBeTruthy()
+    fireEvent.click(open)
+    await screen.findByRole('dialog', { name: 'Decision' })
+    expect(await screen.findByText(/Approved by president@demo\.test at/)).toBeTruthy()
+  })
+})
+
+describe('the Full briefing when the decision fails to load', () => {
+  it('says so with Retry instead of Loading forever', async () => {
+    mockApi({ '/decisions': () => json({ detail: 'boom' }, 503) })
+    render(<App />)
+    await screen.findByText('What should the Cabinet look into?')
+    fireEvent.click(screen.getByRole('button', { name: 'Full briefing' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Full briefing' })
+    await waitFor(() => expect(dialog.textContent).toContain("Couldn't load the decision"))
+    expect(dialog.textContent).not.toContain('Loading the decision')
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy()
+  })
+})
+
 describe('routes and titles', () => {
   it('sends an unknown address to the conversation and names the screen', async () => {
     window.history.replaceState(null, '', '/nowhere')

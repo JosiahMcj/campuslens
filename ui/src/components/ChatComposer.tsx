@@ -16,6 +16,10 @@ interface ChatComposerProps {
   error?: string | null
   /** Re-send the failed question ("Ask again"); null hides the button. */
   onAskAgain?: (() => void) | null
+  /** The approved questions could not be loaded: a quiet line with Retry
+   * takes the starter cards' place (the field still works). */
+  questionsFailed?: boolean
+  onRetryQuestions?: (() => void) | null
 }
 
 /**
@@ -34,6 +38,8 @@ export function ChatComposer({
   onAsk,
   error = null,
   onAskAgain = null,
+  questionsFailed = false,
+  onRetryQuestions = null,
 }: ChatComposerProps) {
   const [question, setQuestion] = useState('')
   const approved = questions ?? []
@@ -71,14 +77,18 @@ export function ChatComposer({
           ))}
         </div>
       )}
+      {starters && questionsFailed && (
+        <p className="questions-retry hint" role="status">
+          The approved questions didn’t load. You can still type one below.{' '}
+          {onRetryQuestions !== null && (
+            <button type="button" className="link-button" onClick={onRetryQuestions}>
+              Retry
+            </button>
+          )}
+        </p>
+      )}
       {error !== null && (
-        <div
-          className="ask-error state-error"
-          role="alert"
-          // Opaque, so the sentence never sits over the answer scrolling
-          // behind the docked composer.
-          style={{ background: 'var(--paper)', paddingBlock: 'var(--space-2)' }}
-        >
+        <div className="ask-error state-error" role="alert">
           <p className="error-line">{error}</p>
           {onAskAgain !== null && (
             <button

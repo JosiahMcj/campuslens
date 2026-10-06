@@ -22,9 +22,10 @@ all three roles are committed in `data/golden/`. Sign-in with five roles and
 institution accounts with validated dataset upload are live as well. The human panel approves the leadership decision and
 records it, and the audit log shows every grant and every refusal, including both
 refusal demos. Beside the briefing, five figures show M1 to M4 and M8, and each
-one opens its own evidence drawer. Every analyst-written section carries an honest
-source label, "Written by the role (recorded live run)" on replay and "(live
-model)" live. We verified the whole system on the real path against the Day-8
+one opens its own evidence panel. Every analyst-written section carries an honest
+source label, "Written by" the role that wrote it, and a small "About this
+answer" detail says whether the text was replayed from an earlier live run or
+written just now. We verified the whole system on the real path against the Day-8
 matrix in `docs/VERIFICATION.md`, and all eight rows pass. The six-beat demo timed
 at 204.9 seconds against the four-minute limit. We documented how to run, stop,
 replay, and reset any of it in `RUNBOOK.md`.

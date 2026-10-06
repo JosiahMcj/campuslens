@@ -490,7 +490,6 @@ describe('DecisionPanel with the queue block', () => {
         onApprove={() => {}}
         onPrepareDispatch={() => {}}
         onSendDispatch={() => {}}
-        onOpenEvidence={() => {}}
         onPrepareAidQueue={() => {}}
         onOpenAidQueue={canOpen ? () => {} : null}
       />,
@@ -542,7 +541,6 @@ describe('DecisionPanel with the queue block', () => {
         onApprove={() => {}}
         onPrepareDispatch={() => {}}
         onSendDispatch={() => {}}
-        onOpenEvidence={() => {}}
         onPrepareAidQueue={() => {}}
         onOpenAidQueue={() => {}}
       />,
@@ -584,7 +582,6 @@ describe('DecisionPanel with the queue block', () => {
         onApprove={() => {}}
         onPrepareDispatch={() => {}}
         onSendDispatch={() => {}}
-        onOpenEvidence={() => {}}
       />,
     )
     expect(html).toContain('>Approve</button>')
@@ -607,7 +604,6 @@ describe('DecisionPanel with the queue block', () => {
         onApprove={() => {}}
         onPrepareDispatch={() => {}}
         onSendDispatch={() => {}}
-        onOpenEvidence={() => {}}
       />,
     )
     expect(html).not.toContain('Queued 18 students')

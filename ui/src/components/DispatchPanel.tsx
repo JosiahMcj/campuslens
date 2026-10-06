@@ -9,7 +9,7 @@ import {
   roleDisplayName,
   type DispatchTask,
 } from '../states'
-import { CheckIcon, ChevronIcon } from './icons'
+import { CheckIcon } from './icons'
 
 interface DispatchPanelProps {
   /** The audit events seen so far (polled every second while a run is in flight). */
@@ -214,7 +214,6 @@ function TaskCard({
       ) : (
         <details className="fold technical-detail" open={open}>
           <summary>
-            <ChevronIcon />
             {task.level === 'aggregate' ? 'Totals it was given' : 'Data it was given'} (
             {task.granted_fields.length})
           </summary>
@@ -228,7 +227,6 @@ function TaskCard({
           </ul>
           <details className="fold technical-detail">
             <summary>
-              <ChevronIcon />
               Technical detail
             </summary>
             <ul className="field-list">

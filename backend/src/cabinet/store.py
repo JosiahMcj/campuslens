@@ -1108,6 +1108,31 @@ class CabinetStore:
             rows = self._conn.execute(sql, params).fetchall()
         return {str(row["decision_id"]) for row in rows}
 
+    def approvals(
+        self, institution_id: int, dataset_id: int | None = None
+    ) -> dict[str, dict[str, str]]:
+        """Who approved each decision and when, by decision id, in one
+        query: ``{"approved_by": email, "approved_at": ISO time}``. With
+        ``dataset_id``, only approvals made against that dataset (the same
+        rule as approved_decision_ids)."""
+        sql = (
+            "SELECT decision_id, approved_by, at FROM decisions"
+            " WHERE institution_id = ?"
+        )
+        params: list[Any] = [institution_id]
+        if dataset_id is not None:
+            sql += " AND dataset_id = ?"
+            params.append(dataset_id)
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return {
+            str(row["decision_id"]): {
+                "approved_by": str(row["approved_by"]),
+                "approved_at": str(row["at"]),
+            }
+            for row in rows
+        }
+
     def decision_task(
         self,
         institution_id: int,

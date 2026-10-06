@@ -485,17 +485,7 @@
   background: var(--paper);
 }
 
-/* --- Evidence drawer --------------------------------------------------------------*/
-
-.drawer-value {
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-.id-badge {
-  border-radius: 999px;
-  background: var(--surface);
-}
+/* --- Evidence: the formula and record lists sit on the surface ------------------*/
 
 .formula,
 .row-list,

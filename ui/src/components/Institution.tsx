@@ -12,7 +12,7 @@ import {
   type DatasetRow,
   type UploadResult,
 } from '../datasets'
-import { friendlyError } from '../errors'
+import { friendlyError, friendlyLoadError } from '../errors'
 import {
   draftRowsFrom,
   fetchDecisionOffices,
@@ -201,7 +201,7 @@ export function Institution({
       setOfficeErrors({})
       setOfficesState({ kind: 'ready', data: null })
     } catch (error) {
-      setOfficesState({ kind: 'error', message: friendlyError(error, 'The office contacts') })
+      setOfficesState({ kind: 'error', message: friendlyLoadError(error) })
     }
   }, [])
 
@@ -297,7 +297,7 @@ export function Institution({
     try {
       setUsersState({ kind: 'ready', data: await fetchUsers() })
     } catch (error) {
-      setUsersState({ kind: 'error', message: friendlyError(error, 'The user list') })
+      setUsersState({ kind: 'error', message: friendlyLoadError(error) })
     }
   }, [])
 
@@ -305,7 +305,7 @@ export function Institution({
     try {
       setDatasetsState({ kind: 'ready', data: await fetchDatasets() })
     } catch (error) {
-      setDatasetsState({ kind: 'error', message: friendlyError(error, 'The data list') })
+      setDatasetsState({ kind: 'error', message: friendlyLoadError(error) })
     }
   }, [])
 

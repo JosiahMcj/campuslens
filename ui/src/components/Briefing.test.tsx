@@ -75,8 +75,10 @@ describe('the full briefing', () => {
   it('names the writer in one line and moves the replay fact into "About this answer"', () => {
     const html = full()
     expect(html).toContain('>Written by the Chief of Staff</p>')
-    expect(html).not.toContain('(recorded live run)')
-    expect(html).toMatch(/About this answer(?:(?!<\/details>).)*recorded live run of the Cabinet/s)
+    expect(html).not.toContain('recorded live run')
+    expect(html).toMatch(
+      /About this answer(?:(?!<\/details>).)*earlier live run(?:(?!<\/details>).)*checked against the data/s,
+    )
   })
 
   it('section 2 adds the comparison table and folds the analyst text', () => {

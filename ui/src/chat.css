@@ -274,6 +274,31 @@
   color: var(--alert);
 }
 
+/* A failed question, above the composer. Opaque, so the sentence never sits
+   over the answer scrolling behind the docked composer. */
+.ask-error.state-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--paper);
+  text-align: start;
+}
+
+.ask-error.state-error > button {
+  margin-top: 0;
+}
+
+/* The approved questions did not load: one quiet line with Retry, in place
+   of the starter cards. The field below still works. */
+.questions-retry {
+  margin: 0 0 var(--space-3);
+  text-align: start;
+}
+
 /* --- The thread ----------------------------------------------------------------------*/
 
 .chat-thread {
@@ -525,46 +550,58 @@
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
 }
 
+/* The evidence layer: a second .panel-overlay (.evidence-overlay) that opens
+   over the page or over another panel. It always sits above the first
+   panel, is a little narrower so that panel's edge stays in view, and over
+   another panel its scrim is lighter so the two scrims do not stack into
+   near black. */
+.evidence-overlay {
+  z-index: 10;
+}
+
+.panel-overlay + .evidence-overlay {
+  background: color-mix(in srgb, var(--scrim) 40%, transparent);
+}
+
+.side-panel.evidence-layer {
+  width: min(36rem, 92vw);
+}
+
 /* Panel motion (200 ms; none under reduced motion, from the system setting
    or from Settings, whose html.reduce-motion rule cuts every animation):
    - opening: the scrim fades in and the panel slides in from the right;
-   - closing: the app adds .is-closing to .panel-overlay and .side-panel (and
-     to .drawer-overlay and .drawer) and unmounts them 200 ms later;
+   - closing: the app adds .is-closing to .panel-overlay and .side-panel
+     (the evidence layer included) and unmounts them 200 ms later;
    - switching: the app gives .side-panel-body a new key per panel, so the
      new content cross-fades in while the panel stays put. */
 @media (prefers-reduced-motion: no-preference) {
-  .panel-overlay,
-  .drawer-overlay {
+  .panel-overlay {
     animation: overlay-in var(--panel-motion) ease-out;
   }
 
-  .side-panel,
-  .drawer {
-    animation: drawer-in var(--panel-motion) var(--ease-out);
+  .side-panel {
+    animation: panel-in var(--panel-motion) var(--ease-out);
   }
 
   .side-panel-body {
     animation: panel-fade-in var(--panel-motion) ease-out;
   }
 
-  .panel-overlay.is-closing,
-  .drawer-overlay.is-closing {
+  .panel-overlay.is-closing {
     animation: overlay-out var(--panel-motion) ease-in forwards;
   }
 
-  .side-panel.is-closing,
-  .drawer.is-closing {
-    animation: drawer-out var(--panel-motion) ease-in forwards;
+  .side-panel.is-closing {
+    animation: panel-out var(--panel-motion) ease-in forwards;
   }
 }
 
 /* A closing panel no longer takes clicks, so the page behind is usable at once. */
-.panel-overlay.is-closing,
-.drawer-overlay.is-closing {
+.panel-overlay.is-closing {
   pointer-events: none;
 }
 
-@keyframes panel-fade-in {
+@keyframes overlay-in {
   from {
     opacity: 0;
   }
@@ -576,9 +613,21 @@
   }
 }
 
-@keyframes drawer-out {
+@keyframes panel-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes panel-out {
   to {
     transform: translateX(100%);
+  }
+}
+
+@keyframes panel-fade-in {
+  from {
+    opacity: 0;
   }
 }
 
@@ -601,7 +650,8 @@
     gap: var(--space-2);
   }
 
-  .side-panel {
+  .side-panel,
+  .side-panel.evidence-layer {
     width: 100vw;
     border-radius: 0;
   }
@@ -609,7 +659,6 @@
   .side-panel-body {
     padding: var(--space-1) var(--space-4) var(--space-6);
   }
-
 }
 
 /* The thread scrolls its newest message clear of the docked composer. */
@@ -644,6 +693,16 @@
 }
 
 /* --- Panel contents -----------------------------------------------------------------------*/
+
+/* The one-sentence intro under a panel's title (DESIGN.md, panel intros). */
+.panel-intro {
+  max-width: 68ch;
+  margin: 0;
+  font-size: var(--text-lg);
+  line-height: 1.5;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+}
 
 /* A section shown on its own in a panel: the panel header already names it. */
 .panel-solo > section > h2:first-child {
@@ -918,8 +977,8 @@
 
 /* --- Financial Aid review queue -----------------------------------------------------------*/
 
-/* The queue panel reuses the panel text, the id badge, and the dispatch
-   buttons; these rules only lay the rows out. Existing tokens only. */
+/* The queue panel reuses the panel text, the shared states and the button
+   looks; these rules only lay the rows out. Existing tokens only. */
 .aid-queue {
   padding-top: var(--space-4);
 }
@@ -942,14 +1001,72 @@
   border: 1px solid var(--rule);
   border-radius: var(--radius-control);
   background: var(--paper);
-  padding: var(--space-3) var(--space-3);
+  padding: 0;
 }
 
-.aid-row-head {
+/* The row's head is one full-width button (it also carries .finding-row,
+   whose hairline, radius and padding are reset here). */
+.aid-row .aid-row-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-1) var(--space-3);
+  width: 100%;
+  min-height: var(--tap);
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  text-align: start;
+}
+
+.aid-row .aid-row-head:hover {
+  background: var(--surface-hover);
+}
+
+.aid-row.open .aid-row-head {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.aid-row-id {
+  flex: none;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.aid-row-hold {
+  flex: 1 1 10rem;
+  min-width: 0;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.aid-row-head .aid-status {
+  flex: none;
+}
+
+.aid-row-head .chevron {
+  color: var(--ink-soft);
+}
+
+.aid-row-head[aria-expanded='true'] .chevron {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .aid-row-head .chevron {
+    transition: transform 200ms ease-out;
+  }
+}
+
+.aid-row-body {
+  padding: var(--space-1) var(--space-3) var(--space-3);
+  border-top: 1px solid var(--rule);
 }
 
 .aid-status {
@@ -1030,17 +1147,6 @@
   font-size: var(--text-sm);
 }
 
-.aid-queued {
-  margin-top: var(--space-4);
-  border-top: 1px solid var(--rule);
-  padding-top: var(--space-3);
-}
-
-.aid-queued p {
-  margin: 0;
-  font-weight: 600;
-}
-
 @media (max-width: 599px) {
   .aid-fact {
     grid-template-columns: 1fr;
@@ -1062,13 +1168,11 @@
   .work-line,
   .starter,
   .finding-row,
-  .filter-bar .filter,
   summary {
     min-height: var(--tap);
   }
 
   .segment,
-  .filter-bar .filter,
   .theme-toggle {
     min-width: var(--tap);
   }

@@ -31,7 +31,7 @@ const DRAFT: DispatchInfo = {
     to_office: 'Financial Aid',
     channel: 'email',
     subject: 'Approved follow-up for Financial Aid: the eligibility review',
-    body: 'To the Financial Aid office,\n\n18 continuing students (finding M3).',
+    body: 'To the Financial Aid office,\n\n18 continuing students have an unresolved financial hold below $1,000.',
     status: 'draft',
     created_by: 'executive@example.edu',
     created_at: '2026-09-26T12:00:00+00:00',
@@ -84,7 +84,6 @@ function render(
       onApprove={() => {}}
       onPrepareDispatch={() => {}}
       onSendDispatch={() => {}}
-      onOpenEvidence={() => {}}
     />,
   )
 }
@@ -156,12 +155,30 @@ describe('DecisionPanel — the decision and Approve', () => {
         ...APPROVED,
         approved_by: 'president@example.edu',
         approved_at: '2026-09-26T11:00:00+00:00',
-      } as Decision,
+      },
     })
     expect(html).toContain('Approved by president@example.edu at 2026-09-26')
   })
 
-  it('says only "Approved by leadership" to staff after approval', () => {
+  it('names the approver to staff too, from the decision or the dispatch state', () => {
+    const fromDecision = render(false, {
+      decision: { ...APPROVED, approved_by: 'president@example.edu' },
+      role: 'staff',
+    })
+    expect(fromDecision).toContain('Approved by president@example.edu')
+    const fromDispatch = render(false, {
+      decision: APPROVED,
+      role: 'staff',
+      dispatches: ready({
+        ...DRAFT,
+        approved_by: 'president@example.edu',
+        approved_at: '2026-09-26T11:00:00+00:00',
+      }),
+    })
+    expect(fromDispatch).toContain('Approved by president@example.edu at 2026-09-26')
+  })
+
+  it('says "Approved by leadership" when the approver is not known yet', () => {
     const html = render(false, { decision: APPROVED, role: 'staff' })
     expect(html).toContain('Approved by leadership')
     expect(html).not.toContain('Only an executive')
@@ -192,7 +209,7 @@ describe('DecisionPanel — next steps', () => {
     expect(html).not.toContain('Prepare the message')
   })
 
-  it('shows To and Subject, with the message itself folded and its finding link kept', () => {
+  it('shows To and Subject, with the message itself folded, in plain words', () => {
     const html = render(false, { decision: APPROVED, role: 'staff', dispatches: ready(DRAFT) })
 
     expect(html).toContain('Prepared, not sent')
@@ -200,7 +217,8 @@ describe('DecisionPanel — next steps', () => {
     expect(html).toContain('Approved follow-up for Financial Aid')
     expect(html).toContain('Show message')
     expect(html).toMatch(/<details[^>]*>(?:(?!<\/details>).)*18 continuing students/s)
-    expect(html).toContain('finding-link')
+    expect(html).not.toContain('finding-link')
+    expect(html.replace(/<[^>]*>/g, ' ')).not.toMatch(/\bM\d\b|finding M|D-spring/)
   })
 
   it('offers Send to staff (behind a confirmation), and not to the executive', () => {
@@ -282,8 +300,7 @@ describe('DecisionPanel — next steps', () => {
         onApprove={() => {}}
         onPrepareDispatch={() => {}}
         onSendDispatch={() => {}}
-        onOpenEvidence={() => {}}
-        loadError="Check your connection and try again."
+          loadError="Check your connection and try again."
         onRetry={() => {}}
       />,
     )
@@ -323,7 +340,6 @@ function LivePanel({ onSend, onApprove }: { onSend: () => void; onApprove?: () =
         setDispatches({ [DECISION.id]: { info: DRAFT, busy: 'send', error: null } })
         setTimeout(() => setDispatches(ready(SENT)), 0)
       }}
-      onOpenEvidence={() => {}}
     />
   )
 }

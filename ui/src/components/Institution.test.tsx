@@ -14,10 +14,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { Institution } from './Institution'
 
-// friendlyError belongs to ui/src/errors.ts (group B); stubbed here so the
-// tests check that every failure goes through it, not its exact wording.
-// A plain server sentence passes through, as the real helper does.
-vi.mock('../errors', () => ({
+// friendlyError (a failed save) is stubbed so the tests check that every
+// failure goes through it, not its exact wording; a plain server sentence
+// passes through, as the real helper does. A failed LOAD uses the real
+// friendlyLoadError, which never says "was not saved".
+vi.mock('../errors', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../errors')>()),
   friendlyError: (error: unknown, action: string) => {
     const message = error instanceof Error ? error.message : ''
     return /^[A-Z].*\.$/.test(message) ? message : `Friendly: ${action}`
@@ -299,7 +301,10 @@ describe('Institution Offices — loading, empty, error', () => {
     renderInstitution()
 
     await waitFor(() => screen.getByText('We couldn’t load the office contacts'))
-    expect(screen.getByText('Friendly: The office contacts')).toBeTruthy()
+    expect(
+      screen.getByText('Something went wrong on our side. Try again in a minute.'),
+    ).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/was not saved/)
     expect(screen.queryByText('the office book is unavailable')).toBeNull()
     // The Users and Datasets sections are unaffected.
     await waitFor(() => screen.getByText('staff@example.edu'))
@@ -718,12 +723,18 @@ describe('Institution Offices — focus after Remove', () => {
     renderInstitution()
     await waitFor(() => screen.getByLabelText('Mailbox for Registrar'))
 
+    // Focus moves in an effect after the row leaves: wait for it (the
+    // assertion once failed under a loaded full-suite run).
     fireEvent.click(screen.getByRole('button', { name: 'Remove the mailbox for Bursar' }))
-    expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'Remove the mailbox for Registrar' }),
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Remove the mailbox for Registrar' }),
+      ),
     )
     fireEvent.click(screen.getByRole('button', { name: 'Remove the mailbox for Registrar' }))
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add an office' }))
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add an office' })),
+    )
   })
 
   it('a failed save clears Saving… and says so in plain words', async () => {
@@ -869,7 +880,10 @@ describe('Institution Data — upload, activate, failures', () => {
     stubApi({ reject: ['GET /api/admin/datasets'] })
     renderInstitution()
     await waitFor(() => screen.getByText('We couldn’t load the uploads'))
-    expect(screen.getByText('Friendly: The data list')).toBeTruthy()
+    expect(
+      screen.getByText("We couldn't reach the Cabinet. Check your connection and try again."),
+    ).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/was not saved/)
     expect(screen.queryByText(/Nothing has been uploaded yet/)).toBeNull()
     expect(screen.queryByText('Loading the uploads…')).toBeNull()
     expect(screen.getAllByRole('button', { name: 'Retry' }).length).toBe(1)

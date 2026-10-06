@@ -5,8 +5,7 @@ import type { Role } from '../auth'
 import { plainSentence } from '../errors'
 import { formatTimestamp } from '../states'
 import { AidQueueNotice, type AidQueueUiState } from './AidQueueNotice'
-import { FindingLink } from './FindingLink'
-import { ApprovedIcon, ChevronIcon, SentIcon } from './icons'
+import { ApprovedIcon, SentIcon } from './icons'
 
 /** What the panel knows about one decision's dispatch: the API's dispatch
  * state, plus whether a Prepare or Send is in flight and its error. */
@@ -37,7 +36,6 @@ interface DecisionPanelProps {
   headingId?: string | null
   onPrepareDispatch: (decisionId: string) => void
   onSendDispatch: (decisionId: string) => void
-  onOpenEvidence: (findingId: string) => void
   /** The Financial Aid review queue (optional: omitted, the row is
    * hidden). onOpenAidQueue is null for a role that may not read the rows. */
   aidQueues?: Record<string, AidQueueUiState>
@@ -63,36 +61,9 @@ function openOfficesSettings(): void {
   window.dispatchEvent(new PopStateEvent('popstate'))
 }
 
-/** The approval facts the API may carry once it sends them (read defensively:
- * today GET /decisions says only approved true or false). */
-interface ApprovalFacts {
-  approved_by?: unknown
-  approved_at?: unknown
-}
-
-/** The finding ids in the message body render as evidence links, exactly
- * like numbers in the briefing: the reader can check every figure before
- * anyone sends it. The text itself is the message as it will be sent. */
-function linkifiedBody(
-  body: string,
-  onOpenEvidence: (findingId: string) => void,
-): ReactNode[] {
-  return body.split('\n').map((line, lineIndex) => {
-    const parts = line.split(/\b(M[1-7])\b/)
-    return (
-      <p key={lineIndex}>
-        {parts.map((part, partIndex) =>
-          /^M[1-7]$/.test(part) ? (
-            <FindingLink key={partIndex} findingId={part} onOpen={onOpenEvidence}>
-              {part}
-            </FindingLink>
-          ) : (
-            part
-          ),
-        )}
-      </p>
-    )
-  })
+/** The message as it will be sent, one paragraph per line. */
+function messageParagraphs(body: string): ReactNode[] {
+  return body.split('\n').map((line, index) => <p key={index}>{line}</p>)
 }
 
 /** The time of the latest approval of this decision in the audit log. */
@@ -148,7 +119,6 @@ export function DecisionPanel({
   headingId = 's-decision',
   onPrepareDispatch,
   onSendDispatch,
-  onOpenEvidence,
   aidQueues = {},
   onPrepareAidQueue,
   onOpenAidQueue = null,
@@ -197,12 +167,18 @@ export function DecisionPanel({
         // Approval for the active dataset only (GET /decisions), the state the
         // API acts on.
         const approved = decision.approved
-        const facts = decision as Decision & ApprovalFacts
-        const approvedHere = approvedTasks[decision.id]?.created === true
-        const approverName =
-          text(facts.approved_by) ?? (approvedHere && canApprove ? 'you' : null)
-        const approvedAt = text(facts.approved_at) ?? approvalTime(events, decision.id)
         const dispatchState = dispatches[decision.id]
+        const approvedHere = approvedTasks[decision.id]?.created === true
+        // Who approved and when, from the API (the decision list, else the
+        // dispatch state); "you" for the approver before the list reloads.
+        const approverName =
+          text(decision.approved_by) ??
+          text(dispatchState?.info?.approved_by) ??
+          (approvedHere && canApprove ? 'you' : null)
+        const approvedAt =
+          text(decision.approved_at) ??
+          text(dispatchState?.info?.approved_at) ??
+          approvalTime(events, decision.id)
         const dispatch = dispatchState?.info?.dispatch ?? null
         const officeContact = dispatchState?.info?.office_contact ?? null
         const office = decision.follow_up.office
@@ -247,9 +223,7 @@ export function DecisionPanel({
                 ref={focusWhen(`${decision.id}:approved`)}
               >
                 <ApprovedIcon />{' '}
-                {canApprove
-                  ? `Approved by ${approverName ?? 'leadership'}`
-                  : 'Approved by leadership'}
+                {`Approved by ${approverName ?? 'leadership'}`}
                 {approvedAt !== null && ` at ${formatTimestamp(approvedAt)}`}.
               </p>
             )}
@@ -317,11 +291,10 @@ export function DecisionPanel({
                         </dl>
                         <details className="fold technical-detail">
                           <summary>
-                            <ChevronIcon />
                             Show message
                           </summary>
                           <div className="dispatch-body">
-                            {linkifiedBody(dispatch.body, onOpenEvidence)}
+                            {messageParagraphs(dispatch.body)}
                           </div>
                         </details>
 
@@ -345,7 +318,6 @@ export function DecisionPanel({
                                 {dispatch.error !== null && (
                                   <details className="fold technical-detail">
                                     <summary>
-                                      <ChevronIcon />
                                       Technical detail
                                     </summary>
                                     <p>{dispatch.error}</p>

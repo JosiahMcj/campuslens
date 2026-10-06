@@ -9,7 +9,7 @@
  * object and CSRF token. Offline means exactly this: the shell opens, and
  * the API is required for every number on it.
  */
-const CACHE = 'cabinet-shell-v2'
+const CACHE = 'cabinet-shell-v3'
 const SHELL = [
   '/',
   '/index.html',
@@ -17,6 +17,9 @@ const SHELL = [
   '/favicon.svg',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
+  '/icons/icon-maskable-192.png',
+  '/icons/icon-maskable-512.png',
+  '/icons/apple-touch-icon.png',
 ]
 
 // The allow-list: the shell entries plus the hashed build assets and the

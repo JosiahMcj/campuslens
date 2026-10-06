@@ -282,12 +282,16 @@ export function analystSourceDetail(
       return (
         'This text was written by the AI employee during an earlier live run and ' +
         'is replayed here for the demonstration. The figures are computed from ' +
-        'the data each time.'
+        'the data each time, and every number in it was checked against the ' +
+        'data before it was shown.'
       )
     case 'live':
-      return modelLabel !== null && modelLabel !== 'live model'
-        ? `Written just now by the AI employee, using ${modelLabel}.`
-        : 'Written just now by the AI employee, using the live model.'
+      return (
+        (modelLabel !== null && modelLabel !== '' && modelLabel !== 'live model'
+          ? `Written just now by the AI employee, using ${modelLabel}.`
+          : 'Written just now by the AI employee, using the live model.') +
+        ' Every number in it was checked against the data before it was shown.'
+      )
   }
 }
 

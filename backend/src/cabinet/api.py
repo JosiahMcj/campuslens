@@ -1416,13 +1416,18 @@ def create_app(
         not shown as approved."""
         institution_id = request_institution(request)
         runtime = runtime_for(institution_id)
-        approved = store.approved_decision_ids(
+        approvals = store.approvals(
             institution_id, dataset_id=int(runtime.dataset["id"])
         )
+        none = {"approved_by": None, "approved_at": None}
         return {
             "question_id": runtime.last_question.id,
             "decisions": [
-                {**decision, "approved": decision["id"] in approved}
+                {
+                    **decision,
+                    "approved": decision["id"] in approvals,
+                    **approvals.get(decision["id"], none),
+                }
                 for decision in runtime.last_question.build_decisions(runtime.findings)
             ],
         }
@@ -1599,14 +1604,20 @@ def create_app(
         _, _, decision, dataset_id, task_id = context
         office = str(decision["follow_up"]["office"])
         row = store.dispatch_for_task(institution_id, task_id, dataset_id=dataset_id)
+        approval = store.decision_row(
+            institution_id, decision_id, dataset_id=dataset_id
+        )
         return JSONResponse(
             content={
                 "decision_id": decision_id,
                 "task_id": task_id,
                 "office": office,
                 "office_contact": store.office_contact(institution_id, office),
-                "approved": decision_id
-                in store.approved_decision_ids(institution_id, dataset_id=dataset_id),
+                "approved": approval is not None,
+                "approved_by": (
+                    str(approval["approved_by"]) if approval is not None else None
+                ),
+                "approved_at": str(approval["at"]) if approval is not None else None,
                 "dispatch": dispatch_body(row) if row is not None else None,
                 "aid_queue": aid_queue_summary(
                     institution_id, decision_id, dataset_id

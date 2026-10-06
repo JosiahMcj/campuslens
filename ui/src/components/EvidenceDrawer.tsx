@@ -5,7 +5,6 @@ import { isAggregateOnly, suppressionNote } from '../counseling'
 import { fieldLabels } from '../fieldLabels'
 import { findingDefinition, findingLabel } from '../findingLabels'
 import { findingDisplay, formatTimestamp } from '../states'
-import { ChevronIcon } from './icons'
 import { SidePanel } from './SidePanel'
 
 interface EvidenceDrawerProps {
@@ -13,6 +12,8 @@ interface EvidenceDrawerProps {
   /** True while the active dataset is the fictional demonstration set. */
   fictional: boolean
   onClose: () => void
+  /** True while the panel plays its exit animation. */
+  closing?: boolean
 }
 
 function isRatioRowIds(rowIds: Finding['row_ids']): rowIds is RatioRowIds {
@@ -63,7 +64,12 @@ function comparisonValue(key: string, value: unknown): string {
  * count) shows its authorization record and never a row. Escape and the
  * close button are the shared panel's, so one Escape closes only this layer.
  */
-export function EvidenceDrawer({ finding, fictional, onClose }: EvidenceDrawerProps) {
+export function EvidenceDrawer({
+  finding,
+  fictional,
+  onClose,
+  closing = false,
+}: EvidenceDrawerProps) {
   const display = findingDisplay(finding)
   // M9: an authorized aggregate with no rows behind it, ever.
   const aggregateOnly = isAggregateOnly(finding)
@@ -75,7 +81,12 @@ export function EvidenceDrawer({ finding, fictional, onClose }: EvidenceDrawerPr
   const records = recordCount(finding)
 
   return (
-    <SidePanel title={findingLabel(finding.id, finding.title)} onClose={onClose}>
+    <SidePanel
+      title={findingLabel(finding.id, finding.title)}
+      onClose={onClose}
+      closing={closing}
+      evidence
+    >
       <div className="evidence-panel">
         {definition !== null && <p className="panel-intro">{definition}</p>}
 
@@ -107,7 +118,6 @@ export function EvidenceDrawer({ finding, fictional, onClose }: EvidenceDrawerPr
 
         <details className="fold technical-detail">
           <summary>
-            <ChevronIcon />
             How it is computed
           </summary>
           <p>It reads these fields from each student record:</p>
@@ -118,7 +128,6 @@ export function EvidenceDrawer({ finding, fictional, onClose }: EvidenceDrawerPr
           </ul>
           <details className="fold technical-detail">
             <summary>
-              <ChevronIcon />
               Technical detail
             </summary>
             {display.missing && display.reason !== null && (
@@ -149,7 +158,6 @@ export function EvidenceDrawer({ finding, fictional, onClose }: EvidenceDrawerPr
         ) : (
           <details className="fold technical-detail">
             <summary>
-              <ChevronIcon />
               Show the records ({records.toLocaleString('en-US')})
             </summary>
             <Records finding={finding} />
