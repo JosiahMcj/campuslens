@@ -67,6 +67,13 @@ Endpoints:
 - ``GET  /admin/offices`` / ``PUT /admin/offices`` (admin role) — the
   institution's office address book, the only source of dispatch
   recipients. Offices, never student addresses.
+- ``GET  /admin/institution/counseling-authorization`` / ``PUT`` (admin
+  role) — the institution's counseling aggregate authorization: who
+  authorized it in writing and the document, recorded by an admin, or
+  revoked. While it is on, the findings carry M9 (``cabinet.counseling``),
+  a count with no rows. It never grants a counseling field: the
+  ``/governance/request`` refusal is the same either way. Logs
+  ``admin.changed`` with action ``counseling_authorization``.
 - ``GET  /admin/datasets`` / ``POST /admin/datasets`` /
   ``POST /admin/datasets/{id}/activate`` / ``DELETE /admin/datasets/{id}``
   (admin role) — the caller's institution's datasets: upload (strict
@@ -178,6 +185,7 @@ from cabinet.auth import (
     session_ttl,
     sign_session_id,
 )
+from cabinet.counseling import M9_ID, authorization_block, m9_finding
 from cabinet.datasets import UploadError, validate_upload
 from cabinet.fixture import parse_fixture
 from cabinet.metrics import findings as compute_findings
@@ -273,6 +281,20 @@ class OfficeContactEntry(BaseModel):
 
 class OfficesPutRequest(BaseModel):
     offices: list[OfficeContactEntry]
+
+
+class CounselingAuthorizationRequest(BaseModel):
+    """Record (``authorized: true`` with both texts) or revoke
+    (``authorized: false``) the counseling aggregate authorization. The
+    texts are stored exactly as typed, trimmed."""
+
+    authorized: bool
+    authorized_by: str | None = None
+    document_reference: str | None = None
+
+
+# The longest name/title or document reference the authorization stores.
+COUNSELING_AUTHORIZATION_TEXT_MAX = 200
 
 
 class AidReviewPatchRequest(BaseModel):
@@ -374,6 +396,16 @@ class InstitutionRuntime:
             "name": dataset["name"],
             "sha256": dataset["sha256"],
         }
+        # M9 exists only while the institution's counseling aggregate
+        # authorization is recorded; recording or revoking it invalidates
+        # this runtime, so the next request recomputes with or without it.
+        m9 = m9_finding(
+            self.document,
+            self.findings["M2"],
+            store.counseling_authorization_for(institution_id),
+        )
+        if m9 is not None:
+            self.findings[M9_ID] = m9
         self.briefing_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
         self.chief_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
         # The last question asked, for GET /decisions; rebuilt from the
@@ -875,9 +907,12 @@ def create_app(
     @app.post("/ask")
     def post_ask(body: AskRequest, request: Request) -> dict[str, Any]:
         institution_id = request_institution(request)
-        runtime = runtime_for(institution_id)
         audit = store.audit_for(institution_id)
         with ask_lock_for(institution_id):
+            # The runtime is read inside the lock, so an ask that waited
+            # behind a counseling authorization change answers with the
+            # findings that change produced, never the ones before it.
+            runtime = runtime_for(institution_id)
             return _ask_unlocked(body, runtime, audit)
 
     def _ask_unlocked(
@@ -951,6 +986,7 @@ def create_app(
         chief_body: dict[str, Any] | None = None
         chief_reason: str | None = None
         chief_fields: list[str] = []
+        chief_findings: list[str] = []
         if all(analyst_bodies[role] is not None for role in ANALYST_ROLES):
             chief_task_id = f"task-{CHIEF_OF_STAFF}-{question_event_id}"
             analyst_texts = {
@@ -960,6 +996,10 @@ def create_app(
             }
             received = chief_received(findings_obj, analyst_texts, question)
             chief_fields = chief_aggregate_fields(received)
+            # What the chief actually received (M9 included while the
+            # counseling authorization is on), so the response's task card
+            # and the task.assigned event never disagree.
+            chief_findings = sorted(received["findings"])
             audit.append(
                 "task.assigned",
                 actor=CHIEF_OF_STAFF,
@@ -1049,6 +1089,11 @@ def create_app(
             "recorded": chief_body["recorded"] if chief_body else False,
             "rekeyed_from": chief_body.get("rekeyed_from") if chief_body else None,
         }
+        # M9 belongs to this briefing only when it answers Q1 and the
+        # authorization was on when it was produced. The briefing keeps its
+        # own copy (no rows, by construction), so the UI never borrows the
+        # current findings' M9 for a Q2 briefing or an older one.
+        m9_in_briefing = question.id == DEFAULT_QUESTION.id and M9_ID in findings_obj
         sections: dict[str, Any] = {
             "1": chief_section(
                 chief_body["executive_summary"] if chief_body else None,
@@ -1074,6 +1119,18 @@ def create_app(
                     }
                     for finding_id in ("M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8")
                 }
+                | (
+                    {
+                        M9_ID: {
+                            "title": findings_obj[M9_ID]["title"],
+                            "display": findings_obj[M9_ID]["display"],
+                            "source_fields": findings_obj[M9_ID]["source_fields"],
+                            "aggregate_only": True,
+                        }
+                    }
+                    if m9_in_briefing
+                    else {}
+                )
             },
             "5": {"actions": question.build_actions(findings_obj)},
             "6": {"decisions": question.build_decisions(findings_obj)},
@@ -1088,6 +1145,9 @@ def create_app(
             "question": question.text,
             "question_event_id": question_event_id,
             "sections": sections,
+            "aggregates": (
+                {M9_ID: findings_obj[M9_ID]} if m9_in_briefing else {}
+            ),
             "meta": {
                 "fictional": runtime.fictional,
                 "dataset": {
@@ -1149,7 +1209,7 @@ def create_app(
                     "task_id": chief_task_id,
                     "role": CHIEF_OF_STAFF,
                     "granted_fields": chief_fields,
-                    "findings": list(question.dispatch[CHIEF_OF_STAFF]),
+                    "findings": chief_findings,
                     "level": "aggregate",
                 }
             )
@@ -1200,7 +1260,52 @@ def create_app(
                     ),
                 },
             )
-        return JSONResponse(content=briefing)
+        authorized = store.counseling_authorization_for(institution_id)["authorized"]
+        return JSONResponse(
+            content=briefing if authorized else without_m9_claims(briefing)
+        )
+
+    def without_m9_claims(briefing: dict[str, Any]) -> dict[str, Any]:
+        """A stored briefing as it may be shown while the counseling
+        authorization is off. A revoked authorization withdraws the count at
+        once, not at the next ask: the briefing's own M9 copy and its
+        section 4 entry are dropped, and a model-written section that cited
+        M9 (only the Chief of Staff's sections 1 and 7 can) is served as
+        unavailable until the question is asked again. Nothing is rewritten
+        in the store."""
+        sections = briefing.get("sections")
+        if not isinstance(sections, dict):
+            return briefing
+        cleaned = dict(sections)
+        section4 = sections.get("4")
+        if isinstance(section4, dict) and isinstance(section4.get("findings"), dict):
+            cleaned["4"] = {
+                **section4,
+                "findings": {
+                    key: value
+                    for key, value in section4["findings"].items()
+                    if key != M9_ID
+                },
+            }
+        for key in ("1", "7"):
+            section = sections.get(key)
+            if not isinstance(section, dict) or section.get("kind") != "available":
+                continue
+            claims = section.get("claims")
+            cites_m9 = isinstance(claims, list) and any(
+                isinstance(claim, dict) and M9_ID in (claim.get("finding_ids") or [])
+                for claim in claims
+            )
+            if cites_m9:
+                cleaned[key] = {
+                    "kind": "unavailable",
+                    "reason": (
+                        "this section cited the counseling figure, whose "
+                        "authorization has been revoked; ask the question "
+                        "again to refresh it"
+                    ),
+                }
+        return {**briefing, "sections": cleaned, "aggregates": {}}
 
     @app.post("/governance/request")
     def post_governance_request(
@@ -1946,6 +2051,105 @@ def create_app(
         return JSONResponse(
             content={"offices": store.office_contacts_for(institution_id)}
         )
+
+    # -- institution admin: the counseling aggregate authorization ----------
+    #
+    # Recording this never grants a counseling field to anyone. It lets code
+    # compute one count (M9) for the institution, shown with no rows and
+    # suppressed below the minimum group size. The audit event carries the
+    # typed authorization only, never counseling data.
+
+    def counseling_authorization_body(institution_id: int) -> dict[str, Any]:
+        record = store.counseling_authorization_for(institution_id)
+        return {
+            "authorized": record["authorized"],
+            **authorization_block(record),
+        }
+
+    @app.get("/admin/institution/counseling-authorization")
+    def get_counseling_authorization(request: Request) -> dict[str, Any]:
+        return counseling_authorization_body(request_institution(request))
+
+    @app.put("/admin/institution/counseling-authorization")
+    def put_counseling_authorization(
+        body: CounselingAuthorizationRequest, request: Request
+    ) -> JSONResponse:
+        """Record or revoke the authorization (admin only). Recording needs
+        both the name or title of the person who authorized it and the
+        document reference; revoking needs neither and keeps the earlier
+        texts for the record. Either way the findings are recomputed on the
+        next request. M9 leaves the findings at once on a revoke, a stored
+        briefing that cited it is withheld (``without_m9_claims``), and the
+        next ask runs without it."""
+        institution_id = request_institution(request)
+        admin = request.scope["cabinet_user"]
+        authorized_by = (body.authorized_by or "").strip()
+        reference = (body.document_reference or "").strip()
+        errors: list[str] = []
+        if body.authorized:
+            if not authorized_by:
+                errors.append(
+                    "enter the name and title of the person who authorized it"
+                )
+            if not reference:
+                errors.append("enter the reference of the written authorization")
+        for label, text in (
+            ("the name and title", authorized_by),
+            ("the document reference", reference),
+        ):
+            if len(text) > COUNSELING_AUTHORIZATION_TEXT_MAX:
+                errors.append(
+                    f"{label} is longer than "
+                    f"{COUNSELING_AUTHORIZATION_TEXT_MAX} characters"
+                )
+        if errors:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "detail": "the authorization was not recorded",
+                    "errors": errors,
+                },
+            )
+        # Under the institution's ask lock: a question being answered right
+        # now finishes with the state it started with, and the next one sees
+        # the change. Without the lock a revoke could land mid-run and that
+        # run would still send M9 and log its grant after the revoke.
+        with ask_lock_for(institution_id):
+            return _set_counseling_authorization(
+                institution_id, admin, body.authorized, authorized_by, reference
+            )
+
+    def _set_counseling_authorization(
+        institution_id: int,
+        admin: dict[str, Any],
+        authorized: bool,
+        authorized_by: str,
+        reference: str,
+    ) -> JSONResponse:
+        previous = store.counseling_authorization_for(institution_id)
+        record = store.set_counseling_authorization(
+            institution_id,
+            authorized=authorized,
+            authorized_by=(authorized_by if authorized else previous["authorized_by"]),
+            document_reference=(
+                reference if authorized else previous["document_reference"]
+            ),
+            recorded_by=str(admin["email"]),
+        )
+        invalidate_runtime(institution_id)
+        store.audit_append(
+            institution_id,
+            "admin.changed",
+            actor=str(admin["id"]),
+            payload={
+                "action": "counseling_authorization",
+                "by": str(admin["email"]),
+                "authorized": record["authorized"],
+                "authorized_by": record["authorized_by"],
+                "document_reference": record["document_reference"],
+            },
+        )
+        return JSONResponse(content=counseling_authorization_body(institution_id))
 
     # -- institution admin: datasets ----------------------------------------
     #

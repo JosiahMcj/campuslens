@@ -412,6 +412,9 @@ def test_every_protected_route_is_in_the_role_table() -> None:
         # decision id in the path and live in ROUTE_ROLE_PREFIXES.
         ("GET", "/admin/offices"),
         ("PUT", "/admin/offices"),
+        # The counseling aggregate authorization (admin only).
+        ("GET", "/admin/institution/counseling-authorization"),
+        ("PUT", "/admin/institution/counseling-authorization"),
         # User administration (admin only; path-parameter routes live
         # in ROUTE_ROLE_PREFIXES).
         ("GET", "/admin/users"),

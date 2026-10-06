@@ -3,6 +3,8 @@
 // approved-question check, and display formatting. No arithmetic on
 // metrics lives here — the API's `display` strings are rendered verbatim.
 
+import type { Finding } from './api'
+
 export const APPROVED_QUESTION = 'What should I know about spring registration?'
 
 // --- Demo query switches ---------------------------------------------------
@@ -329,6 +331,45 @@ export interface CabinetBriefing {
     6: { decisions: BriefingDecision[] }
     7: ModelSection
   }
+  /**
+   * Aggregates this briefing carried when it was produced: M9, the
+   * authorized counseling count, on a spring registration briefing asked
+   * while the authorization was on. Empty otherwise. Rendered from here,
+   * never from the current findings, so it never appears under another
+   * question's briefing or one produced before the authorization.
+   */
+  aggregates: Record<string, Finding>
+}
+
+/** One stored aggregate finding, or null when it is not one. No rows are
+ * accepted: an aggregate-only finding always has an empty row list. */
+function aggregateFindingFrom(id: string, raw: unknown): Finding | null {
+  const record = asRecord(raw)
+  if (record.aggregate_only !== true) return null
+  if (typeof record.title !== 'string' || typeof record.display !== 'string') return null
+  const authorization = asRecord(record.authorization)
+  const text = (value: unknown) => (typeof value === 'string' ? value : null)
+  return {
+    id,
+    title: record.title,
+    value: typeof record.value === 'number' ? record.value : null,
+    display: record.display,
+    reason: text(record.reason),
+    comparison: null,
+    source_fields: stringList(record.source_fields),
+    row_ids: [],
+    definition: typeof record.definition === 'string' ? record.definition : '',
+    aggregate_only: true,
+    suppressed: record.suppressed === true,
+    minimum_cell_size:
+      typeof record.minimum_cell_size === 'number' ? record.minimum_cell_size : undefined,
+    authorization: {
+      authorized_by: text(authorization.authorized_by),
+      document_reference: text(authorization.document_reference),
+      recorded_by: text(authorization.recorded_by),
+      recorded_at: text(authorization.recorded_at),
+    },
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -426,6 +467,11 @@ export function cabinetBriefingFrom(raw: unknown): CabinetBriefing | null {
       })
     }
   }
+  const aggregates: Record<string, Finding> = {}
+  for (const [id, value] of Object.entries(asRecord(record.aggregates))) {
+    const finding = aggregateFindingFrom(id, value)
+    if (finding !== null) aggregates[id] = finding
+  }
   return {
     question_id: record.question_id,
     question: typeof record.question === 'string' ? record.question : '',
@@ -439,6 +485,7 @@ export function cabinetBriefingFrom(raw: unknown): CabinetBriefing | null {
       6: { decisions },
       7: modelSectionFrom(sections[7]),
     },
+    aggregates,
   }
 }
 

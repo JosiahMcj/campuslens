@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react'
 
-import type { Finding, OfficeHolds, RatioRowIds } from '../api'
-import { findingDisplay } from '../states'
+import type { Finding, FindingAuthorization, OfficeHolds, RatioRowIds } from '../api'
+import { isAggregateOnly, suppressionNote } from '../counseling'
+import { findingDisplay, formatTimestamp } from '../states'
 
 interface EvidenceDrawerProps {
   finding: Finding
@@ -25,7 +26,9 @@ function hasRowRules(finding: Finding): boolean {
 
 /**
  * The evidence drawer (Beat 4): a claim opened to its source fields, its
- * formula/definition, and the row IDs behind the number. Keyboard-closable
+ * formula/definition, and the row IDs behind the number. An aggregate-only
+ * figure (M9, the authorized counseling count) shows its authorization
+ * record instead and never a row: there is no drill-down behind it. Keyboard-closable
  * (Esc) and focus-managed: focus moves into the drawer on open and returns
  * to the element that opened it on close.
  */
@@ -48,6 +51,9 @@ export function EvidenceDrawer({ finding, fictional, onClose }: EvidenceDrawerPr
   }, [onClose])
 
   const display = findingDisplay(finding)
+  // M9: an authorized aggregate with no rows behind it, ever.
+  const aggregateOnly = isAggregateOnly(finding)
+  const withheld = suppressionNote(finding)
 
   return (
     <div className="drawer-overlay" onClick={onClose}>
@@ -74,12 +80,22 @@ export function EvidenceDrawer({ finding, fictional, onClose }: EvidenceDrawerPr
           <dt>Value</dt>
           <dd>
             <span className={display.missing ? 'drawer-value missing' : 'drawer-value'}>
-              {display.text}
+              {withheld !== null ? `${capitalize(display.text)} students` : display.text}
             </span>
+            {withheld !== null && <p className="hint">{withheld}</p>}
             {display.missing && display.reason !== null && (
               <p className="hint">Not available: {display.reason}</p>
             )}
           </dd>
+
+          {finding.authorization !== undefined && (
+            <>
+              <dt>Authorization</dt>
+              <dd>
+                <AuthorizationRecord authorization={finding.authorization} />
+              </dd>
+            </>
+          )}
 
           <dt>Formula / definition</dt>
           <dd>
@@ -114,7 +130,12 @@ export function EvidenceDrawer({ finding, fictional, onClose }: EvidenceDrawerPr
 
           <dt>Rows behind this number</dt>
           <dd>
-            {isRatioRowIds(finding.row_ids) ? (
+            {aggregateOnly ? (
+              <p className="hint">
+                No rows are shown for this figure. It is a count only, with no
+                list of students behind it.
+              </p>
+            ) : isRatioRowIds(finding.row_ids) ? (
               <>
                 <RowList
                   label="Numerator"
@@ -140,13 +161,35 @@ export function EvidenceDrawer({ finding, fictional, onClose }: EvidenceDrawerPr
         <OfficeBreakdown finding={finding} />
         <IndicatorBreakdown finding={finding} />
 
-        <p className="hint">
-          {fictional
-            ? 'These rows are fictional and pseudonymous. data/VERIFY.md lists them for hand-counting.'
-            : 'These rows are pseudonymous student records from the uploaded export.'}
-        </p>
+        {!aggregateOnly && (
+          <p className="hint">
+            {fictional
+              ? 'These rows are fictional and pseudonymous. data/VERIFY.md lists them for hand-counting.'
+              : 'These rows are pseudonymous student records from the uploaded export.'}
+          </p>
+        )}
       </div>
     </div>
+  )
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/** Who authorized an aggregate in writing, the document, and who recorded it. */
+function AuthorizationRecord({ authorization }: { authorization: FindingAuthorization }) {
+  return (
+    <ul className="field-list authorization-record">
+      <li>Authorized by {authorization.authorized_by ?? 'not recorded'}</li>
+      <li>Document: {authorization.document_reference ?? 'not recorded'}</li>
+      <li>
+        Recorded by {authorization.recorded_by ?? 'not recorded'}
+        {authorization.recorded_at !== null && (
+          <> on {formatTimestamp(authorization.recorded_at)}</>
+        )}
+      </li>
+    </ul>
   )
 }
 

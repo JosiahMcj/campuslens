@@ -3,7 +3,10 @@ institution, and dataset documents live as files under ``var/data/``.
 
 Tables (created and versioned by ``cabinet.migrations``):
 
-- ``institutions(id, name, slug UNIQUE, created_at)`` — the tenants.
+- ``institutions(id, name, slug UNIQUE, created_at, counseling_aggregate_*)``
+  — the tenants. The five ``counseling_aggregate_*`` columns (migration 7)
+  hold the recorded counseling aggregate authorization: whether it is on,
+  who authorized it and the document, and the admin who recorded it and when.
 - ``users(..., institution_id NOT NULL, ...)`` and ``sessions(...)`` — the
   original auth tables, now tenanted; the password hashing and session signing
   stay in ``cabinet.auth``.
@@ -254,6 +257,67 @@ class CabinetStore:
                 "SELECT * FROM institutions WHERE id = ?", (institution_id,)
             ).fetchone()
         return dict(row) if row is not None else None
+
+    def counseling_authorization_for(self, institution_id: int) -> dict[str, Any]:
+        """The institution's counseling aggregate authorization (migration 7).
+
+        Always a full record, so callers never branch on a missing row: an
+        institution that never recorded one reads as not authorized with
+        every other field ``None``. Revoking keeps who revoked it and when in
+        ``recorded_by`` and ``recorded_at``, and clears nothing else, so the
+        settings screen can say what the last recorded state was.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT counseling_aggregate_authorized,"
+                " counseling_aggregate_authorized_by,"
+                " counseling_aggregate_document_reference,"
+                " counseling_aggregate_recorded_by,"
+                " counseling_aggregate_recorded_at"
+                " FROM institutions WHERE id = ?",
+                (institution_id,),
+            ).fetchone()
+        if row is None:
+            raise StoreError(f"institution {institution_id} does not exist")
+        return {
+            "authorized": bool(row[0]),
+            "authorized_by": row[1],
+            "document_reference": row[2],
+            "recorded_by": row[3],
+            "recorded_at": row[4],
+        }
+
+    def set_counseling_authorization(
+        self,
+        institution_id: int,
+        *,
+        authorized: bool,
+        authorized_by: str | None,
+        document_reference: str | None,
+        recorded_by: str,
+    ) -> dict[str, Any]:
+        """Record or revoke the authorization in one UPDATE (one statement,
+        so the five fields can never be seen half-written). Returns the
+        stored record."""
+        with self._lock, self._conn:
+            self._conn.execute(
+                "UPDATE institutions SET"
+                " counseling_aggregate_authorized = ?,"
+                " counseling_aggregate_authorized_by = ?,"
+                " counseling_aggregate_document_reference = ?,"
+                " counseling_aggregate_recorded_by = ?,"
+                " counseling_aggregate_recorded_at = ?"
+                " WHERE id = ?",
+                (
+                    1 if authorized else 0,
+                    authorized_by,
+                    document_reference,
+                    recorded_by,
+                    _now(),
+                    institution_id,
+                ),
+            )
+        return self.counseling_authorization_for(institution_id)
 
     def list_institutions(self) -> list[dict[str, Any]]:
         with self._lock:

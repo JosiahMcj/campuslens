@@ -207,6 +207,11 @@ appears.
 > exist in this fictional data precisely so that refusal is real. Governed AI is not a
 > promise. It is the architecture here. Thank you."
 
+*Footnote.* The refusal is the default for every institution, and it is what this
+demo shows. An institution may record its counseling director's written
+authorization for one aggregate count (RUNBOOK.md). Even then this question and every
+request for a counseling field are refused word for word.
+
 ---
 
 ## Timing discipline

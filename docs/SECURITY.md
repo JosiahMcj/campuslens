@@ -128,7 +128,10 @@ and `task.created`, and dataset administration added `dataset.uploaded`,
 `dataset.activated`, and `dataset.deleted`. User administration added
 `admin.changed`, which covers user creation, disable and enable, role changes,
 and now office address book changes, with the payload `action`, target user id,
-`role`, and `by`. The dispatch events are `task.dispatched`, `task.sent`, and
+`role`, and `by`. Recording or revoking the counseling authorization is one
+`admin.changed` event with action `counseling_authorization`, and its payload
+carries `by`, `authorized`, `authorized_by`, and `document_reference` as typed,
+never counseling data. The dispatch events are `task.dispatched`, `task.sent`, and
 `task.send_failed` (a provider refusal or failure, with the error and never the
 message body), and their actor is the named person who composed or sent the
 message. The Financial Aid review queue added `aid.queued` (decision, dataset,
@@ -147,6 +150,22 @@ keeps only its scrypt hash, which is never logged, and no audit payload carries
 it. An admin cannot disable their own account, and an institution's last
 enabled admin can be neither disabled nor demoted. A disabled account cannot
 log in, and its existing session is rejected on the next request.
+
+**The counseling authorization.** `GET` and `PUT
+/admin/institution/counseling-authorization` are admin only, under the same CSRF
+token and rate limits as every other route, and the institution comes from the
+session. Recording needs both the name and title of the person who authorized it
+and the document reference, each at most 200 characters, and anything else is a
+422 that records nothing. Recording or revoking recomputes the findings on the next
+request. A change waits for any question being answered for that institution, and
+after a revoke a stored Chief of Staff section that cited the count is served as
+unavailable until the question is asked again. The authorization never grants a field. The counseling fields stay refused
+to every role, so `POST /governance/request` for `counseling.counseling_notes` is
+refused and logged as `data.refused` exactly as before, authorization or not. What
+it allows is one count computed in code (M9), with no rows and withheld below 10.
+The Chief of Staff's `data.granted` event for it is separate from the aggregate
+grant and records `aggregate_only: true`, the fields read, and the authorization
+reference. No analyst ever receives it.
 
 **Dispatches, the governed execution step.** An approved leadership decision
 can be sent to its responsible office, and only by a named person. We compose

@@ -12,8 +12,9 @@ Field paths use the nested groups in the fixture (`SCHEMA.md`), and they are
 `profile.*`, `enrollment.*`, `holds[]`, `advising.*`, `comparison.*`, and the three
 term objects under `terms.*`, with **no** top-level `term` object. ROADMAP §4 writes
 `hold.*`, but the fixture group is a list, so `hold.x` means "field `x` of an element
-of `holds`". The group `counseling.*` exists in the fixture only to be refused and is
-never read by any metric.
+of `holds`". The group `counseling.*` exists in the fixture to be refused, and no
+role is ever granted it. No metric among M1 to M8 reads it. M9 reads it in code only
+after a recorded authorization and shows a count, never a row.
 
 ---
 
@@ -331,6 +332,48 @@ one. Move the close date to 2026-12-04 and I4 fires for all 42 M2 rows, so M8
 becomes 42. `data/VERIFY.md` lists the 22 ids, and `data/check_fixture.py`
 recomputes M8 and each rule's count independently.
 
+## M9. Students in M2 with any counseling contact this term *(only with a recorded authorization)*
+
+We added M9 on 2026-10-05. It is the one counseling figure the Cabinet can show,
+and only in aggregate. Per-student counseling and spiritual-care data stays refused
+to every role and every AI employee, exactly as before.
+
+- M9 exists only after the institution's counseling director has authorized it in
+  writing and an admin has recorded that authorization in Institution settings
+  (`PUT /admin/institution/counseling-authorization`). Without it M9 is **absent**
+  from the findings. It is not `0`, not `--`, and not "refused".
+- The formula is `count(row ∈ M2 ∧ (counseling.counseling_notes is not null ∨
+  counseling.chaplain_contact = true))`. A note counts only when it carries text.
+  The source fields are `profile.continuing`, `enrollment.registration_status`,
+  `counseling.counseling_notes`, and `counseling.chaplain_contact`.
+- The grain is the student and the population is M2's own row list, so M9 can never
+  describe a different group than M2 counts. The dataset is one term's records, so
+  "this term" is the active dataset's term.
+- The **minimum group size is 10**. A count under 10, zero included, is withheld.
+  `value` is `null`, the display is "fewer than 10", and the briefing and the
+  evidence drawer say the count is withheld so no one can be identified.
+- There is **no drill-down**. `row_ids` is always empty, and the evidence drawer
+  shows the authorization record and the fields read, never a student.
+- The `--` rule is `null` exactly when the M2 population has no value (an empty
+  dataset).
+- The finding carries an `authorization` block naming who authorized it, the
+  document reference, and the admin who recorded it and when.
+- A spring registration briefing produced while the authorization is on keeps its
+  own copy of M9 and shows it in section 3 and in section 4's evidence list as
+  "aggregate, authorized", with no rows. Other briefings never show it.
+- The Chief of Staff may receive M9 for the spring registration question, as the
+  count or as a marker with no number in it when the count is withheld. The
+  analysts never receive it. Its `data.granted` event is separate from the
+  aggregate grant and records `aggregate_only: true`, the fields read, and the
+  authorization reference.
+
+On the committed fixture the raw count is **2** (STU-0126 and STU-0147). Of the
+five rows with counseling contact, STU-0026 and STU-0071 are registered and
+STU-0177 is not continuing. Two is under 10, so with the authorization recorded
+the product shows "fewer than 10" and never the 2. `data/check_fixture.py`
+recomputes the raw count, and the backend tests run a fixture edited to 12 to show
+the number path.
+
 ---
 
 ## How to break these contracts on paper
@@ -350,6 +393,7 @@ to redo that count on paper.
    STU-0176…STU-0185 are new unregistered students, so M2 excludes them. An empty
    fixture must hit every metric's contracted `--` or empty-table rule, and a zero
    must render `0`, not `--`.
-5. Confirm no metric reads `counseling.counseling_notes` or
-   `counseling.chaplain_contact`. Those fields exist only to be refused (ROADMAP
-   §5).
+5. Confirm no metric among M1 to M8 reads `counseling.counseling_notes` or
+   `counseling.chaplain_contact`. Those fields exist to be refused (ROADMAP §5).
+   M9 reads them in code only after a recorded authorization, and it shows a
+   count of 10 or more, never a row.

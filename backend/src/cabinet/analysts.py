@@ -31,8 +31,9 @@ bad live answer can never overwrite a good recording.
 
 The Chief of Staff (``run_chief_of_staff``) follows the same runner pattern
 with two differences. It receives the aggregate findings for the asked
-question's chief dispatch (all of M1–M8 for the default question; row IDs
-stripped, like every role) plus the two analysts' *validated*
+question's chief dispatch (all of M1–M8 for the default question, plus the
+M9 count or its suppressed marker when the institution has authorized it;
+row IDs stripped, like every role) plus the two analysts' *validated*
 explanations — never student rows, never the counseling group — and its gate
 is the aggregate grant (``data.granted`` at level ``aggregate``). It writes
 exactly two briefing sections and answers with a JSON object only,
@@ -59,10 +60,12 @@ from typing import Any
 from weakref import WeakKeyDictionary
 
 from cabinet.audit import AuditSink
+from cabinet.counseling import M9_ID
 from cabinet.permissions import (
     ROLE_TASK_FIELDS,
     findings_for_role,
     grant_aggregates,
+    grant_authorized_aggregate,
     normalize_field,
     request_fields,
 )
@@ -1202,10 +1205,15 @@ def chief_received(
     it stays stable when the analysts' texts are replayed from the golden
     recordings."""
     question = question or DEFAULT_QUESTION
+    finding_ids = list(question.dispatch[CHIEF_OF_STAFF])
+    # M9 exists only while the institution's counseling aggregate
+    # authorization is recorded, and it answers the spring registration
+    # question (it is a count within M2), so only Q1 carries it. When it is
+    # absent the payload, and so Q1's replay hash, is exactly what it was.
+    if question.id == DEFAULT_QUESTION.id and M9_ID in findings_obj:
+        finding_ids.append(M9_ID)
     received: dict[str, Any] = {
-        "findings": findings_for_role(
-            CHIEF_OF_STAFF, findings_obj, question.dispatch[CHIEF_OF_STAFF]
-        ),
+        "findings": findings_for_role(CHIEF_OF_STAFF, findings_obj, finding_ids),
         "analyst_explanations": {
             role: analyst_texts[role] for role in sorted(analyst_texts)
         },
@@ -1234,7 +1242,10 @@ def chief_aggregate_fields(received: dict[str, Any]) -> list[str]:
 
 
 def _grant_chief_once(
-    task_id: str, received: dict[str, Any], log: AuditSink
+    task_id: str,
+    received: dict[str, Any],
+    log: AuditSink,
+    findings_obj: dict[str, Any] | None = None,
 ) -> list[str]:
     """The aggregate gate, with ``data.granted`` written at most once per
     (chief, task_id, received hash) for this audit log in this process."""
@@ -1253,6 +1264,19 @@ def _grant_chief_once(
         log,
         analyst_explanations=sorted(received["analyst_explanations"]),
     )
+    if M9_ID in received["findings"] and findings_obj is not None:
+        # The counseling aggregate gets its own event, after the aggregate
+        # grant, so the chain shows it apart: aggregate only, the fields
+        # code read, and the recorded authorization it rests on.
+        m9 = findings_obj[M9_ID]
+        grant_authorized_aggregate(
+            CHIEF_OF_STAFF,
+            M9_ID,
+            list(m9.get("source_fields") or []),
+            dict(m9.get("authorization") or {}),
+            task_id,
+            log,
+        )
     seen.add(key)
     return granted
 
@@ -1279,7 +1303,7 @@ def run_chief_of_staff(
     pre-registry behavior.
     """
     received = chief_received(findings_obj, analyst_texts, question)
-    _grant_chief_once(task_id, received, log)
+    _grant_chief_once(task_id, received, log, findings_obj)
 
     try:
         explanation: Explanation = provider.explain(received, CHIEF_OF_STAFF)

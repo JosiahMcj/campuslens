@@ -20,6 +20,7 @@ import {
   type AuditEvent,
   type CabinetBriefing,
   type Decision,
+  type Finding,
   type Findings,
   type SimulatedTask,
 } from './api'
@@ -753,9 +754,17 @@ function BriefingPage({
     }
   }, [events])
 
+  // M9 as the produced briefing carried it: only a spring registration
+  // briefing asked while the counseling authorization was on has one.
+  const briefingCounseling: Finding | null =
+    cabinetBriefing !== null && cabinetBriefing.question_id === 'spring-registration'
+      ? (cabinetBriefing.aggregates.M9 ?? null)
+      : null
+
   const drawerFinding =
     findingsState.kind === 'ready' && evidenceId !== null
-      ? getFinding(findingsState.data, evidenceId)
+      ? (getFinding(findingsState.data, evidenceId) ??
+        (evidenceId === 'M9' ? (briefingCounseling ?? undefined) : undefined))
       : undefined
 
   // Sections 1, 2, 3, and 7 come from the produced briefing once one exists;
@@ -1163,6 +1172,7 @@ function BriefingPage({
                 chiefSummary={chiefSummary}
                 onCheckAgain={act ? checkAgain : null}
                 onOpenEvidence={openEvidence}
+                counselingFigure={briefingCounseling}
               />
               <section aria-labelledby="s-decision-note">
                 <h2 id="s-decision-note">6. Leadership decisions</h2>
@@ -1217,6 +1227,7 @@ function BriefingPage({
                 fictional={fictional}
                 onOpenEvidence={openEvidence}
                 headingId={null}
+                counselingFigure={briefingCounseling}
               />
             </div>
           )}

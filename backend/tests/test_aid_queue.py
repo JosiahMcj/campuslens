@@ -133,8 +133,10 @@ def test_migration_6_is_idempotent_and_upgrades_a_real_1_to_5_database(
         )
         conn.commit()
         assert recorded_versions(conn) == [1, 2, 3, 4, 5]
-        assert migrate(conn) == [6]
-        assert recorded_versions(conn) == [1, 2, 3, 4, 5, 6]
+        # Migration 6 applies; later migrations (7, the counseling
+        # aggregate authorization) follow in the same call.
+        assert migrate(conn)[0] == 6
+        assert recorded_versions(conn)[:6] == [1, 2, 3, 4, 5, 6]
         assert migrate(conn) == []
         columns = {
             str(row[1]) for row in conn.execute("PRAGMA table_info(aid_reviews)")

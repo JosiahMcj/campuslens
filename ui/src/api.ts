@@ -56,6 +56,23 @@ export interface Finding {
   rules?: IndicatorRuleRow[]
   /** M8 only: pseudonymous student id -> the rule ids that fired for it. */
   row_rules?: Record<string, string[]>
+  /** M9 only: an aggregate with no rows behind it, ever (no drill-down). */
+  aggregate_only?: boolean
+  /** M9 only: true when the count is withheld below the minimum group size. */
+  suppressed?: boolean
+  /** M9 only: the minimum group size below which the count is withheld. */
+  minimum_cell_size?: number
+  /** M9 only: the recorded authorization the figure rests on. */
+  authorization?: FindingAuthorization
+}
+
+/** Who authorized an aggregate in writing, the document, and who recorded
+ * it when (M9, the counseling aggregate). */
+export interface FindingAuthorization {
+  authorized_by: string | null
+  document_reference: string | null
+  recorded_by: string | null
+  recorded_at: string | null
 }
 
 export interface FindingsMeta {

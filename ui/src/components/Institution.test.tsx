@@ -129,6 +129,15 @@ function stubApi(options: StubOptions = {}) {
       users[1] = { ...users[1], disabled: true }
       return jsonResponse({ user: users[1], changed: true })
     }
+    if (url === '/api/admin/institution/counseling-authorization' && method === 'GET') {
+      return jsonResponse({
+        authorized: false,
+        authorized_by: null,
+        document_reference: null,
+        recorded_by: null,
+        recorded_at: null,
+      })
+    }
     if (url === '/api/admin/datasets' && method === 'GET') {
       return jsonResponse({ datasets: [] })
     }
