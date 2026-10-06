@@ -63,6 +63,9 @@ class StepResult:
     notes: list[str] = field(default_factory=list)
     instructor_rows_withheld: bool = False
     error: str | None = None
+    # The parameters as a reader sees them ("How this was answered"); the
+    # exact record (codes included) stays in ``params_plain``.
+    params_shown: list[str] = field(default_factory=list)
 
     def table(self) -> dict[str, Any]:
         """``{columns: [{key, label}], rows: [[cell, ...]]}`` in column order."""
@@ -82,9 +85,10 @@ StepHook = Callable[[int, str, tuple[str, ...], bool], None]
 
 def _resolve(
     step: Step, analysis: Analysis, done: list[StepResult], catalog: Catalog
-) -> tuple[dict[str, Any], list[str]]:
+) -> tuple[dict[str, Any], list[str], list[str]]:
     params: dict[str, Any] = {}
     plain: list[str] = []
+    shown: list[str] = []
     for param in analysis.params:
         value = step.params.get(param.name, param.default)
         source: str | None = None
@@ -110,12 +114,20 @@ def _resolve(
         value = catalog.normalize(param, value)
         params[param.name] = value
         plain.append(f"{param.label}: {catalog.plain(param, value)}{source or ''}")
-    return params, plain
+        reader = catalog.shown(param, value)
+        if reader is not None:
+            shown.append(reader + (source or ""))
+    return params, plain, shown
 
 
 def _check_no_student_ids(result: StepResult) -> None:
     blob = json.dumps(
-        {"rows": result.rows, "notes": result.notes, "params": result.params_plain},
+        {
+            "rows": result.rows,
+            "notes": result.notes,
+            "params": result.params_plain,
+            "shown": result.params_shown,
+        },
         default=str,
     )
     if STUDENT_ID_RE.search(blob):
@@ -139,7 +151,7 @@ def execute(
         analysis = ANALYSIS_BY_ID[step.analysis_id]
         withheld = analysis.instructor_level and role not in INSTRUCTOR_ROLES
         try:
-            params, plain = _resolve(step, analysis, done, catalog)
+            params, plain, shown = _resolve(step, analysis, done, catalog)
         except AnalysisError as exc:
             done.append(
                 StepResult(
@@ -175,7 +187,15 @@ def execute(
         except AnalysisError as exc:
             done.append(
                 StepResult(
-                    index, analysis, params, plain, fields, columns, [], error=str(exc)
+                    index,
+                    analysis,
+                    params,
+                    plain,
+                    fields,
+                    columns,
+                    [],
+                    error=str(exc),
+                    params_shown=shown,
                 )
             )
             continue
@@ -194,6 +214,7 @@ def execute(
             rows,
             notes,
             instructor_rows_withheld=withheld,
+            params_shown=shown,
         )
         _check_no_student_ids(result)
         done.append(result)

@@ -49,7 +49,7 @@ describe('ChatComposer', () => {
 
   it('takes any question: an example placeholder and no "will be refused" warning', () => {
     const html = render(true)
-    expect(html).toContain('placeholder="e.g. Which course has the highest withdrawal rate?"')
+    expect(html).toContain('placeholder="Ask about students, courses or majors"')
     expect(html).toContain('Ask the Cabinet a question')
     expect(html).not.toContain('will be refused')
   })

@@ -144,6 +144,18 @@ RULE_PHRASINGS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("withdrawal_by_modality",),
     ),
     ("Do online courses have higher withdrawal rates?", ("withdrawal_by_modality",)),
+    (
+        "Which course has the highest withdrawal rate online?",
+        ("withdrawal_by_course_modality",),
+    ),
+    (
+        "What online classes do students withdraw from most?",
+        ("withdrawal_by_course_modality",),
+    ),
+    (
+        "Show the online withdrawal rate by course.",
+        ("withdrawal_by_course_modality",),
+    ),
     ("Which majors have the highest probation rates?", ("standing_by_major",)),
     (
         "What share of Mechanical Engineering students were suspended?",
@@ -830,9 +842,30 @@ class _ClausePlanner:
                 p["term"] = e.terms[0]
             return Step("continuing_registration_change", p)
 
-        if _has(r"withdr", text) and _has(
-            r"online|modalit|in[- ]person|hybrid|delivery", text
+        online_words = r"online|modalit|in[- ]person|hybrid|delivery|teaching mode"
+        if (
+            _has(r"withdr", text)
+            and _has(r"\bonline\b", text)
+            and _has(
+                r"\b(?:which|what)\s+(?:\w+\s+){0,2}(?:courses?|class(?:es)?)\b|"
+                r"\b(?:by|per|each|every|for\s+each)\s+(?:courses?|class(?:es)?)\b|"
+                r"\bcourse[- ]by[- ]course\b",
+                text,
+            )
         ):
+            # Ranks courses ("Which course has the highest withdrawal rate
+            # online?"); "Do online courses have higher withdrawal rates?"
+            # names no ranking of courses and stays with the term comparison.
+            if e.subjects:
+                p["subject"] = e.subjects[0]
+            p["order"] = (
+                "lowest_first"
+                if _has(r"lowest|least|fewest", text) and not high
+                else "highest_first"
+            )
+            return Step("withdrawal_by_course_modality", p)
+
+        if _has(r"withdr", text) and _has(online_words, text):
             if e.terms:
                 p["term"] = e.terms[0]
             if _has(r"largest|biggest|widest|most|highest|which term|when", text):

@@ -41,12 +41,15 @@ from cabinet.explore.answer import (
     SOURCE_MODEL,
     SOURCE_TEMPLATE,
     check_sentence,
+    growth_words,
+    reader_number,
     template_answer,
     write_answer,
 )
 from cabinet.explore.catalog import (
     ANALYSES,
     ANALYSIS_BY_ID,
+    GRADED_SQL,
     NOT_INSTALLED_MESSAGE,
     Catalog,
     catalog_for,
@@ -68,7 +71,7 @@ from cabinet.explore.planner import (
     rule_plan_detail,
     validate_plan,
 )
-from cabinet.explore.privacy import refusal_for
+from cabinet.explore.privacy import COUNSELING_REFUSAL, refusal_for
 from cabinet.provider import (
     Explanation,
     FakeProvider,
@@ -179,8 +182,8 @@ class StubProvider:
 # --- the catalog and the executor --------------------------------------------
 
 
-def test_catalog_has_the_sixteen_analyses(catalog: Catalog) -> None:
-    assert len(ANALYSES) == 16
+def test_catalog_has_the_seventeen_analyses(catalog: Catalog) -> None:
+    assert len(ANALYSES) == 17
     for analysis in ANALYSES:
         assert analysis.title and analysis.description and analysis.fields_read
         assert analysis.columns
@@ -315,7 +318,9 @@ def test_staff_and_reviewers_get_the_course_without_instructor_rows(
     assert "instructor" not in keys and "name" not in keys
     assert third["instructor_rows_withheld"] is True
     assert "executive and admin roles only" in third["notes"][0]
-    assert "executive and admin roles only" in " ".join(
+    # Said once, in the answer (the step note is folded under "How this was
+    # answered", and the screen shows no second copy under the answer).
+    assert "shown to the executive and admin only" in " ".join(
         s["text"] for s in body["answer"]
     )
     assert "fictional" not in json.dumps(third["table"])
@@ -327,7 +332,7 @@ def test_staff_and_reviewers_get_the_course_without_instructor_rows(
     assert refused and refused[-1]["payload"]["role"] == role
     history = _ask(_client(app, role), "What has Alicia Shelby taught?")
     assert history["steps"][0]["table"]["rows"] == []
-    assert "executive and admin roles only" in history["answer"][0]["text"]
+    assert "shown to the executive and admin only" in history["answer"][0]["text"]
 
 
 @pytest.mark.parametrize("role", ["executive", "admin"])
@@ -398,7 +403,7 @@ def test_unmappable_question_suggests_three_examples(app: FastAPI) -> None:
 
 def test_catalog_route(app: FastAPI) -> None:
     body = _client(app, "staff").get("/explore/catalog").json()
-    assert len(body["analyses"]) == 16
+    assert len(body["analyses"]) == 17
     assert all(set(a) == {"id", "title", "description"} for a in body["analyses"])
     assert len(body["examples"]) == 12
     assert body["fictional"] is True
@@ -942,19 +947,19 @@ def test_full_scale_owner_example(full_env: None, app: FastAPI, question: str) -
     ]
     assert instructors["rows"][1][-3:] == [31, 4, 12.9]
     assert [s["text"] for s in body["answer"]] == [
-        "Mechanical Engineering has the lowest average cumulative GPA, 2.623 "
+        "Mechanical Engineering has the lowest average cumulative GPA, 2.62 "
         "across 250 "
         "students.",
         "In Mechanical Engineering, the historically hardest required course is "
         "MEEN 3310 "
-        "Thermodynamics I, with a D, F or withdrawal rate of 41.8 % (38 of 91 graded "
+        "Thermodynamics I, with a D, F or withdrawal rate of 41.8% (38 of 91 graded "
         "registrations over "
         "10 sections).",
         "I-0001 Alicia Shelby (fictional) has taught it most: 7 sections in 7 "
         "terms, with "
-        "a D, F or withdrawal rate of 56.7 %.",
+        "a D, F or withdrawal rate of 56.7%.",
         "I-0002 Anthony Jennings (fictional) taught 3 sections, "
-        "with a D, F or withdrawal rate of 12.9 %.",
+        "with a D, F or withdrawal rate of 12.9%.",
     ]
 
 
@@ -964,30 +969,30 @@ def test_full_scale_owner_example(full_env: None, app: FastAPI, question: str) -
     [
         (
             "Which major grew fastest from Fall 2020 to Fall 2025?",
-            ["Computer Science", "65", "137", "110.8 %"],
+            ["Computer Science", "65", "137", "111% (more than doubled)"],
         ),
         (
             "How much did continuing spring registration change in Spring 2026?",
-            ["2,073", "2,178", "−4.8 %"],
+            ["2,073", "2,178", "−4.8%"],
         ),
         (
             "What is the first-generation equity gap in College Algebra?",
-            ["42.8 %", "15.6 %", "27.2 points"],
+            ["42.8%", "15.6%", "27.2 points"],
         ),
         (
             "Which term had the largest gap between online and in-person "
             "withdrawal rates?",
-            ["Spring 2021", "16.7 %", "4.3 %", "12.4 points"],
+            ["Spring 2021", "16.7%", "4.3%", "12.4 points"],
         ),
         (
             "Who has taught Organic Chemistry I?",
             [
                 "I-0004 Chloe Merriweather (fictional)",
                 "8 sections",
-                "14.5 %",
+                "14.5%",
                 "I-0003 Naomi Faraday (fictional)",
                 "7 sections",
-                "47.3 %",
+                "47.3%",
             ],
         ),
     ],
@@ -1182,3 +1187,208 @@ def test_planner_says_what_it_did_not_apply(app: FastAPI, catalog: Catalog) -> N
     assert college == [
         Step("gpa_by_college", {"college": "COB", "order": "lowest_first"})
     ]
+
+
+# --- the last review of the Explore path ----------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("value", "kind", "shown"),
+    [
+        (2.623, "gpa", "2.62"),
+        (2.615, "gpa", "2.62"),  # half up on the decimal value, not the float
+        (2.625, "gpa", "2.63"),
+        (3.1, "gpa", "3.10"),
+        (110.8, "pct", "111"),
+        (110.5, "pct", "111"),
+        (100.0, "pct", "100"),
+        (-4.8, "pct", "-4.8"),
+        (41.8, "pct", "41.8"),
+        (99.9, "pct", "99.9"),
+        (12.4, "points", "12.4"),
+    ],
+)
+def test_sentence_numbers_are_rounded_for_a_reader(
+    value: float, kind: str, shown: str
+) -> None:
+    assert str(reader_number(value, kind)) == shown
+
+
+def test_growth_words() -> None:
+    assert growth_words(110.8) == " (more than doubled)"
+    assert growth_words(100.0) == " (doubled)"
+    assert growth_words(250.0) == " (more than tripled)"
+    assert growth_words(53.8) == "" and growth_words(-4.8) == ""
+    assert growth_words("fewer than 10") == ""
+
+
+def test_the_validator_accepts_the_reader_rounding_and_nothing_looser(
+    con: sqlite3.Connection, catalog: Catalog
+) -> None:
+    results = _owner_results(con, catalog)
+    top = results[0].rows[0]
+    gpa = top["avg_gpa"]
+    rounded = reader_number(gpa, "gpa")
+    check_sentence(f"{top['major_name']} averages {rounded}.", results)
+    check_sentence(f"{top['major_name']} averages {gpa}.", results)
+    # A GPA rounded any other way is not the cell.
+    with pytest.raises(OutputRejected):
+        check_sentence(f"{top['major_name']} averages {round(gpa, 1)}.", results)
+    rate = results[1].rows[0]["dfw_rate"]
+    check_sentence(f"Its DFW rate is {rate}%.", results)
+    # A percentage under 100 is never rounded to a whole number.
+    with pytest.raises(OutputRejected):
+        check_sentence(f"Its DFW rate is {round(rate)}%.", results)
+    # The template's sentence carries the rounded GPA, linked to its cell.
+    first = template_answer(results)[0]
+    assert f"GPA, {rounded} " in first.text
+    assert {"table": 0, "row": 0, "column": "avg_gpa"} in first.claims
+
+
+def test_growth_of_100_percent_or_more_is_a_whole_number_in_the_sentence(
+    con: sqlite3.Connection, catalog: Catalog
+) -> None:
+    steps = [Step("headcount_growth", {"min_start": 10})]
+    results = execute(steps, con, catalog, "executive")
+    growth = results[0].rows[0]["growth"]
+    first = template_answer(results)[0]
+    check_sentence(first.text, results)
+    shown = reader_number(growth, "pct")
+    assert f"{shown}%" in first.text
+    if growth >= 100:
+        assert "doubled" in first.text or "tripled" in first.text
+        assert results[0].rows[0]["growth"] == growth  # the table keeps it all
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Which course has the highest withdrawal rate online?",
+        "What online classes do students withdraw from most?",
+        "Show the online withdrawal rate by course.",
+    ],
+)
+def test_course_level_online_withdrawal_questions_rank_courses(
+    question: str, catalog: Catalog
+) -> None:
+    steps = rule_plan(question, catalog)
+    assert steps is not None
+    assert [s.analysis_id for s in steps] == ["withdrawal_by_course_modality"]
+    assert steps[0].params.get("order", "highest_first") == "highest_first"
+
+
+def test_term_level_online_withdrawal_questions_stay_by_term(
+    catalog: Catalog,
+) -> None:
+    for question in (
+        "Do online courses have higher withdrawal rates?",
+        # Not about online sections: never answered with the online ranking.
+        "Which courses have the most withdrawals in person?",
+        "What courses have the highest withdrawal rate in hybrid sections?",
+        "Which term had the largest gap between online and in-person withdrawal rates?",
+    ):
+        steps = rule_plan(question, catalog)
+        assert steps is not None
+        assert [s.analysis_id for s in steps] == ["withdrawal_by_modality"], question
+
+
+def test_withdrawal_by_course_and_mode_is_aggregate_and_suppressed(
+    con: sqlite3.Connection, catalog: Catalog
+) -> None:
+    for minimum in (10, 30):
+        steps = [Step("withdrawal_by_course_modality", {"min_online": minimum})]
+        results = execute(steps, con, catalog, "staff")
+        step = results[0]
+        assert step.error is None
+        rates = [r["online_rate"] for r in step.rows]
+        assert rates == sorted(rates, reverse=True)
+        for row in step.rows:
+            assert row["online_students"] >= max(minimum, 10)
+            assert row["online_rate"] == round(
+                100.0 * row["online_w"] / row["online_graded"], 1
+            )
+        assert any(f"at least {minimum} students" in n for n in step.notes)
+        check_sentence(template_answer(results)[0].text, results)
+
+
+def test_a_course_never_taught_in_person_says_so(
+    con: sqlite3.Connection, catalog: Catalog
+) -> None:
+    results = execute(
+        [Step("withdrawal_by_course_modality", {"min_online": 10})],
+        con,
+        catalog,
+        "executive",
+    )
+    results[0].rows[0]["in_person_rate"] = None
+    results[0].rows[0]["gap_points"] = None
+    first = template_answer(results)[0]
+    check_sentence(first.text, results)
+    assert first.text.endswith("; it was not taught in person.")
+    assert "withheld" not in first.text
+
+
+def test_api_shows_reader_parameters_without_codes_or_row_limits(
+    app: FastAPI,
+) -> None:
+    body = _ask(_client(app, "executive"), OWNER_EXAMPLE)
+    lines = [line for step in body["steps"] for line in step["params_plain"]]
+    assert "Ranked: lowest first" in lines
+    assert "Only majors with at least 20 students" in lines
+    assert not any(line.startswith("Rows shown") for line in lines)
+    assert not any(re.search(r"\([A-Z]{2,4}\)", line) for line in lines), lines
+    growth = _ask(_client(app, "executive"), "Which majors shrank the most since 2020?")
+    assert (
+        "Only majors with at least 40 students at the start"
+        in growth["steps"][0]["params_plain"]
+    )
+
+
+def test_counseling_refusal_says_records_are_never_disclosed(app: FastAPI) -> None:
+    body = _ask(_client(app, "executive"), "How many students saw a counselor?")
+    assert body["refused"] is True
+    assert body["message"] == COUNSELING_REFUSAL
+    assert "not in this data" not in body["message"]
+
+
+@FULL
+def test_full_scale_online_withdrawal_by_course(full_env: None, app: FastAPI) -> None:
+    """The top course against a direct count from the database."""
+    body = _ask(
+        _client(app, "executive"),
+        "Which course has the highest withdrawal rate online?",
+    )
+    step = body["steps"][0]
+    assert step["analysis_id"] == "withdrawal_by_course_modality"
+    keys = [c["key"] for c in step["table"]["columns"]]
+    top = dict(zip(keys, step["table"]["rows"][0], strict=True))
+    con = connect_readonly(FULL_DB)
+    try:
+        expected = con.execute(
+            f"""
+            SELECT s.course_id, SUM(g.grade = 'W'), COUNT(*),
+                   COUNT(DISTINCT r.student_id)
+            FROM final_grades g
+            JOIN section_registrations r ON r.registration_id = g.registration_id
+            JOIN sections s ON s.section_id = r.section_id
+            JOIN courses c ON c.course_id = s.course_id
+            JOIN academic_periods ap ON ap.term_code = s.term_code
+            WHERE c.grade_mode = 'standard' AND g.grade IN {GRADED_SQL}
+              AND ap.season != 'Summer' AND s.modality = 'online'
+            GROUP BY 1 HAVING COUNT(DISTINCT r.student_id) >= 30
+            ORDER BY 1.0 * SUM(g.grade = 'W') / COUNT(*) DESC, 1 LIMIT 1"""
+        ).fetchone()
+    finally:
+        con.close()
+    assert [top["course"], top["online_w"], top["online_graded"]] == list(
+        expected[:3]
+    )
+    assert top["course"] == "MATH 2415" and top["online_rate"] == 26.7
+    text = _texts(body)
+    # The sentence says a threshold applies: a course with fewer online
+    # students (WRSP 3320, 11 students) is not ranked, so it is not "the
+    # highest"; the threshold itself is in the step's parameters.
+    assert text.startswith(
+        "Among courses with enough online students to rank, MATH 2415 Calculus III"
+    )
+    assert "26.7% (8 of 30 online graded registrations)" in text

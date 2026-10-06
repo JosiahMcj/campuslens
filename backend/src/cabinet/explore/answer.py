@@ -13,6 +13,11 @@ tables: each number must be a value in some cell (percent columns in percent
 form), no student id, no risk-score language. Claims are rebuilt by finding
 each number's cell. Anything that fails is discarded and the template answer
 is used instead.
+
+Numbers in a sentence are written for a reader (``reader_number``): a GPA to
+2 decimals, a percentage of 100 or more as a whole number, "41.8%" with no
+space. Each still links to its cell, and the validator accepts exactly that
+rounded form of the cell's value.
 """
 
 from __future__ import annotations
@@ -22,7 +27,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 from cabinet.analysts import (
@@ -42,8 +47,8 @@ logger = logging.getLogger(__name__)
 
 WRITER_ROLE = "explore_writer"
 MAX_SENTENCES = 4
-SOURCE_TEMPLATE = "Written from computed tables (no model)"
-SOURCE_MODEL = "Written by the Chief of Staff from computed tables"
+SOURCE_TEMPLATE = "Calculated directly from the records"
+SOURCE_MODEL = "Written by the Chief of Staff from the records"
 # Sentences with no numbers, used when a step could not run or a template
 # sentence unexpectedly fails its own check (the step's error stays in its
 # JSON, never in a sentence, so no number can slip in through it).
@@ -68,18 +73,48 @@ class Sentence:
 # --- formatting cells --------------------------------------------------------
 
 
+def reader_number(value: float | int, kind: str) -> Decimal:
+    """The number as a sentence shows it to a reader: a GPA to 2 decimals
+    (2.623 -> 2.62) and a percentage of 100 or more as a whole number
+    (110.8 -> 111); everything else exactly as the table holds it. Rounding
+    is half up on the decimal value, so 2.615 -> 2.62 (never the binary
+    float's 2.61). The table keeps full precision, and the validator accepts
+    this form for the cell (``_cell_numbers``)."""
+    number = Decimal(str(value))
+    if kind == "gpa":
+        return number.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if kind == "pct" and abs(number) >= 100:
+        return number.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return number
+
+
 def _fmt(value: Any, kind: str) -> str:
     if isinstance(value, str) or value is None:
         return str(value)
+    if isinstance(value, bool):
+        return str(value)
     if kind == "pct":
-        return f"{_signed(value)} %"
+        return f"{_signed(reader_number(value, kind))}%"
     if kind == "points":
         return f"{_signed(value)} points"
     if kind == "money":
         return f"${value:,.2f}"
+    if kind == "gpa":
+        return _signed(reader_number(value, kind))
     if kind in ("count", "hours") and isinstance(value, int):
         return _signed_int(value)
     return str(value)
+
+
+def growth_words(value: Any) -> str:
+    """" (more than doubled)" and the like for a growth percentage, else ""."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 100:
+        return ""
+    times = int(value // 100) + 1  # growth of 100 % to 199 % ends 2 to 3 times as big
+    word = {2: "doubled", 3: "tripled", 4: "quadrupled"}.get(times)
+    if word is None:
+        return ""
+    return f" ({word})" if value % 100 == 0 else f" (more than {word})"
 
 
 def _signed(value: Any) -> str:
@@ -132,18 +167,15 @@ def _primary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
     if step.error:
         return Sentence(STEP_ERROR_SENTENCE)
     if step.instructor_rows_withheld and a == "instructor_history":
-        return Sentence(
-            "Instructor-level results are available to the executive and "
-            "admin roles only."
-        )
+        return Sentence("Instructor results are shown to the executive and admin only.")
     if not step.rows:
         return Sentence(
             f"No results matched {step.analysis.title.lower()} with these settings."
         )
     if step.instructor_rows_withheld and a == "course_instructors":
         b.t(
-            "Instructor-level results are available to the executive and admin roles "
-            "only, so this shows "
+            "Instructor results are shown to the executive and admin only, so this "
+            "shows "
         ).t(str(step.cell(0, "title"))).t(" as a whole: ")
         return (
             b.c(step, 0, "sections")
@@ -280,11 +312,19 @@ def _primary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
     if a == "headcount_growth":
         b.t(f"{step.cell(0, 'major_name')} ")
         growth = step.cell(0, "growth")
+        grew = isinstance(growth, (int, float)) and growth >= 0
+        if grew and not order_low:
+            # "Computer Science grew the fastest, 111% (more than doubled):"
+            b.t("grew " if p.get("major") else "grew the fastest, ")
+            shown = float(reader_number(growth, "pct"))
+            b.c(step, 0, "growth").t(growth_words(shown)).t(": from ")
+            b.c(step, 0, "start_headcount").t(" students in ").c(step, 0, "start_term")
+            b.t(" to ").c(step, 0, "end_headcount").t(" in ").c(step, 0, "end_term")
+            return b.t(".").done()
         if p.get("major"):
             b.t("went")
         elif order_low:
-            shrank = isinstance(growth, float) and growth < 0
-            b.t("shrank the most," if shrank else "grew slowest,")
+            b.t("grew slowest," if grew else "shrank the most,")
         else:
             b.t("grew fastest,")
         b.t(" from ").c(step, 0, "start_headcount").t(" students in ").c(
@@ -323,6 +363,23 @@ def _primary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
         if isinstance(step.cell(row, "gap_points"), float):
             b.t(", a gap of ").c(step, row, "gap_points")
         return b.t(".").done()
+    if a == "withdrawal_by_course_modality":
+        subject = _subject_name(step)
+        word = "lowest" if order_low else "highest"
+        # The threshold is a parameter, not a table cell, so it is named in
+        # "How this was answered" and the sentence says only that it applies.
+        b.t(f"Among {subject + ' ' if subject else ''}courses with enough online ")
+        b.t("students to rank, ")
+        b.c(step, 0, "course").t(f" {step.cell(0, 'title')} has the {word} online ")
+        b.t("withdrawal rate: ").c(step, 0, "online_rate").t(" (")
+        b.c(step, 0, "online_w").t(" of ").c(step, 0, "online_graded")
+        b.t(" online graded registrations)")
+        if step.cell(0, "in_person_rate") is None:
+            return b.t("; it was not taught in person.").done()
+        if step.cell(0, "in_person_rate") == SUPPRESSED_DISPLAY:
+            b.t("; its in-person rate is ").c(step, 0, "in_person_rate")
+            return b.t(".").done()
+        return b.t(", against ").c(step, 0, "in_person_rate").t(" in person.").done()
     if a == "standing_by_major":
         if p.get("major"):
             b.t(f"In {step.cell(0, 'major_name')}, ")
@@ -387,9 +444,10 @@ def _secondary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
         }[a]
         b.t(f"Next is {step.cell(1, 'major_name')} at ").c(step, 1, key)
         return b.t(".").done()
-    if a == "dfw_by_course":
+    if a in ("dfw_by_course", "withdrawal_by_course_modality"):
+        key = "dfw_rate" if a == "dfw_by_course" else "online_rate"
         b.t("Next is ").c(step, 1, "course").t(f" {step.cell(1, 'title')} at ")
-        return b.c(step, 1, "dfw_rate").t(".").done()
+        return b.c(step, 1, key).t(".").done()
     return None
 
 
@@ -451,9 +509,13 @@ def _cell_numbers(value: Any, kind: str) -> set[AllowedNumber]:
             number = Decimal(str(value))
         except InvalidOperation:
             return numbers
-        numbers.add(AllowedNumber(number, False))
-        if kind in _PERCENT_KINDS:
-            numbers.add(AllowedNumber(number, True))
+        # The exact value and the one rounded form a sentence shows for it
+        # (``reader_number``): a GPA of 2.623 is "2.623" or "2.62", a growth
+        # of 110.8 % is "110.8%" or "111%", never any other rounding.
+        for form in {number, reader_number(value, kind)}:
+            numbers.add(AllowedNumber(form, False))
+            if kind in _PERCENT_KINDS:
+                numbers.add(AllowedNumber(form, True))
         return numbers
     for match in _NUMERAL_RE.finditer(str(value)):
         parsed, is_percent, _ = _parse_numeral_token(

@@ -194,6 +194,12 @@ class Param:
     default: Any = None
     choices: tuple[Any, ...] = ()
     choice_labels: dict[Any, str] = field(default_factory=dict)
+    # How "How this was answered" shows the parameter to a reader: a template
+    # with ``{}`` for the plain value (default "<label>: {}"), or None to leave
+    # it out (the number of rows shown says nothing about the answer).
+    shown: str | None = "{label}: {}"
+    # Reader words for a value, where the record's words read badly on screen.
+    shown_labels: dict[Any, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -309,11 +315,14 @@ def _order_param(default: str = "lowest_first") -> Param:
         default=default,
         choices=ORDER_LOW_HIGH,
         choice_labels=ORDER_LABELS,
+        shown="Ranked: {}",
     )
 
 
-def _top_param(default: int = 10) -> Param:
-    return Param("top", "Rows shown", "choice", default=default, choices=TOP_CHOICES)
+def _top_param(default: int | None = 10) -> Param:
+    return Param(
+        "top", "Rows shown", "choice", default=default, choices=TOP_CHOICES, shown=None
+    )
 
 
 # --- 1. average GPA by major ----------------------------------------------------
@@ -1037,6 +1046,85 @@ def _withdrawal_by_modality(
     return Result(_top(out, p.get("top")), notes)
 
 
+# --- 11b. withdrawal rate by course and teaching mode -----------------------------
+
+
+def _withdrawal_by_course_modality(
+    con: sqlite3.Connection, p: dict[str, Any], v: Vocab
+) -> Result:
+    """Each course's online W rate against its in-person W rate, over the fall
+    and spring terms, ranked by the online rate. A course is ranked only when
+    its online sections had at least ``min_online`` students (never under
+    10); an in-person rate over fewer than 10 students is withheld."""
+    clauses: list[tuple[str, Any]] = []
+    if p.get("subject"):
+        clauses.append(("c.subject_code = ?", p["subject"]))
+    where, args = _filters(clauses)
+    rows = con.execute(
+        f"""
+        SELECT s.course_id, c.title, s.modality, SUM(g.grade = 'W'), COUNT(*),
+               COUNT(DISTINCT r.student_id)
+        FROM final_grades g
+        JOIN section_registrations r ON r.registration_id = g.registration_id
+        JOIN sections s ON s.section_id = r.section_id
+        JOIN courses c ON c.course_id = s.course_id
+        JOIN academic_periods ap ON ap.term_code = s.term_code
+        WHERE c.grade_mode = 'standard' AND g.grade IN {GRADED_SQL}
+          AND ap.season != 'Summer'
+          AND s.modality IN ('online', 'in_person') {where}
+        GROUP BY 1, 2, 3""",
+        args,
+    ).fetchall()
+    by_course: dict[str, dict[str, Any]] = {}
+    for course, title, modality, w, n, students in rows:
+        entry = by_course.setdefault(course, {"title": title})
+        entry[modality] = (int(w), int(n), int(students))
+    minimum = max(int(p.get("min_online") or MINIMUM_CELL_SIZE), MINIMUM_CELL_SIZE)
+    kept: list[dict[str, Any]] = []
+    withheld = 0
+    for course, entry in by_course.items():
+        if "online" not in entry:
+            continue  # never taught online: nothing to rank
+        w, n, students = entry["online"]
+        if students < minimum:
+            if _suppressed(students):
+                withheld += 1
+            continue
+        row: dict[str, Any] = {
+            "course": course,
+            "title": entry["title"],
+            "online_students": students,
+            "online_w": w,
+            "online_graded": n,
+            "online_rate": pct(w, n),
+            "_sort": w / n,
+        }
+        if "in_person" not in entry:
+            # Never taught in person: nothing to compare, nothing withheld.
+            row["in_person_rate"] = None
+            row["gap_points"] = None
+            kept.append(row)
+            continue
+        iw, inn, istudents = entry["in_person"]
+        if _suppressed(istudents):
+            row["in_person_rate"] = SUPPRESSED_DISPLAY
+            row["gap_points"] = SUPPRESSED_DISPLAY
+        else:
+            row["in_person_rate"] = pct(iw, inn)
+            row["gap_points"] = round(row["online_rate"] - row["in_person_rate"], 1)
+        kept.append(row)
+    descending = p.get("order", "highest_first") == "highest_first"
+    kept.sort(key=lambda r: (-r["_sort"] if descending else r["_sort"], r["course"]))
+    notes = [
+        "The withdrawal rate is W grades divided by graded registrations, fall and "
+        "spring terms only. Hybrid sections are left out.",
+        f"Only courses whose online sections had at least {minimum} students are "
+        "ranked.",
+    ]
+    notes += _withheld_note(withheld, "course")
+    return Result(_top(kept, p.get("top")), notes)
+
+
 # --- 12. probation and suspension rates by major ----------------------------------
 
 
@@ -1311,6 +1399,7 @@ ANALYSES: tuple[Analysis, ...] = (
                 "choice",
                 default=20,
                 choices=(10, 20, 50, 100),
+                shown="Only majors with at least {} students",
             ),
             _top_param(10),
         ),
@@ -1374,9 +1463,15 @@ ANALYSES: tuple[Analysis, ...] = (
                 "choice",
                 default=8,
                 choices=(1, 2, 4, 8, 16),
+                shown="Only courses with at least {} sections",
             ),
             Param(
-                "min_terms", "Minimum terms", "choice", default=4, choices=(1, 2, 4, 8)
+                "min_terms",
+                "Minimum terms",
+                "choice",
+                default=4,
+                choices=(1, 2, 4, 8),
+                shown="Only courses taught in at least {} terms",
             ),
             _order_param("highest_first"),
             _top_param(10),
@@ -1537,6 +1632,7 @@ ANALYSES: tuple[Analysis, ...] = (
                     "fastest_first": "fastest growth first",
                     "slowest_first": "slowest growth first",
                 },
+                shown="Ranked: {}",
             ),
             Param(
                 "min_start",
@@ -1544,6 +1640,7 @@ ANALYSES: tuple[Analysis, ...] = (
                 "choice",
                 default=40,
                 choices=(10, 20, 40, 100),
+                shown="Only majors with at least {} students at the start",
             ),
             _top_param(10),
         ),
@@ -1622,8 +1719,9 @@ ANALYSES: tuple[Analysis, ...] = (
                     "by_term": "in term order",
                     "largest_gap": "largest online gap first",
                 },
+                shown="Shown {}",
             ),
-            Param("top", "Rows shown", "choice", default=None, choices=TOP_CHOICES),
+            _top_param(None),
         ),
         (
             "final_grades.grade",
@@ -1644,6 +1742,45 @@ ANALYSES: tuple[Analysis, ...] = (
             Column("gap_points", "Online gap (points)", "points"),
         ),
         _withdrawal_by_modality,
+    ),
+    Analysis(
+        "withdrawal_by_course_modality",
+        "Withdrawal rate by course and teaching mode",
+        "Each course's W rate in its online sections against its in-person "
+        "sections (fall and spring terms), ranked by the online rate.",
+        (
+            Param("subject", "Subject", "subject"),
+            Param(
+                "min_online",
+                "Minimum online students to rank",
+                "choice",
+                default=30,
+                choices=(10, 20, 30, 50),
+                shown="Only courses with at least {} students online",
+            ),
+            _order_param("highest_first"),
+            _top_param(10),
+        ),
+        (
+            "final_grades.grade",
+            "sections.modality",
+            "sections.course_id",
+            "sections.term_code",
+            "courses.grade_mode",
+            "courses.subject_code",
+            "academic_periods.season",
+        ),
+        (
+            Column("course", "Course", entity="course"),
+            Column("title", "Title"),
+            Column("online_students", "Online students", "count"),
+            Column("online_w", "Online W", "count"),
+            Column("online_graded", "Online graded", "count"),
+            Column("online_rate", "Online W rate (%)", "pct"),
+            Column("in_person_rate", "In-person W rate (%)", "pct"),
+            Column("gap_points", "Online gap (points)", "points"),
+        ),
+        _withdrawal_by_course_modality,
     ),
     Analysis(
         "standing_by_major",
@@ -1689,6 +1826,7 @@ ANALYSES: tuple[Analysis, ...] = (
                 default="major",
                 choices=("major", "year"),
                 choice_labels={"major": "major", "year": "academic year"},
+                shown="Grouped by {}",
             ),
             _top_param(10),
         ),
@@ -1717,6 +1855,8 @@ ANALYSES: tuple[Analysis, ...] = (
                 "choice",
                 default="no",
                 choices=("yes", "no"),
+                shown="{}",
+                shown_labels={"yes": "Active holds only", "no": "All holds"},
             ),
             Param("term", "Term placed", "term"),
             Param("category", "Category", "category"),
@@ -1869,6 +2009,27 @@ class Catalog:
         if param.kind == "category":
             return str(value).replace("_", " ")
         return str(param.choice_labels.get(value, value))
+
+    def shown(self, param: Param, value: Any) -> str | None:
+        """The parameter as a reader sees it in "How this was answered":
+        names without their codes ("Major: Mechanical Engineering",
+        "Instructor: Alicia Shelby (fictional)"), thresholds as a rule ("Only
+        majors with at least 20 students"), and nothing for the number of
+        rows shown. ``plain`` stays the exact record (codes included)."""
+        if param.shown is None:
+            return None
+        v = self.vocab
+        if value in param.shown_labels:
+            text = param.shown_labels[value]
+        elif param.kind == "major":
+            text = v.majors[value]
+        elif param.kind == "subject":
+            text = v.subjects[value]
+        elif param.kind == "instructor":
+            text = f"{v.instructors.get(value, value)} (fictional)"
+        else:
+            text = self.plain(param, value)
+        return param.shown.replace("{label}", param.label).replace("{}", text)
 
     def spec(self) -> dict[str, Any]:
         """What the model planner receives: ids, titles, descriptions,

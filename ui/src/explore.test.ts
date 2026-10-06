@@ -6,6 +6,7 @@ import {
   answerNotes,
   canExplore,
   claimColumn,
+  dedupeLabels,
   displayText,
   exploreResponseFrom,
   formatCell,
@@ -14,11 +15,13 @@ import {
   loadExploreHistory,
   pickExamples,
   redactQuestion,
+  roundHalfUp,
   saveExploreHistory,
   sourceLabel,
   visibleColumns,
   withQuestion,
   type ExploreResponse,
+  type ExploreStep,
 } from './explore'
 
 // Recorded from the real API (POST /explore, replay provider, the school
@@ -27,7 +30,7 @@ const EXEC_RAW = {
   "refused": false,
   "answer": [
     {
-      "text": "Mechanical Engineering has the lowest average cumulative GPA, 2.623 across 250 students.",
+      "text": "Mechanical Engineering has the lowest average cumulative GPA, 2.62 across 250 students.",
       "claims": [
         {
           "table": 0,
@@ -42,7 +45,7 @@ const EXEC_RAW = {
       ]
     },
     {
-      "text": "In Mechanical Engineering, the historically hardest required course is MEEN 3310 Thermodynamics I, with a DFW rate of 41.8 % (38 of 91 graded registrations over 10 sections).",
+      "text": "In Mechanical Engineering, the historically hardest required course is MEEN 3310 Thermodynamics I, with a DFW rate of 41.8% (38 of 91 graded registrations over 10 sections).",
       "claims": [
         {
           "table": 1,
@@ -72,7 +75,7 @@ const EXEC_RAW = {
       ]
     },
     {
-      "text": "I-0001 Alicia Shelby (fictional) has taught it most: 7 sections in 7 terms, with a DFW rate of 56.7 %.",
+      "text": "I-0001 Alicia Shelby (fictional) has taught it most: 7 sections in 7 terms, with a DFW rate of 56.7%.",
       "claims": [
         {
           "table": 2,
@@ -97,7 +100,7 @@ const EXEC_RAW = {
       ]
     },
     {
-      "text": "I-0002 Anthony Jennings (fictional) taught 3 sections, with a DFW rate of 12.9 %.",
+      "text": "I-0002 Anthony Jennings (fictional) taught 3 sections, with a DFW rate of 12.9%.",
       "claims": [
         {
           "table": 2,
@@ -122,9 +125,8 @@ const EXEC_RAW = {
       "analysis_id": "gpa_by_major",
       "title": "Average GPA by major",
       "params_plain": [
-        "Order: lowest first",
-        "Minimum students to rank: 20",
-        "Rows shown: 10"
+        "Ranked: lowest first",
+        "Only majors with at least 20 students"
       ],
       "fields_read": [
         "student_term_records.program_code",
@@ -237,11 +239,10 @@ const EXEC_RAW = {
       "analysis_id": "dfw_by_course",
       "title": "DFW rate by course",
       "params_plain": [
-        "Required by major: Mechanical Engineering (MEEN) (from step 1)",
-        "Minimum sections: 8",
-        "Minimum terms: 4",
-        "Order: highest first",
-        "Rows shown: 10"
+        "Required by major: Mechanical Engineering (from step 1)",
+        "Only courses with at least 8 sections",
+        "Only courses taught in at least 4 terms",
+        "Ranked: highest first"
       ],
       "fields_read": [
         "final_grades.grade",
@@ -473,7 +474,7 @@ const EXEC_RAW = {
       ]
     }
   ],
-  "source": "Written from computed tables (no model)",
+  "source": "Calculated directly from the records",
   "planner": "rule",
   "notes": [],
   "fallbacks": [],
@@ -485,7 +486,7 @@ const STAFF_RAW = {
   "refused": false,
   "answer": [
     {
-      "text": "Mechanical Engineering has the lowest average cumulative GPA, 2.623 across 250 students.",
+      "text": "Mechanical Engineering has the lowest average cumulative GPA, 2.62 across 250 students.",
       "claims": [
         {
           "table": 0,
@@ -500,7 +501,7 @@ const STAFF_RAW = {
       ]
     },
     {
-      "text": "In Mechanical Engineering, the historically hardest required course is MEEN 3310 Thermodynamics I, with a DFW rate of 41.8 % (38 of 91 graded registrations over 10 sections).",
+      "text": "In Mechanical Engineering, the historically hardest required course is MEEN 3310 Thermodynamics I, with a DFW rate of 41.8% (38 of 91 graded registrations over 10 sections).",
       "claims": [
         {
           "table": 1,
@@ -530,7 +531,7 @@ const STAFF_RAW = {
       ]
     },
     {
-      "text": "Next is MEEN 3350 Manufacturing Processes at 34.1 %.",
+      "text": "Next is MEEN 3350 Manufacturing Processes at 34.1%.",
       "claims": [
         {
           "table": 1,
@@ -545,7 +546,7 @@ const STAFF_RAW = {
       ]
     },
     {
-      "text": "Instructor-level results are available to the executive and admin roles only, so this shows Thermodynamics I as a whole: 10 sections in 10 terms with a DFW rate of 41.8 %.",
+      "text": "Instructor results are shown to the executive and admin only, so this shows Thermodynamics I as a whole: 10 sections in 10 terms with a DFW rate of 41.8%.",
       "claims": [
         {
           "table": 2,
@@ -570,9 +571,8 @@ const STAFF_RAW = {
       "analysis_id": "gpa_by_major",
       "title": "Average GPA by major",
       "params_plain": [
-        "Order: lowest first",
-        "Minimum students to rank: 20",
-        "Rows shown: 10"
+        "Ranked: lowest first",
+        "Only majors with at least 20 students"
       ],
       "fields_read": [
         "student_term_records.program_code",
@@ -685,11 +685,10 @@ const STAFF_RAW = {
       "analysis_id": "dfw_by_course",
       "title": "DFW rate by course",
       "params_plain": [
-        "Required by major: Mechanical Engineering (MEEN) (from step 1)",
-        "Minimum sections: 8",
-        "Minimum terms: 4",
-        "Order: highest first",
-        "Rows shown: 10"
+        "Required by major: Mechanical Engineering (from step 1)",
+        "Only courses with at least 8 sections",
+        "Only courses taught in at least 4 terms",
+        "Ranked: highest first"
       ],
       "fields_read": [
         "final_grades.grade",
@@ -897,7 +896,7 @@ const STAFF_RAW = {
       "instructor_rows_withheld": true
     }
   ],
-  "source": "Written from computed tables (no model)",
+  "source": "Calculated directly from the records",
   "planner": "rule",
   "notes": [],
   "fallbacks": [],
@@ -948,9 +947,9 @@ describe('reading the response', () => {
 
 describe('linking numbers to cells', () => {
   it('links the planted values in the owner\'s answer', () => {
-    expect(linkedText(EXEC, 0)).toEqual(['2.623', '250'])
-    expect(linkedText(EXEC, 1)).toEqual(['MEEN 3310', '41.8 %', '38', '91', '10'])
-    expect(linkedText(EXEC, 2)).toEqual(['Alicia Shelby (fictional)', '7', '7', '56.7 %'])
+    expect(linkedText(EXEC, 0)).toEqual(['2.62', '250'])
+    expect(linkedText(EXEC, 1)).toEqual(['MEEN 3310', '41.8%', '38', '91', '10'])
+    expect(linkedText(EXEC, 2)).toEqual(['Alicia Shelby (fictional)', '7', '7', '56.7%'])
   })
 
   it('sends "7 sections in 7 terms" to two different cells', () => {
@@ -964,7 +963,7 @@ describe('linking numbers to cells', () => {
       .map((part) => part.text)
       .join('')
     expect(joined).toBe(
-      'Alicia Shelby (fictional) has taught it most: 7 sections in 7 terms, with a DFW rate of 56.7 %.',
+      'Alicia Shelby (fictional) has taught it most: 7 sections in 7 terms, with a DFW rate of 56.7%.',
     )
   })
 
@@ -1071,7 +1070,105 @@ describe('words and tables on screen', () => {
     expect(keys).not.toContain('instructor')
     expect(keys).toContain('name')
     expect(claimColumn(step, 'instructor')).toBe('name')
-    expect(claimColumn(EXEC.steps[0], 'major')).toBe('major')
+    expect(claimColumn(EXEC.steps[0], 'avg_gpa')).toBe('avg_gpa')
+  })
+
+  it('hides code columns (term codes, major codes) when the name is shown', () => {
+    const gpa = EXEC.steps[0]
+    const keys = visibleColumns(gpa).map((index) => gpa.table.columns[index].key)
+    expect(keys).not.toContain('major')
+    expect(keys[0]).toBe('major_name')
+    expect(claimColumn(gpa, 'major')).toBe('major_name')
+    const trend: ExploreStep = {
+      analysis_id: 'course_dfw_trend',
+      title: "A course's D, F or withdrawal trend by term",
+      params_plain: [],
+      fields_read: [],
+      notes: [],
+      table: {
+        columns: [
+          { key: 'course', label: 'Course' },
+          { key: 'term', label: 'Term code' },
+          { key: 'term_name', label: 'Term' },
+          { key: 'dfw_rate', label: 'D, F or withdrawal rate (%)' },
+        ],
+        rows: [
+          ['MEEN 3310', '202120', 'Spring 2021', 41.2],
+          ['MEEN 3310', '202210', 'Fall 2021', 38.5],
+        ],
+      },
+    }
+    // No term code, and the term (which tells the rows apart) comes first,
+    // so it is the column that stays in view on a phone.
+    expect(visibleColumns(trend).map((index) => trend.table.columns[index].key)).toEqual([
+      'term_name',
+      'course',
+      'dfw_rate',
+    ])
+    expect(claimColumn(trend, 'term')).toBe('term_name')
+  })
+
+  it('names each thing read once', () => {
+    expect(
+      dedupeLabels([
+        'Major each term',
+        'Term',
+        'Cumulative GPA',
+        'Major',
+        'Major name',
+        'College',
+        'Instructor first name (fictional)',
+        'Instructor last name (fictional)',
+      ]),
+    ).toEqual([
+      'Major each term',
+      'Term',
+      'Cumulative GPA',
+      'Major',
+      'College',
+      'Instructor name (fictional)',
+    ])
+  })
+
+  it('rounds half up on the decimal value, as the API rounds a sentence', () => {
+    expect(roundHalfUp(2.615, 2)).toBe('2.62')
+    expect(roundHalfUp(2.625, 2)).toBe('2.63')
+    expect(roundHalfUp(2.623, 2)).toBe('2.62')
+    expect(roundHalfUp(3.1, 2)).toBe('3.10')
+    expect(roundHalfUp(110.8, 0)).toBe('111')
+    expect(roundHalfUp(110.5, 0)).toBe('111')
+    expect(roundHalfUp(99.96, 1)).toBe('100.0')
+    expect(roundHalfUp(0.004, 2)).toBe('0.00')
+  })
+
+  it('links a rounded GPA and a whole-number growth to their cells', () => {
+    const step: ExploreStep = {
+      analysis_id: 'headcount_growth',
+      title: 'Headcount by major over time',
+      params_plain: [],
+      fields_read: [],
+      notes: [],
+      table: {
+        columns: [
+          { key: 'major_name', label: 'Major' },
+          { key: 'avg_gpa', label: 'Average cumulative GPA' },
+          { key: 'growth', label: 'Growth (%)' },
+        ],
+        rows: [['Computer Science', 2.615, 110.8]],
+      },
+    }
+    const parts = linkSentence(
+      {
+        text: 'Computer Science grew the fastest, 111% (more than doubled), and averages 2.62.',
+        claims: [
+          { table: 0, row: 0, column: 'growth' },
+          { table: 0, row: 0, column: 'avg_gpa' },
+        ],
+      },
+      [step],
+    )
+    const links = parts.flatMap((part) => ('claim' in part ? [part.text] : []))
+    expect(links).toEqual(['111%', '2.62'])
   })
 
   it('formats cells plainly', () => {
@@ -1084,18 +1181,32 @@ describe('words and tables on screen', () => {
   })
 
   it('writes the source line without the "(no model)" aside', () => {
+    expect(sourceLabel('Calculated directly from the records')).toBe(
+      'Calculated directly from the records',
+    )
+    expect(sourceLabel('Written by the Chief of Staff from the records')).toBe(
+      'Written by the Chief of Staff from the records',
+    )
+    // Answers recorded under the older wording read the same way.
     expect(sourceLabel('Written from computed tables (no model)')).toBe(
-      'Written from computed tables',
+      'Calculated directly from the records',
     )
     expect(sourceLabel('Written by the Chief of Staff from computed tables')).toBe(
-      'Written by the Chief of Staff from computed tables',
+      'Written by the Chief of Staff from the records',
     )
     expect(sourceLabel(null)).toBeNull()
   })
 
-  it('adds the instructor note when a step withheld instructor rows', () => {
-    expect(answerNotes(STAFF)).toEqual([INSTRUCTOR_NOTE])
+  it('says the instructor rule once: the note only when no sentence says it', () => {
+    // The staff answer's sentence already says it.
+    expect(answerNotes(STAFF)).toEqual([])
     expect(answerNotes(EXEC)).toEqual([])
+    // A rewording that dropped the sentence still gets the note.
+    const reworded = {
+      ...STAFF,
+      answer: STAFF.answer.filter((sentence) => !/executive and admin/.test(sentence.text)),
+    }
+    expect(answerNotes(reworded)).toEqual([INSTRUCTOR_NOTE])
   })
 
   it('keeps no student id anywhere in a real answer', () => {

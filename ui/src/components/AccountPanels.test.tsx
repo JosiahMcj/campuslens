@@ -50,6 +50,20 @@ describe('DataAccessPanel', () => {
     )
   })
 
+  it('says in the People table who may ask questions and who sees instructor names', () => {
+    const html = renderToStaticMarkup(<DataAccessPanel grants={null} />)
+    const ask = 'Ask any question about students, courses and majors (totals only)'
+    const rows = html.match(/<tr><th scope="row">[^<]+<\/th><td>[^<]*<\/td><\/tr>/g) ?? []
+    expect(rows).toHaveLength(5)
+    for (const row of rows) {
+      // Every role that can ask has the line; Financial Aid does not.
+      expect(row.includes(ask)).toBe(!row.includes('Financial Aid review queue, with a status'))
+    }
+    expect(html).toContain('Instructor names are shown to the executive and admin only.')
+    // The empty note sits directly above the cards, which keep their own gap.
+    expect(html).toMatch(/class="panel-text state-empty">[^<]+<\/p><div class="grant-list">/)
+  })
+
   it('shows a failed load with Retry, not the empty text', () => {
     const html = renderToStaticMarkup(
       <DataAccessPanel grants={null} error="Check your connection and try again." onRetry={() => {}} />,

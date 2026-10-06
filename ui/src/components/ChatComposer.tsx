@@ -156,7 +156,7 @@ export function ChatComposer({
           autoComplete="off"
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
-          placeholder="e.g. Which course has the highest withdrawal rate?"
+          placeholder="Ask about students, courses or majors"
           disabled={sending}
         />
         <button

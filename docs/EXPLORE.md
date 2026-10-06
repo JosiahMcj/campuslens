@@ -15,7 +15,9 @@ Four rules hold for every answer.
    Nothing else reaches it.
 3. **Every answer shows how it was answered.** The response carries each step's analysis,
    its parameters in plain words, the fields it read, and its table. Each sentence links
-   every number it uses to the table cell it came from.
+   every number it uses to the table cell it came from. A sentence writes its numbers for
+   a reader (a GPA to 2 decimals, "41.8%", a growth of 100% or more as a whole number);
+   the table keeps full precision.
 4. **Refusals come first.** A question about counseling or spiritual care, about one
    student, or asking to predict what a student will do is refused in code before any
    planning or model call, and the refusal is recorded.
@@ -35,7 +37,7 @@ connection is read-only.
 
 ## What can be asked
 
-Explore runs only the sixteen reviewed analyses in
+Explore runs only the seventeen reviewed analyses in
 `backend/src/cabinet/explore/catalog.py`. `GET /explore/catalog` lists them with twelve
 example questions.
 
@@ -52,6 +54,7 @@ example questions.
 | `enrollment_by_term` | Students enrolled per term, new and continuing | major, college, season |
 | `continuing_registration_change` | Continuing students registered against the same term a year earlier | term (latest spring) |
 | `withdrawal_by_modality` | W rate online, in person, and hybrid per term, with the online gap | term, order |
+| `withdrawal_by_course_modality` | Each course's W rate online against in person (fall and spring), ranked by the online rate | subject, minimum online students (30), order, rows |
 | `standing_by_major` | Probation and suspension rates per major, ranked | term, college, major, order |
 | `graduations` | Graduates by major (ranked) or by academic year | major, college, academic year, group by |
 | `holds_by_office` | Holds, students affected, and amounts owed per office | active only, term placed, category |
@@ -69,7 +72,7 @@ graded registrations. A student counts once, in the program and cumulative GPA o
 latest term. Rates are rounded exactly as `data/school/check.py` rounds them, so the
 planted facts come back to the digit.
 
-Some questions the rule planner maps (the tests check all 40 phrasings in
+Some questions the rule planner maps (the tests check all 43 phrasings in
 `RULE_PHRASINGS`, and 40 more wordings of the planted questions with other words
 and typos, such as "worst", "toughest", "lowest-performing", "who teaches", and
 "teh"):
@@ -83,6 +86,7 @@ and typos, such as "worst", "toughest", "lowest-performing", "who teaches", and
 - Which major grew fastest from Fall 2020 to Fall 2025?
 - How much did continuing spring registration change in Spring 2026?
 - Which term had the largest gap between online and in-person withdrawal rates?
+- Which course has the highest withdrawal rate online?
 - Which offices hold the most active holds?
 - What is the hardest class in Chemistry, and who taught it?
 
@@ -94,7 +98,10 @@ analyses yet." with the three example questions closest to it.
 1. **Refusal check** (`explore/privacy.py`). Counseling and spiritual care, a student id or
    a numbered student, a request for individual students, and predictions about students
    are refused here. The API records `question.asked` and `data.refused`, and nothing else
-   runs.
+   runs. The screen shows a refusal as a calm note headed "Not something the Cabinet
+   answers", not as an error: "Individual counseling and spiritual-care records are never
+   disclosed." for counseling (the briefing may still show an authorized aggregate count),
+   and a line about totals only for a single student or a prediction.
 2. **Plan** (`explore/planner.py`). The question becomes a list of steps, each an analysis
    id with parameters. A later step can take a parameter from an earlier step's top row, so
    the owner's question becomes three steps: the lowest-GPA major, the hardest course that
@@ -129,9 +136,13 @@ analyses yet." with the three example questions closest to it.
    reword them. It receives only the tables and must answer `{"sentences": [...]}`. Each
    sentence then passes the cabinet's numeral validator (`analysts.check_numbers_against`):
    every number must be a cell value, rates in percent form, no student id, and no risk
-   language. Anything else is discarded and the template answer is shown. `source` says
-   which one you see: "Written from computed tables (no model)" or "Written by the Chief of
-   Staff from computed tables". A reworded sentence must also keep each number with its
+   language. A number may also be the one rounded form the template writes for that cell
+   (`answer.reader_number`: a GPA to 2 decimals, half up, so 2.623 reads 2.62; a percentage
+   of 100 or more as a whole number, so 110.8 reads 111), and never any other rounding: 42%
+   does not pass for a cell of 41.8. The screen links the rounded number to its cell the
+   same way. Anything else is discarded and the template answer is shown. `source` says
+   which one you see: "Calculated directly from the records" or "Written by the Chief of
+   Staff from the records". A reworded sentence must also keep each number with its
    row: the row named nearest to a number in the sentence must hold that number, so a
    true figure cannot be attached to the wrong major or course. A rewording may change
    the words, never drop a fact: every figure and every major, course, or name the
@@ -182,8 +193,8 @@ events:
   before the question is recorded.
 - **Instructor rows are for the executive and admin roles.** Staff and reviewers asking
   about a course's instructors get the course as a whole (sections, terms, instructor
-  count, DFW rate) with a sentence saying instructor-level results are available to the
-  executive and admin roles only, and a `data.refused` event records it. An instructor's
+  count, DFW rate) with one sentence saying instructor results are shown to the executive
+  and admin only (the screen says it once), and a `data.refused` event records it. An instructor's
   teaching history is withheld the same way.
 - **Instructor names are fictional.** Every instructor in the school database is generated
   and marked fictional, and every answer and table labels the names so.
@@ -200,7 +211,12 @@ The aid role gets a 403 on both. The response of `POST /explore` is
 title, params_plain, fields_read, table: {columns, rows}, notes}], source}` plus `planner`
 (rule, model, or recorded), `notes` (a named term or college the chosen analysis does not
 filter by, and any part of the question no analysis answered), `fallbacks`, and
-`suggestions` when the question could not be mapped. If an answer cannot be finished, the
+`suggestions` when the question could not be mapped. `params_plain` holds only the
+parameters a reader cares about, in plain words ("Ranked: lowest first", "Only majors with
+at least 20 students"); codes and the number of rows shown stay out of it, and the command
+line tool prints the exact record. The screen hides code columns (term codes, major and
+college codes, instructor ids) when the table also carries the name, and keeps the row's
+name in view while a narrow table scrolls. If an answer cannot be finished, the
 response says so in `message`, the run is recorded with `answered: false`, and nothing is
 guessed. Demonstration University is one shared fictional dataset. Users of every
 institution query the same data, and each question's audit events land on the asker's own
@@ -214,7 +230,10 @@ institution chain.
    fewer than 10 students, and keep withheld groups out of any ranking.
 2. Register an `Analysis` in `ANALYSES` with its id, title, description, typed parameters,
    the fields it reads, and its columns (plain labels, a kind such as `count` or `pct`, and
-   an `entity` on a column a later step may chain from).
+   an `entity` on a column a later step may chain from). A parameter's `shown` says how a
+   reader sees it ("Only courses with at least {} students online"), or `None` to leave it
+   out; a code column keeps a name column beside it (`major` with `major_name`) so the
+   screen can hide the code.
 3. Teach the rule planner in `explore/planner.py` at least one phrasing and add it to
    `RULE_PHRASINGS`, then add a template sentence in `explore/answer.py`.
 4. Run `make check`. The tests run every analysis, check every response for student ids,

@@ -16,17 +16,20 @@ from __future__ import annotations
 
 import re
 
+# Calm, plain lines: a refusal is the Cabinet working as designed, not an
+# error. The counseling line does not say the data is absent: the briefing
+# may show an authorized aggregate count, and individual records are what is
+# never disclosed.
 COUNSELING_REFUSAL = (
-    "The Cabinet does not answer questions about counseling or spiritual care. That "
-    "information is not in this data, and it is never disclosed."
+    "Individual counseling and spiritual-care records are never disclosed."
 )
 INDIVIDUAL_REFUSAL = (
-    "The Cabinet answers in aggregates only. It never answers about an individual "
-    "student, by id or by description."
+    "The Cabinet answers with totals only, never about a single student, by id or "
+    "by description."
 )
 PREDICTION_REFUSAL = (
     "The Cabinet does not predict what an individual student will do. It can show "
-    "aggregate rates, such as withdrawal or probation rates by major."
+    "totals, such as withdrawal or probation rates by major."
 )
 
 _COUNSELING_RE = re.compile(

@@ -163,6 +163,9 @@ type AuthState =
 
 const SESSION_ENDED_NOTICE = 'Your session ended. Sign in again.'
 
+/** The approved question behind the full briefing and the decision. */
+const SPRING_QUESTION_ID = 'spring-registration'
+
 /** A task's status in the working reply, in plain words. */
 const TASK_STATUS_WORDS = {
   working: 'working…',
@@ -1080,7 +1083,7 @@ function BriefingPage({
   // M9 as the produced briefing carried it: only a spring registration
   // briefing asked while the counseling authorization was on has one.
   const briefingCounseling: Finding | null =
-    cabinetBriefing !== null && cabinetBriefing.question_id === 'spring-registration'
+    cabinetBriefing !== null && cabinetBriefing.question_id === SPRING_QUESTION_ID
       ? (cabinetBriefing.aggregates.M9 ?? null)
       : null
 
@@ -1515,6 +1518,8 @@ function BriefingPage({
   // an approval for a briefing nobody asked for). The latest briefing is
   // kept by the API across restarts (GET /briefing), so "asked" is simply
   // "a briefing exists".
+  // The approved question the Briefing panels and the Decision start from.
+  const springQuestion = (questions ?? []).find((item) => item.id === SPRING_QUESTION_ID)
   const briefingGate = (content: () => ReactNode) =>
     cabinetBriefing === null && briefingStatus.kind !== 'ready' ? (
       notReady(briefingStatus, retryBriefing, 'the briefing')
@@ -1525,6 +1530,25 @@ function BriefingPage({
             ? 'Ask the spring registration question first. The briefing and the decision appear here.'
             : 'The briefing and the decision appear here once an executive asks the spring registration question.'}
         </p>
+        {act && springQuestion !== undefined && (
+          <div className="state-actions">
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={sending}
+              aria-busy={sending ? 'true' : undefined}
+              onClick={() => void submit(springQuestion.text)}
+            >
+              {sending && <span className="spinner" aria-hidden="true" />}
+              {sending ? 'Asking…' : 'Ask it now'}
+            </button>
+          </div>
+        )}
+        {act && springQuestion !== undefined && askState.kind === 'error' &&
+          askState.question === springQuestion.text && (
+            // Under the button it belongs to; the composer announces the error.
+            <p className="error-line">{askState.message}</p>
+          )}
       </div>
     ) : (
       content()

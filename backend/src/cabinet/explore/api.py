@@ -76,7 +76,9 @@ def _step_json(step: StepResult) -> dict[str, Any]:
     out: dict[str, Any] = {
         "analysis_id": step.analysis.id,
         "title": step.analysis.title,
-        "params_plain": step.params_plain,
+        # The parameters a reader cares about, in plain words; the exact
+        # record (codes, row limits) stays in the step and the CLI.
+        "params_plain": step.params_shown,
         "fields_read": list(step.fields_read),
         "aggregate_only": True,
         "table": step.table(),

@@ -57,7 +57,7 @@ const EXPLORE_ANSWER = {
   refused: false,
   answer: [
     {
-      text: 'Mechanical Engineering has the lowest average cumulative GPA, 2.623 across 250 students.',
+      text: 'Mechanical Engineering has the lowest average cumulative GPA, 2.62 across 250 students.',
       claims: [
         { table: 0, row: 0, column: 'avg_gpa' },
         { table: 0, row: 0, column: 'students' },
@@ -68,7 +68,7 @@ const EXPLORE_ANSWER = {
     {
       analysis_id: 'gpa_by_major',
       title: 'Average GPA by major',
-      params_plain: ['Order: lowest first', 'Minimum students to rank: 20', 'Rows shown: 10'],
+      params_plain: ['Ranked: lowest first', 'Only majors with at least 20 students'],
       fields_read: ['student_term_records.cumulative_gpa'],
       aggregate_only: true,
       table: {
@@ -83,7 +83,7 @@ const EXPLORE_ANSWER = {
       notes: [],
     },
   ],
-  source: 'Written from computed tables (no model)',
+  source: 'Calculated directly from the records',
   planner: 'rule',
   notes: [],
   fallbacks: [],
@@ -92,7 +92,7 @@ const EXPLORE_ANSWER = {
 const REFUSAL = {
   refused: true,
   message:
-    'The Cabinet does not answer questions about counseling or spiritual care. That information is not in this data, and it is never disclosed.',
+    'Individual counseling and spiritual-care records are never disclosed.',
   answer: [],
   steps: [],
   source: null,
@@ -384,11 +384,11 @@ describe('Explore', () => {
     render(<App />)
     await screen.findByText('What would you like to know?')
     await askQuestion('Which major has the lowest GPA?')
-    expect(await screen.findByRole('button', { name: '2.623' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: '2.62' })).toBeTruthy()
     expect(calls.some((c) => c.endsWith('/api/explore'))).toBe(true)
     expect(calls.some((c) => c.endsWith('/api/ask'))).toBe(false)
     expect(screen.getByText('How this was answered')).toBeTruthy()
-    expect(screen.getByText('Written from computed tables')).toBeTruthy()
+    expect(screen.getByText('Calculated directly from the records')).toBeTruthy()
     // The sidebar lists the question with its Explore mark.
     const row = screen.getByTitle('Which major has the lowest GPA?')
     expect(within(row).getByText('Explore')).toBeTruthy()
@@ -438,14 +438,17 @@ describe('Explore', () => {
     expect(calls.some((c) => c.endsWith('/api/explore'))).toBe(false)
   })
 
-  it('reads a refusal as a refusal, with three questions to try instead', async () => {
+  it('reads a refusal as a calm note, with three questions to try instead', async () => {
     mockApi({ '/explore': () => json(REFUSAL) })
     render(<App />)
     await screen.findByText('What would you like to know?')
     await askQuestion('Which students are in counseling?')
-    const card = await screen.findByRole('alert')
-    expect(within(card).getByText('Refused')).toBeTruthy()
-    expect(card.textContent).toMatch(/does not answer questions about counseling/)
+    const heading = await screen.findByText('Not something the Cabinet answers')
+    const card = heading.closest('.explore-declined') as HTMLElement
+    expect(card.getAttribute('role')).toBe('status')
+    expect(card.textContent).toContain(
+      'Individual counseling and spiritual-care records are never disclosed.',
+    )
     expect(screen.getByText('You can ask one of these instead')).toBeTruthy()
     expect(screen.getByText(OWNER)).toBeTruthy()
     const row = screen.getByTitle('Which students are in counseling?')
@@ -469,7 +472,7 @@ describe('Explore', () => {
     expect(document.querySelectorAll('.exchange').length).toBe(0)
     fail = false
     fireEvent.click(screen.getByRole('button', { name: 'Ask again' }))
-    expect(await screen.findByRole('button', { name: '2.623' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: '2.62' })).toBeTruthy()
   })
 
   it('lists questions from before a reload and asks again when one is opened', async () => {
@@ -483,7 +486,7 @@ describe('Explore', () => {
     const row = screen.getByTitle('Which offices hold the most active holds?')
     expect(within(row).getByText('Explore')).toBeTruthy()
     fireEvent.click(row)
-    expect(await screen.findByRole('button', { name: '2.623' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: '2.62' })).toBeTruthy()
     expect(calls.filter((c) => c.endsWith('/api/explore')).length).toBe(1)
     // Listed once, not twice.
     expect(screen.getAllByTitle('Which offices hold the most active holds?')).toHaveLength(1)
@@ -545,6 +548,36 @@ describe('the sidebar clean-up', () => {
 })
 
 describe('the briefing before any question', () => {
+  it('offers "Ask it now" in the Full briefing panel, which asks the spring question', async () => {
+    let asked: unknown = null
+    mockApi({
+      '/ask': (_url, init) => {
+        asked = JSON.parse(String(init?.body ?? '{}'))
+        return json({ detail: 'busy' }, 429)
+      },
+    })
+    render(<App />)
+    await screen.findByText('What would you like to know?')
+    fireEvent.click(screen.getByRole('button', { name: 'Full briefing' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Full briefing' })
+    const button = await within(dialog).findByRole('button', { name: 'Ask it now' })
+    expect(button.className).toContain('btn-primary')
+    fireEvent.click(button)
+    await waitFor(() => expect(asked).toMatchObject({ question: QUESTION }))
+  })
+
+  it('keeps the sentence without a button for a role that cannot ask briefings', async () => {
+    mockApi({ '/auth/me': () => json(sessionAs('staff')) })
+    render(<App />)
+    await screen.findByText('What would you like to know?')
+    fireEvent.click(screen.getByRole('button', { name: 'Full briefing' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Full briefing' })
+    await waitFor(() =>
+      expect(dialog.textContent).toContain('once an executive asks the spring registration question'),
+    )
+    expect(within(dialog).queryByRole('button', { name: 'Ask it now' })).toBeNull()
+  })
+
   it('shows the Decision as an empty state, with nothing to approve', async () => {
     mockApi({
       '/decisions': () =>

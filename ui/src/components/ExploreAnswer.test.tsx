@@ -12,7 +12,7 @@ const EXEC: ExploreResponse = exploreResponseFrom({
   "refused": false,
   "answer": [
     {
-      "text": "Mechanical Engineering has the lowest average cumulative GPA, 2.623 across 250 students.",
+      "text": "Mechanical Engineering has the lowest average cumulative GPA, 2.62 across 250 students.",
       "claims": [
         {
           "table": 0,
@@ -27,7 +27,7 @@ const EXEC: ExploreResponse = exploreResponseFrom({
       ]
     },
     {
-      "text": "In Mechanical Engineering, the historically hardest required course is MEEN 3310 Thermodynamics I, with a DFW rate of 41.8 % (38 of 91 graded registrations over 10 sections).",
+      "text": "In Mechanical Engineering, the historically hardest required course is MEEN 3310 Thermodynamics I, with a DFW rate of 41.8% (38 of 91 graded registrations over 10 sections).",
       "claims": [
         {
           "table": 1,
@@ -57,7 +57,7 @@ const EXEC: ExploreResponse = exploreResponseFrom({
       ]
     },
     {
-      "text": "I-0001 Alicia Shelby (fictional) has taught it most: 7 sections in 7 terms, with a DFW rate of 56.7 %.",
+      "text": "I-0001 Alicia Shelby (fictional) has taught it most: 7 sections in 7 terms, with a DFW rate of 56.7%.",
       "claims": [
         {
           "table": 2,
@@ -82,7 +82,7 @@ const EXEC: ExploreResponse = exploreResponseFrom({
       ]
     },
     {
-      "text": "I-0002 Anthony Jennings (fictional) taught 3 sections, with a DFW rate of 12.9 %.",
+      "text": "I-0002 Anthony Jennings (fictional) taught 3 sections, with a DFW rate of 12.9%.",
       "claims": [
         {
           "table": 2,
@@ -107,9 +107,8 @@ const EXEC: ExploreResponse = exploreResponseFrom({
       "analysis_id": "gpa_by_major",
       "title": "Average GPA by major",
       "params_plain": [
-        "Order: lowest first",
-        "Minimum students to rank: 20",
-        "Rows shown: 10"
+        "Ranked: lowest first",
+        "Only majors with at least 20 students"
       ],
       "fields_read": [
         "student_term_records.program_code",
@@ -222,11 +221,10 @@ const EXEC: ExploreResponse = exploreResponseFrom({
       "analysis_id": "dfw_by_course",
       "title": "DFW rate by course",
       "params_plain": [
-        "Required by major: Mechanical Engineering (MEEN) (from step 1)",
-        "Minimum sections: 8",
-        "Minimum terms: 4",
-        "Order: highest first",
-        "Rows shown: 10"
+        "Required by major: Mechanical Engineering (from step 1)",
+        "Only courses with at least 8 sections",
+        "Only courses taught in at least 4 terms",
+        "Ranked: highest first"
       ],
       "fields_read": [
         "final_grades.grade",
@@ -458,7 +456,7 @@ const EXEC: ExploreResponse = exploreResponseFrom({
       ]
     }
   ],
-  "source": "Written from computed tables (no model)",
+  "source": "Calculated directly from the records",
   "planner": "rule",
   "notes": [],
   "fallbacks": [],
@@ -470,7 +468,7 @@ const STAFF: ExploreResponse = exploreResponseFrom({
   "refused": false,
   "answer": [
     {
-      "text": "Mechanical Engineering has the lowest average cumulative GPA, 2.623 across 250 students.",
+      "text": "Mechanical Engineering has the lowest average cumulative GPA, 2.62 across 250 students.",
       "claims": [
         {
           "table": 0,
@@ -485,7 +483,7 @@ const STAFF: ExploreResponse = exploreResponseFrom({
       ]
     },
     {
-      "text": "In Mechanical Engineering, the historically hardest required course is MEEN 3310 Thermodynamics I, with a DFW rate of 41.8 % (38 of 91 graded registrations over 10 sections).",
+      "text": "In Mechanical Engineering, the historically hardest required course is MEEN 3310 Thermodynamics I, with a DFW rate of 41.8% (38 of 91 graded registrations over 10 sections).",
       "claims": [
         {
           "table": 1,
@@ -515,7 +513,7 @@ const STAFF: ExploreResponse = exploreResponseFrom({
       ]
     },
     {
-      "text": "Next is MEEN 3350 Manufacturing Processes at 34.1 %.",
+      "text": "Next is MEEN 3350 Manufacturing Processes at 34.1%.",
       "claims": [
         {
           "table": 1,
@@ -530,7 +528,7 @@ const STAFF: ExploreResponse = exploreResponseFrom({
       ]
     },
     {
-      "text": "Instructor-level results are available to the executive and admin roles only, so this shows Thermodynamics I as a whole: 10 sections in 10 terms with a DFW rate of 41.8 %.",
+      "text": "Instructor results are shown to the executive and admin only, so this shows Thermodynamics I as a whole: 10 sections in 10 terms with a DFW rate of 41.8%.",
       "claims": [
         {
           "table": 2,
@@ -555,9 +553,8 @@ const STAFF: ExploreResponse = exploreResponseFrom({
       "analysis_id": "gpa_by_major",
       "title": "Average GPA by major",
       "params_plain": [
-        "Order: lowest first",
-        "Minimum students to rank: 20",
-        "Rows shown: 10"
+        "Ranked: lowest first",
+        "Only majors with at least 20 students"
       ],
       "fields_read": [
         "student_term_records.program_code",
@@ -670,11 +667,10 @@ const STAFF: ExploreResponse = exploreResponseFrom({
       "analysis_id": "dfw_by_course",
       "title": "DFW rate by course",
       "params_plain": [
-        "Required by major: Mechanical Engineering (MEEN) (from step 1)",
-        "Minimum sections: 8",
-        "Minimum terms: 4",
-        "Order: highest first",
-        "Rows shown: 10"
+        "Required by major: Mechanical Engineering (from step 1)",
+        "Only courses with at least 8 sections",
+        "Only courses taught in at least 4 terms",
+        "Ranked: highest first"
       ],
       "fields_read": [
         "final_grades.grade",
@@ -882,7 +878,7 @@ const STAFF: ExploreResponse = exploreResponseFrom({
       "instructor_rows_withheld": true
     }
   ],
-  "source": "Written from computed tables (no model)",
+  "source": "Calculated directly from the records",
   "planner": "rule",
   "notes": [],
   "fallbacks": [],
@@ -921,10 +917,10 @@ afterEach(() => cleanup())
 describe('an Explore answer', () => {
   it('shows the planted values as links, the source line, and no ids', () => {
     show(EXEC)
-    for (const value of ['2.623', '41.8 %', '56.7 %', 'Alicia Shelby (fictional)']) {
+    for (const value of ['2.62', '41.8%', '56.7%', 'Alicia Shelby (fictional)']) {
       expect(screen.getAllByRole('button', { name: value }).length).toBeGreaterThan(0)
     }
-    expect(screen.getByText('Written from computed tables')).toBeTruthy()
+    expect(screen.getByText('Calculated directly from the records')).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/I-\d{4}|\bS-\d+|no model/)
   })
 
@@ -932,7 +928,7 @@ describe('an Explore answer', () => {
     show(EXEC)
     const fold = document.querySelector('details.explore-how') as HTMLDetailsElement
     expect(fold.open).toBe(false)
-    fireEvent.click(screen.getByRole('button', { name: '41.8 %' }))
+    fireEvent.click(screen.getByRole('button', { name: '41.8%' }))
     expect(fold.open).toBe(true)
     const cell = document.getElementById('explore-7-t1-r0-dfw_rate') as HTMLElement
     expect(cell.textContent).toBe('41.8')
@@ -945,7 +941,14 @@ describe('an Explore answer', () => {
     const steps = document.querySelectorAll('.explore-step')
     expect(steps).toHaveLength(3)
     expect(steps[0].querySelector('h4')?.textContent).toBe('Step 1. Average GPA by major')
-    expect(steps[0].textContent).toContain('Order: lowest first')
+    expect(steps[0].textContent).toContain('Ranked: lowest first')
+    expect(steps[0].textContent).toContain('Only majors with at least 20 students')
+    expect(steps[0].textContent).not.toContain('Rows shown')
+    // No major code column ("Major code") in the table, and "Major name"
+    // beside "Major" is named once.
+    expect(within(steps[0] as HTMLElement).queryByText('Major code')).toBeNull()
+    const read = steps[0].querySelector('.explore-read')?.textContent ?? ''
+    expect(read).not.toContain('Major name')
     expect(steps[0].textContent).toContain('Data it read:')
     expect(steps[0].textContent).toContain('Cumulative GPA')
     expect(steps[0].textContent).not.toContain('student_term_records')
@@ -958,9 +961,11 @@ describe('an Explore answer', () => {
     expect(steps[2].textContent).toContain('Alicia Shelby (fictional)')
   })
 
-  it('gives staff the course as a whole and the instructor note', () => {
+  it('gives staff the course as a whole and says the instructor rule once', () => {
     show(STAFF)
-    expect(screen.getByText(INSTRUCTOR_NOTE)).toBeTruthy()
+    // The answer's sentence says it; the grey note under the answer does not repeat it.
+    expect(screen.queryByText(INSTRUCTOR_NOTE)).toBeNull()
+    expect(document.body.textContent?.match(/executive and admin/g)).toHaveLength(1)
     // Said once under the answer, not again under the step's table.
     expect(document.body.textContent).not.toContain('so this table shows the course as a whole')
     expect(document.body.textContent).not.toContain('Alicia Shelby')
@@ -1004,19 +1009,24 @@ describe('an Explore answer', () => {
 })
 
 describe('a refusal and a question no analysis answers', () => {
-  it('reads a refusal like the briefing\'s refusals, with three questions to try', () => {
+  it('reads a refusal as a calm note, not an error, with three questions to try', () => {
     const { onAsk } = show(
       exploreResponseFrom({
         refused: true,
-        message: 'The Cabinet does not answer questions about counseling or spiritual care.',
+        message: 'Individual counseling and spiritual-care records are never disclosed.',
         answer: [],
         steps: [],
         source: null,
       }),
       { onSeeAuditLog: vi.fn() },
     )
-    const card = screen.getByRole('alert')
-    expect(within(card).getByText('Refused')).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(document.querySelector('.refusal-card')).toBeNull()
+    const card = screen.getByRole('status')
+    expect(card.className).toBe('explore-declined')
+    expect(within(card).getByText('Not something the Cabinet answers')).toBeTruthy()
+    expect(card.textContent).toContain('never disclosed')
+    expect(card.textContent).not.toContain('not in this data')
     expect(card.textContent).toContain('recorded in the audit log')
     expect(within(card).getByRole('button', { name: 'See the audit log' })).toBeTruthy()
     fireEvent.click(screen.getByText(EXAMPLES[1]))

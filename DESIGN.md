@@ -46,6 +46,10 @@ one.
 
 Rules: one accent (`--navy`) for action; gold belongs only to the decision; red only to refusals,
 errors and destructive actions. No other hues. No raw hex or rgb outside the token block.
+A question the Cabinet does not answer from Explore (counseling records, a single student, a
+prediction) is not an error: it is a calm `--surface` card with a `--rule` border, headed "Not
+something the Cabinet answers", with a plain line saying why. Red stays for real errors and
+the briefing's data refusals.
 
 **Theme:** light is the default for everyone (the demo is projected in a lit room). Dark is
 available from Settings and the theme switch and remembered per browser. The operating system's
@@ -102,7 +106,8 @@ measure 68ch.
   `<span class="spinner">` beside its working label ("Saving…").
 - **Inputs:** `.field`, 44 px tall, `--text-md`, `--rule-strong` border, `--radius-control`,
   label above, help text below, error text below in `--alert` linked with `aria-describedby`
-  and `aria-invalid="true"` (red border). Placeholders start with "e.g.".
+  and `aria-invalid="true"` (red border). Placeholders start with "e.g.", except the question box, whose placeholder says what can be
+  asked ("Ask about students, courses or majors") and fits a 390 px phone.
 - **Panels:** the slide-over panel is the one pattern for everything outside the conversation.
   Title, one-sentence intro, then content. Escape and the close button close it; focus returns.
   It slides in and out in 200 ms: closing adds `.is-closing` to `.panel-overlay` and
@@ -128,7 +133,9 @@ measure 68ch.
 Below 900 px the sidebar becomes a menu button (44 × 44) and a drawer. Every tap target is at
 least 44 × 44 px: buttons, fields, rows, chips, segments, summaries; a link inside a sentence
 keeps its size and gets an invisible 44 × 44 hit area. No sideways scrolling at 360 px, including with text enlarged to 150 %.
-Tables become stacked cards (`.stack-table`).
+Tables become stacked cards (`.stack-table`), except Explore's computed tables, which scroll
+sideways inside their own box with the first column (the row's name) kept in view, so an
+opened figure is never shown without its row.
 
 ## Words
 

@@ -226,6 +226,20 @@
   color: var(--ink-soft);
 }
 
+/* Phones: the whole placeholder ("Ask about students, courses or majors")
+   fits beside the send button. The text a person types stays at 16 px. */
+@media (max-width: 899px) {
+  .composer input {
+    padding-inline: var(--space-3) calc(var(--tap) + var(--space-3));
+  }
+}
+
+@media (max-width: 479px) {
+  .composer input::placeholder {
+    font-size: var(--text-sm);
+  }
+}
+
 /* The send button is the composer's main button: the accent fill, round. */
 .send-button {
   position: absolute;
@@ -869,6 +883,17 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
+}
+
+/* The "Ask a question…" note (or the load error) sits above the cards with
+   the same gap the cards keep between themselves. */
+.state-empty + .grant-list,
+.state-error + .grant-list {
+  margin-top: var(--space-2);
+}
+
+.role-table-note {
+  margin-top: var(--space-2);
 }
 
 .grant-card {

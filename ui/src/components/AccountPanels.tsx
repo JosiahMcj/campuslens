@@ -4,9 +4,14 @@ import { findingLabel } from '../findingLabels'
 import { setPrefs, usePrefs, type Motion, type TextSize } from '../theme'
 
 /** What each human role may do, mirroring the API's role table (auth.ts). */
+/** The Explore line: every role but Financial Aid may ask it. */
+const ASK_ANYTHING = 'Ask any question about students, courses and majors (totals only)'
+
+/** What each human role may do, mirroring the API's role table (auth.ts). */
 const ROLE_ABILITIES: Record<Role, string[]> = {
   admin: [
     'Ask the approved questions',
+    ASK_ANYTHING,
     'Approve leadership decisions',
     'Read the audit log',
     'Manage datasets and users in Institution settings',
@@ -14,13 +19,15 @@ const ROLE_ABILITIES: Record<Role, string[]> = {
   ],
   executive: [
     'Ask the approved questions',
+    ASK_ANYTHING,
     'Approve leadership decisions',
     'Read the audit log',
     'Read the Financial Aid review queue',
   ],
-  staff: ['Read the briefing, the figures and their evidence'],
+  staff: ['Read the briefing, the figures and their evidence', ASK_ANYTHING],
   reviewer: [
     'Read the briefing, the figures and their evidence',
+    ASK_ANYTHING,
     'Read the audit log',
     'Read the Financial Aid review queue',
   ],
@@ -29,6 +36,10 @@ const ROLE_ABILITIES: Record<Role, string[]> = {
     'Work the Financial Aid review queue, with a status and a note for each student',
   ],
 }
+
+/** Under the People table: who sees instructor names in those answers. */
+export const INSTRUCTOR_NAMES_NOTE =
+  'Instructor names are shown to the executive and admin only.'
 
 const ROLE_ORDER: Role[] = ['admin', 'executive', 'staff', 'reviewer', 'aid']
 
@@ -320,6 +331,7 @@ export function DataAccessPanel({
           ))}
         </tbody>
       </table>
+      <p className="panel-text role-table-note">{INSTRUCTOR_NAMES_NOTE}</p>
     </div>
   )
 }

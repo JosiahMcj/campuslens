@@ -173,10 +173,14 @@ export function redactQuestion(question: string): string {
     .trim()
 }
 
-/** The honest source line, without the "(no model)" aside. */
+/** The honest source line: "Calculated directly from the records", or
+ * "Written by the Chief of Staff from the records" when the model reworded
+ * the computed answer. Older wordings read the same way. */
 export function sourceLabel(source: string | null): string | null {
   if (source === null) return null
-  return source.replace(/\s*\(no model\)\s*$/i, '').trim()
+  const text = source.replace(/\s*\(no model\)\s*$/i, '').trim()
+  if (/^Written from computed tables$/i.test(text)) return 'Calculated directly from the records'
+  return text.replace(/\bfrom computed tables$/i, 'from the records')
 }
 
 /** How the plan was made, for the "About this answer" detail. */
@@ -195,14 +199,39 @@ export function plannerLabel(planner: string | undefined): string | null {
 
 export const INSTRUCTOR_NOTE = 'Instructor results are shown to the executive and admin only.'
 
+/** True when a sentence of the answer already says who sees instructors. */
+function saysInstructorRule(response: ExploreResponse): boolean {
+  return response.answer.some((sentence) => /executive and admin/i.test(sentence.text))
+}
+
 /** The quiet line under the answer: the API's notes, plus the instructor
- * note when a step withheld instructor rows from this role. */
+ * note when a step withheld instructor rows from this role and no sentence
+ * says so already (the rule is said once). */
 export function answerNotes(response: ExploreResponse): string[] {
   const notes = (response.notes ?? []).map(displayText)
-  if (response.steps.some((step) => step.instructor_rows_withheld === true)) {
+  if (
+    response.steps.some((step) => step.instructor_rows_withheld === true) &&
+    !saysInstructorRule(response)
+  ) {
     notes.push(INSTRUCTOR_NOTE)
   }
   return [...new Set(notes)]
+}
+
+/**
+ * One label per thing read: a first and a last name read as one "name"
+ * ("Instructor name (fictional)"), and "X name" beside "X" ("Major name"
+ * beside "Major") is the same thing named twice. Every other field read
+ * keeps its own label ("Major each term", "Term of each section").
+ */
+export function dedupeLabels(labels: readonly string[]): string[] {
+  const merged = labels.map((label) => label.replace(/\b(?:first|last) name\b/i, 'name'))
+  const unique = [...new Set(merged)]
+  const lower = new Set(unique.map((label) => label.toLowerCase()))
+  return unique.filter((label) => {
+    const named = /^(.+) name$/i.exec(label)
+    return named === null || !lower.has(named[1].toLowerCase())
+  })
 }
 
 // --- Tables -----------------------------------------------------------------
@@ -210,20 +239,46 @@ export function answerNotes(response: ExploreResponse): string[] {
 /** The cell a sentence's suppressed figures read as. */
 export const SUPPRESSED = 'fewer than 10'
 
-/** The columns shown, by index: an id column is hidden when the row also
- * carries a name (instructors). */
-export function visibleColumns(step: ExploreStep): number[] {
-  const keys = step.table.columns.map((column) => column.key)
-  return keys.flatMap((key, index) =>
-    key === 'instructor' && keys.includes('name') ? [] : [index],
-  )
+/** Code columns and the name column a reader sees instead: an instructor
+ * id, a term code (202120), a major or college code. Each is hidden when its
+ * name is in the same table. */
+const CODE_COLUMNS: Record<string, string> = {
+  instructor: 'name',
+  term: 'term_name',
+  prior_term: 'prior_term_name',
+  major: 'major_name',
+  college: 'college_name',
 }
 
-/** The column a claim points at, moved off a hidden id column onto the
+function nameTwin(keys: readonly string[], key: string): string | null {
+  const twin = CODE_COLUMNS[key]
+  return twin !== undefined && keys.includes(twin) ? twin : null
+}
+
+/** The columns shown, by index: a code column is hidden when the row also
+ * carries its name (instructors, terms, majors, colleges), and the column
+ * that tells the rows apart (the first text column whose cells differ: the
+ * term in a course's trend, not the course repeated on every row) comes
+ * first, so it can stay in view while a narrow table scrolls sideways. */
+export function visibleColumns(step: ExploreStep): number[] {
+  const keys = step.table.columns.map((column) => column.key)
+  const shown = keys.flatMap((key, index) => (nameTwin(keys, key) !== null ? [] : [index]))
+  const rows = step.table.rows
+  const label = shown.find((index) => {
+    const cells = rows.map((row) => row[index] ?? null)
+    return (
+      cells.every((cell) => typeof cell === 'string') &&
+      (rows.length < 2 || new Set(cells).size > 1)
+    )
+  })
+  return label === undefined ? shown : [label, ...shown.filter((index) => index !== label)]
+}
+
+/** The column a claim points at, moved off a hidden code column onto the
  * row's name. */
 export function claimColumn(step: ExploreStep, column: string): string {
   const keys = step.table.columns.map((c) => c.key)
-  return column === 'instructor' && keys.includes('name') ? 'name' : column
+  return nameTwin(keys, column) ?? column
 }
 
 /** A table cell as text: whole numbers with thousands separators, negative
@@ -251,6 +306,27 @@ export type SentencePart =
   | { text: string }
   | { text: string; claim: ExploreClaim }
 
+/**
+ * A non-negative number rounded half up to `digits` decimals on its decimal
+ * text, as the API rounds it for a sentence (explore/answer.py
+ * reader_number): 2.615 -> "2.62", where `toFixed` gives the binary float's
+ * "2.61".
+ */
+export function roundHalfUp(magnitude: number, digits: number): string {
+  const text = String(magnitude)
+  if (!/^\d+(\.\d+)?$/.test(text)) return magnitude.toFixed(digits)
+  const [whole, fraction = ''] = text.split('.')
+  if (fraction.length <= digits) {
+    return digits === 0 ? whole : `${whole}.${fraction.padEnd(digits, '0')}`
+  }
+  // Integer arithmetic on the kept digits, plus one when the next digit is 5+.
+  const kept = BigInt(whole + fraction.slice(0, digits)) + (Number(fraction[digits]) >= 5 ? 1n : 0n)
+  const padded = kept.toString().padStart(digits + 1, '0')
+  return digits === 0
+    ? padded
+    : `${padded.slice(0, padded.length - digits)}.${padded.slice(padded.length - digits)}`
+}
+
 /** The ways the API writes one cell into a sentence, longest first. */
 function candidates(value: ExploreCell): string[] {
   if (value === null || typeof value === 'boolean') return []
@@ -261,7 +337,7 @@ function candidates(value: ExploreCell): string[] {
   const magnitude = Math.abs(value)
   const forms = new Set<string>([String(magnitude), magnitude.toLocaleString('en-US')])
   for (const digits of [1, 2, 3]) {
-    forms.add(magnitude.toFixed(digits))
+    forms.add(roundHalfUp(magnitude, digits))
     forms.add(
       magnitude.toLocaleString('en-US', {
         minimumFractionDigits: digits,
@@ -269,6 +345,8 @@ function candidates(value: ExploreCell): string[] {
       }),
     )
   }
+  // A percentage of 100 or more reads as a whole number ("grew 111%").
+  if (magnitude >= 100 && !Number.isInteger(magnitude)) forms.add(roundHalfUp(magnitude, 0))
   const out: string[] = []
   for (const form of forms) {
     const signed = value < 0 ? [`−${form}`, `-${form}`] : [form]

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import {
   answerNotes,
   cellDomId,
+  dedupeLabels,
   displayText,
   formatCell,
   linkSentence,
@@ -28,7 +29,8 @@ function readLabels(fields: readonly string[]): string[] {
   const rest = fields.filter((field) => FIELD_LABELS[normalizeField(field)] === undefined)
   // An unlisted field still reads as words, never as an id.
   const plain = fieldLabels(rest).map((label) => label.replace(/\bids?\b/gi, '').replace(/\s+/g, ' ').trim())
-  return [...new Set([...fieldLabels(known), ...plain])].filter(Boolean)
+  const labels = [...new Set([...fieldLabels(known), ...plain])].filter(Boolean)
+  return dedupeLabels(labels)
 }
 
 interface ExploreAnswerProps {
@@ -238,9 +240,9 @@ export function ExploreAnswer({
   if (response.refused) {
     return (
       <div className="explore-answer">
-        <div className="refusal-card" role="alert">
-          <h3>Refused</h3>
-          <p>{response.message ?? 'The Cabinet does not answer that question.'}</p>
+        <div className="explore-declined" role="status">
+          <h3>Not something the Cabinet answers</h3>
+          <p>{response.message ?? 'The Cabinet answers with totals only.'}</p>
           <p className="explore-recorded">
             The question and the refusal are recorded in the audit log.
             {onSeeAuditLog !== null && (
