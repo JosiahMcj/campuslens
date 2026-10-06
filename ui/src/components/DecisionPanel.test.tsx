@@ -170,6 +170,43 @@ describe('DecisionPanel — the governed execution step', () => {
 
     expect(html).toContain('no mailbox configured')
     expect(html).toContain('No mailbox is configured for Financial Aid')
+    // Staff are told where the mailbox is added and who adds it; no link.
+    expect(html).toContain(
+      'An administrator adds one in Institution settings, Offices, before anything can be sent.',
+    )
+    expect(html).not.toContain('href="/institution#inst-offices"')
+    expect(html).not.toContain('runbook')
+  })
+
+  it('gives an admin a link to Institution settings, Offices', () => {
+    const html = render(false, {
+      decision: APPROVED,
+      role: 'admin',
+      dispatches: ready({ ...DRAFT, office_contact: null }),
+    })
+
+    expect(html).toContain('No mailbox is configured for Financial Aid')
+    expect(html).toContain('href="/institution#inst-offices"')
+    expect(html).toContain('>Institution settings, Offices</a>')
+    expect(html).not.toContain('An administrator adds one')
+  })
+
+  it('tells an executive an administrator adds the mailbox', () => {
+    const html = render(true, {
+      decision: APPROVED,
+      role: 'executive',
+      dispatches: ready({ ...DRAFT, office_contact: null }),
+    })
+
+    expect(html).toContain('An administrator adds one in Institution settings, Offices')
+    expect(html).not.toContain('href="/institution#inst-offices"')
+  })
+
+  it('shows no mailbox hint once the office has a mailbox', () => {
+    const html = render(false, { decision: APPROVED, role: 'admin', dispatches: ready(DRAFT) })
+
+    expect(html).not.toContain('No mailbox is configured')
+    expect(html).toContain('&lt;financial-aid@example.edu&gt;')
   })
 
   it('shows who sent it, when, and through which provider — and no Send', () => {

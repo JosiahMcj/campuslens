@@ -38,6 +38,17 @@ interface DecisionPanelProps {
 }
 
 const COMPOSE_ROLES: readonly Role[] = ['staff', 'executive', 'admin']
+
+/** Institution settings, scrolled to its Offices section. */
+const OFFICES_HREF = '/institution#inst-offices'
+
+/** Open Institution settings in place: the app follows the address on
+ * popstate, so a pushState plus that event switches screens without a
+ * reload (the href still works on its own, e.g. in a new tab). */
+function openOfficesSettings(): void {
+  window.history.pushState(null, '', OFFICES_HREF)
+  window.dispatchEvent(new PopStateEvent('popstate'))
+}
 const SEND_ROLES: readonly Role[] = ['staff', 'admin']
 
 /** The finding ids in the message body render as evidence links, exactly
@@ -227,13 +238,29 @@ export function DecisionPanel({
                         The last send did not go through: {dispatch.error}
                       </p>
                     )}
-                    {officeContact === null && (
-                      <p className="hint">
-                        No mailbox is configured for {dispatch.to_office}. An
-                        administrator must add one first (office contacts, in the runbook)
-                        before anything can be sent.
-                      </p>
-                    )}
+                    {officeContact === null &&
+                      (role === 'admin' ? (
+                        <p className="hint">
+                          No mailbox is configured for {dispatch.to_office}. Add
+                          one in{' '}
+                          <a
+                            href={OFFICES_HREF}
+                            onClick={(event) => {
+                              event.preventDefault()
+                              openOfficesSettings()
+                            }}
+                          >
+                            Institution settings, Offices
+                          </a>{' '}
+                          before anything can be sent.
+                        </p>
+                      ) : (
+                        <p className="hint">
+                          No mailbox is configured for {dispatch.to_office}. An
+                          administrator adds one in Institution settings,
+                          Offices, before anything can be sent.
+                        </p>
+                      ))}
                     {canSend ? (
                       <button
                         type="button"

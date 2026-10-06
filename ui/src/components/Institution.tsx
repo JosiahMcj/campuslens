@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { roleDisplayName, type Role } from '../auth'
 import {
@@ -11,6 +11,16 @@ import {
   type DatasetRow,
   type UploadResult,
 } from '../datasets'
+import {
+  draftRowsFrom,
+  fetchDecisionOffices,
+  fetchOffices,
+  officesForSave,
+  saveOffices,
+  validateOfficeRows,
+  type OfficeDraftRow,
+  type OfficeRowErrors,
+} from '../offices'
 import { formatTimestamp, type LoadState } from '../states'
 import {
   addUser,
@@ -52,12 +62,24 @@ type UploadState =
   | { kind: 'done'; result: Extract<UploadResult, { ok: true }> }
   | { kind: 'failed'; errors: string[] }
 
+type OfficeSaveState =
+  | { kind: 'idle' }
+  | { kind: 'invalid' }
+  | { kind: 'saving' }
+  | { kind: 'saved'; count: number }
+  | { kind: 'failed'; message: string; errors: string[] }
+
 const USER_ROLES: readonly Role[] = ['admin', 'executive', 'staff', 'reviewer']
+
+/** The section anchor the decision panel links to. */
+export const OFFICES_SECTION_ID = 'inst-offices'
 
 /**
  * The Institution area (admin only): the institution's users with their
  * roles and status (with the one-time password of a newly added user shown
- * once in a callout), the institution's datasets with their row counts and
+ * once in a callout), the office address book approved follow-ups are sent
+ * to (one mailbox per office, edited inline and saved whole), the
+ * institution's datasets with their row counts and
  * active and fictional flags, an upload form (JSON only, with the API's
  * validation errors listed line by line and the counseling flag shown as
  * information), and activate / soft delete / disable / enable / role
@@ -95,6 +117,108 @@ export function Institution({
   const [userBusy, setUserBusy] = useState(false)
   const [userError, setUserError] = useState<string | null>(null)
 
+  const [officesState, setOfficesState] = useState<LoadState<null>>({ kind: 'loading' })
+  const [officeRows, setOfficeRows] = useState<OfficeDraftRow[]>([])
+  const [decisionOffices, setDecisionOffices] = useState<string[]>([])
+  const [officeErrors, setOfficeErrors] = useState<Record<string, OfficeRowErrors>>({})
+  const [officeSave, setOfficeSave] = useState<OfficeSaveState>({ kind: 'idle' })
+  const newOfficeCount = useRef(0)
+  const focusKey = useRef<string | null>(null)
+
+  const loadOffices = useCallback(async () => {
+    setOfficesState({ kind: 'loading' })
+    try {
+      const [book, routed] = await Promise.all([fetchOffices(), fetchDecisionOffices()])
+      setDecisionOffices(routed)
+      setOfficeRows(draftRowsFrom(book, routed))
+      setOfficeErrors({})
+      setOfficesState({ kind: 'ready', data: null })
+    } catch (error) {
+      setOfficesState({
+        kind: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }, [])
+
+  const editOfficeRow = useCallback(
+    (key: string, field: 'office' | 'email', value: string) => {
+      setOfficeRows((rows) =>
+        rows.map((row) => (row.key === key ? { ...row, [field]: value } : row)),
+      )
+      setOfficeErrors((errors) => {
+        if (errors[key]?.[field] === undefined) return errors
+        const next = { ...errors, [key]: { ...errors[key], [field]: undefined } }
+        if (next[key].office === undefined && next[key].email === undefined) delete next[key]
+        return next
+      })
+      setOfficeSave((state) => (state.kind === 'saving' ? state : { kind: 'idle' }))
+    },
+    [],
+  )
+
+  const removeOfficeRow = useCallback((row: OfficeDraftRow) => {
+    // An office a decision routes to stays listed, without its mailbox, so
+    // the gap stays visible; any other row leaves the book on the next Save.
+    setOfficeRows((rows) =>
+      row.known
+        ? rows.map((r) => (r.key === row.key ? { ...r, email: '' } : r))
+        : rows.filter((r) => r.key !== row.key),
+    )
+    setOfficeErrors((errors) => {
+      if (errors[row.key] === undefined) return errors
+      const next = { ...errors }
+      delete next[row.key]
+      return next
+    })
+    setOfficeSave({ kind: 'idle' })
+  }, [])
+
+  const addOfficeRow = useCallback(() => {
+    newOfficeCount.current += 1
+    const key = `new:${newOfficeCount.current}`
+    focusKey.current = key
+    setOfficeRows((rows) => [...rows, { key, office: '', email: '', known: false }])
+    setOfficeSave({ kind: 'idle' })
+  }, [])
+
+  useEffect(() => {
+    if (focusKey.current === null) return
+    const input = document.getElementById(`office-name-${focusKey.current}`)
+    focusKey.current = null
+    input?.focus()
+  }, [officeRows])
+
+  const submitOffices = useCallback(async () => {
+    if (officeSave.kind === 'saving') return
+    const errors = validateOfficeRows(officeRows)
+    setOfficeErrors(errors)
+    if (Object.keys(errors).length > 0) {
+      setOfficeSave({ kind: 'invalid' })
+      return
+    }
+    setOfficeSave({ kind: 'saving' })
+    let result: Awaited<ReturnType<typeof saveOffices>>
+    try {
+      result = await saveOffices(officesForSave(officeRows))
+    } catch (error) {
+      // A network failure, or a session that ended (the app returns to
+      // the sign-in screen on its own in that case).
+      setOfficeSave({
+        kind: 'failed',
+        message: error instanceof Error ? error.message : 'the server could not be reached.',
+        errors: [],
+      })
+      return
+    }
+    if (result.ok) {
+      setOfficeRows(draftRowsFrom(result.offices, decisionOffices))
+      setOfficeSave({ kind: 'saved', count: result.offices.length })
+    } else {
+      setOfficeSave({ kind: 'failed', message: result.message, errors: result.errors })
+    }
+  }, [officeSave.kind, officeRows, decisionOffices])
+
   const loadUsers = useCallback(async () => {
     try {
       setUsersState({ kind: 'ready', data: await fetchUsers() })
@@ -121,7 +245,16 @@ export function Institution({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load()
     void loadUsers()
-  }, [load, loadUsers])
+    void loadOffices()
+  }, [load, loadUsers, loadOffices])
+
+  // Arriving from the decision panel's link (/institution#inst-offices):
+  // once the section has rendered, bring it into view.
+  const officesReady = officesState.kind === 'ready'
+  useEffect(() => {
+    if (!officesReady || window.location.hash !== `#${OFFICES_SECTION_ID}`) return
+    document.getElementById(OFFICES_SECTION_ID)?.scrollIntoView?.({ block: 'start' })
+  }, [officesReady])
 
   const pickFile = useCallback((files: FileList | null) => {
     setFileError(null)
@@ -458,6 +591,199 @@ export function Institution({
               Shown once. Share it privately; it is not stored.
             </p>
           </div>
+        )}
+      </section>
+
+      <section id={OFFICES_SECTION_ID} aria-labelledby="inst-offices-heading">
+        <h2 id="inst-offices-heading">Offices</h2>
+        <p className="hint">
+          Where approved follow-ups are sent. Each office gets one mailbox.
+          Nothing is sent until a staff member presses Send.
+        </p>
+        {officesState.kind === 'loading' && (
+          <p className="status-line">Loading the office contacts…</p>
+        )}
+        {officesState.kind === 'error' && (
+          <div className="state-panel error-panel" role="alert">
+            <h3>The office contacts could not be loaded</h3>
+            <p>{officesState.message}</p>
+            <button type="button" onClick={() => void loadOffices()}>
+              Retry
+            </button>
+          </div>
+        )}
+        {officesState.kind === 'ready' && (
+          <form
+            className="office-book"
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault()
+              void submitOffices()
+            }}
+          >
+            {officeRows.length === 0 ? (
+              <p className="status-line office-empty">
+                No office has a mailbox yet. Add the first one below.
+              </p>
+            ) : (
+              <table className="office-table dataset-table office-book-table">
+                <caption>Office mailboxes for {institutionName}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Office</th>
+                    <th scope="col">Mailbox</th>
+                    <th scope="col">
+                      <span className="visually-hidden">Remove</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {officeRows.map((row, index) => {
+                    const errors = officeErrors[row.key] ?? {}
+                    const isNew = row.key.startsWith('new:')
+                    const label = row.office.trim() !== '' ? row.office.trim() : `new office ${index + 1}`
+                    const officeErrorId = `office-name-error-${row.key}`
+                    const emailErrorId = `office-email-error-${row.key}`
+                    const busy = officeSave.kind === 'saving'
+                    return (
+                      <tr key={row.key}>
+                        <td data-label="Office">
+                          {isNew ? (
+                            <>
+                              <input
+                                id={`office-name-${row.key}`}
+                                type="text"
+                                autoComplete="off"
+                                aria-label={`Office name, row ${index + 1}`}
+                                aria-invalid={errors.office !== undefined}
+                                aria-describedby={
+                                  errors.office !== undefined ? officeErrorId : undefined
+                                }
+                                placeholder="Office name"
+                                value={row.office}
+                                disabled={busy}
+                                onChange={(event) =>
+                                  editOfficeRow(row.key, 'office', event.target.value)
+                                }
+                              />
+                              {errors.office !== undefined && (
+                                <p className="field-error" id={officeErrorId}>
+                                  {errors.office}
+                                </p>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {row.office}
+                              {row.known && row.email.trim() === '' && (
+                                <span className="dataset-flag office-gap">
+                                  No mailbox yet. Approved follow-ups go here.
+                                </span>
+                              )}
+                              {errors.office !== undefined && (
+                                <p className="field-error" id={officeErrorId}>
+                                  {errors.office}
+                                </p>
+                              )}
+                            </>
+                          )}
+                        </td>
+                        <td data-label="Mailbox">
+                          <input
+                            type="email"
+                            inputMode="email"
+                            autoComplete="off"
+                            aria-label={`Mailbox for ${label}`}
+                            aria-invalid={errors.email !== undefined}
+                            aria-describedby={
+                              errors.email !== undefined ? emailErrorId : undefined
+                            }
+                            placeholder="office@example.edu"
+                            value={row.email}
+                            disabled={busy}
+                            onChange={(event) =>
+                              editOfficeRow(row.key, 'email', event.target.value)
+                            }
+                          />
+                          {errors.email !== undefined && (
+                            <p className="field-error" id={emailErrorId}>
+                              {errors.email}
+                            </p>
+                          )}
+                        </td>
+                        <td className="office-row-actions">
+                          {(!row.known || row.email !== '') && (
+                            <button
+                              type="button"
+                              className="secondary"
+                              aria-label={`Remove the mailbox for ${label}`}
+                              disabled={busy}
+                              onClick={() => removeOfficeRow(row)}
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+            <div className="office-book-actions">
+              <button
+                type="button"
+                className="secondary"
+                disabled={officeSave.kind === 'saving'}
+                onClick={addOfficeRow}
+              >
+                Add an office
+              </button>
+              <button
+                type="submit"
+                className="primary-button"
+                disabled={officeSave.kind === 'saving'}
+                aria-busy={officeSave.kind === 'saving'}
+              >
+                {officeSave.kind === 'saving' ? (
+                  <>
+                    <span className="save-spinner" aria-hidden="true" />
+                    Saving…
+                  </>
+                ) : (
+                  'Save the office contacts'
+                )}
+              </button>
+            </div>
+            {officeSave.kind === 'invalid' && (
+              <p className="error-line" role="alert">
+                Nothing was saved. Fix the marked fields, then save again.
+              </p>
+            )}
+            {officeSave.kind === 'saved' && (
+              <p className="office-saved" role="status">
+                Saved. {officeSave.count === 1 ? '1 office has' : `${officeSave.count} offices have`}{' '}
+                a mailbox. The audit log records the change.
+              </p>
+            )}
+            {officeSave.kind === 'failed' && (
+              <div className="upload-errors" role="alert">
+                <p>The office contacts were not saved: {officeSave.message}</p>
+                {officeSave.errors.length > 0 && (
+                  <ul>
+                    {officeSave.errors.map((problem, index) => (
+                      <li key={index}>{problem}</li>
+                    ))}
+                  </ul>
+                )}
+                <p className="hint">
+                  The address book is unchanged. Check the entries and press
+                  Save again. If it keeps failing, reload the page and try
+                  once more.
+                </p>
+              </div>
+            )}
+          </form>
         )}
       </section>
 

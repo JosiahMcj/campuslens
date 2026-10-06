@@ -1623,3 +1623,157 @@ details[open]::details-content {
 .password-callout .hint {
   margin: 12px 0 0;
 }
+
+/* --- The Offices section (the dispatch address book, edited inline) ---------*/
+
+.office-book-table {
+  width: 100%;
+}
+
+.office-book-table input {
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.89rem;
+  width: 100%;
+  min-width: 12rem;
+  padding: 4px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.office-book-table input:focus {
+  border-color: var(--navy);
+}
+
+.office-book-table input[aria-invalid='true'] {
+  border-color: var(--alert);
+}
+
+.office-book-table .office-row-actions {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.office-book-table .office-row-actions button {
+  padding: 4px 12px;
+  font-size: 0.89rem;
+}
+
+.office-gap {
+  color: var(--gold);
+}
+
+.field-error {
+  margin: 4px 0 0;
+  font-size: 0.89rem;
+  color: var(--alert);
+  overflow-wrap: anywhere;
+}
+
+.office-book-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.office-book-actions .primary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.office-book-actions button:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.save-spinner {
+  width: 0.9em;
+  height: 0.9em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: save-spin 0.8s linear infinite;
+}
+
+@keyframes save-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .save-spinner {
+    animation: none;
+    border-right-color: currentColor;
+    opacity: 0.6;
+  }
+}
+
+.office-saved {
+  margin: 12px 0 0;
+  color: var(--navy);
+  font-weight: 600;
+}
+
+/* Phone width: each office becomes a stacked card, labels above inputs. */
+@media (max-width: 640px) {
+  .office-book-table,
+  .office-book-table caption,
+  .office-book-table tbody,
+  .office-book-table tr,
+  .office-book-table td {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .office-book-table caption {
+    padding: 8px 12px 0;
+  }
+
+  .office-book-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  .office-book-table tr {
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .office-book-table tr:last-child {
+    border-bottom: none;
+  }
+
+  .office-book-table td,
+  .office-book-table tr:last-child td {
+    border: none;
+  }
+
+  .office-book-table td[data-label='Mailbox']::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.89rem;
+    color: var(--ink-soft);
+    margin-bottom: 4px;
+  }
+
+  .office-book-table input {
+    min-width: 0;
+  }
+
+  .office-book-table .office-row-actions {
+    width: 100%;
+    padding-top: 0;
+  }
+
+  .office-book-table .office-row-actions:empty {
+    display: none;
+  }
+}
