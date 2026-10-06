@@ -1,21 +1,70 @@
-/* Golden Eagle AI Cabinet dashboard. Visual authority: DESIGN.md —
-   a printed briefing (document serif) with an instrument rail (system sans). */
+/* Golden Eagle AI Cabinet. Visual authority: DESIGN.md at the repo root.
+
+   This is the one token block for the whole interface: every colour, type
+   step, spacing step, radius and shadow in ui/src is read from here, and no
+   other stylesheet declares a token. Light is the default; the `dark` class
+   on <html> (set only from Settings or the theme switch, see theme.ts)
+   swaps the colours. Sizes are in rem, so the 16 px root (18 px at 1200 px
+   and wider, for the projector) scales everything together, the sidebar
+   included. */
 
 :root {
-  --paper: #f7f6f2;
-  --rail: #eef0f3;
-  --ink: #1b2230;
-  --ink-soft: #4e5566;
-  --rule: #d8dbe1;
-  --navy: #1f3a5f;
-  --gold: #8a6d1f;
-  --gold-wash: #fbf7ea;
-  --alert: #8c2b1d;
+  /* Colour (DESIGN.md, Colour) */
+  --paper: #ffffff;
+  --rail: #f7f7f8;
+  --surface: #f7f7f8;
+  --surface-hover: #ececec;
+  --surface-pressed: #e3e3e3;
+  --ink: #212121;
+  --ink-soft: #595959;
+  --rule: #e3e3e3;
+  --rule-strong: #cdcdcd;
+  --navy: #126e6b;
+  --navy-hover: #0f5d5b;
+  --navy-pressed: #0c4d4b;
+  --on-navy: #ffffff;
+  --gold: #b45309;
+  --gold-hover: #9a4708;
+  --gold-pressed: #823c07;
+  --on-gold: #ffffff;
+  --gold-wash: #fffbeb;
+  --alert: #b91c1c;
+  --alert-wash: #fef2f2;
+  --navy-wash: #e7f1f0;
+  --scrim: rgb(0 0 0 / 0.35);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 4px 12px rgb(0 0 0 / 0.06);
+  --shadow-float: 0 12px 32px rgb(0 0 0 / 0.16), 0 0 0 1px var(--rule);
+  --shadow-panel: -8px 0 32px rgb(0 0 0 / 0.2);
+  --shadow-drawer: 8px 0 32px rgb(0 0 0 / 0.2);
 
-  --document: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
-  --instrument: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Type (DESIGN.md, Type) */
+  --font: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --text-3xl: 2.25rem;
 
-  font-family: var(--instrument);
+  /* Space and shape (DESIGN.md, Space and shape) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --radius-control: 8px;
+  --radius-surface: 12px;
+  --tap: 2.75rem; /* 44 px: the smallest control on a phone, and every field */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --sidebar-ease: var(--ease-out);
+  --panel-motion: 200ms;
+
+  color-scheme: light;
+  font-family: var(--font);
   font-size: 16px;
   line-height: 1.5;
   color: var(--ink);
@@ -26,6 +75,37 @@
   interpolate-size: allow-keywords;
 }
 
+.dark {
+  --paper: #212121;
+  --rail: #171717;
+  --surface: #2f2f2f;
+  --surface-hover: #393939;
+  --surface-pressed: #474747;
+  --ink: #ececec;
+  --ink-soft: #b4b4b4;
+  --rule: #393939;
+  --rule-strong: #595959;
+  --navy: #41a79d;
+  --navy-hover: #56b5ab;
+  --navy-pressed: #6cc2b8;
+  --on-navy: #171717;
+  --gold: #f59e0b;
+  --gold-hover: #f7ad35;
+  --gold-pressed: #f9bd5c;
+  --on-gold: #171717;
+  --gold-wash: #2a2419;
+  --alert: #f87171;
+  --alert-wash: #2e1f1f;
+  --navy-wash: #1d2f2d;
+  --scrim: rgb(0 0 0 / 0.5);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 12px rgb(0 0 0 / 0.25);
+  --shadow-float: 0 12px 32px rgb(0 0 0 / 0.45), 0 0 0 1px var(--rule);
+  --shadow-panel: -8px 0 32px rgb(0 0 0 / 0.45);
+  --shadow-drawer: 8px 0 32px rgb(0 0 0 / 0.45);
+
+  color-scheme: dark;
+}
+
 /* Room scale: projected at 1400 px from three metres, every rem scales up. */
 @media (min-width: 1200px) {
   :root {
@@ -34,11 +114,13 @@
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--navy) 20%, var(--paper));
+  background: color-mix(in srgb, var(--navy) 25%, var(--paper));
 }
 
 body {
   margin: 0;
+  background: var(--paper);
+  color: var(--ink);
 }
 
 /* One focus ring — 2px navy, 2px offset — on every control. */
@@ -58,14 +140,14 @@ a {
 }
 
 code {
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 0.85em;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
 }
 
 button {
   font: inherit;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   transition:
     background-color 150ms ease-out,
     border-color 150ms ease-out,
@@ -77,55 +159,293 @@ button:disabled {
   cursor: default;
 }
 
-p {
-  margin: 12px 0 0;
+/* --- Buttons: exactly four looks (DESIGN.md, Components) ---------------------
+   Main: filled accent, one per screen or panel. Secondary: outlined.
+   Destructive: outlined alert, always confirmed inline. Approve: filled gold,
+   the leadership decision only. The .btn-* names are the shared ones; the
+   older class names on the right of each list are aliases of the same look.
+   Text on a filled button is --on-navy / --on-gold: white in light, dark ink
+   in dark, the only foregrounds that reach 4.5:1 on both fills. */
+
+.btn-primary,
+.btn-secondary,
+.btn-danger,
+.btn-approve,
+.primary-button,
+.question-row button[type='submit'],
+.dispatch-send,
+.panel-action,
+.error-panel button,
+button.secondary,
+.close-button,
+.dispatch-prepare,
+.danger-button,
+.panel-danger,
+.approve-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
 }
 
-/* Weights 400 and 600 only, <strong> included. */
+.btn-primary,
+.primary-button,
+.question-row button[type='submit'],
+.dispatch-send,
+.panel-action {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: var(--on-navy);
+}
+
+.btn-primary:hover:not(:disabled),
+.primary-button:hover:not(:disabled),
+.question-row button[type='submit']:hover:not(:disabled),
+.dispatch-send:hover:not(:disabled),
+.panel-action:hover:not(:disabled) {
+  background: var(--navy-hover);
+  border-color: var(--navy-hover);
+}
+
+.btn-primary:active:not(:disabled),
+.primary-button:active:not(:disabled),
+.question-row button[type='submit']:active:not(:disabled),
+.dispatch-send:active:not(:disabled),
+.panel-action:active:not(:disabled) {
+  background: var(--navy-pressed);
+  border-color: var(--navy-pressed);
+}
+
+.btn-secondary,
+button.secondary,
+.close-button,
+.dispatch-prepare,
+.error-panel button {
+  background: transparent;
+  border-color: var(--rule-strong);
+  color: var(--ink);
+}
+
+.btn-secondary:hover:not(:disabled),
+button.secondary:hover:not(:disabled),
+.close-button:hover:not(:disabled),
+.dispatch-prepare:hover:not(:disabled),
+.error-panel button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.btn-secondary:active:not(:disabled),
+button.secondary:active:not(:disabled),
+.close-button:active:not(:disabled),
+.dispatch-prepare:active:not(:disabled),
+.error-panel button:active:not(:disabled) {
+  background: var(--surface-pressed);
+}
+
+.btn-danger,
+.danger-button,
+.panel-danger {
+  background: transparent;
+  border-color: var(--alert);
+  color: var(--alert);
+}
+
+.btn-danger:hover:not(:disabled),
+.danger-button:hover:not(:disabled),
+.panel-danger:hover:not(:disabled) {
+  background: var(--alert-wash);
+}
+
+.btn-danger:active:not(:disabled),
+.danger-button:active:not(:disabled),
+.panel-danger:active:not(:disabled) {
+  background: color-mix(in srgb, var(--alert) 18%, var(--paper));
+}
+
+.btn-approve,
+.approve-button {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--on-gold);
+}
+
+.btn-approve:hover:not(:disabled),
+.approve-button:hover:not(:disabled) {
+  background: var(--gold-hover);
+  border-color: var(--gold-hover);
+}
+
+.btn-approve:active:not(:disabled),
+.approve-button:active:not(:disabled) {
+  background: var(--gold-pressed);
+  border-color: var(--gold-pressed);
+}
+
+/* A working button: a spinner beside its working label ("Saving…"). */
+[aria-busy='true'] {
+  cursor: progress;
+}
+
+.spinner,
+.save-spinner {
+  flex: none;
+  width: 1em;
+  height: 1em;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: save-spin 0.8s linear infinite;
+}
+
+@keyframes save-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner,
+  .save-spinner {
+    animation: none;
+    border-right-color: currentColor;
+    opacity: 0.6;
+  }
+}
+
+/* --- Fields: 44 px tall, label above, error below (DESIGN.md, Inputs) --------
+   .field is the shared look; the older selectors below are aliases. */
+
+.field,
+.login-panel form input,
+.user-table select,
+.add-user-row select,
+.add-user-row input,
+.office-book-table input,
+.counseling-auth-fields input,
+.aid-edit select,
+.aid-edit textarea {
+  box-sizing: border-box;
+  min-height: var(--tap);
+  padding: var(--space-2) var(--space-3);
+  font: inherit;
+  font-size: var(--text-md);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-control);
+}
+
+.field:focus,
+.login-panel form input:focus,
+.user-table select:focus,
+.add-user-row select:focus,
+.add-user-row input:focus,
+.office-book-table input:focus,
+.counseling-auth-fields input:focus,
+.aid-edit select:focus,
+.aid-edit textarea:focus {
+  border-color: var(--navy);
+}
+
+.field[aria-invalid='true'],
+.login-panel form input[aria-invalid='true'],
+.add-user-row input[aria-invalid='true'],
+.office-book-table input[aria-invalid='true'],
+.counseling-auth-fields input[aria-invalid='true'],
+.aid-edit textarea[aria-invalid='true'] {
+  border-color: var(--alert);
+}
+
+::placeholder {
+  color: var(--ink-soft);
+  opacity: 1;
+}
+
+/* Every select and text field is at least 44 px tall. */
+select,
+input:not([type='checkbox'], [type='radio'], [type='file'], [type='hidden']) {
+  min-height: var(--tap);
+  box-sizing: border-box;
+}
+
+/* "Skip to question": hidden until focused, then above everything. */
+.skip-link {
+  position: fixed;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 100;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+  color: var(--navy);
+  font-weight: 600;
+  box-shadow: var(--shadow-float);
+  transform: translateY(calc(-100% - var(--space-4)));
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: none;
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+}
+
+p {
+  margin: var(--space-3) 0 0;
+}
+
+/* Weights 400, 500 and 600 only, <strong> included. */
 strong,
 b {
   font-weight: 600;
 }
 
-/* Headings are the document's; h4 lives only on instrument surfaces. */
+/* Headings: one family, the ink colour, line height 1.25. */
 h1,
 h2,
-h3 {
-  font-family: var(--document);
-  color: var(--navy);
-  line-height: 1.2;
+h3,
+h4 {
+  font-family: var(--font);
+  color: var(--ink);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
   text-wrap: balance;
 }
 
 h1 {
-  font-size: 1.8rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: var(--text-2xl);
   margin: 0;
 }
 
 h2 {
-  font-size: 1.42rem;
-  font-weight: 600;
-  margin: 0 0 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--rule);
+  font-size: var(--text-xl);
+  margin: 0 0 var(--space-3);
 }
 
 h3 {
-  font-size: 1.27rem;
-  font-weight: 600;
-  margin: 16px 0 8px;
+  font-size: var(--text-lg);
+  margin: var(--space-4) 0 var(--space-2);
 }
 
 h4 {
-  font-size: 1rem;
-  font-weight: 600;
-  margin: 0 0 4px;
+  font-size: var(--text-md);
+  letter-spacing: 0;
+  margin: 0 0 var(--space-1);
 }
 
 section {
-  margin-top: 32px;
+  margin-top: var(--space-6);
 }
 
 .visually-hidden {
@@ -145,7 +465,7 @@ section {
 .page {
   max-width: 68ch;
   margin-inline: auto;
-  padding: 24px 16px 48px;
+  padding: var(--space-5) var(--space-4) var(--space-7);
 }
 
 /* On one column the rail wrappers vanish and their children flow in DOM
@@ -164,9 +484,9 @@ section {
       'header header'
       'question question'
       'doc rail';
-    column-gap: 48px;
+    column-gap: var(--space-7);
     justify-content: center;
-    padding: 32px 24px 48px;
+    padding: var(--space-6) var(--space-5) var(--space-7);
   }
 
   .page-header {
@@ -184,10 +504,10 @@ section {
   .rail {
     display: block;
     grid-area: rail;
-    margin-top: 32px;
+    margin-top: var(--space-6);
     background: var(--rail);
-    border-radius: 8px;
-    padding: 16px;
+    border-radius: var(--radius-control);
+    padding: var(--space-4);
   }
 
   .rail-inner {
@@ -195,7 +515,7 @@ section {
     top: 24px;
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: var(--space-5);
   }
 
   /* The rail shows the figures first; the DOM keeps the task cards ahead. */
@@ -211,18 +531,17 @@ section {
 
 /* The product name lives at the top of the rail, not above the h1. */
 .rail-masthead {
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
   color: var(--ink-soft);
-  margin: 24px 0 0;
+  margin: var(--space-5) 0 0;
 }
 
 /* --- Header --------------------------------------------------------------*/
 
 .page-header .lede {
-  font-family: var(--document);
   color: var(--ink-soft);
   max-width: 68ch;
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
   text-wrap: pretty;
 }
 
@@ -230,104 +549,315 @@ section {
 
 .question-bar form label {
   display: block;
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
   color: var(--ink-soft);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .question-row {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 
 .question-row input {
   flex: 1 1 22rem;
-  font: inherit;
-  padding: 8px 12px;
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  background: var(--rail);
-  color: var(--ink);
-}
-
-.question-row input:focus {
-  border-color: var(--navy);
-}
-
-.question-row input::placeholder {
-  color: var(--ink-soft);
-}
-
-.question-row button[type='submit'] {
-  background: var(--navy);
-  color: var(--paper);
-  border: 1px solid var(--navy);
-  padding: 8px 16px;
-  font-weight: 600;
-}
-
-.question-row button[type='submit']:hover {
-  background: color-mix(in srgb, var(--navy), black 15%);
-}
-
-.question-row button[type='submit']:active {
-  background: color-mix(in srgb, var(--navy), black 25%);
-}
-
-button.secondary {
-  background: transparent;
-  color: var(--navy);
-  border: 1px solid var(--navy);
-  padding: 8px 16px;
-}
-
-button.secondary:hover {
-  background: color-mix(in srgb, var(--navy) 8%, transparent);
-}
-
-button.secondary:active {
-  background: color-mix(in srgb, var(--navy) 14%, transparent);
 }
 
 .hint {
   color: var(--ink-soft);
-  font-size: 0.89rem;
-  font-family: var(--instrument);
+  font-size: var(--text-sm);
 }
 
 .status-line {
   color: var(--ink-soft);
   font-style: italic;
-  font-family: var(--instrument);
 }
 
 .error-line {
   color: var(--alert);
-  font-family: var(--instrument);
 }
 
 /* Refusals and the unavailable state share the alert rule, never gold. */
 .refusal-card,
 .model-unavailable {
-  margin-top: 16px;
-  padding: 12px 16px;
-  background: var(--paper);
-  border: 1px solid var(--alert);
-  border-radius: 8px;
-  font-family: var(--instrument);
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--alert-wash);
+  border: 1px solid color-mix(in srgb, var(--alert) 45%, var(--rule));
+  border-radius: var(--radius-control);
 }
 
 .refusal-card h3,
 .model-unavailable h3 {
-  margin: 0 0 8px;
-  font-size: 1rem;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-md);
   color: var(--alert);
 }
 
 .technical-detail {
-  margin-top: 8px;
+  margin-top: var(--space-2);
   color: var(--ink-soft);
+}
+
+/* --- Shared states: loading, empty, error (every panel and list) ------------
+   .skeleton-line   one shimmering placeholder line (add .short for 55 %)
+   .state-empty     says what to do next
+   .state-error     a friendly line and a Retry button (.btn-primary inside) */
+
+.skeleton-line {
+  display: block;
+  height: 1em;
+  margin: 0 0 var(--space-2);
+  border-radius: var(--radius-control);
+  background: linear-gradient(
+    90deg,
+    var(--surface) 25%,
+    var(--surface-hover) 50%,
+    var(--surface) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+
+.skeleton-line.short {
+  width: 55%;
+}
+
+.state-empty,
+.state-error {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+  color: var(--ink-soft);
+}
+
+.state-error {
+  border-color: color-mix(in srgb, var(--alert) 45%, var(--rule));
+  background: var(--alert-wash);
+  color: var(--ink);
+}
+
+.state-empty > :first-child,
+.state-error > :first-child {
+  margin-top: 0;
+}
+
+.state-error p,
+.state-empty p {
+  margin: 0;
+}
+
+.state-error .error-line {
+  color: var(--alert);
+  font-weight: 500;
+}
+
+.state-empty > button,
+.state-error > button,
+.state-empty .state-actions,
+.state-error .state-actions {
+  margin-top: var(--space-3);
+}
+
+.state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* --- Shared layouts for other groups -----------------------------------------*/
+
+/* .kv: a definition list of label/value pairs. Long values wrap instead of
+   widening the panel; under 400 px each label sits above its value. */
+.kv {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+
+.kv dt {
+  font-weight: 600;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.kv dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 399px) {
+  .kv {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0;
+  }
+
+  .kv dd + dt {
+    margin-top: var(--space-2);
+  }
+}
+
+/* .stack-table: a full-width table that becomes stacked cards under 640 px.
+   Each cell carries data-label="Column name"; on a phone the row is a card
+   and every cell reads "label: value". A cell with data-label="" (actions)
+   shows no label. */
+.stack-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.stack-table caption {
+  text-align: start;
+  color: var(--ink-soft);
+  margin-bottom: var(--space-2);
+}
+
+.stack-table th,
+.stack-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--rule);
+  text-align: start;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.stack-table thead th {
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.stack-table thead th:first-child {
+  border-top-left-radius: var(--radius-control);
+}
+
+.stack-table thead th:last-child {
+  border-top-right-radius: var(--radius-control);
+}
+
+.stack-table tbody tr:last-child > * {
+  border-bottom: none;
+}
+
+@media (max-width: 639px) {
+  .stack-table,
+  .stack-table tbody,
+  .stack-table tr,
+  .stack-table th,
+  .stack-table td {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .stack-table {
+    border: none;
+  }
+
+  .stack-table caption {
+    display: block;
+  }
+
+  .stack-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .stack-table tbody tr {
+    margin-bottom: var(--space-3);
+    padding: var(--space-2) 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-surface);
+    background: var(--paper);
+  }
+
+  .stack-table tbody tr > * {
+    display: grid;
+    grid-template-columns: 7rem minmax(0, 1fr);
+    gap: var(--space-3);
+    padding: var(--space-1) var(--space-3);
+    border-bottom: none;
+  }
+
+  .stack-table tbody tr > [data-label]::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+
+  .stack-table tbody tr > [data-label='']::before,
+  .stack-table tbody tr > :not([data-label])::before {
+    content: none;
+  }
+
+  .stack-table tbody tr > [data-label=''],
+  .stack-table tbody tr > :not([data-label]) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 399px) {
+  .stack-table tbody tr > * {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+}
+
+/* .fold: a details/summary that hides long content behind "Show …". */
+.fold {
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--rule);
+}
+
+.fold > summary {
+  min-height: var(--tap);
+  padding: 0 var(--space-1);
+  gap: var(--space-2);
+  font-weight: 500;
+  border-radius: var(--radius-control);
+}
+
+.fold > summary:hover {
+  background: var(--surface-hover);
+}
+
+.fold > summary::before {
+  content: '';
+  flex: none;
+  width: 0.45em;
+  height: 0.45em;
+  margin-inline: 0.2em 0.1em;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.fold[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.fold > :not(summary) {
+  margin-top: var(--space-2);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fold > summary::before {
+    transition: transform 200ms ease-out;
+  }
 }
 
 /* --- Disclosure widgets: drawn chevron, 200 ms ease-out open --------------*/
@@ -337,8 +867,9 @@ summary {
   list-style: none;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   color: var(--navy);
+  border-radius: var(--radius-control);
 }
 
 summary::-webkit-details-marker {
@@ -383,18 +914,17 @@ details[open]::details-content {
 /* --- Task cards (the cabinet's dispatch) -----------------------------------*/
 
 .dispatch {
-  margin-top: 24px;
-  font-family: var(--instrument);
+  margin-top: var(--space-5);
 }
 
 .dispatch h3 {
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-3);
 }
 
 .task-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 @media (min-width: 1200px) {
@@ -407,29 +937,29 @@ details[open]::details-content {
 .task-card {
   background: var(--paper);
   border: 1px solid var(--rule);
-  border-radius: 8px;
-  padding: 12px;
-  font-size: 0.89rem;
+  border-radius: var(--radius-control);
+  padding: var(--space-3);
+  font-size: var(--text-sm);
 }
 
 .task-card h4 {
-  margin: 0 0 4px;
+  margin: 0 0 var(--space-1);
 }
 
 .task-card .task-id {
   color: var(--ink-soft);
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
 
 .task-card ul {
-  margin: 4px 0 8px;
-  padding-inline-start: 16px;
+  margin: var(--space-1) 0 var(--space-2);
+  padding-inline-start: var(--space-4);
 }
 
 .task-card details {
-  margin: 4px 0 8px;
+  margin: var(--space-1) 0 var(--space-2);
 }
 
 .task-card details ul {
@@ -439,8 +969,8 @@ details[open]::details-content {
 .task-card .task-status {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin: 8px 0 0;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
   font-weight: 600;
   color: var(--ink-soft);
 }
@@ -472,23 +1002,22 @@ details[open]::details-content {
 .stat-row {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  column-gap: 16px;
+  column-gap: var(--space-4);
   /* Five figures on two columns leave one cell alone on the last row; the
      odd one spans the row so nothing sits beside an empty cell. */
   & > :last-child:nth-child(odd) {
     grid-column: 1 / -1;
   }
   border-block: 1px solid var(--rule);
-  margin-top: 24px;
-  font-family: var(--document);
+  margin-top: var(--space-5);
 }
 
 .stat-row .stat-figure {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
-  padding: 12px 4px 12px 0;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-1) var(--space-3) 0;
   border: none;
   border-top: 1px solid var(--rule);
   border-radius: 0;
@@ -503,7 +1032,7 @@ details[open]::details-content {
 }
 
 .stat-display {
-  font-size: 2.4rem;
+  font-size: var(--text-3xl);
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
   color: var(--navy);
@@ -513,7 +1042,7 @@ details[open]::details-content {
 }
 
 .stat-figure:hover .stat-display {
-  color: color-mix(in srgb, var(--navy), black 20%);
+  color: var(--navy-hover);
   text-decoration-thickness: 2px;
 }
 
@@ -522,9 +1051,11 @@ details[open]::details-content {
 }
 
 .stat-title {
-  font-family: var(--instrument);
-  font-size: 0.89rem;
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--text-sm);
   color: var(--ink-soft);
+  overflow-wrap: anywhere;
 }
 
 @media (min-width: 1200px) {
@@ -547,8 +1078,8 @@ details[open]::details-content {
 /* --- Section list -----------------------------------------------------------*/
 
 .section-nav {
-  margin-top: 24px;
-  font-size: 0.89rem;
+  margin-top: var(--space-5);
+  font-size: var(--text-sm);
 }
 
 .section-nav ul {
@@ -564,7 +1095,7 @@ details[open]::details-content {
 
 .section-nav a {
   display: block;
-  padding: 8px 4px;
+  padding: var(--space-2) var(--space-1);
   color: var(--navy);
   text-decoration: none;
 }
@@ -582,33 +1113,13 @@ details[open]::details-content {
 
 /* --- The briefing document ---------------------------------------------------*/
 
-.doc {
-  font-family: var(--document);
-}
-
-.doc .audit-log,
-.doc .finding-list,
-.doc .office-table,
-.doc .analyst-source,
-.doc .simulated-task,
-.doc .model-unavailable,
-.doc .refusal-card,
-.doc .state-panel,
-.doc .hint,
-.doc .status-line,
-.doc .error-line,
-.doc .technical-detail,
-.doc .filter-bar,
-.doc .event-list {
-  font-family: var(--instrument);
-}
-
 .briefing .headline-text {
-  font-size: 1.27rem;
+  font-size: var(--text-xl);
 }
 
 /* Every number in prose is a finding link and looks like one. */
 .finding-link {
+  position: relative;
   background: none;
   border: none;
   padding: 0 0.1em;
@@ -617,12 +1128,26 @@ details[open]::details-content {
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 0.18em;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
 }
 
 .finding-link:hover {
-  color: color-mix(in srgb, var(--navy), black 20%);
-  background: color-mix(in srgb, var(--navy) 8%, transparent);
+  color: var(--navy-hover);
+  background: color-mix(in srgb, var(--navy) 12%, transparent);
+}
+
+/* On a phone the number keeps its size in the sentence but answers a 44 px
+   tap: an invisible hit area centred on it, at least 44 x 44. */
+@media (max-width: 899px) {
+  .finding-link::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, var(--tap));
+    height: max(100%, var(--tap));
+    transform: translate(-50%, -50%);
+  }
 }
 
 .num {
@@ -639,15 +1164,15 @@ details[open]::details-content {
 /* The findings list rows ride on hairlines, not cards. */
 .finding-list {
   list-style: none;
-  margin: 16px 0 0;
+  margin: var(--space-4) 0 0;
   padding: 0;
   border-top: 1px solid var(--rule);
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
 }
 
 .finding-row {
   display: flex;
-  gap: 12px;
+  gap: var(--space-3);
   align-items: baseline;
   flex-wrap: wrap;
   width: 100%;
@@ -656,12 +1181,12 @@ details[open]::details-content {
   border: none;
   border-bottom: 1px solid var(--rule);
   border-radius: 0;
-  padding: 8px 4px;
+  padding: var(--space-2) var(--space-1);
   color: var(--ink);
 }
 
 .finding-row:hover {
-  background: color-mix(in srgb, var(--navy) 5%, transparent);
+  background: var(--surface);
 }
 
 .finding-row-id {
@@ -681,25 +1206,27 @@ details[open]::details-content {
 
 .finding-row-fields {
   flex-basis: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--ink-soft);
 }
 
 .office-table {
   border-collapse: collapse;
-  margin: 12px 0;
-  font-size: 0.89rem;
+  margin: var(--space-3) 0;
+  font-size: var(--text-sm);
 }
 
 .office-table caption {
   text-align: start;
   color: var(--ink-soft);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .office-table th,
 .office-table td {
   border: 1px solid var(--rule);
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
   text-align: start;
 }
 
@@ -715,35 +1242,35 @@ details[open]::details-content {
 /* The operational-actions panel is the rail's ground; it needs no approval. */
 .staff-plan {
   background: var(--rail);
-  border-radius: 8px;
-  padding: 16px 24px 24px;
+  border-radius: var(--radius-control);
+  padding: var(--space-4) var(--space-5) var(--space-5);
 }
 
 .action-list {
-  margin: 12px 0 0;
-  padding-inline-start: 24px;
+  margin: var(--space-3) 0 0;
+  padding-inline-start: var(--space-5);
 }
 
 .action-list li {
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .limitations-list li {
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .analyst-source {
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
   color: var(--ink-soft);
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
 }
 
 .stub-tag {
   display: inline-block;
   background: var(--rail);
   border: 1px solid var(--rule);
-  border-radius: 4px;
-  padding: 4px 8px;
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-2);
   color: var(--ink-soft);
   font-weight: 600;
 }
@@ -753,8 +1280,8 @@ details[open]::details-content {
 .decision-panel {
   background: var(--gold-wash);
   border: 1px solid var(--gold);
-  border-radius: 8px;
-  padding: 16px 24px 24px;
+  border-radius: var(--radius-control);
+  padding: var(--space-4) var(--space-5) var(--space-5);
 }
 
 .decision-panel h2 {
@@ -766,7 +1293,7 @@ details[open]::details-content {
 }
 
 .decision-card h3 {
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .follow-up {
@@ -774,40 +1301,25 @@ details[open]::details-content {
 }
 
 .approve-button {
-  background: var(--paper);
-  color: var(--gold);
-  border: 1px solid var(--gold);
-  font-weight: 600;
-  padding: 8px 16px;
-  margin-top: 12px;
-}
-
-.approve-button:hover {
-  background: color-mix(in srgb, var(--gold) 12%, var(--paper));
-  color: color-mix(in srgb, var(--gold), black 15%);
-}
-
-.approve-button:active {
-  background: color-mix(in srgb, var(--gold) 20%, var(--paper));
-  color: color-mix(in srgb, var(--gold), black 15%);
+  margin-top: var(--space-3);
 }
 
 .simulated-task {
-  margin-top: 16px;
+  margin-top: var(--space-4);
   background: var(--paper);
   border: 1px solid var(--rule);
-  border-radius: 8px;
-  padding: 12px 16px;
+  border-radius: var(--radius-control);
+  padding: var(--space-3) var(--space-4);
 }
 
 .simulated-task h4 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
 }
 
 .simulated-task dl {
   display: grid;
-  grid-template-columns: 7rem 1fr;
-  gap: 4px 12px;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
   margin: 0;
 }
 
@@ -818,41 +1330,34 @@ details[open]::details-content {
 
 .simulated-task dd {
   margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* --- The dispatch: the message to the office ---------------------------------*/
-/* Same boxed treatment as the task card (the one boxed element), paper on the
- * gold wash, hairline rule. No new colours. */
+/* Same boxed treatment as the task card, paper on the gold wash, hairline
+ * rule. The buttons take their looks from the Buttons section. */
 
 .dispatch-prepare {
-  background: var(--paper);
-  color: var(--navy);
-  border: 1px solid var(--navy);
-  font-weight: 600;
-  padding: 8px 16px;
-  margin-top: 12px;
-}
-
-.dispatch-prepare:hover {
-  background: color-mix(in srgb, var(--navy) 8%, var(--paper));
+  margin-top: var(--space-3);
 }
 
 .dispatch-draft {
-  margin-top: 16px;
+  margin-top: var(--space-4);
   background: var(--paper);
   border: 1px solid var(--rule);
-  border-radius: 8px;
-  padding: 12px 16px;
+  border-radius: var(--radius-control);
+  padding: var(--space-3) var(--space-4);
 }
 
 .dispatch-draft h4 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
 }
 
 .dispatch-draft dl {
   display: grid;
-  grid-template-columns: 7rem 1fr;
-  gap: 4px 12px;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
   margin: 0;
 }
 
@@ -863,16 +1368,32 @@ details[open]::details-content {
 
 .dispatch-draft dd {
   margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The task and dispatch grids stack under 400 px, like .kv. */
+@media (max-width: 399px) {
+  .simulated-task dl,
+  .dispatch-draft dl {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0;
+  }
+
+  .simulated-task dd + dt,
+  .dispatch-draft dd + dt {
+    margin-top: var(--space-2);
+  }
 }
 
 .dispatch-body {
-  margin-top: 8px;
+  margin-top: var(--space-2);
   border-top: 1px solid var(--rule);
-  padding-top: 8px;
+  padding-top: var(--space-2);
 }
 
 .dispatch-body p {
-  margin: 0 0 4px;
+  margin: 0 0 var(--space-1);
   min-height: 1em;
 }
 
@@ -881,36 +1402,21 @@ details[open]::details-content {
 }
 
 .dispatch-send {
-  background: var(--navy);
-  color: var(--paper);
-  border: 1px solid var(--navy);
-  font-weight: 600;
-  padding: 8px 16px;
-  margin-top: 12px;
-}
-
-.dispatch-send:hover {
-  background: color-mix(in srgb, var(--navy), white 12%);
-}
-
-.dispatch-send:disabled,
-.dispatch-prepare:disabled {
-  opacity: 0.6;
-  cursor: default;
+  margin-top: var(--space-3);
 }
 
 .dispatch-sent {
-  margin-top: 12px;
+  margin-top: var(--space-3);
   font-weight: 600;
 }
 
 /* --- Loading, error, empty -----------------------------------------------------*/
 
 .state-panel {
-  margin-top: 32px;
+  margin-top: var(--space-6);
   border: 1px solid var(--rule);
-  border-radius: 8px;
-  padding: 16px 24px 24px;
+  border-radius: var(--radius-control);
+  padding: var(--space-4) var(--space-5) var(--space-5);
 }
 
 .error-panel {
@@ -923,36 +1429,23 @@ details[open]::details-content {
 }
 
 .error-panel button {
-  background: var(--alert);
-  color: var(--paper);
-  border: 1px solid var(--alert);
-  font-weight: 600;
-  padding: 8px 16px;
-  margin-top: 16px;
-}
-
-.error-panel button:hover {
-  background: color-mix(in srgb, var(--alert), black 15%);
-}
-
-.error-panel button:active {
-  background: color-mix(in srgb, var(--alert), black 25%);
+  margin-top: var(--space-4);
 }
 
 /* The loading state is a skeleton of the figures row and the section
    headings, not a spinner. */
 .skeleton {
   height: 1rem;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: linear-gradient(
     90deg,
-    var(--rail) 25%,
-    color-mix(in srgb, var(--rail), white 55%) 50%,
-    var(--rail) 75%
+    var(--surface) 25%,
+    var(--surface-hover) 50%,
+    var(--surface) 75%
   );
   background-size: 200% 100%;
   animation: shimmer 1.4s infinite;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .skeleton.short {
@@ -962,15 +1455,15 @@ details[open]::details-content {
 .skeleton-heading {
   height: 1.42rem;
   width: 40%;
-  margin-top: 32px;
+  margin-top: var(--space-6);
 }
 
 .doc-skeleton .hint {
-  margin-top: 24px;
+  margin-top: var(--space-5);
 }
 
 .skeleton-figure {
-  padding: 12px 4px 12px 0;
+  padding: var(--space-3) var(--space-1) var(--space-3) 0;
   border-top: 1px solid var(--rule);
 }
 
@@ -1000,7 +1493,8 @@ details[open]::details-content {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .skeleton {
+  .skeleton,
+  .skeleton-line {
     animation: none;
   }
 }
@@ -1019,7 +1513,7 @@ details[open]::details-content {
 .drawer-overlay {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, var(--ink) 45%, transparent);
+  background: var(--scrim);
   display: flex;
   justify-content: flex-end;
   z-index: 10;
@@ -1030,10 +1524,10 @@ details[open]::details-content {
   width: min(36rem, 94vw);
   height: 100%;
   overflow-y: auto;
-  padding: 24px 32px 48px;
-  box-shadow: -8px 0 24px color-mix(in srgb, var(--ink) 25%, transparent);
+  padding: var(--space-5) var(--space-6) var(--space-7);
+  border-radius: var(--radius-surface) 0 0 var(--radius-surface);
+  box-shadow: var(--shadow-panel);
   scrollbar-color: var(--ink-soft) var(--rail);
-  font-family: var(--instrument);
 }
 
 .drawer:focus,
@@ -1045,7 +1539,7 @@ details[open]::details-content {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .drawer-header h2 {
@@ -1053,45 +1547,34 @@ details[open]::details-content {
   margin: 0;
 }
 
-/* The drawer's finding id is a small instrument tag, not part of the title. */
+/* The drawer's finding id is a small tag, not part of the title. */
 .id-badge {
   display: inline-block;
-  font-family: var(--instrument);
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--navy);
   border: 1px solid var(--rule);
-  border-radius: 4px;
-  padding: 4px 8px;
-  margin-inline-end: 8px;
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-2);
+  margin-inline-end: var(--space-2);
 }
 
 .close-button {
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  color: var(--ink);
-  padding: 8px 12px;
   white-space: nowrap;
-}
-
-.close-button:hover {
-  border-color: var(--navy);
-  color: var(--navy);
 }
 
 .drawer-facts dt {
   font-weight: 600;
-  color: var(--navy);
-  margin-top: 24px;
+  color: var(--ink);
+  margin-top: var(--space-5);
 }
 
 .drawer-facts dd {
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
 }
 
 .drawer-value {
-  font-family: var(--document);
-  font-size: 2.4rem;
+  font-size: var(--text-3xl);
   font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
@@ -1102,30 +1585,28 @@ details[open]::details-content {
 
 .formula {
   display: block;
-  background: var(--rail);
-  border-radius: 6px;
-  padding: 12px;
+  border-radius: var(--radius-control);
+  padding: var(--space-3);
   white-space: pre-wrap;
 }
 
 .field-list {
   margin: 0;
-  padding-inline-start: 16px;
+  padding-inline-start: var(--space-4);
 }
 
 .row-list-block h3 {
-  font-size: 1rem;
-  margin: 16px 0 8px;
+  font-size: var(--text-md);
+  margin: var(--space-4) 0 var(--space-2);
 }
 
 .row-list {
   list-style: none;
   margin: 0;
-  padding: 12px;
-  background: var(--rail);
-  border-radius: 6px;
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
   columns: 3;
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
 }
 
 /* M8: per-student support indicators, one block per pseudonymous id. */
@@ -1133,11 +1614,11 @@ details[open]::details-content {
   list-style: none;
   margin: 0;
   padding: 0;
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
 }
 
 .indicator-rows > li {
-  padding: 8px 0;
+  padding: var(--space-2) 0;
   border-top: 1px solid var(--rule);
 }
 
@@ -1147,23 +1628,13 @@ details[open]::details-content {
 
 .indicator-rows ul {
   list-style: none;
-  margin: 4px 0 2px;
-  padding-inline-start: 16px;
+  margin: var(--space-1) 0 0;
+  padding-inline-start: var(--space-4);
   color: var(--ink-soft);
 }
 
 .indicator-rows ul li {
-  margin-block: 4px;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .drawer-overlay {
-    animation: overlay-in 200ms ease-out;
-  }
-
-  .drawer {
-    animation: drawer-in 200ms ease-out;
-  }
+  margin-block: var(--space-1);
 }
 
 @keyframes overlay-in {
@@ -1174,48 +1645,44 @@ details[open]::details-content {
 
 @keyframes drawer-in {
   from {
-    transform: translateX(32px);
+    transform: translateX(100%);
   }
 }
 
 /* --- Audit log -----------------------------------------------------------------*/
 
-.audit-log {
-  font-family: var(--instrument);
-}
-
 .denied-demo {
-  margin: 12px 0 16px;
+  margin: var(--space-3) 0 var(--space-4);
 }
 
 .denied-demo .hint {
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
 }
 
 .filter-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 12px 0 16px;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 var(--space-4);
 }
 
 .filter-bar .filter {
-  background: var(--paper);
+  background: var(--surface);
   border: 1px solid var(--rule);
   color: var(--ink);
-  padding: 4px 12px;
-  font-size: 0.89rem;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
   border-radius: 999px;
 }
 
 .filter-bar .filter:hover {
-  border-color: var(--navy);
+  background: var(--surface-hover);
 }
 
 .filter-bar .filter.active {
   background: var(--navy);
   border-color: var(--navy);
-  color: var(--paper);
+  color: var(--on-navy);
 }
 
 .filter-bar .refresh {
@@ -1231,7 +1698,7 @@ details[open]::details-content {
 
 .event {
   border-bottom: 1px solid var(--rule);
-  padding: 12px 4px;
+  padding: var(--space-3) var(--space-1);
 }
 
 .event.highlighted {
@@ -1245,25 +1712,26 @@ details[open]::details-content {
 
 .event-line {
   display: flex;
-  gap: 12px;
+  gap: var(--space-3);
   flex-wrap: wrap;
   align-items: baseline;
 }
 
 .event-id {
   color: var(--ink-soft);
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
 .event-ts {
   color: var(--ink-soft);
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
 .event-type {
-  color: var(--navy);
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .event-actor {
@@ -1271,17 +1739,17 @@ details[open]::details-content {
 }
 
 .event-badge {
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--alert);
   border: 1px solid var(--alert);
   border-radius: 999px;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
 }
 
 .event-summary {
-  margin: 8px 0 0;
-  font-size: 0.89rem;
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
 }
 
 .event-summary.refusal {
@@ -1289,61 +1757,23 @@ details[open]::details-content {
 }
 
 .event details {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 
 .event summary {
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
 }
 
 .event pre {
-  background: var(--rail);
-  border-radius: 6px;
-  padding: 12px;
+  padding: var(--space-3);
   overflow-x: auto;
-  /* The one exception to the 0.89rem floor: the raw JSON payload is scrolled,
-     not read. */
-  font-size: 0.85rem;
-}
-
-/* --- Shared primary and danger buttons -------------------------------------*/
-
-.primary-button {
-  background: var(--navy);
-  color: var(--paper);
-  border: 1px solid var(--navy);
-  padding: 8px 16px;
-  font-weight: 600;
-}
-
-.primary-button:hover {
-  background: color-mix(in srgb, var(--navy), black 15%);
-}
-
-.primary-button:active {
-  background: color-mix(in srgb, var(--navy), black 25%);
-}
-
-.danger-button {
-  background: var(--alert);
-  color: var(--paper);
-  border: 1px solid var(--alert);
-  padding: 8px 16px;
-  font-weight: 600;
-}
-
-.danger-button:hover {
-  background: color-mix(in srgb, var(--alert), black 15%);
-}
-
-.danger-button:active {
-  background: color-mix(in srgb, var(--alert), black 25%);
+  font-size: var(--text-xs);
 }
 
 /* --- The sign-in screen ------------------------------------------------------*/
 
 .auth-check {
-  padding-top: 48px;
+  padding-top: var(--space-7);
 }
 
 .login-page {
@@ -1351,7 +1781,7 @@ details[open]::details-content {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 48px 16px;
+  padding: var(--space-7) var(--space-4);
 }
 
 .login-panel {
@@ -1360,66 +1790,54 @@ details[open]::details-content {
 }
 
 .login-panel h1 {
-  font-size: 1.42rem;
+  font-size: var(--text-xl);
 }
 
 .login-lede {
-  font-family: var(--document);
   color: var(--ink-soft);
-  margin: 8px 0 24px;
+  margin: var(--space-2) 0 var(--space-5);
   text-wrap: pretty;
 }
 
 .login-notice {
   color: var(--navy);
   border: 1px solid var(--navy);
-  border-radius: 6px;
-  padding: 8px 12px;
-  margin: 0 0 16px;
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-4);
 }
 
 .login-panel form label {
   display: block;
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
   color: var(--ink-soft);
-  margin: 12px 0 4px;
+  margin: var(--space-3) 0 var(--space-1);
 }
 
 .login-panel form input {
   display: block;
   width: 100%;
-  box-sizing: border-box;
-  font: inherit;
-  padding: 8px 12px;
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  background: var(--rail);
-  color: var(--ink);
-}
-
-.login-panel form input:focus {
-  border-color: var(--navy);
 }
 
 .login-panel form .primary-button {
   width: 100%;
-  margin-top: 16px;
+  margin-top: var(--space-4);
 }
 
 .login-panel .error-line {
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 
 /* --- The rail masthead (identity, provenance, sign out) ----------------------*/
 
 .masthead {
-  margin: 24px 0 0;
-  padding-bottom: 16px;
+  margin: var(--space-5) 0 0;
+  padding-bottom: var(--space-4);
   border-bottom: 1px solid var(--rule);
 }
 
 .masthead p {
-  margin: 4px 0 0;
+  margin: var(--space-1) 0 0;
 }
 
 .masthead-product {
@@ -1433,7 +1851,7 @@ details[open]::details-content {
 
 .masthead-dataset,
 .masthead-user {
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
   color: var(--ink-soft);
   overflow-wrap: anywhere;
 }
@@ -1441,31 +1859,31 @@ details[open]::details-content {
 .masthead-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-top: 12px;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
 }
 
 .masthead-actions a {
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
 }
 
 .masthead-actions button {
-  padding: 4px 12px;
-  font-size: 0.89rem;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
   margin-inline-start: auto;
 }
 
 /* A small note under the figures while the data is the demonstration set. */
 .demo-note {
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
   color: var(--ink-soft);
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
 }
 
-/* --- The Institution area (instrument surface, admin only) --------------------*/
+/* --- The Institution area (admin only) ----------------------------------------*/
 
-.institution-doc {
-  font-family: var(--instrument);
+.dataset-table {
+  width: 100%;
 }
 
 .dataset-table td {
@@ -1474,58 +1892,58 @@ details[open]::details-content {
 
 .dataset-flag {
   display: block;
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
   color: var(--ink-soft);
 }
 
 .dataset-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .dataset-actions button {
-  padding: 4px 12px;
-  font-size: 0.89rem;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
 }
 
 /* Inline confirmations: part of the page flow, never a modal. */
 .confirm-inline {
-  margin-top: 16px;
-  padding: 12px 16px;
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
   background: var(--rail);
   border: 1px solid var(--navy);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
 }
 
 .confirm-inline p {
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-3);
 }
 
 .confirm-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .upload-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   flex-wrap: wrap;
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 
 .upload-row input[type='file'] {
   font: inherit;
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
   color: var(--ink-soft);
   max-width: 100%;
 }
 
 .upload-result {
-  margin-top: 12px;
-  padding: 12px 16px;
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--navy);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
 }
 
 .upload-result p {
@@ -1533,69 +1951,51 @@ details[open]::details-content {
 }
 
 .upload-result .hint {
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
 }
 
 .upload-errors {
-  margin-top: 12px;
-  padding: 12px 16px;
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--alert);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
 }
 
-.upload-errors p {
-  margin: 0 0 8px;
+.upload-errors > p:first-child {
+  margin: 0 0 var(--space-2);
   color: var(--alert);
   font-weight: 600;
 }
 
 .upload-errors ul {
   margin: 0;
-  padding-inline-start: 24px;
+  padding-inline-start: var(--space-5);
 }
 
 .upload-errors li {
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
   overflow-wrap: anywhere;
 }
 
 /* --- The Users section (list, add form, one-time password callout) ----------*/
 
-.user-table select,
-.add-user-row select,
-.add-user-row input {
-  font: inherit;
-  font-size: 0.89rem;
-  padding: 4px 8px;
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  background: var(--paper);
-  color: var(--ink);
-}
-
-.user-table select:focus,
-.add-user-row select:focus,
-.add-user-row input:focus {
-  border-color: var(--navy);
-}
-
 .add-user {
-  margin-top: 24px;
+  margin-top: var(--space-5);
 }
 
 .add-user h3 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
 }
 
 .add-user-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 
 .add-user-row label {
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
   color: var(--ink-soft);
 }
 
@@ -1604,24 +2004,24 @@ details[open]::details-content {
 }
 
 .password-callout {
-  margin-top: 16px;
-  padding: 12px 16px;
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
   background: var(--gold-wash);
   border: 1px solid var(--gold);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
 }
 
 .password-callout p {
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-3);
 }
 
 .password-callout .password-value code {
-  font-size: 1rem;
+  font-size: var(--text-md);
   overflow-wrap: anywhere;
 }
 
 .password-callout .hint {
-  margin: 12px 0 0;
+  margin: var(--space-3) 0 0;
 }
 
 /* --- The Offices section (the dispatch address book, edited inline) ---------*/
@@ -1631,24 +2031,8 @@ details[open]::details-content {
 }
 
 .office-book-table input {
-  box-sizing: border-box;
-  font: inherit;
-  font-size: 0.89rem;
   width: 100%;
   min-width: 12rem;
-  padding: 4px 8px;
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  background: var(--paper);
-  color: var(--ink);
-}
-
-.office-book-table input:focus {
-  border-color: var(--navy);
-}
-
-.office-book-table input[aria-invalid='true'] {
-  border-color: var(--alert);
 }
 
 .office-book-table .office-row-actions {
@@ -1657,8 +2041,8 @@ details[open]::details-content {
 }
 
 .office-book-table .office-row-actions button {
-  padding: 4px 12px;
-  font-size: 0.89rem;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
 }
 
 .office-gap {
@@ -1666,23 +2050,23 @@ details[open]::details-content {
 }
 
 .field-error {
-  margin: 4px 0 0;
-  font-size: 0.89rem;
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
   color: var(--alert);
   overflow-wrap: anywhere;
 }
 
 .office-book-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 
 .office-book-actions .primary-button {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .office-book-actions button:disabled {
@@ -1690,37 +2074,14 @@ details[open]::details-content {
   cursor: progress;
 }
 
-.save-spinner {
-  width: 0.9em;
-  height: 0.9em;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: save-spin 0.8s linear infinite;
-}
-
-@keyframes save-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .save-spinner {
-    animation: none;
-    border-right-color: currentColor;
-    opacity: 0.6;
-  }
-}
-
 .office-saved {
-  margin: 12px 0 0;
+  margin: var(--space-3) 0 0;
   color: var(--navy);
   font-weight: 600;
 }
 
 /* Phone width: each office becomes a stacked card, labels above inputs. */
-@media (max-width: 640px) {
+@media (max-width: 639px) {
   .office-book-table,
   .office-book-table caption,
   .office-book-table tbody,
@@ -1732,7 +2093,7 @@ details[open]::details-content {
   }
 
   .office-book-table caption {
-    padding: 8px 12px 0;
+    padding: var(--space-2) var(--space-3) 0;
   }
 
   .office-book-table thead {
@@ -1759,9 +2120,9 @@ details[open]::details-content {
   .office-book-table td[data-label='Mailbox']::before {
     content: attr(data-label);
     display: block;
-    font-size: 0.89rem;
+    font-size: var(--text-sm);
     color: var(--ink-soft);
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
   }
 
   .office-book-table input {
@@ -1781,46 +2142,38 @@ details[open]::details-content {
 /* --- Institution settings: the counseling figure's authorization ------------*/
 
 .counseling-auth-state {
-  margin: 12px 0 4px;
+  margin: var(--space-3) 0 var(--space-1);
 }
 
 .counseling-auth .hint {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 
 .counseling-auth-fields {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 8px;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
 }
 
 .counseling-auth-fields label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   flex: 1 1 16rem;
   min-width: 0;
-  font-size: 0.89rem;
+  font-size: var(--text-sm);
   color: var(--ink-soft);
 }
 
 .counseling-auth-fields input {
-  box-sizing: border-box;
   width: 100%;
-  font: inherit;
-  font-size: 0.89rem;
-  padding: 6px 8px;
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  background: var(--paper);
-  color: var(--ink);
 }
 
 /* The authorized counseling count in briefing section 3: computed in code,
  * so it carries its authorization as its source label. */
 .aggregate-figure {
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 
 .authorization-record li {
