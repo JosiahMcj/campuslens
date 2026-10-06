@@ -311,7 +311,7 @@ describe('wiring of the panels', () => {
     expect(screen.getByText('Authorize the eligibility review')).toBeTruthy()
     fireEvent.click(open)
     await screen.findByRole('dialog', { name: 'Decision' })
-    expect(await screen.findByText(/Approved by president@demo\.test at/)).toBeTruthy()
+    expect(await screen.findByText(/Approved by you at/)).toBeTruthy()
   })
 })
 
