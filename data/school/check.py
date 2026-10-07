@@ -77,6 +77,17 @@ EXPECTED_COLUMNS: dict[str, list[str]] = {
     "subsequent_enrollment": ["student_id", "found_term", "sector"],
 }
 
+# The student billing tables (billing.py, applied at the end of generation).
+# Kept apart from EXPECTED_COLUMNS so the JSON counts keep the 24 simulated
+# tables; the schema check still requires these, with exactly these columns.
+BILLING_COLUMNS: dict[str, list[str]] = {
+    "student_charges": ["charge_id", "student_id", "term_code", "category", "amount",
+                        "due_date"],
+    "student_payments": ["payment_id", "student_id", "term_code", "amount", "paid_on",
+                         "method"],
+    "payment_plans": ["student_id", "term_code", "installments", "enrolled_on"],
+}
+
 POINTS10 = {"A": 40, "A-": 37, "B+": 33, "B": 30, "B-": 27, "C+": 23, "C": 20, "C-": 17,
             "D+": 13, "D": 10, "F": 0}
 PASSING = {"A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "P"}
@@ -116,10 +127,13 @@ def pct(n: int, d: int) -> float:
 
 
 def canonical_hash(con: sqlite3.Connection) -> str:
-    """sha256 over every table's rows in a fixed order (file bytes may differ)."""
+    """sha256 over the simulated tables' rows in a fixed order (file bytes may
+    differ). The billing tables written on top (BILLING_COLUMNS) have their own
+    seeded determinism and are not part of the hash recorded in VERIFY.md."""
     h = hashlib.sha256()
     tables = [r[0] for r in con.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        if r[0] in EXPECTED_COLUMNS]
     for t in tables:
         cols = [r[1] for r in con.execute(f'PRAGMA table_info("{t}")')]
         order = ", ".join(f'"{c}"' for c in cols)
@@ -147,15 +161,17 @@ class Checker:
     # ------------------------------------------------------------ schema
     def check_schema(self) -> None:
         problems = []
-        for table, cols in EXPECTED_COLUMNS.items():
+        for table, cols in {**EXPECTED_COLUMNS, **BILLING_COLUMNS}.items():
             got = [r[1] for r in self.q(f'PRAGMA table_info("{table}")')]
             if got != cols:
                 problems.append(f"{table}: {got}")
         extra = sorted({r[0] for r in self.q("SELECT name FROM sqlite_master WHERE type='table'")}
-                       - set(EXPECTED_COLUMNS))
+                       - set(EXPECTED_COLUMNS) - set(BILLING_COLUMNS))
         if extra:
             problems.append(f"unexpected tables {extra}")
-        self.record("schema", not problems, "; ".join(problems) or f"{len(EXPECTED_COLUMNS)} tables, columns as documented")
+        self.record("schema", not problems, "; ".join(problems) or
+                    f"{len(EXPECTED_COLUMNS)} core and {len(BILLING_COLUMNS)} billing tables, "
+                    "columns as documented")
         fk = self.q("PRAGMA foreign_key_check")
         self.record("foreign_keys", not fk, f"{len(fk)} dangling references")
 
@@ -481,6 +497,55 @@ class Checker:
                       (course, *args))[0]
         return int(d), int(n)
 
+    def check_billing(self) -> None:
+        """Student billing tables (billing.py): existence, references, amounts, dates."""
+        have = {r[0] for r in self.q("SELECT name FROM sqlite_master WHERE type='table'")}
+        missing = [t for t in BILLING_COLUMNS if t not in have]
+        if missing:
+            self.record("billing", False, f"missing billing tables {sorted(missing)}")
+            return
+        problems: list[str] = []
+        for table in BILLING_COLUMNS:
+            unknown_students = self.q(f"""SELECT COUNT(*) FROM {table} WHERE student_id
+                NOT IN (SELECT student_id FROM students)""")[0][0]
+            unknown_terms = self.q(f"""SELECT COUNT(*) FROM {table} WHERE term_code
+                NOT IN (SELECT term_code FROM academic_periods)""")[0][0]
+            if unknown_students:
+                problems.append(f"{table}: {unknown_students} unknown student_id")
+            if unknown_terms:
+                problems.append(f"{table}: {unknown_terms} unknown term_code")
+        for table in ("student_charges", "student_payments", "payment_plans"):
+            unenrolled = self.q(f"""SELECT COUNT(*) FROM {table} WHERE NOT EXISTS
+                (SELECT 1 FROM student_term_enrollment e WHERE e.student_id = {table}.student_id
+                 AND e.term_code = {table}.term_code AND e.status = 'enrolled')""")[0][0]
+            if unenrolled:
+                problems.append(f"{table}: {unenrolled} pairs not enrolled in "
+                                "student_term_enrollment")
+        bad_charges = self.q("""SELECT COUNT(*) FROM student_charges
+            WHERE amount <= 0 OR amount IS NULL
+               OR category NOT IN ('tuition', 'housing', 'fees', 'meal_plan')
+               OR due_date IS NULL OR date(due_date) IS NULL OR date(due_date) != due_date""")[0][0]
+        if bad_charges:
+            problems.append(f"student_charges: {bad_charges} bad amount, category, or due_date")
+        bad_payments = self.q("""SELECT COUNT(*) FROM student_payments
+            WHERE amount <= 0 OR amount IS NULL
+               OR method NOT IN ('card', 'ach', 'aid_disbursement', 'payment_plan',
+                                 'third_party')
+               OR paid_on IS NULL OR date(paid_on) IS NULL OR date(paid_on) != paid_on""")[0][0]
+        if bad_payments:
+            problems.append(f"student_payments: {bad_payments} bad amount, method, or paid_on")
+        bad_plans = self.q("""SELECT COUNT(*) FROM payment_plans
+            WHERE installments < 1 OR installments IS NULL
+               OR enrolled_on IS NULL OR date(enrolled_on) IS NULL
+               OR date(enrolled_on) != enrolled_on""")[0][0]
+        if bad_plans:
+            problems.append(f"payment_plans: {bad_plans} bad installments or enrolled_on")
+        counts = {t: self.q(f"SELECT COUNT(*) FROM {t}")[0][0] for t in BILLING_COLUMNS}
+        self.record("billing", not problems,
+                    "; ".join(problems) or
+                    f"charges {counts['student_charges']}, payments {counts['student_payments']}, "
+                    f"plans {counts['payment_plans']}: references, amounts, dates ok")
+
     def planted(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
         # 1. Major with the lowest average cumulative GPA.
@@ -730,6 +795,7 @@ class Checker:
         self.check_graduation()
         self.check_distributions()
         self.check_enrollment_history()
+        self.check_billing()
         values = self.planted()
         digest = canonical_hash(self.con)
         self.check_planted_exact(values, digest)
