@@ -9,7 +9,7 @@
  * object and CSRF token. Offline means exactly this: the shell opens, and
  * the API is required for every number on it.
  */
-const CACHE = 'cabinet-shell-v4'
+const CACHE = 'cabinet-shell-v5'
 const SHELL = [
   '/',
   '/index.html',

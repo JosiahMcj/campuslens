@@ -28,7 +28,8 @@ and approvals use the same marks everywhere.
 | `--ink` | `#212121` | `#ECECEC` | text |
 | `--ink-soft` | `#595959` | `#B4B4B4` | secondary text (4.5:1 or better on its surface) |
 | `--rule` | `#E3E3E3` | `#393939` | hairlines |
-| `--rule-strong` | `#CDCDCD` | `#595959` | input borders, table rules |
+| `--rule-strong` | `#CDCDCD` | `#595959` | secondary button outlines, pills, table rules |
+| `--field-border` | `#8F8F8F` | `#7A7A7A` | the border of every input, select and text area (3.3:1 on paper light, 3.8:1 dark; at least 3:1 on every surface) |
 | `--navy` (accent, the logo blue) | `#1667C7` | `#5EA2EE` | links, focus rings, the main button |
 | `--navy-hover` / `--navy-pressed` | `#1257A8` / `#0F4A8F` | `#78B2F1` / `#93C2F4` | the main button's hover and pressed fills |
 | `--on-navy` | `#FFFFFF` | `#171717` | text on a filled accent button (5.5:1 and 6.7:1) |
@@ -38,6 +39,7 @@ and approvals use the same marks everywhere.
 | `--gold-wash` | `#FFFBEB` | `#2A2419` | the decision card's ground |
 | `--alert` | `#B91C1C` | `#F87171` | refusals, errors, destructive actions |
 | `--alert-wash` | `#FEF2F2` | `#2E1F1F` | the ground of refusals and error panels |
+| `--navy-wash` | `#E8F0FB` | `#1B2738` | a quiet accent ground: the Done status pill, a table cell opened from a figure; never a button |
 | `--scrim` | black 35 % | black 50 % | behind the phone drawer |
 | `--brand-deep` / `--brand-mid` / `--brand-teal` | `#0B2A5B` / `#1667C7` / `#1DB89A` | `#3D7FE0` / `#3B9BE8` / `#2FD0B0` | the CampusLens mark's gradient and the sign-in screen's backdrop, nothing else |
 | `--brand-glint` / `--brand-glint-soft` | `#5EA2EE` / `#9CC6F4` | `#9CC6F4` / `#C6DEFA` | the two highlights inside the mark's lens |
@@ -95,7 +97,9 @@ measure 68ch.
   - `.btn-primary`: the main button, one per screen or panel. Filled `--navy`, `--on-navy` text.
   - `.btn-secondary`: outlined, `--rule-strong` border, `--ink` text; hover `--surface-hover`,
     pressed `--surface-pressed`.
-  - `.btn-danger`: outlined in `--alert`, `--alert` text. Always confirmed inline.
+  - `.btn-danger`: outlined in `--alert`, `--alert` text. Only on the inline confirmation's
+    own button: the row's Disable or Delete that opens the confirmation is `.btn-secondary`,
+    and signing out is not destructive (`.btn-secondary`).
   - `.btn-approve`: filled `--gold`, `--on-gold` text. The leadership decision only.
 
   The text on a filled button is white in light and dark ink (`#171717`) in dark: dark text on
@@ -112,7 +116,7 @@ measure 68ch.
   `--surface`. Its fields carry a mail and a lock icon inside the left edge, which turn `--navy`
   on focus. Each part settles in once, in order (500 ms, 80 ms apart), and the backdrop drifts
   slowly; no motion under reduced motion.
-- **Inputs:** `.field`, 44 px tall, `--text-md`, `--rule-strong` border, `--radius-control`,
+- **Inputs:** `.field`, 44 px tall, `--text-md`, `--field-border` border, `--radius-control`,
   label above, help text below, error text below in `--alert` linked with `aria-describedby`
   and `aria-invalid="true"` (red border). Placeholders start with "e.g.", except the question box, whose placeholder says what can be
   asked ("Ask about students, courses or majors") and fits a 390 px phone.
@@ -122,26 +126,46 @@ measure 68ch.
   `.btn-primary`. Reading pages (the briefing, evidence, the decision, profile, settings) keep a
   52rem column; pages of cards or rows (Staff actions, Key figures, Audit log, Financial Aid
   review) use the wider 76rem column (`.side-panel.is-wide`) so a 1440 px screen is used, not a
-  narrow strip. Institution settings has the same title size and intro. Escape and Back close a
+  narrow strip. Institution settings has the same title size and intro, and shows one section
+  at a time (Users, Offices, Counseling, Data, Connections), chosen from its section links; the
+  open link is marked (`aria-current`) and the address keeps it (`/institution#inst-offices`). Escape and Back close a
   page; focus returns. It rises in over 200 ms: closing adds `.is-closing` and unmounts it 200 ms
   later; switching pages cross-fades the body. No motion under reduced motion.
-- **Worklist (Staff actions):** a summary strip of three status tiles (To do, In progress,
-  Done; each a toggle that filters, `aria-pressed`), then the Office and Status filters with a
-  "Showing N of M" line, then one card per action (`.action-card`, `--surface` once done): the
-  office and a status pill, the title, the count as a finding link to its evidence, what to do,
-  then the editor (Status and Due date on one row, Owner under them; "Save changes" appears
-  only when something changed, so a page of cards never shows a row of main buttons), the
-  message to the office (Send, Sent with who and when, or a failure with Retry; never the raw
-  error), and Notes and History folds. Two columns at 1200 px and wider. Roles that cannot edit
-  see owner and due date as a `.kv` list instead of the form.
+- **Worklist (Staff actions):** one notice when any office has no mailbox (never a paragraph
+  per card; each such card only says "Can't send yet"), a segmented strip of three status
+  toggles (To do, In progress, Done; `aria-pressed`, the pressed one a filled accent segment,
+  wrapping on a narrow screen), then the Office and Status filters with a "Showing N of M"
+  line, then one card per action (`.action-card`, `--surface` once done): the office and a
+  status pill, the title, the count (`--text-md`) as a finding link to its evidence, what to
+  do, then the editor (Status, Due date and Owner on one row where the card is 32rem wide,
+  Status and Due date over Owner below that, one field per row under 24rem: container
+  queries, so larger text never clips the date; "Save changes" appears only when something
+  changed, so a page of cards never shows a row of main buttons), the message to the office
+  (Send, Sent with who and when, or a failure: the button then says "Retry sending" with the
+  reason directly under it; never the raw error), and Notes and History folds, closed. Two
+  columns only where each card is at least 36rem wide. Roles that cannot edit see owner and
+  due date as a `.kv` list instead of the form.
 - **Steps:** the Decision page shows where a decision stands as a line of steps
-  (`.decision-steps`): done steps carry a filled accent check, the next step is outlined in the
-  accent, later ones are quiet. The decision card keeps its gold.
+  (`.decision-steps`, short labels; four equal columns at 1200 px and wider, never three and one): done steps carry a filled
+  accent check, the next step is outlined in the accent, later ones are quiet, and a step that
+  waits on someone else ("Waiting: Financial Aid needs a mailbox") has a dashed mark. The
+  decision card keeps its gold; the "Approved by …" line on it is ink with an accent check
+  (DecisionPanel.css), so an approval never reads as a warning.
 - **Filters:** a filter is a labelled `.field` select or date above its control, on one row that
-  wraps; a "Clear filters" secondary button appears only while a filter is set, and a count
+  wraps, every field the same width (at least 12rem); the page's own buttons (Test a refusal,
+  Refresh) sit together at the right of the count line; a "Clear filters" secondary button appears only while a filter is set, and a count
   line ("Showing 3 of 98 entries.") says what the filters hide.
 - **Figures:** a figure is a link to its evidence. Five figure cards (M1, M2, M3, M4, M8); M9,
-  when authorized, appears only in the briefing text and the evidence list.
+  when authorized, appears only in the briefing text and the evidence list. On a narrow or
+  enlarged screen the cards fit as many whole ones per row as there is room for, and a label
+  never breaks inside a word.
+- **Numbers:** one style everywhere (`ui/src/displayFormat.ts`): thousands separators (1,872),
+  a percent sign with no space (−4.8%), dates as "Nov 20, 2025". The server's figures and
+  written explanations are not rewritten (they are validated and replayed byte for byte); the
+  style is applied when they are drawn.
+- **Connections:** each outside connection is a card with its state as a pill (the granted or
+  refused mark and the words, e.g. "Not set up"); the settings behind it are folded under
+  "Settings on the server".
 - **States:** every list and panel has a loading line (`.skeleton-line`), an empty state that
   says what to do next (`.state-empty`), and an error state that says what went wrong and offers
   Retry (`.state-error`, the Retry button inside it). A failed load never looks like "nothing
@@ -150,8 +174,8 @@ measure 68ch.
   values wrap, and under 400 px each label sits above its value. `.stack-table` is a full-width
   table that becomes one card per row under 640 px, each cell reading "label: value" from its
   `data-label` (an empty `data-label` shows no label, for action cells). `.fold` is a
-  `details`/`summary` for long content behind "Show …", with a 44 px summary that draws its
-  own chevron.
+  `details`/`summary` for long content behind "Show …", with a 44 px summary in `--text-sm`
+  (every fold the same size) that draws its own chevron.
 - **Governance marks:** granted (check in a circle), refused (no-entry circle, `--alert`),
   approved (check in a square, `--gold`), sent (arrow out of a tray). Always with a text label.
 

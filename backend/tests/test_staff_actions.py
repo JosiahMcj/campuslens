@@ -563,3 +563,87 @@ def test_connections_say_what_is_configured_never_a_credential(
 
     staff = make_authenticated_client(app, role="staff")
     assert staff.get("/admin/connections").status_code == 403
+
+
+# --- demonstration mailboxes (make demo-mailboxes) ------------------------------
+
+
+def test_demo_mailboxes_fill_every_office_and_keep_existing_ones(
+    tmp_path: Path,
+) -> None:
+    from cabinet.auth import AuthStore
+    from cabinet.users import seed_demo_mailboxes
+
+    store = AuthStore(tmp_path / "cabinet.db", seed_fixture=FIXTURE_PATH)
+    institution_id = store.ensure_bootstrap_institution()
+    store.set_office_contacts(institution_id, [("Bursar", "cashier@example.edu")])
+
+    added = seed_demo_mailboxes(store, institution_id)
+
+    book = {
+        row["office"]: row["email"] for row in store.office_contacts_for(institution_id)
+    }
+    # Every office the worklist names has a mailbox now; the one an admin
+    # set is kept, never replaced.
+    from cabinet.api import InstitutionRuntime
+
+    offices = {
+        spec.office
+        for spec in action_specs(InstitutionRuntime(store, institution_id).findings)
+    }
+    assert set(book) == offices
+    assert book["Bursar"] == "cashier@example.edu"
+    assert book["Student Success"] == "student-success@demo.test"
+    assert book["Financial Aid"] == "financial-aid@demo.test"
+    assert ("Bursar", "cashier@example.edu") not in added
+    assert all(email.endswith("@demo.test") for _, email in added)
+    assert len(added) == len(offices) - 1
+    events = [
+        event
+        for event in store.audit_for(institution_id).events()
+        if event["type"] == "admin.changed"
+    ]
+    assert len(events) == 1
+    assert events[0]["payload"]["action"] == "office_contacts"
+    assert sorted(events[0]["payload"]["offices"]) == sorted(offices)
+
+    # A second run changes nothing and records nothing.
+    assert seed_demo_mailboxes(store, institution_id) == []
+    assert [
+        event
+        for event in store.audit_for(institution_id).events()
+        if event["type"] == "admin.changed"
+    ] == events
+
+
+def test_demo_mailboxes_refuse_real_data(tmp_path: Path) -> None:
+    from cabinet.auth import AuthStore
+    from cabinet.users import NotDemonstrationData, seed_demo_mailboxes
+
+    store = AuthStore(tmp_path / "cabinet.db", seed_fixture=FIXTURE_PATH)
+    institution_id = store.ensure_bootstrap_institution()
+    document = json.loads(FIXTURE_PATH.read_text())
+    document["meta"]["fictional"] = False
+    store.add_dataset(
+        institution_id,
+        name="Spring term (real)",
+        raw=json.dumps(document).encode(),
+        uploaded_by="admin@test.example",
+        activate=True,
+    )
+    with pytest.raises(NotDemonstrationData):
+        seed_demo_mailboxes(store, institution_id)
+    assert store.office_contacts_for(institution_id) == []
+
+
+def test_demo_mailboxes_cli(capsys: pytest.CaptureFixture[str]) -> None:
+    from cabinet.users import main as users_main
+
+    assert users_main(["demo-mailboxes"]) == 0
+    out = capsys.readouterr().out
+    assert "Student Success: student-success@demo.test" in out
+    assert "never leave this machine" in out
+    assert users_main(["demo-mailboxes"]) == 0
+    assert "nothing changed" in capsys.readouterr().out
+    assert users_main(["demo-mailboxes", "--institution", "nowhere"]) == 1
+    assert "no institution with slug 'nowhere'" in capsys.readouterr().err

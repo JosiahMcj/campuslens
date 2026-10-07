@@ -58,7 +58,9 @@ export function AidQueueNotice({
             {queuedLine(summary.count).replace(' for Financial Aid review', '')}
           </span>
         ) : (
-          <span className="next-step-status">Not prepared yet</span>
+          <span className="next-step-status">
+            {canPrepare ? 'Not prepared yet' : 'Not prepared yet. Staff or leadership prepares it.'}
+          </span>
         )}
       </p>
       {summary.count !== null

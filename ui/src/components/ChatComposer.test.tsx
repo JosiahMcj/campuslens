@@ -1,5 +1,8 @@
+// @vitest-environment jsdom
+
+import { fireEvent, render as mount, cleanup } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ApprovedQuestion } from '../api'
 import { ChatComposer } from './ChatComposer'
@@ -49,7 +52,8 @@ describe('ChatComposer', () => {
 
   it('takes any question: an example placeholder and no "will be refused" warning', () => {
     const html = render(true)
-    expect(html).toContain('placeholder="Ask about students, courses or majors"')
+    // Short enough to fit beside the send button on a 360 px phone at 150%.
+    expect(html).toContain('placeholder="Ask a question"')
     expect(html).toContain('Ask CampusLens a question')
     expect(html).not.toContain('will be refused')
   })
@@ -158,5 +162,34 @@ describe('ChatComposer — the approved questions failed to load', () => {
     )
     expect(html).toContain('class="ask-error state-error"')
     expect(html).not.toContain('style=')
+  })
+})
+
+describe('ChatComposer — the growing question box', () => {
+  afterEach(cleanup)
+
+  it('is a textarea: Enter asks, Shift+Enter keeps typing on a new line', () => {
+    const onAsk = vi.fn()
+    const { container } = mount(
+      <ChatComposer questions={[]} sending={false} starters={false} onAsk={onAsk} />,
+    )
+    const field = container.querySelector('#question-input') as HTMLTextAreaElement
+    expect(field.tagName).toBe('TEXTAREA')
+    fireEvent.change(field, { target: { value: 'Which majors have the highest GPA?' } })
+    fireEvent.keyDown(field, { key: 'Enter', shiftKey: true })
+    expect(onAsk).not.toHaveBeenCalled()
+    fireEvent.keyDown(field, { key: 'Enter' })
+    expect(onAsk).toHaveBeenCalledWith('Which majors have the highest GPA?')
+    expect(field.value).toBe('')
+  })
+
+  it('never asks an empty question on Enter', () => {
+    const onAsk = vi.fn()
+    const { container } = mount(
+      <ChatComposer questions={[]} sending={false} starters={false} onAsk={onAsk} />,
+    )
+    const field = container.querySelector('#question-input') as HTMLTextAreaElement
+    fireEvent.keyDown(field, { key: 'Enter' })
+    expect(onAsk).not.toHaveBeenCalled()
   })
 })

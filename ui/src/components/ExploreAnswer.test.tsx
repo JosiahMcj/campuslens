@@ -936,7 +936,7 @@ describe('an Explore answer', () => {
     await waitFor(() => expect(document.activeElement).toBe(cell))
   })
 
-  it('lists each step with its parameters, table and the data it read', () => {
+  it('lists each step with its parameters, table and the data it used', () => {
     show(EXEC)
     const steps = document.querySelectorAll('.explore-step')
     expect(steps).toHaveLength(3)
@@ -949,7 +949,7 @@ describe('an Explore answer', () => {
     expect(within(steps[0] as HTMLElement).queryByText('Major code')).toBeNull()
     const read = steps[0].querySelector('.explore-read')?.textContent ?? ''
     expect(read).not.toContain('Major name')
-    expect(steps[0].textContent).toContain('Data it read:')
+    expect(steps[0].textContent).toContain('Data it used:')
     expect(steps[0].textContent).toContain('Cumulative GPA')
     expect(steps[0].textContent).not.toContain('student_term_records')
     // No field reads as an id.
@@ -984,11 +984,75 @@ describe('an Explore answer', () => {
     show(long)
     const table = document.querySelector('.explore-table') as HTMLTableElement
     expect(table.tBodies[0].rows).toHaveLength(10)
-    expect(screen.getByRole('button', { name: 'Show all 12' })).toBeTruthy()
+    expect(document.querySelector('.explore-table-more')?.textContent).toContain(
+      'Showing 10 of 12 rows',
+    )
+    expect(screen.getByRole('button', { name: 'Show all 12 rows' })).toBeTruthy()
     // Opening a number in row 11 shows every row first.
     fireEvent.click(screen.getByRole('button', { name: '250' }))
     expect(table.tBodies[0].rows).toHaveLength(12)
-    expect(screen.queryByRole('button', { name: 'Show all 12' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Show all 12 rows' })).toBeNull()
+  })
+
+  it('never folds away a single row (a top 10 and its whole-population row)', () => {
+    const step = EXEC.steps[0]
+    const rows = [...step.table.rows, step.table.rows[0]]
+    show({ ...EXEC, steps: [{ ...step, table: { ...step.table, rows } }, ...EXEC.steps.slice(1)] })
+    const table = document.querySelector('.explore-table') as HTMLTableElement
+    expect(table.tBodies[0].rows).toHaveLength(11)
+    expect(screen.queryByRole('button', { name: /^Show all \d/ })).toBeNull()
+  })
+
+  it('puts the quoted figures right after the row label and folds the rest away', () => {
+    show(EXEC)
+    const steps = document.querySelectorAll<HTMLElement>('.explore-step')
+    const heads = (index: number) =>
+      [...steps[index].querySelectorAll('th')].map((th) => th.textContent)
+    // Step 2 quotes the rate first, then the counts; Title and Terms wait.
+    expect(heads(1)).toEqual([
+      'Course',
+      'DFW rate (%)',
+      'D, F, or W',
+      'Graded registrations',
+      'Sections',
+    ])
+    const more = within(steps[1]).getByRole('button', { name: 'Show all columns (2 more)' })
+    fireEvent.click(more)
+    expect(heads(1)).toHaveLength(7)
+    expect(heads(1).slice(0, 2)).toEqual(['Course', 'DFW rate (%)'])
+    expect(within(steps[1]).queryByRole('button', { name: /Show all columns/ })).toBeNull()
+  })
+
+  it('formats figures by their column kind: GPA 2 decimals, rates 1, thousands', () => {
+    const answer = exploreResponseFrom({
+      refused: false,
+      answer: [{ text: 'GPA 2.62 and 21.0% of 1,533.', claims: [] }],
+      steps: [
+        {
+          analysis_id: 'x',
+          title: 'Kinds',
+          params_plain: [],
+          fields_read: [],
+          notes: [],
+          table: {
+            columns: [
+              { key: 'name', label: 'Name', kind: 'text' },
+              { key: 'gpa', label: 'GPA', kind: 'gpa' },
+              { key: 'rate', label: 'Rate (%)', kind: 'pct' },
+              { key: 'n', label: 'Graded', kind: 'count' },
+            ],
+            rows: [
+              ['A', 2.623, 21, 1533],
+              ['B', 2.95, 41.8, 12],
+            ],
+          },
+        },
+      ],
+      source: 'Written from computed tables',
+    })
+    show(answer)
+    const cells = [...document.querySelectorAll('.explore-table td')].map((td) => td.textContent)
+    expect(cells).toEqual(['A', '2.62', '21.0', '1,533', 'B', '2.95', '41.8', '12'])
   })
 
   it('reads a withheld cell as "fewer than 10"', () => {
@@ -1013,7 +1077,8 @@ describe('a refusal and a question no analysis answers', () => {
     const { onAsk } = show(
       exploreResponseFrom({
         refused: true,
-        message: 'Individual counseling and spiritual-care records are never disclosed.',
+        message:
+          'CampusLens does not answer questions about counseling or spiritual care, even as totals.',
         answer: [],
         steps: [],
         source: null,
@@ -1025,7 +1090,7 @@ describe('a refusal and a question no analysis answers', () => {
     const card = screen.getByRole('status')
     expect(card.className).toBe('explore-declined')
     expect(within(card).getByText('Not something CampusLens answers')).toBeTruthy()
-    expect(card.textContent).toContain('never disclosed')
+    expect(card.textContent).toContain('even as totals')
     expect(card.textContent).not.toContain('not in this data')
     expect(card.textContent).toContain('recorded in the audit log')
     expect(within(card).getByRole('button', { name: 'See the audit log' })).toBeTruthy()
@@ -1055,11 +1120,13 @@ describe('a refusal and a question no analysis answers', () => {
       exploreResponseFrom({ refused: true, message: 'No.', answer: [], steps: [], source: null }),
       { busy: true },
     )
-    const chips = document.querySelectorAll<HTMLButtonElement>('.explore-chip')
-    expect(chips).toHaveLength(3)
-    for (const chip of chips) expect(chip.disabled).toBe(true)
-    // Each chip is a button inside a list item.
-    expect(chips[0].closest('li')).not.toBeNull()
+    // The same card and rows as the home screen's "Try asking".
+    const card = document.querySelector('.try-card') as HTMLElement
+    expect(within(card).getByRole('list', { name: 'You can ask one of these instead' })).toBeTruthy()
+    const rows = card.querySelectorAll<HTMLButtonElement>('.try-row')
+    expect(rows).toHaveLength(3)
+    for (const row of rows) expect(row.disabled).toBe(true)
+    expect(rows[0].closest('li')).not.toBeNull()
   })
 })
 

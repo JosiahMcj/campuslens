@@ -28,7 +28,7 @@ const EVENTS: ExploreTraceEvent[] = [
   { type: 'plan', steps: ['Dropout rate by major'], planner: 'rules' },
   {
     type: 'reading',
-    text: 'Reading the student records (Ellucian format, fictional data): 6,225 students, Fall 2020 to Spring 2026',
+    text: 'Reading six years of student records (fictional data): 6,225 students, Fall 2020 to Spring 2026',
   },
   { type: 'step', index: 0, total: 1, title: 'Dropout rate by major' },
   { type: 'writing', text: 'Writing the answer from the tables' },
@@ -81,7 +81,7 @@ describe('the trace helpers', () => {
       'Reading your question',
       'Understood: Dropout rate by major',
       'Chose 1 approved analysis',
-      'Reading the student records (Ellucian format, fictional data): 6,225 students, Fall 2020 to Spring 2026',
+      'Reading six years of student records (fictional data): 6,225 students, Fall 2020 to Spring 2026',
       'Computing: Dropout rate by major',
       'Writing the answer from the tables',
       'Checked 5 numbers against the tables',

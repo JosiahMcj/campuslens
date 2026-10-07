@@ -96,18 +96,9 @@ export function StaffActionsPage({
     () => (list === null ? [] : [...new Set(list.items.map((item) => item.office))]),
     [list],
   )
-  const intro = list === null
-    ? 'Work staff can start now, each with a responsible office.'
-    : list.can_edit
-      ? 'Work staff can start now, each with a responsible office. Track who has it, when it is due and how far it has got. No leadership approval is needed, and nothing goes to an office until you send it.'
-      : list.can_note
-        ? 'Work staff can start now, each with a responsible office. You can follow progress and add a note for the staff working on it. No leadership approval is needed.'
-        : 'Work staff can start now, each with a responsible office. This view is read only.'
 
   return (
     <div className="worklist">
-      <p className="panel-intro">{intro}</p>
-
       {state.kind === 'loading' && (
         <div role="status" aria-busy="true" className="worklist-loading">
           <span className="visually-hidden">Loading the staff actions…</span>
@@ -188,8 +179,34 @@ function Worklist({
     (item) => (office === 'all' || item.office === office) && (status === 'all' || item.status === status),
   )
   const today = todayIso()
+  // Offices whose action cannot be sent yet: no mailbox in the address book.
+  const unsendable = [
+    ...new Set(
+      list.items
+        .filter((item) => item.office_mailbox === null && item.message?.status !== 'sent')
+        .map((item) => item.office),
+    ),
+  ]
+  const noMailboxAtAll = list.items.every((item) => item.office_mailbox === null)
   return (
     <>
+      {unsendable.length > 0 && (
+        <div className="worklist-notice" role="note">
+          <p>
+            {noMailboxAtAll
+              ? 'No office mailboxes are set yet, so nothing can be sent to an office.'
+              : `No mailbox is set yet for ${joinNames(unsendable)}, so ${unsendable.length === 1 ? 'that action' : 'those actions'} cannot be sent.`}{' '}
+            {onOpenInstitution !== null ? (
+              <button type="button" className="link-button" onClick={onOpenInstitution}>
+                Add {noMailboxAtAll || unsendable.length > 1 ? 'them' : 'it'} in Institution settings
+              </button>
+            ) : (
+              `An administrator can add ${noMailboxAtAll || unsendable.length > 1 ? 'them' : 'it'} in Institution settings.`
+            )}
+          </p>
+        </div>
+      )}
+
       <div className="worklist-summary" role="group" aria-label="Actions by status">
         {ACTION_STATUSES.map((value) => (
           <button
@@ -199,7 +216,7 @@ function Worklist({
             aria-pressed={status === value}
             onClick={() => onStatus(status === value ? 'all' : value)}
           >
-            <span className="summary-count">{counts[value]}</span>{' '}
+            <span className="summary-count">{counts[value].toLocaleString('en-US')}</span>{' '}
             <span className="summary-label">{statusLabel(value)}</span>
           </button>
         ))}
@@ -266,7 +283,6 @@ function Worklist({
                 today={today}
                 onSaved={onSaved}
                 onOpenEvidence={onOpenEvidence}
-                onOpenInstitution={onOpenInstitution}
                 viewerEmail={viewerEmail}
               />
             </li>
@@ -285,7 +301,6 @@ function ActionCard({
   today,
   onSaved,
   onOpenEvidence,
-  onOpenInstitution,
   viewerEmail,
 }: {
   item: StaffAction
@@ -293,7 +308,6 @@ function ActionCard({
   today: string
   onSaved: (item: StaffAction) => void
   onOpenEvidence: (findingId: string) => void
-  onOpenInstitution: (() => void) | null
   viewerEmail: string | null
 }) {
   const headingId = useId()
@@ -343,7 +357,7 @@ function ActionCard({
           <>
             <dt>Last change</dt>
             <dd>
-              {capitalize(personName(item.updated_by, viewerEmail))}, {formatTimestamp(item.updated_at)}
+              {sentenceStart(personName(item.updated_by, viewerEmail))}, {formatTimestamp(item.updated_at)}
             </dd>
           </>
         )}
@@ -357,7 +371,6 @@ function ActionCard({
         item={item}
         canSend={list.can_send}
         onSaved={onSaved}
-        onOpenInstitution={onOpenInstitution}
         viewerEmail={viewerEmail}
       />
 
@@ -367,8 +380,16 @@ function ActionCard({
   )
 }
 
-function capitalize(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1)
+/** A name at the start of a sentence: "You", but an email address keeps
+ * its own case. */
+function sentenceStart(name: string): string {
+  return name === 'you' ? 'You' : name
+}
+
+/** "Bursar", "Bursar and Library", "Bursar, Library and Registrar". */
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names.join('')
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
 }
 
 /** Status, owner and due date, saved together with the version they were
@@ -548,20 +569,20 @@ function OfficeMessage({
   item,
   canSend,
   onSaved,
-  onOpenInstitution,
   viewerEmail,
 }: {
   item: StaffAction
   canSend: boolean
   onSaved: (item: StaffAction) => void
-  onOpenInstitution: (() => void) | null
   viewerEmail: string | null
 }) {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const message = item.message
   const sent = message !== null && message.status === 'sent'
-  const failed = message !== null && message.status === 'failed'
+  // A failed try, recorded by the server or just now in this browser (a
+  // dropped connection leaves no record): the button then says Retry.
+  const failed = (message !== null && message.status === 'failed') || error !== null
 
   const send = async () => {
     if (sending) return
@@ -593,37 +614,35 @@ function OfficeMessage({
           </span>
         </p>
       )}
-      {!sent && failed && (
-        <p className="error-line" role="alert">
-          The last try to send this to the office did not go through. Nothing was delivered.
-        </p>
-      )}
+      {/* The page's one notice explains a missing mailbox; each card only
+          says it cannot go yet. */}
       {!sent && item.office_mailbox === null && (
-        <p className="hint">
-          No mailbox is set for the {item.office} office yet, so this cannot be sent.
-          {onOpenInstitution !== null ? (
-            <>
-              {' '}
-              <button type="button" className="link-button" onClick={onOpenInstitution}>
-                Add one in Institution settings
-              </button>
-            </>
-          ) : (
-            ' An administrator can add one.'
-          )}
+        <p className="hint message-blocked">Can't send yet: no mailbox for this office.</p>
+      )}
+      {!sent && item.office_mailbox === null && error !== null && (
+        <p className="error-line" role="alert">
+          {error}
         </p>
       )}
       {!sent && item.office_mailbox !== null && canSend && (
         <div className="message-actions">
-          <button
-            type="button"
-            className="btn-secondary secondary"
-            aria-busy={sending ? 'true' : undefined}
-            onClick={() => void send()}
-          >
-            {sending && <span className="spinner" aria-hidden="true" />}
-            {sending ? 'Sending…' : failed ? 'Retry sending' : `Send to ${item.office}`}
-          </button>
+          <div className="message-send">
+            <button
+              type="button"
+              className="btn-secondary secondary"
+              aria-busy={sending ? 'true' : undefined}
+              onClick={() => void send()}
+            >
+              {sending && <span className="spinner" aria-hidden="true" />}
+              {sending ? 'Sending…' : failed ? 'Retry sending' : `Send to ${item.office}`}
+            </button>
+            {(error !== null || failed) && (
+              <p className="error-line" role="alert">
+                {error ??
+                  'The last try to send this to the office did not go through. Nothing was delivered.'}
+              </p>
+            )}
+          </div>
           <p className="hint">
             Goes to {item.office_mailbox} with the count and a sign-in link. No student names
             or records are in the message.
@@ -631,11 +650,10 @@ function OfficeMessage({
         </div>
       )}
       {!sent && item.office_mailbox !== null && !canSend && (
-        <p className="hint">Not sent to the office yet. A staff member sends it.</p>
-      )}
-      {error !== null && (
-        <p className="error-line" role="alert">
-          {error}
+        <p className="hint">
+          {failed
+            ? 'The last try to send this to the office did not go through. A staff member can try again.'
+            : 'Not sent to the office yet. A staff member sends it.'}
         </p>
       )}
       {message !== null && (
@@ -664,6 +682,9 @@ function NotesFold({
   const [text, setText] = useState('')
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // "Note added", read out once the note is saved; cleared on the next edit.
+  const [added, setAdded] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const length = [...text].length
   const over = length - ACTION_NOTE_MAX_CHARS
 
@@ -671,9 +692,14 @@ function NotesFold({
     if (adding || text.trim() === '' || over > 0) return
     setAdding(true)
     setError(null)
+    setAdded(false)
     try {
       onSaved(await addActionNote(item.id, text))
       setText('')
+      setAdded(true)
+      // The Add button disables once the box is empty, so focus would fall
+      // to the page: it goes back to the box, ready for another note.
+      textareaRef.current?.focus()
     } catch (caught) {
       setError(friendlyError(caught, 'Your note'))
     } finally {
@@ -692,7 +718,7 @@ function NotesFold({
           {item.notes.map((note) => (
             <li key={note.id}>
               <p className="note-meta">
-                {capitalize(personName(note.author, viewerEmail))}, {formatTimestamp(note.created_at)}
+                {sentenceStart(personName(note.author, viewerEmail))}, {formatTimestamp(note.created_at)}
               </p>
               <p className="note-text">{note.text}</p>
             </li>
@@ -710,6 +736,7 @@ function NotesFold({
           <label htmlFor={noteId}>Add a note</label>
           <textarea
             id={noteId}
+            ref={textareaRef}
             className="field"
             rows={3}
             value={text}
@@ -719,6 +746,7 @@ function NotesFold({
             onChange={(event) => {
               setText(event.target.value)
               setError(null)
+              setAdded(false)
             }}
           />
           <p className="hint" id={`${noteId}-help`}>
@@ -740,6 +768,9 @@ function NotesFold({
             {adding && <span className="spinner" aria-hidden="true" />}
             {adding ? 'Adding…' : 'Add note'}
           </button>
+          <p className="hint note-added" role="status">
+            {added ? 'Note added.' : ''}
+          </p>
           {error !== null && (
             <p className="error-line" role="alert">
               {error}
@@ -763,7 +794,7 @@ function HistoryFold({ item, viewerEmail }: { item: StaffAction; viewerEmail: st
           <li key={change.id}>
             <span className="history-when">{formatTimestamp(change.at)}</span>{' '}
             <span>
-              {capitalize(personName(change.actor, viewerEmail))}{' '}
+              {sentenceStart(personName(change.actor, viewerEmail))}{' '}
               {changeWords(change, item.office, viewerEmail)}.
             </span>
           </li>

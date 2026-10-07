@@ -16,14 +16,17 @@ import {
   type AidReviewRow,
   type AidStatus,
 } from '../aid'
+import { fetchDecisions } from '../api'
 import { friendlyError } from '../errors'
-import { formatTimestamp, personName } from '../states'
+import { formatTimestamp, parseFlags, personName } from '../states'
 import { ChevronIcon } from './icons'
 
 type QueueState =
   | { kind: 'loading' }
   | { kind: 'error'; message: string }
-  | { kind: 'ready'; queue: AidQueue }
+  /** approved: whether leadership has approved a decision yet, read only
+   * when the queue is empty (null when that could not be read). */
+  | { kind: 'ready'; queue: AidQueue; approved?: boolean | null }
 
 type StatusFilter = 'all' | AidStatus
 
@@ -165,6 +168,7 @@ function EditableRow({
       <label htmlFor={statusId}>Status</label>
       <select
         id={statusId}
+        className="field"
         value={status}
         onChange={(event) => {
           setStatus(event.target.value as AidStatus)
@@ -183,6 +187,7 @@ function EditableRow({
           emoji in half. The count below is the API's own (characters). */}
       <textarea
         id={noteId}
+        className="field"
         value={note}
         rows={3}
         aria-describedby={describedBy}
@@ -262,7 +267,17 @@ export function AidQueuePanel({
 
   const load = useCallback(async () => {
     try {
-      setState({ kind: 'ready', queue: await fetchAidQueue() })
+      const queue = await fetchAidQueue()
+      // An empty queue reads differently before and after approval.
+      let approved: boolean | null = null
+      if (queue.rows.length === 0) {
+        try {
+          approved = (await fetchDecisions(parseFlags(''))).some((decision) => decision.approved)
+        } catch {
+          approved = null
+        }
+      }
+      setState({ kind: 'ready', queue, approved })
     } catch (caught) {
       setState({ kind: 'error', message: friendlyError(caught, 'The review queue') })
     }
@@ -300,12 +315,6 @@ export function AidQueuePanel({
 
   return (
     <div className="aid-queue">
-      <p className="panel-intro">
-        Facts for the Financial Aid office to start its own review. CampusLens
-        decides nothing about any student; a person in the office sets each
-        status and note.{canEdit ? '' : ' This view is read only.'}
-      </p>
-
       {state.kind === 'loading' && (
         <p className="status-line" role="status">
           Loading the review queue…
@@ -331,8 +340,11 @@ export function AidQueuePanel({
       {state.kind === 'ready' && state.queue.rows.length === 0 && (
         <div className="state-empty">
           <p>
-            No students are queued yet. Once leadership approves the decision,
-            the queue is prepared from the decision's next steps.
+            {state.approved === true
+              ? 'Approved. Waiting for staff to prepare the review queue from the Decision page.'
+              : state.approved === false
+                ? 'No students are queued yet. Once leadership approves the decision, staff prepare the queue from the Decision page.'
+                : "No students are queued yet. The queue is prepared from the Decision page's next steps once leadership approves."}
           </p>
           {onOpenDecision !== undefined && (
             <div className="state-actions">

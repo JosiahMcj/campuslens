@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 
 import { roleDisplayName, type Role } from '../auth'
-import { ConnectionsSection, CONNECTIONS_SECTION_ID } from './ConnectionsSection'
+import { ConnectionsSection, CONNECTIONS_SECTION_ID, SectionLoading } from './ConnectionsSection'
 import { CounselingAuthorizationSection, COUNSELING_SECTION_ID } from './CounselingAuthorization'
 import {
   activateDataset,
@@ -93,6 +93,14 @@ const SECTIONS = [
   { id: CONNECTIONS_SECTION_ID, label: 'Connections' },
 ] as const
 
+type SectionId = (typeof SECTIONS)[number]['id']
+
+/** The section an address names (/institution#inst-offices), else Users. */
+function sectionFromHash(hash: string): SectionId {
+  const id = hash.replace(/^#/, '')
+  return SECTIONS.find((section) => section.id === id)?.id ?? USERS_SECTION_ID
+}
+
 /** A button's working label: a spinner and the "…ing" words. */
 function Working({ label }: { label: string }) {
   return (
@@ -132,8 +140,9 @@ function useConfirmFocus(
 }
 
 /**
- * The Institution area (admin only), as four calm cards reached from a
- * short section list: Users (roles and status, the one-time password of a
+ * The Institution area (admin only), one section at a time, chosen from a
+ * short section list (the address keeps the section, so a link such as
+ * /institution#inst-offices opens Offices, and a reload stays put): Users (roles and status, the one-time password of a
  * newly added user shown once), Offices (the address book approved
  * follow-ups are sent to, edited inline and saved whole), Counseling (the
  * counseling figure's recorded authorization) and Data (the uploads with
@@ -148,6 +157,9 @@ export function Institution({
   currentUserEmail,
   onDataChanged,
 }: InstitutionProps) {
+  const [activeSection, setActiveSection] = useState<SectionId>(() =>
+    sectionFromHash(window.location.hash),
+  )
   const [datasetsState, setDatasetsState] = useState<LoadState<DatasetRow[]>>({
     kind: 'loading',
   })
@@ -324,13 +336,17 @@ export function Institution({
     void loadOffices()
   }, [load, loadUsers, loadOffices])
 
-  // Arriving from the decision panel's link (/institution#inst-offices):
-  // once the section has rendered, bring it into view.
-  const officesReady = officesState.kind === 'ready'
+  // The address can change the section too (a link to
+  // /institution#inst-offices while the page is open).
   useEffect(() => {
-    if (!officesReady || window.location.hash !== `#${OFFICES_SECTION_ID}`) return
-    document.getElementById(OFFICES_SECTION_ID)?.scrollIntoView?.({ block: 'start' })
-  }, [officesReady])
+    const follow = () => setActiveSection(sectionFromHash(window.location.hash))
+    window.addEventListener('hashchange', follow)
+    window.addEventListener('popstate', follow)
+    return () => {
+      window.removeEventListener('hashchange', follow)
+      window.removeEventListener('popstate', follow)
+    }
+  }, [])
 
   const pickFile = useCallback((files: FileList | null) => {
     setFileError(null)
@@ -342,7 +358,9 @@ export function Institution({
     }
     if (!picked.name.toLowerCase().endsWith('.json')) {
       setFile(null)
-      setFileError('That file can’t be used. Choose the student-records export, a .json file.')
+      setFileError(
+        'That file can’t be used. Choose the student-records export your records office gave you.',
+      )
       return
     }
     void picked.arrayBuffer().then(
@@ -455,14 +473,22 @@ export function Institution({
     }
   }, [])
 
-  const goToSection = useCallback((id: string) => {
-    const section = document.getElementById(id)
-    const reduced =
-      document.documentElement.classList.contains('reduce-motion') ||
-      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
-    section?.scrollIntoView?.({ block: 'start', behavior: reduced ? 'auto' : 'smooth' })
-    section?.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true })
+  // Opening a section shows it alone and moves focus to its heading. The
+  // address records it without a new history entry, so Back still leaves
+  // the page instead of walking through the sections.
+  const pendingFocus = useRef<SectionId | null>(null)
+  const goToSection = useCallback((id: SectionId) => {
+    pendingFocus.current = id
+    setActiveSection(id)
+    if (window.location.hash !== `#${id}`) {
+      window.history.replaceState(window.history.state, '', `#${id}`)
+    }
   }, [])
+  useEffect(() => {
+    if (pendingFocus.current !== activeSection) return
+    pendingFocus.current = null
+    document.getElementById(activeSection)?.querySelector<HTMLElement>('h2')?.focus()
+  }, [activeSection])
 
   const uploading = uploadState.kind === 'uploading'
   const emailErrorId = 'new-user-email-error'
@@ -475,6 +501,7 @@ export function Institution({
             <li key={section.id}>
               <a
                 href={`#${section.id}`}
+                aria-current={section.id === activeSection ? 'true' : undefined}
                 onClick={(event) => {
                   event.preventDefault()
                   goToSection(section.id)
@@ -487,7 +514,12 @@ export function Institution({
         </ul>
       </nav>
 
-      <section id={USERS_SECTION_ID} className="inst-card" aria-labelledby="inst-users-heading">
+      <section
+        id={USERS_SECTION_ID}
+        className="inst-card"
+        aria-labelledby="inst-users-heading"
+        hidden={activeSection !== USERS_SECTION_ID}
+      >
         <h2 id="inst-users-heading" ref={usersHeadingRef} tabIndex={-1}>
           Users
         </h2>
@@ -496,9 +528,7 @@ export function Institution({
           a sign-in with a one-time password. Disabling ends access at the
           next request. The audit log records every change.
         </p>
-        {usersState.kind === 'loading' && (
-          <p className="status-line">Loading the users…</p>
-        )}
+        {usersState.kind === 'loading' && <SectionLoading label="Loading the users…" />}
         {usersState.kind === 'error' && (
           <div className="state-error" role="alert">
             <h3>We couldn’t load the users</h3>
@@ -534,8 +564,9 @@ export function Institution({
                     <td data-label="Role">
                       <select
                         aria-label={`Role for ${user.email}`}
+                        aria-describedby={isYou ? 'own-role-hint' : undefined}
                         value={user.role}
-                        disabled={userBusy}
+                        disabled={userBusy || isYou}
                         onChange={(event) => {
                           const role = event.target.value as Role
                           if (role !== user.role) {
@@ -551,6 +582,11 @@ export function Institution({
                           </option>
                         ))}
                       </select>
+                      {isYou && (
+                        <span className="dataset-flag" id="own-role-hint">
+                          You can’t change your own role
+                        </span>
+                      )}
                     </td>
                     <td data-label="Status">
                       {user.disabled ? (
@@ -578,7 +614,7 @@ export function Institution({
                           ) : (
                             <button
                               type="button"
-                              className="btn-danger"
+                              className="btn-secondary"
                               disabled={userBusy}
                               onClick={(event) => {
                                 userTriggerRef.current = event.currentTarget
@@ -745,6 +781,7 @@ export function Institution({
         id={OFFICES_SECTION_ID}
         className="inst-card"
         aria-labelledby="inst-offices-heading"
+        hidden={activeSection !== OFFICES_SECTION_ID}
       >
         <h2 id="inst-offices-heading" tabIndex={-1}>
           Offices
@@ -753,9 +790,7 @@ export function Institution({
           Where approved follow-ups and staff actions are sent. Each office gets
           one mailbox. Nothing is sent until a staff member presses Send.
         </p>
-        {officesState.kind === 'loading' && (
-          <p className="status-line">Loading the office contacts…</p>
-        )}
+        {officesState.kind === 'loading' && <SectionLoading label="Loading the office contacts…" />}
         {officesState.kind === 'error' && (
           <div className="state-error" role="alert">
             <h3>We couldn’t load the office contacts</h3>
@@ -952,9 +987,16 @@ export function Institution({
         )}
       </section>
 
-      <CounselingAuthorizationSection onChanged={onDataChanged} />
+      <div className="inst-section" hidden={activeSection !== COUNSELING_SECTION_ID}>
+        <CounselingAuthorizationSection onChanged={onDataChanged} />
+      </div>
 
-      <section id={DATA_SECTION_ID} className="inst-card" aria-labelledby="inst-data-heading">
+      <section
+        id={DATA_SECTION_ID}
+        className="inst-card"
+        aria-labelledby="inst-data-heading"
+        hidden={activeSection !== DATA_SECTION_ID}
+      >
         <h2 id="inst-data-heading" ref={dataHeadingRef} tabIndex={-1}>
           Data
         </h2>
@@ -962,9 +1004,7 @@ export function Institution({
           The briefing is computed from the active upload. Activating another
           one recomputes the briefing.
         </p>
-        {datasetsState.kind === 'loading' && (
-          <p className="status-line">Loading the uploads…</p>
-        )}
+        {datasetsState.kind === 'loading' && <SectionLoading label="Loading the uploads…" />}
         {datasetsState.kind === 'error' && (
           <div className="state-error" role="alert">
             <h3>We couldn’t load the uploads</h3>
@@ -1030,7 +1070,7 @@ export function Institution({
                           </button>
                           <button
                             type="button"
-                            className="btn-danger"
+                            className="btn-secondary"
                             disabled={actionBusy}
                             onClick={(event) => {
                               datasetTriggerRef.current = event.currentTarget
@@ -1116,7 +1156,7 @@ export function Institution({
           </p>
           <div className="inst-field">
             <span className="inst-label" id="upload-file-label">
-              Data file (.json)
+              Student records file
             </span>
             <div className="inst-file-row">
               <label
@@ -1202,7 +1242,9 @@ export function Institution({
         )}
       </section>
 
-      <ConnectionsSection />
+      <div className="inst-section" hidden={activeSection !== CONNECTIONS_SECTION_ID}>
+        <ConnectionsSection />
+      </div>
     </div>
   )
 }

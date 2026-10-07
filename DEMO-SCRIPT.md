@@ -1,19 +1,13 @@
 # Demo Script, four minutes
 
-The demo is the scope (ROADMAP §2), and we wrote this script word for word with the
-timings as targets from the six beats. We tune the pauses in rehearsals on Oct 4-5,
-never the numbers. All numbers come from the fixture, not the model. They are
-**−4.8 %, 42, 18, 12**.
+The script is word for word, with the timings as targets. We tune the pauses in
+rehearsal, never the numbers. Every number on screen is computed in code from fictional
+data, never by the model. The ones we say out loud are **−4.8 %, 42, 18, 12** from the
+briefing, **2.62** and **41.8 %** from the lowest-GPA question, and **29.9 %** against
+**17.8 %** from the dropout question.
 
-The person demoing is "the presenter", and the on-screen persona is "the president".
-The president signs in as the executive account created in preflight, and the masthead
-names that account for the whole demo.
-
-The seven briefing sections follow PROPOSAL.md's "Executive Briefing Format" in order
-and wording. The first six are executive summary, current measure and historical
-comparison, student groups most affected, evidence and source fields, operational
-actions, and leadership decisions (stated separately). The last is known limitations,
-missing data, or conflicting definitions.
+The person demoing is "the presenter", and the on-screen persona is "the president",
+who signs in as the executive account created in preflight.
 
 ---
 
@@ -23,6 +17,7 @@ One-time setup, from the repo root (creates `.venv`, installs backend and UI dep
 
 ```bash
 make setup
+make school-data   # builds Demonstration University for "ask anything" (about a minute)
 ```
 
 The demo accounts are also one-time. Each generated password prints exactly once and is
@@ -70,147 +65,88 @@ the second device.
 
 ---
 
-## Beat 1, 0:00 to 0:30 · The question
+## Beat 1, 0:00 to 0:25 · The problem
 
-**On screen.** The sign-in screen, then the briefing shell. The masthead names the
-signed-in president, and a single question field sits beside the approved-question
-buttons.
+*Sign in as `president@demo.test` while speaking.*
 
-**Clicked.** The presenter signs in as the president (`president@demo.test`, the
-password printed once at account creation). That takes ten seconds at most, typed
-while the opening line is spoken, so the beat keeps its thirty seconds. The shell
-opens, and the presenter clicks the question field (or the approved question's
-button), types (or pastes, per rehearsal) the one approved question, and presses
-Enter.
-*"What should I know about spring registration?"*
+> "Every university has the data. Getting one straight answer out of it still takes
+> several offices and several days, and nobody wants to hand student records to an AI.
+> This is CampusLens."
 
-**Said.**
-> "Every fall, a president asks a simple question. What should I know about spring
-> registration? Today the answer lives in six spreadsheets and three inboxes. This is
-> CampusLens, governed AI employees that turn student-system data into
-> one briefing a leader can act on. Watch what happens when we ask."
+## Beat 2, 0:25 to 1:05 · The AI employees go to work
 
-## Beat 2, 0:30 to 1:10 · The cabinet goes to work, visibly scoped
+*Click the approved question "What should I know about spring registration?".*
 
-**On screen.** The Chief of Staff accepts the question and dispatches two tasks, one to
-the Enrollment Analyst, one to the Student Success Analyst. Each task card shows the
-exact fields that analyst is allowed to see. An audit event appears for each grant.
+> "I ask one question. A Chief of Staff hands narrow tasks to an Enrollment Analyst and
+> a Student Success Analyst. Each one sees only the fields its job allows, and none of
+> them ever sees a student's record."
 
-**Clicked.** Nothing yet. The presenter lets the dispatch play, then clicks "Fields
-granted" on one task card so the audience sees the permission list.
+*While the analysts work, point at the live task list. Then open **AI employees and data
+access** from the sidebar for two seconds, and press **Back**.*
 
-**Said.**
-> "The Chief of Staff does not answer itself. It assigns the work. The Enrollment
-> Analyst gets enrollment numbers, and nothing else. The Student Success Analyst gets
-> holds and advising, and nothing else. Every field granted is logged, and as you will
-> see in a minute, every field refused is logged too. These are employees with job
-> descriptions, not a chatbot with the database password."
+## Beat 3, 1:05 to 1:45 · The briefing, and one number opened
 
-## Beat 3, 1:10 to 2:20 · The briefing
+> "Spring registration is down 4.8 percent. Forty-two continuing students haven't
+> registered. Eighteen of them have a small balance under a thousand dollars, and twelve
+> haven't seen an advisor."
 
-**On screen.** The executive briefing renders, the seven sections in the proposal's
-order, as listed above. The operational actions and the leadership decisions are
-visually separated.
+*Click **42**. The evidence page opens.*
 
-**Clicked.** The presenter scrolls slowly through the briefing, pausing on the student
-groups most affected section.
+> "Every number is computed in code and links to how it was worked out and the records
+> behind it. The model only explains numbers it is given, and a checker rejects any
+> sentence whose number doesn't match."
 
-**Said.**
-> "Here is the briefing. Spring registration is down **4.8 percent** versus the same
-> date last year. **Forty-two** continuing students have not registered. These are not
-> risk scores. They are forty-two people who may need support. Of the forty-two,
-> **eighteen** have a financial hold under a thousand dollars. That is the kind a
-> small grant or a payment plan often clears. **Twelve** have not met with an advisor
-> this term. Below, the cabinet separates the operational actions from the one
-> decision that belongs to leadership. Student Success reviews the students with no
-> advising contact, and Financial Aid reviews the small-balance cases. Every number
-> on this page traces to a row in the data, and we will prove that next."
-
-## Beat 4, 2:20 to 3:10 · Open one claim
-
-**On screen.** The presenter opens the evidence drawer on the 4.8 % claim. The drawer
-shows the source fields, the formula, and the rows behind the number.
-
-**Clicked.** Click the −4.8 % figure in the executive summary section. The evidence
-drawer slides open showing the formula `119 / 125 − 1 = −4.8 %`, the source fields
-(`enrollment.registration_status`, `enrollment.registration_date`,
-`comparison.prior_year_equivalent_date`, `profile.continuing`), and the row-ID lists
-behind 119 and 125. Scroll the row list briefly.
-
-**Said.**
-> "Pick any number. We will take the headline. Here is the formula, the exact fields it
-> read, and the one hundred nineteen students behind the numerator and the one hundred
-> twenty-five behind the denominator. Anyone can count these by hand from the raw
-> data, and `data/VERIFY.md` lists them. The AI explains the numbers. It is never allowed to
-> invent one. A test extracts every numeral in this briefing and fails the build if it
-> is not in the data."
 > (Optional) "The support indicators work the same way. There are four named rules,
 > and for each pseudonymous student we show exactly which rules fired and why."
 
-## Beat 5, 3:10 to 3:40 · The human decides
+*Press **Back**.*
 
-**On screen.** The decision panel. The leadership decision, whether to authorize a
-focused emergency-aid eligibility review for students below a defined balance
-threshold, stated separately from the operational actions, with an Approve button.
+## Beat 4, 1:45 to 2:35 · Ask anything
 
-**Clicked.** The presenter clicks **Approve**. A confirmation appears. One simulated
-follow-up task to Financial Aid created, and a `decision.approved` event lands in the
-audit log. Nothing is sent anywhere.
+*Type: "Which major has the lowest GPA, and in that major what is the hardest class
+historically and who teaches it?"*
 
-**Said.**
-> "The cabinet advises. The president decides. Approving authorizes the eligibility
-> review, not an aid decision, which is currently out of scope. It sends the review to
-> Financial Aid as a follow-up task, simulated, because nothing here ever emails a
-> student or touches a record. The approval itself becomes part of the record."
+> "Now any question about the university. Watch it think."
 
-**Optional ten seconds (use only when Beat 5 lands early).** The presenter clicks
-"Prepare the message to Financial Aid". The composed message appears read-only,
-with the office, the decision, the eighteen students with their finding link, and
-the approving president's name. The president's account has no Send button. The
-panel says a staff member sends it.
+*Let the trace run: understood, plan, reading the student records, each step, checking
+every number. It folds into "Thought for".*
 
-**Said.**
-> "And if the office needs the message, a staff member sends it, not the AI and not
-> the president. The software wrote the message from the numbers we checked. It goes
-> to the office, never to a student, and the record will show exactly whose click sent
-> it."
+> "Mechanical Engineering, 2.62. Its hardest required course is Thermodynamics I, at a
+> 41.8 percent D, F or withdrawal rate, and here is who has taught it most."
 
-**Optional sentence (only with time to spare).** After the sign-off, the presenter
-clicks "Prepare the Financial Aid review queue" and the panel reads "Queued 18 students
-for Financial Aid review".
+*Click **41.8 %**: the table opens at that exact cell. Then type "what majors have the
+highest dropout rate".*
 
-> "The office gets a queue of those eighteen students with the facts it needs to start
-> its own review. The cabinet makes no determination about any student. Financial Aid
-> staff record their own status and notes."
+> "Public Health, 29.9 percent against 17.8 percent overall, and it tells you exactly
+> what it counted as a dropout."
 
-## Beat 6, 3:40 to 4:00 · The audit log and the refusal
+## Beat 5, 2:35 to 3:15 · People act, and a person decides
 
-**On screen.** The audit log view. Reading the audit log belongs to the executive
-role, and the president signed in with that role in Beat 1. This walkthrough runs
-under the same account. The full event list, `question.asked`,
-`task.assigned`, `data.granted`, `finding.produced`, `briefing.produced`,
-`decision.approved`, `task.created`, and two `data.refused` events. First, the
-Enrollment Analyst's task requested `hold.amount` and was denied before any model call.
-Second, the out-of-scope question.
+*Open **Staff actions**.*
 
-**Clicked.** The presenter filters the audit log to `data.refused` and clicks the
-first refusal so the denied field list is visible. Then the presenter clicks into the
-second question field, types *"Which students are in counseling?"*, and submits it.
-The Chief of Staff refuses with a sentence, and a second `data.refused` event
-appears.
+> "The briefing turns into work. Each office gets its action, an owner, a due date and
+> notes, and a staff member sends it to the office's mailbox when they're ready. Nothing
+> goes out on its own."
 
-**Said.**
-> "Finally, the part we built first. One of the analysts asked for a field outside its
-> role, hold amounts, and was refused before any model was called. And when we ask
-> something outside the approved use case, which students are in counseling, the
-> cabinet refuses in plain words, and the refusal is recorded. The counseling fields
-> exist in this fictional data precisely so that refusal is real. Governed AI is not a
-> promise. It is the architecture here. Thank you."
+*Set the Bursar action to In progress. Open **Decision** and press **Approve**.*
 
-*Footnote.* The refusal is the default for every institution, and it is what this
-demo shows. An institution may record its counseling director's written
-authorization for one aggregate count (RUNBOOK.md). Even then this question and every
-request for a counseling field are refused word for word.
+> "The one leadership decision is mine. I approve it, and CampusLens prepares the
+> message to Financial Aid."
+
+## Beat 6, 3:15 to 3:45 · The refusal
+
+*Type: "Which students have met with a counselor this term?"*
+
+> "Some questions it will never answer: counseling records, one student's file,
+> or a guess about one person's future. It refuses before any model is called, and it writes that
+> down."
+
+*Open **Audit log**, filter to refusals, point at the entry.*
+
+## Beat 7, 3:45 to 4:00 · Close
+
+> "Answers your leaders can trust: computed, traceable, private, and a person always
+> decides. That's CampusLens."
 
 ---
 
@@ -218,29 +154,24 @@ request for a counseling field are refused word for word.
 
 | Beat | Target | Hard limit |
 |---|---|---|
-| 1 | 0:00 to 0:30 | 0:30 |
-| 2 | 0:30 to 1:10 | 1:15 |
-| 3 | 1:10 to 2:20 | 2:25 |
-| 4 | 2:20 to 3:10 | 3:15 |
-| 5 | 3:10 to 3:40 | 3:45 |
-| 6 | 3:40 to 4:00 | 4:00 |
+| 1 | 0:00 to 0:25 | 0:30 |
+| 2 | 0:25 to 1:05 | 1:10 |
+| 3 | 1:05 to 1:45 | 1:50 |
+| 4 | 1:45 to 2:35 | 2:40 |
+| 5 | 2:35 to 3:15 | 3:20 |
+| 6 | 3:15 to 3:45 | 3:50 |
+| 7 | 3:45 to 4:00 | 4:00 |
 
-The sign-in adds no seconds. It rides inside Beat 1's window, typed while the opening
-line is spoken, so the pauses, the table above, and the four-minute total stand.
-
-If a beat runs long, the recovery is always the same. Skip the scroll, keep the
-sentence, never drop Beat 6. The refusal is the thesis. We timed the six beats end
-to end at 204.9 seconds on the replay path, and every beat sat inside its window.
+If a beat runs long, skip the second Explore question first, then the AI employees
+page. Never drop Beat 6: the refusal is the thesis. We time the whole run in each
+rehearsal on the replay path and write the total here.
 
 ## Failure fallbacks
 
 - **Model unavailable.** The UI shows its "model unavailable" state with retry. The
   presenter restarts the API in replay mode (`make stop && make api REPLAY=1`) and
   says, *"and this is why the demo does not depend on the network."*
-- **UI down entirely.** The offline deck (`docs/backup-demo.html`) opens on the
-  second device with no network. It steps through the six beats with real
-  screenshots and this script's spoken lines, word for word. After the Day-10
-  rehearsal, the backup video recorded from the replay path joins it on the second
-  device.
+- **UI down entirely.** The demo video plays from the second device with no network.
 - **Numbers questioned.** We open `data/VERIFY.md`, where the row IDs behind 119, 125,
-  42, 18, 12 are listed for hand counting.
+  42, 18, 12 are listed for hand counting, and `data/school/VERIFY.md` for the
+  university's figures.

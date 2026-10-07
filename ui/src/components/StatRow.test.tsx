@@ -39,11 +39,11 @@ describe('StatRow', () => {
     expect(html).not.toMatch(/\bM[1-9]\b/)
   })
 
-  it("shows each finding's display string verbatim and nothing else", () => {
+  it("shows each finding's display string, in the house number style, and nothing else", () => {
     const displays = [...html.matchAll(/<span class="stat-display">([^<]*)<\/span>/g)].map(
       (match) => match[1],
     )
-    expect(displays).toEqual(['−4.8 %', '42', '18', '12', '22'])
+    expect(displays).toEqual(['−4.8%', '42', '18', '12', '22'])
   })
 
   it('never makes M9 a card, even when the findings carry it', () => {

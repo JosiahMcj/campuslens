@@ -74,6 +74,8 @@ describe('the page head', () => {
     expect(html).toContain('rel="manifest"')
     expect(html).toContain('href="/manifest.webmanifest"')
     expect(html).toContain('name="theme-color" content="#FFFFFF"')
+    // The phone's browser bar follows a dark system theme too.
+    expect(html).toContain('name="theme-color" content="#212121" media="(prefers-color-scheme: dark)"')
   })
 
   it('links a 180 px apple-touch-icon that exists on disk', () => {
@@ -101,7 +103,7 @@ describe('the service worker', () => {
     expect(sw).toContain('cacheableStaticPath')
     expect(sw).toContain("'/assets/'")
     expect(sw).toContain('NEVER stored')
-    expect(sw).toContain('cabinet-shell-v4')
+    expect(sw).toContain('cabinet-shell-v5')
     // Every icon the manifest and the page name is in the shell.
     for (const icon of [
       '/icons/icon-192.png',

@@ -103,13 +103,19 @@ export function ProfilePanel({
       <p className="panel-text">Need access? Ask your administrator.</p>
       <p className="panel-text">You are signed out after 12 hours.</p>
 
-      <button type="button" className="panel-danger" onClick={onSignOut}>
+      {/* Signing out loses nothing, so it is a plain secondary button. */}
+      <button type="button" className="btn-secondary profile-sign-out" onClick={onSignOut}>
         Sign out
       </button>
     </div>
   )
 }
 
+/**
+ * A choice of a few options, as a radio group: one Tab stop (the chosen
+ * option), and the arrow keys move the choice, Home and End jump to the
+ * first and last, as a radio group does everywhere else.
+ */
 function Segmented<T extends string>({
   label,
   value,
@@ -121,18 +127,49 @@ function Segmented<T extends string>({
   options: { value: T; label: string }[]
   onChange: (value: T) => void
 }) {
+  const id = `setting-${label.toLowerCase().replace(/\s+/g, '-')}`
+  const current = Math.max(
+    0,
+    options.findIndex((option) => option.value === value),
+  )
+  const choose = (index: number, group: HTMLElement | null) => {
+    const next = (index + options.length) % options.length
+    onChange(options[next].value)
+    group?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus()
+  }
   return (
     <div className="setting-row">
-      <span className="setting-label" id={`setting-${label}`}>
+      <span className="setting-label" id={id}>
         {label}
       </span>
-      <div className="segmented" role="radiogroup" aria-labelledby={`setting-${label}`}>
-        {options.map((option) => (
+      <div
+        className="segmented"
+        role="radiogroup"
+        aria-labelledby={id}
+        onKeyDown={(event) => {
+          const group = event.currentTarget
+          if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+            event.preventDefault()
+            choose(current + 1, group)
+          } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+            event.preventDefault()
+            choose(current - 1, group)
+          } else if (event.key === 'Home') {
+            event.preventDefault()
+            choose(0, group)
+          } else if (event.key === 'End') {
+            event.preventDefault()
+            choose(options.length - 1, group)
+          }
+        }}
+      >
+        {options.map((option, index) => (
           <button
             key={option.value}
             type="button"
             role="radio"
-            aria-checked={value === option.value}
+            aria-checked={index === current}
+            tabIndex={index === current ? 0 : -1}
             className="segment"
             onClick={() => onChange(option.value)}
           >
@@ -257,12 +294,8 @@ export function DataAccessPanel({
 }) {
   return (
     <div className="account-panel">
-      <p className="panel-intro">
-        Each AI employee sees only the fields its task needs, and never a
-        student's name or identifiers. A request outside those fields is
-        refused before any model runs, and the refusal is logged.
-      </p>
-
+      {/* The page's introduction comes from the page header (SidePanel's
+          intro), like every other page's. */}
       <h3 className="panel-subhead">AI employees</h3>
       {error !== null && (
         <div className="state-error state-panel error-panel" role="alert">

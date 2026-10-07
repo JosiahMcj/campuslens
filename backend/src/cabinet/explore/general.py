@@ -661,6 +661,98 @@ MEASURES: dict[str, Measure] = {
 MEASURE_KEYS: tuple[str, ...] = tuple(MEASURES)
 
 
+# --- the fields one request uses ----------------------------------------------------
+#
+# "How this was answered" lists the data each step used: the measure's own
+# inputs, its groupings and filters, and the fields that define who is
+# counted. The audit event (data.granted) keeps the analysis's full list,
+# every field the reviewed SQL may touch, so the log never understates.
+
+_GROUPING_FIELDS: dict[str, tuple[str, ...]] = {
+    "major": ("student_term_records.program_code",),
+    "college": ("academic_programs.college_code",),
+    "class_level": ("student_term_records.class_level",),
+    "term": ("student_term_records.term_code",),
+    "entry_cohort": ("students.entry_term",),
+    "residency": ("students.residency",),
+    "first_generation": ("students.first_generation",),
+    "pell": ("students.pell_recipient",),
+    "gender": ("student_profiles.gender",),
+    "race_ethnicity": ("student_profiles.race_ethnicity",),
+    "age_band": ("student_profiles.age_band_at_entry",),
+    "admit_type": ("students.entry_type",),
+    "load": ("student_term_enrollment.academic_load",),
+    "housing": ("student_term_enrollment.housing",),
+    "athlete": ("student_profiles.athlete",),
+    "honors": ("student_profiles.honors",),
+    "modality": ("sections.modality",),
+}
+
+_ELSEWHERE = "subsequent_enrollment (enrolled at another college)"
+
+_MEASURE_FIELDS: dict[str, tuple[str, ...]] = {
+    "headcount": ("student_term_records.term_code",),
+    "avg_gpa": ("student_term_records.cumulative_gpa",),
+    "avg_credits_earned": ("student_term_records.cumulative_earned_hours",),
+    "dropout_rate": ("students.enrollment_status", _ELSEWHERE),
+    "transfer_out_rate": ("students.enrollment_status", _ELSEWHERE),
+    "major_change_rate": ("student_academic_programs.status",),
+    "pell_share": ("students.pell_recipient",),
+    "first_gen_share": ("students.first_generation",),
+    "international_share": ("students.residency",),
+    "part_time_share": ("student_term_enrollment.academic_load",),
+    "on_campus_share": ("student_term_enrollment.housing",),
+    "probation_rate": ("academic_standings.standing",),
+    "suspension_rate": ("academic_standings.standing",),
+    "stop_out_rate": ("student_term_enrollment (enrolled the next term or not)",),
+    "credit_completion_rate": (
+        "student_term_records.attempted_hours",
+        "student_term_records.earned_hours",
+    ),
+    "avg_credits_attempted": ("student_term_records.attempted_hours",),
+    "advising_rate": ("student_appointments.status",),
+    "hold_rate": ("person_holds.term_code",),
+    "retention_rate": (
+        "students.entry_term",
+        "student_term_records (enrolled the next fall or not)",
+    ),
+    "grad_rate_4yr": ("students.entry_term", "students.exit_term"),
+    "grad_rate_6yr": ("students.entry_term", "students.exit_term"),
+    "time_to_degree": ("students.entry_term", "student_academic_programs.end_term"),
+    "graduates": ("student_academic_programs.status",),
+    "dfw_rate": ("final_grades.grade",),
+    "withdrawal_rate": ("final_grades.grade",),
+}
+
+# Who is counted, by unit: the term each row belongs to, and the rows a unit
+# leaves out (first-time entrants, standard-graded courses).
+_UNIT_FIELDS: dict[str, tuple[str, ...]] = {
+    "student": ("student_term_records.term_code",),
+    "student_term": ("student_term_records.term_code",),
+    "cohort": ("students.entry_type",),
+    "graduate": ("student_academic_programs.end_term",),
+    "registration": ("sections.term_code", "courses.grade_mode"),
+}
+
+
+def fields_used(p: dict[str, Any]) -> tuple[str, ...]:
+    """The fields one measure-by-group request uses, in reading order: the
+    measure's inputs, its groupings, its filters, then who is counted."""
+    measure = MEASURES.get(str(p.get("measure")))
+    if measure is None:
+        return ()
+    groups = [str(g) for g in (p.get("group_by"), p.get("then_by")) if g]
+    filters = [k for k in GROUPING_KEYS if k != "term" and p.get(k)]
+    out: list[str] = list(_MEASURE_FIELDS.get(measure.id, ()))
+    for key in groups + filters:
+        out.extend(_GROUPING_FIELDS.get(key, ()))
+    unit = _UNIT_FIELDS.get(measure.unit, ())
+    if measure.unit == "cohort" and ("admit_type" in groups or "admit_type" in filters):
+        unit = ()
+    out.extend(unit)
+    return tuple(dict.fromkeys(out))
+
+
 # Every grouping a measure may use: the unit's list, minus the term for
 # measures read at one fixed point (each student once, or a cohort).
 def allowed_groupings(measure: Measure) -> tuple[str, ...]:
@@ -1179,8 +1271,17 @@ def run(
             key=lambda r_: (-r_["_sort"] if descending else r_["_sort"], r_["_key"])
         )
     top = p.get("top")
+    ranked_of = len(visible)
     if top and not natural:
         visible = visible[: int(top)]
+    cut_note: str | None = None
+    if len(visible) < ranked_of and keys:
+        plural = {"major": "majors", "college": "colleges", "term": "terms"}
+        noun = plural.get(keys[0], "groups") if len(keys) == 1 else "groups"
+        cut_note = (
+            f"The first {len(visible)} of {ranked_of:,} {noun} in this ranking "
+            "are shown."
+        )
 
     # The whole (one grouping): the parent of every row above, checked the
     # same way as a cell of its own.
@@ -1207,6 +1308,8 @@ def run(
             f"(groups of {SUPPRESSED_DISPLAY} students, with more where needed so a "
             "withheld figure cannot be worked out from a total) and not ranked."
         )
+    if cut_note is not None:
+        notes.append(cut_note)
     if m.unit == "cohort" and r.admit_default:
         notes.append(
             "Entering students are first-time students unless admit type is asked."

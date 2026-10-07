@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import type { AuditEvent } from '../api'
 import { DENIED_REQUEST } from '../api'
@@ -7,8 +7,10 @@ import {
   AUDIT_FILTERS,
   filterAuditEvents,
   NO_FILTERS,
+  peopleFrom,
   type AuditFilterId,
   type AuditFilters,
+  type People,
 } from '../auditFilters'
 import { plainSentence } from '../errors'
 import { fieldLabels } from '../fieldLabels'
@@ -38,7 +40,8 @@ interface AuditLogProps {
    * failed load. */
   onRefresh: () => void
   deniedRequest: DeniedRequestState
-  /** "Test a refusal": the Enrollment Analyst's out-of-role request. */
+  /** "Show how a refusal works": the Enrollment Analyst's out-of-role
+   * request. */
   onShowDeniedRequest: () => void
   /** An entry to scroll to and highlight (e.g. the refusal a chat reply
    * points at). The refusal test's own entry is highlighted too. */
@@ -57,16 +60,40 @@ const ROLE_NAMES: Record<string, string> = {
   executive: 'the executive',
 }
 
+/** Sign-in roles in words, for a refusal's reason. */
+const SIGN_IN_ROLES: Record<string, string> = {
+  admin: 'an administrator',
+  executive: 'the executive',
+  staff: 'staff',
+  reviewer: 'the reviewer',
+  aid: 'Financial Aid',
+}
+
 function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
+/** A name at the start of a sentence: "You", "The Chief of Staff", but an
+ * email address keeps its own case. */
+function sentenceStart(name: string): string {
+  return name.includes('@') ? name : capitalize(name)
+}
+
+/** Quoted text inside a sentence, with no doubled punctuation: the closing
+ * full stop is dropped when the quote already ends in . ? or !. */
+function quoted(text: string, end = '.'): string {
+  return /[.?!…]$/.test(text.trim()) ? `“${text.trim()}”` : `“${text.trim()}”${end}`
+}
+
+const NO_PEOPLE: People = { key: (actor) => actor, question: () => null }
+
 /** Who did it, in words: an AI employee by name, the viewer as "you",
- * anyone else by email. */
+ * anyone else by email. `actor` is a key from People. */
 function actorName(actor: string, viewerEmail: string | null = null): string {
   if (ROLE_NAMES[actor] !== undefined) return ROLE_NAMES[actor]
   if (actor.includes('@')) return personName(actor, viewerEmail)
-  if (/^\d+$/.test(actor)) return 'an administrator'
+  if (/^\d+$/.test(actor)) return 'a signed-in person'
+  if (actor === 'anonymous') return 'someone who was not signed in'
   return 'CampusLens'
 }
 
@@ -89,14 +116,80 @@ function statusWord(value: unknown): string {
     : 'another status'
 }
 
+/** A staff action status as the tiles show it ("To do", "In progress"). */
 function actionStatusWord(value: unknown): string {
   return value === 'todo'
-    ? 'to do'
+    ? 'To do'
     : value === 'in_progress'
-      ? 'in progress'
+      ? 'In progress'
       : value === 'done'
-        ? 'done'
+        ? 'Done'
         : 'another status'
+}
+
+/** The question an Explore entry belongs to: its question entry's id, or
+ * the number in its task id ("explore-14"). */
+function questionEventId(payload: Record<string, unknown>): number | null {
+  if (typeof payload.question_event_id === 'number') return payload.question_event_id
+  const match = /^explore-(\d+)$/.exec(str(payload.task_id) ?? '')
+  return match !== null ? Number(match[1]) : null
+}
+
+/** A refusal recorded with a category or a security reason, in words: the
+ * sentence and a plain reason (never the recorded method, path or role code). */
+function refusalWords(
+  payload: Record<string, unknown>,
+  who: string,
+): { sentence: string; reason: string | null } {
+  const recorded = str(payload.reason) ?? ''
+  const plain = plainSentence(recorded)
+  switch (payload.category) {
+    case 'counseling':
+      return {
+        sentence: 'A counseling question was refused before any AI employee was asked.',
+        reason: plain ?? 'Counseling and spiritual-care records are never disclosed.',
+      }
+    case 'individual_student':
+      return {
+        sentence: 'A question about a single student was refused before any AI employee was asked.',
+        reason: plain ?? 'CampusLens answers with totals only, never about a single student.',
+      }
+    case 'prediction':
+      return {
+        sentence:
+          'A question asking to predict what a student will do was refused before any AI employee was asked.',
+        reason: plain ?? 'CampusLens does not predict what an individual student will do.',
+      }
+    case 'instructor_level': {
+      const role = SIGN_IN_ROLES[str(payload.role) ?? ''] ?? 'this person'
+      return {
+        sentence: `Instructor names were left out of an answer for ${role}.`,
+        reason: 'Instructor-level rows are shown to the executive and administrators only.',
+      }
+    }
+  }
+  if (/no valid session/i.test(recorded)) {
+    return {
+      sentence: 'A request without a valid sign-in was refused.',
+      reason: 'The browser was not signed in, or its sign-in had ended or been turned off.',
+    }
+  }
+  if (/csrf|origin\/referer/i.test(recorded)) {
+    return {
+      sentence: 'A request without a valid security check was refused.',
+      reason: /csrf/i.test(recorded)
+        ? 'The request did not carry the page’s security check, so it could not be trusted.'
+        : 'The request came from another site, so it could not be trusted.',
+    }
+  }
+  const role = /^role '([a-z_]+)' is not allowed/i.exec(recorded)
+  if (role !== null) {
+    return {
+      sentence: `A request ${SIGN_IN_ROLES[role[1]] ?? 'this role'} may not make was refused, and nothing was changed.`,
+      reason: `Signed in as ${SIGN_IN_ROLES[role[1]] ?? 'a role'}, which may not do this.`,
+    }
+  }
+  return { sentence: `A request from ${who} was refused, and nothing was changed.`, reason: plain }
 }
 
 type AuditMark = 'granted' | 'refused' | 'approved' | 'sent' | null
@@ -110,11 +203,15 @@ interface DescribedEvent {
 
 /** One audit entry as a plain sentence, its governance mark, and details
  * (only what the sentence does not already say). */
-function describeEvent(event: AuditEvent, viewerEmail: string | null): DescribedEvent {
+function describeEvent(
+  event: AuditEvent,
+  viewerEmail: string | null,
+  people: People = NO_PEOPLE,
+): DescribedEvent {
   const payload = event.payload
-  const who = actorName(event.actor, viewerEmail)
+  const who = actorName(people.key(event.actor), viewerEmail)
   // An email address keeps its own case; a name starts the sentence.
-  const Who = who.includes('@') ? who : capitalize(who)
+  const Who = sentenceStart(who)
   const details: [string, string][] = []
   const add = (label: string, value: string | null) => {
     if (value !== null && value !== '') details.push([label, value])
@@ -122,7 +219,7 @@ function describeEvent(event: AuditEvent, viewerEmail: string | null): Described
   switch (event.type) {
     case 'question.asked':
       return {
-        sentence: `${Who} asked “${str(payload.question) ?? 'a question'}”.`,
+        sentence: `${Who} asked ${quoted(str(payload.question) ?? 'a question')}`,
         mark: null,
         details,
       }
@@ -143,9 +240,15 @@ function describeEvent(event: AuditEvent, viewerEmail: string | null): Described
     case 'data.granted': {
       const fields = list(payload.granted_fields)
       if (payload.aggregate_only === true) {
-        add('Fields read', fieldLabels(list(payload.fields_read)).join(', '))
+        const read = fieldLabels(list(payload.fields_read))
+        add('Fields read', read.join(', '))
+        // Only the counseling figure (M9) rests on a recorded authorization;
+        // every other totals-only grant is an answer from the records.
         return {
-          sentence: `${Who} was given the authorized counseling total, with no student records.`,
+          sentence:
+            payload.finding_id === 'M9'
+              ? `${Who} was given the authorized counseling total, with no student records.`
+              : `${Who} was given totals for ${read.length} field${read.length === 1 ? '' : 's'} (${read.slice(0, 3).join(', ')}${read.length > 3 ? ', …' : ''}), never student records.`,
           mark: 'granted',
           details,
         }
@@ -165,7 +268,7 @@ function describeEvent(event: AuditEvent, viewerEmail: string | null): Described
       if (refused.length > 0) {
         add('Fields refused', fieldLabels(refused).join(', '))
         return {
-          sentence: `${Who} asked to see the ${quotedFields(refused)} and was refused before any model was called.`,
+          sentence: `${Who} asked to see the ${quotedFields(refused)} and was refused before any AI employee was asked.`,
           mark: 'refused',
           details,
         }
@@ -175,16 +278,16 @@ function describeEvent(event: AuditEvent, viewerEmail: string | null): Described
         const reason = str(payload.reason)
         add('Reason', reason === null ? null : plainSentence(reason))
         return {
-          sentence: `A question outside the approved list was refused: “${question}”.`,
+          sentence: `A question outside the approved list was refused: ${quoted(question)}`,
           mark: 'refused',
           details,
         }
       }
-      return {
-        sentence: `A request from ${who} was refused, and nothing was changed.`,
-        mark: 'refused',
-        details,
-      }
+      const words = refusalWords(payload, who)
+      const asked = questionEventId(payload)
+      add('Reason', words.reason)
+      add('Question', asked !== null ? people.question(asked) : null)
+      return { sentence: words.sentence, mark: 'refused', details }
     }
     case 'finding.produced': {
       const findings = list(payload.findings)
@@ -302,7 +405,7 @@ function describeEvent(event: AuditEvent, viewerEmail: string | null): Described
       }
     case 'admin.changed': {
       const byEmail = str(payload.by)
-      const by = byEmail !== null ? capitalize(personName(byEmail, viewerEmail)) : 'An administrator'
+      const by = byEmail !== null ? sentenceStart(personName(byEmail, viewerEmail)) : 'An administrator'
       switch (payload.action) {
         case 'office_contacts':
           return { sentence: `${by} updated the office mailboxes.`, mark: null, details }
@@ -341,6 +444,9 @@ function describeEvent(event: AuditEvent, viewerEmail: string | null): Described
   }
 }
 
+/** Entries listed at first, and added by each "Show more". */
+const PAGE_SIZE = 25
+
 const MARKS: Record<Exclude<AuditMark, null>, { icon: ReactNode; label: string }> = {
   granted: { icon: <GrantedIcon />, label: 'Granted' },
   refused: { icon: <RefusedIcon />, label: 'Refused' },
@@ -352,14 +458,16 @@ const MARKS: Record<Exclude<AuditMark, null>, { icon: ReactNode; label: string }
 function deniedRequestSentence(): string {
   return `${capitalize(actorName(DENIED_REQUEST.role))} asked to see the ${quotedFields([
     ...DENIED_REQUEST.fields,
-  ])} and was refused before any model was called.`
+  ])} and was refused before any AI employee was asked.`
 }
 
 /**
  * The audit log (Beat 6): every entry as a compact plain sentence and its
  * time, newest first, filtered by a five-option "Show" select. An entry
  * with more to say than its sentence has a "Details" fold of plain labels
- * and values (never the raw record), ending with the full record time. "Test a refusal" sends
+ * and values (never the raw record), ending with the full record time. The
+ * newest 25 entries are listed first, with "Show more". "Show how a refusal
+ * works" sends
  * the Enrollment Analyst's out-of-role request; the refusal is recorded and
  * its entry highlighted. An entry passed in (highlightEventId) is scrolled
  * to and highlighted the same way.
@@ -375,27 +483,32 @@ export function AuditLog({
   viewerEmail = getSession()?.user.email ?? null,
 }: AuditLogProps) {
   const [filters, setFilters] = useState<AuditFilters>(NO_FILTERS)
+  // How many entries are listed: the newest page first, then "Show more".
+  const [limit, setLimit] = useState(PAGE_SIZE)
   const filtered = filters.kind !== 'all' || filters.actor !== 'all' || filters.from !== '' || filters.to !== ''
-  const setFilter = (change: Partial<AuditFilters>) =>
+  const setFilter = (change: Partial<AuditFilters>) => {
     setFilters((current) => ({ ...current, ...change }))
+    setLimit(PAGE_SIZE)
+  }
+  const people = useMemo(() => peopleFrom(events ?? []), [events])
   // Newest first: the API returns the chain in order (ascending ids).
-  const visible = filterAuditEvents(events ?? [], filters)
+  const visible = filterAuditEvents(events ?? [], filters, people.key)
     .slice()
     .sort((a, b) => b.id - a.id)
-  // Who appears in the log, by name, for the "Who" filter.
-  const actors = [...new Set((events ?? []).map((event) => event.actor))]
-    .map((actor) => {
-      const name = actorName(actor, viewerEmail)
-      return { actor, name: name.includes('@') ? name : capitalize(name) }
-    })
+  // Who appears in the log, one choice per person (a person recorded by
+  // role, by sign-in number and by email is still one name).
+  const actorChoices = [...new Set((events ?? []).map((event) => people.key(event.actor)))]
+    .map((key) => ({ key, name: sentenceStart(actorName(key, viewerEmail)) }))
     .sort((a, b) => a.name.localeCompare(b.name))
-  const actorChoices = actors.filter(
-    (choice, index) => actors.findIndex((other) => other.name === choice.name) === index,
-  )
   const highlightId =
     deniedRequest.kind === 'shown' ? deniedRequest.eventId : (highlightEventId ?? null)
-  const highlightPresent =
-    highlightId !== null && visible.some((event) => event.id === highlightId)
+  const highlightIndex =
+    highlightId === null ? -1 : visible.findIndex((event) => event.id === highlightId)
+  const highlightPresent = highlightIndex !== -1
+  // An entry to highlight is always listed, even past the first page.
+  const shownCount = Math.max(limit, highlightIndex + 1)
+  const shown = visible.slice(0, shownCount)
+  const more = visible.length - shown.length
 
   useEffect(() => {
     if (!highlightPresent || highlightId === null) return
@@ -406,11 +519,6 @@ export function AuditLog({
 
   return (
     <section aria-label="Audit log" id="audit-log" className="audit-log">
-      <p className="panel-intro">
-        Every question, data request, refusal and decision is recorded here and can
-        never be changed. Newest entries are first.
-      </p>
-
       <div className="audit-filters" role="group" aria-label="Filter the log">
         <label className="audit-filter-field">
           <span>Show</span>
@@ -435,7 +543,7 @@ export function AuditLog({
           >
             <option value="all">Anyone</option>
             {actorChoices.map((choice) => (
-              <option key={choice.actor} value={choice.actor}>
+              <option key={choice.key} value={choice.key}>
                 {choice.name}
               </option>
             ))}
@@ -465,7 +573,10 @@ export function AuditLog({
           <button
             type="button"
             className="btn-secondary secondary audit-clear"
-            onClick={() => setFilters(NO_FILTERS)}
+            onClick={() => {
+              setFilters(NO_FILTERS)
+              setLimit(PAGE_SIZE)
+            }}
           >
             Clear filters
           </button>
@@ -477,25 +588,28 @@ export function AuditLog({
           {events === null
             ? ''
             : filtered
-              ? `Showing ${visible.length} of ${events.length} entries.`
-              : `${events.length} entr${events.length === 1 ? 'y' : 'ies'}.`}
+              ? `Showing ${visible.length.toLocaleString('en-US')} of ${events.length.toLocaleString('en-US')} entries.`
+              : `${events.length.toLocaleString('en-US')} entr${events.length === 1 ? 'y' : 'ies'}.`}
         </p>
+        {/* The refusal demonstration sits on the right beside Refresh: the
+            first of the two carries .audit-refresh, which pushes them right. */}
         {!readOnly && (
           <button
             type="button"
-            className="btn-secondary secondary"
+            className="btn-secondary secondary audit-refresh"
             aria-busy={sending}
+            disabled={events === null && !sending}
             onClick={() => {
-              if (!sending) onShowDeniedRequest()
+              if (!sending && events !== null) onShowDeniedRequest()
             }}
           >
             {sending && <span className="spinner" aria-hidden="true" />}
-            {sending ? 'Testing…' : 'Test a refusal'}
+            {sending ? 'Showing…' : 'Show how a refusal works'}
           </button>
         )}
         <button
           type="button"
-          className="icon-button audit-refresh"
+          className={readOnly ? 'icon-button audit-refresh' : 'icon-button'}
           aria-label="Refresh the audit log"
           title="Refresh"
           onClick={onRefresh}
@@ -529,7 +643,12 @@ export function AuditLog({
             </button>
           </div>
         ) : (
-          <p className="status-line">Loading the audit log…</p>
+          <div role="status" aria-busy="true" className="audit-loading">
+            <span className="visually-hidden">Loading the audit log…</span>
+            <div className="skeleton skeleton-line" />
+            <div className="skeleton skeleton-line" />
+            <div className="skeleton skeleton-line short" />
+          </div>
         )
       ) : visible.length === 0 ? (
         <p className="state-empty hint">
@@ -538,9 +657,10 @@ export function AuditLog({
             : 'No entries match these filters. Clear the filters to see the whole log.'}
         </p>
       ) : (
+        <>
         <ol className="event-list">
-          {visible.map((event) => {
-            const described = describeEvent(event, viewerEmail)
+          {shown.map((event) => {
+            const described = describeEvent(event, viewerEmail, people)
             const highlighted = event.id === highlightId
             const mark = described.mark !== null ? MARKS[described.mark] : null
             return (
@@ -586,6 +706,22 @@ export function AuditLog({
             )
           })}
         </ol>
+        {more > 0 && (
+          <div className="state-actions audit-more">
+            <button
+              type="button"
+              className="btn-secondary secondary"
+              onClick={() => setLimit(shownCount + PAGE_SIZE)}
+            >
+              Show {Math.min(more, PAGE_SIZE)} more
+            </button>
+            <p className="hint">
+              Showing the newest {shown.length.toLocaleString('en-US')} of{' '}
+              {visible.length.toLocaleString('en-US')}.
+            </p>
+          </div>
+        )}
+        </>
       )}
     </section>
   )

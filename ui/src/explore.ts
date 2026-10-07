@@ -22,6 +22,9 @@ export interface ExploreSentence {
 export interface ExploreColumn {
   key: string
   label: string
+  /** count, gpa, pct, points, money, hours, average or text (the API's
+   * column kind); absent from older answers. */
+  kind?: string
 }
 
 export type ExploreCell = string | number | boolean | null
@@ -97,7 +100,11 @@ function stepOf(value: unknown): ExploreStep | null {
   const columns = Array.isArray(table.columns)
     ? table.columns
         .filter(isObject)
-        .map((column) => ({ key: String(column.key ?? ''), label: String(column.label ?? '') }))
+        .map((column) => ({
+          key: String(column.key ?? ''),
+          label: String(column.label ?? ''),
+          ...(typeof column.kind === 'string' ? { kind: column.kind } : {}),
+        }))
     : []
   const rows = Array.isArray(table.rows)
     ? table.rows.filter(Array.isArray).map((row) => (row as unknown[]).map(cellOf))
@@ -281,16 +288,75 @@ export function claimColumn(step: ExploreStep, column: string): string {
   return nameTwin(keys, column) ?? column
 }
 
-/** A table cell as text: whole numbers with thousands separators, negative
- * numbers with a true minus sign, an empty cell as a dash. */
-export function formatCell(value: ExploreCell): string {
+/** The columns a table shows beside an answer: the row label first, then
+ * the columns the answer quotes, in the order it quotes them. The rest wait
+ * behind "Show all columns" (`hidden`). A step the answer does not quote,
+ * or quotes only by its row label, shows every column. */
+export function answerColumns(
+  step: ExploreStep,
+  quoted: readonly string[],
+  showAll: boolean,
+): { columns: number[]; hidden: number } {
+  const all = visibleColumns(step)
+  if (all.length === 0) return { columns: all, hidden: 0 }
+  const keys = step.table.columns.map((column) => column.key)
+  const [label, ...rest] = all
+  const picked: number[] = []
+  for (const key of quoted) {
+    const index = keys.indexOf(claimColumn(step, key))
+    if (index >= 0 && index !== label && rest.includes(index) && !picked.includes(index)) {
+      picked.push(index)
+    }
+  }
+  if (picked.length === 0) return { columns: all, hidden: 0 }
+  const others = rest.filter((index) => !picked.includes(index))
+  return showAll || others.length === 0
+    ? { columns: [label, ...picked, ...others], hidden: 0 }
+    : { columns: [label, ...picked], hidden: others.length }
+}
+
+/** The column keys a step's answer quotes, in the order the sentences
+ * quote them. */
+export function quotedColumns(response: ExploreResponse, table: number): string[] {
+  const keys: string[] = []
+  for (const sentence of response.answer) {
+    for (const claim of sentence.claims) {
+      if (claim.table === table && !keys.includes(claim.column)) keys.push(claim.column)
+    }
+  }
+  return keys
+}
+
+/** Decimals a number of each column kind is shown with: a GPA with two, a
+ * rate or a share with one, a count with none. Other kinds (averages, hours,
+ * years, money) keep the API's own decimals, which the sentences quote. */
+const KIND_DIGITS: Record<string, number> = {
+  gpa: 2,
+  pct: 1,
+  points: 1,
+  count: 0,
+}
+
+/** A table cell as text: thousands separators, a GPA with two decimals and
+ * a rate with one (by the column's kind), negative numbers with a true minus
+ * sign, an empty cell as a dash. */
+export function formatCell(value: ExploreCell, kind?: string): string {
   if (value === null) return '—'
   if (typeof value === 'boolean') return value ? 'Yes' : 'No'
   if (typeof value === 'number') {
-    const text = Number.isInteger(value)
-      ? Math.abs(value).toLocaleString('en-US')
-      : String(Math.abs(value))
-    return value < 0 ? `−${text}` : text
+    const magnitude = Math.abs(value)
+    const digits = kind !== undefined ? KIND_DIGITS[kind] : undefined
+    let text: string
+    if (digits !== undefined && !(kind === 'count' && !Number.isInteger(value))) {
+      const rounded = roundHalfUp(magnitude, digits)
+      const [whole, fraction] = rounded.split('.')
+      text = Number(whole).toLocaleString('en-US') + (fraction !== undefined ? `.${fraction}` : '')
+    } else {
+      text = magnitude.toLocaleString('en-US', {
+        maximumFractionDigits: kind === undefined ? 3 : 2,
+      })
+    }
+    return value < 0 && /[1-9]/.test(text) ? `−${text}` : text
   }
   return displayText(value)
 }

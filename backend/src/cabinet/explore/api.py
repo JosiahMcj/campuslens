@@ -70,6 +70,18 @@ router = APIRouter()
 
 ANALYSES_BY_ID = {a.id: a for a in ANALYSES}
 _READING_CACHE: dict[str, str] = {}
+_YEAR_WORDS = {
+    1: "one",
+    2: "two",
+    3: "three",
+    4: "four",
+    5: "five",
+    6: "six",
+    7: "seven",
+    8: "eight",
+    9: "nine",
+    10: "ten",
+}
 
 
 def _reading_text(con: Any) -> str:
@@ -82,12 +94,17 @@ def _reading_text(con: Any) -> str:
     )
     if key not in _READING_CACHE:
         students = int(con.execute("SELECT COUNT(*) FROM students").fetchone()[0])
-        first, last = con.execute(
+        first, last, years = con.execute(
             "SELECT (SELECT name FROM academic_periods ORDER BY sequence LIMIT 1), "
-            "(SELECT name FROM academic_periods ORDER BY sequence DESC LIMIT 1)"
+            "(SELECT name FROM academic_periods ORDER BY sequence DESC LIMIT 1), "
+            "(SELECT COUNT(DISTINCT academic_year) FROM academic_periods)"
         ).fetchone()
+        # Named apart from the briefing's one-term snapshot: this is every
+        # year of the school records.
+        span = _YEAR_WORDS.get(int(years), f"{int(years):,}")
+        noun = "year" if int(years) == 1 else "years"
         _READING_CACHE[key] = (
-            "Reading the student records (Ellucian format, fictional data): "
+            f"Reading {span} {noun} of student records (fictional data): "
             f"{students:,} students, {first} to {last}"
         )
     return _READING_CACHE[key]
@@ -104,6 +121,18 @@ def _missing() -> JSONResponse:
     )
 
 
+def _table_json(step: StepResult) -> dict[str, Any]:
+    """The step's table, each column with its kind (count, gpa, pct, ...), so
+    the screen formats a GPA with two decimals and a rate with one."""
+    table = step.table()
+    kinds = {c.key: c.kind for c in step.columns}
+    table["columns"] = [
+        {**column, "kind": kinds.get(str(column["key"]), "text")}
+        for column in table["columns"]
+    ]
+    return table
+
+
 def _step_json(step: StepResult) -> dict[str, Any]:
     out: dict[str, Any] = {
         "analysis_id": step.analysis.id,
@@ -111,9 +140,15 @@ def _step_json(step: StepResult) -> dict[str, Any]:
         # The parameters a reader cares about, in plain words; the exact
         # record (codes, row limits) stays in the step and the CLI.
         "params_plain": step.params_shown,
-        "fields_read": list(step.fields_read),
+        # The fields this step used (the audit event keeps the analysis's
+        # full list): for the general measure, its inputs and groupings only.
+        "fields_read": list(
+            general.fields_used(step.params)
+            if step.analysis.id == general.ANALYSIS_ID and not step.error
+            else step.fields_read
+        ),
         "aggregate_only": True,
-        "table": step.table(),
+        "table": _table_json(step),
         "notes": step.notes,
     }
     if step.instructor_rows_withheld:
