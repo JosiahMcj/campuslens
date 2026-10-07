@@ -44,6 +44,7 @@ from pydantic import BaseModel
 from cabinet.counseling import SUPPRESSED_DISPLAY
 from cabinet.explore import general
 from cabinet.explore.answer import SOURCE_MODEL, Sentence, write_answer
+from cabinet.explore.card import CHART_TEMPLATES, Card, build_card
 from cabinet.explore.catalog import (
     ANALYSES,
     INSTRUCTOR_ROLES,
@@ -210,6 +211,11 @@ def get_explore_catalog() -> JSONResponse:
                 "analyses": [describe_analysis(a) for a in ANALYSES],
                 "examples": list(EXAMPLE_QUESTIONS),
                 "instructor_roles": list(INSTRUCTOR_ROLES),
+                # The fixed chart templates an answer card may use.
+                "chart_templates": [
+                    {"id": t.id, "title": t.title, "accepts": t.accepts}
+                    for t in CHART_TEMPLATES.values()
+                ],
             }
         )
     finally:
@@ -343,6 +349,40 @@ def _withheld_count(step: Any) -> int:
     if count == 0 and any(n.startswith("The figure is withheld") for n in step.notes):
         count = 1
     return count
+
+
+def _card(
+    steps: list[StepResult],
+    question: str,
+    con: Any,
+    catalog: Any,
+    role: str,
+    emit: Emit,
+    granted: Callable[[int, str, tuple[str, ...], bool], None],
+) -> Card | None:
+    """The answer card (``cabinet.explore.card``), or None if it could not be
+    built: a defect there is logged and the answer is shown without it."""
+    if not any(s.rows for s in steps):
+        return None
+
+    def on_trend(
+        index: int, analysis_id: str, fields: tuple[str, ...], withheld: bool
+    ) -> None:
+        emit(
+            {
+                "type": "step",
+                "index": index,
+                "total": index + 1,
+                "title": "The same figure a year earlier, for the trend",
+            }
+        )
+        granted(index, analysis_id, fields, withheld)
+
+    try:
+        return build_card(steps, question, con, catalog, role, on_step=on_trend)
+    except Exception:  # never lose the answer over its card
+        logger.exception("explore card could not be built")
+        return None
 
 
 def _explore(
@@ -616,6 +656,23 @@ def _explore(
                     },
                 )
 
+        def granted_extra(
+            index: int, analysis_id: str, fields: tuple[str, ...], withheld: bool
+        ) -> None:
+            # The card's trend read: its own data.granted, like every step.
+            audit.append(
+                "data.granted",
+                actor=EXPLORE_ACTOR,
+                payload={
+                    "task_id": task_id,
+                    "step": index,
+                    "analysis_id": analysis_id,
+                    "fields_read": list(fields),
+                    "aggregate_only": True,
+                    "purpose": "trend",
+                },
+            )
+
         try:
             steps = execute(planned, con, catalog, role, on_step=granted)
             withheld = sum(_withheld_count(s) for s in steps)
@@ -677,12 +734,17 @@ def _explore(
                     "source": None,
                 }
             )
+        card = _card(steps, question, con, catalog, role, emit, granted_extra)
+        extra_ids = [
+            s.analysis.id for s in (card.extra_steps if card else []) if s.params
+        ]
         audit.append(
             "explore.answered",
             actor=EXPLORE_ACTOR,
             payload={
                 "task_id": task_id,
                 "question_event_id": asked["id"],
+                **({"card_steps": extra_ids} if extra_ids else {}),
                 "steps": [s.analysis.id for s in steps],
                 "row_counts": [len(s.rows) for s in steps],
                 "planner": outcome.planner,
@@ -700,6 +762,7 @@ def _explore(
                 "answer": [s.to_json() for s in answer],
                 "steps": [_step_json(s) for s in steps],
                 "source": source,
+                **({"card": card.to_json(_step_json)} if card is not None else {}),
                 "planner": outcome.planner,
                 "notes": list(outcome.notes),
                 "fallbacks": [

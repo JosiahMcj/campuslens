@@ -45,6 +45,23 @@
   the recipient gets a 404, so message ids do not leak. One ``inbox.read``
   or ``inbox.reviewed`` event.
 
+**Approved decisions reach the owning department.** When the president
+approves a leadership decision (``POST /decisions/approve``), the server
+sends one message to every enabled account of the department that owns the
+follow-up (``DEPARTMENT_ROLES``: Financial Aid -> aid, Bursar -> finance,
+Registrar -> registrar, Student Success -> studentlife), from the approver,
+with ``source_ref`` ``decision:<decision id>``. Only the reference, the
+dataset it was approved on and the proposed deadline are stored: the
+decision's title, the approved follow-up and its figures are re-read from
+the current findings whenever the message is shown, never a student row,
+and the message is "no longer available" once another dataset is active.
+These rows are stored with ``source_kind`` 'note' (the table's CHECK
+predates them) and shown as kind ``decision``. One ``inbox.sent`` event per
+recipient with ``reason: "decision.approved"``. The department marks it
+**Acknowledged** (``POST /inbox/{id}/reviewed``); the president sees each
+delivery's state on the decision card (``GET /decisions/{id}/dispatch``,
+``department_inbox``). Nothing leaves the app.
+
 The audit events carry ids, roles and the source kind and ref; never the note
 text and never a student id (the events outlive any message). The tables are
 scoped by institution: a recipient id from another institution is a 404.
@@ -76,6 +93,11 @@ from cabinet.explore.catalog import (
     school_db_path,
 )
 from cabinet.explore.privacy import redact_question
+from cabinet.questions import (
+    DEMO_DECISION_ID,
+    UNRESOLVED_HOLDS_DECISION_ID,
+    find_decision,
+)
 from cabinet.security import EXPLORE_ROLES, READ_ROLES
 from cabinet.staffactions import valid_due_date
 from cabinet.store import CabinetStore
@@ -161,6 +183,163 @@ def _finding_view(
     return figure
 
 
+# --- approved decisions -> the owning department ----------------------------------
+
+DECISION_REF_PREFIX = "decision:"
+# The office that owns a decision's follow-up -> the account roles that are
+# that department.
+DEPARTMENT_ROLES: dict[str, tuple[str, ...]] = {
+    "Financial Aid": ("aid",),
+    "Bursar": ("finance",),
+    "Student Accounts": ("finance",),
+    "Registrar": ("registrar",),
+    "Student Success": ("studentlife",),
+    "Student Life": ("studentlife",),
+}
+# The briefing figures behind each decision, re-read whenever it is shown.
+DECISION_FIGURES: dict[str, tuple[str, ...]] = {
+    DEMO_DECISION_ID: ("M3",),
+    UNRESOLVED_HOLDS_DECISION_ID: ("M5", "M3"),
+}
+
+
+def department_roles(office: str) -> tuple[str, ...]:
+    return DEPARTMENT_ROLES.get(office, ())
+
+
+def _is_decision(row: dict[str, Any]) -> bool:
+    return str(row["source_kind"]) == "note" and str(
+        row["source_ref"] or ""
+    ).startswith(DECISION_REF_PREFIX)
+
+
+def notify_decision(
+    store: CabinetStore,
+    institution_id: int,
+    approver: dict[str, Any],
+    decision: dict[str, Any],
+    dataset_id: int,
+    due: str | None,
+) -> list[dict[str, Any]]:
+    """One inbox message per enabled account of the department that owns an
+    approved decision's follow-up, from the approver; each audited as
+    ``inbox.sent`` with ``reason: "decision.approved"``. Returns the
+    deliveries (empty when the department has no account)."""
+    office = str(decision["follow_up"]["office"])
+    roles = department_roles(office)
+    ref = DECISION_REF_PREFIX + str(decision["id"])
+    note = (
+        f"Leadership approved: {decision['title']}. The {office} office is "
+        "asked to carry out the follow-up below. Mark it acknowledged once "
+        "your office has reviewed it."
+    )
+    snapshot = json.dumps(
+        {"decision_id": decision["id"], "dataset_id": dataset_id, "due": due}
+    )
+    recipients = [
+        row
+        for row in store.users_for(institution_id)
+        if not row["disabled"]
+        and row["role"] in roles
+        and int(row["id"]) != int(approver["id"])
+    ]
+    for recipient in recipients:
+        with store._lock:
+            cursor = store._conn.execute(
+                "INSERT INTO inbox_messages (institution_id, sender_id, recipient_id,"
+                " note, review_by, source_kind, source_ref, snapshot, created_at)"
+                " VALUES (?, ?, ?, ?, ?, 'note', ?, ?, ?)",
+                (
+                    institution_id,
+                    int(approver["id"]),
+                    int(recipient["id"]),
+                    note,
+                    due,
+                    ref,
+                    snapshot,
+                    _now(),
+                ),
+            )
+            store._conn.commit()
+            message_id = int(cursor.lastrowid or 0)
+        store.audit_append(
+            institution_id,
+            "inbox.sent",
+            actor=str(approver["email"]),
+            payload={
+                "message_id": message_id,
+                "recipient_id": int(recipient["id"]),
+                "recipient_role": recipient["role"],
+                "source_kind": "decision",
+                "source_ref": ref,
+                "reason": "decision.approved",
+                "decision_id": decision["id"],
+                "has_review_by": due is not None,
+            },
+        )
+    return decision_deliveries(store, institution_id, str(decision["id"]), dataset_id)
+
+
+def decision_deliveries(
+    store: CabinetStore,
+    institution_id: int,
+    decision_id: str,
+    dataset_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """Where an approved decision was delivered: per recipient, when it
+    arrived, was opened and was acknowledged (newest first)."""
+    people = {int(p["id"]): p for p in store.users_for(institution_id)}
+    rows = _rows(
+        store,
+        "SELECT * FROM inbox_messages WHERE institution_id = ? AND source_kind = 'note'"
+        " AND source_ref = ? ORDER BY id DESC LIMIT ?",
+        (institution_id, DECISION_REF_PREFIX + decision_id, LIST_LIMIT),
+    )
+    return [
+        {
+            "message_id": int(row["id"]),
+            "to": _person(people.get(int(row["recipient_id"]))),
+            "created_at": row["created_at"],
+            "read_at": row["read_at"],
+            "acknowledged_at": row["reviewed_at"],
+        }
+        for row in rows
+        if dataset_id is None
+        or int(json.loads(row["snapshot"] or "{}").get("dataset_id") or -1)
+        == dataset_id
+    ]
+
+
+def _decision_view(request: Request, row: dict[str, Any]) -> dict[str, Any] | None:
+    """An approved decision as words, re-read from the CURRENT findings: its
+    title, the approved follow-up, the deadline and its figures. None once
+    the dataset it was approved on is no longer the active one."""
+    stored = json.loads(row["snapshot"]) if row["snapshot"] else {}
+    decision_id = str(row["source_ref"])[len(DECISION_REF_PREFIX) :]
+    runtime = request.app.state.runtime_for(int(row["institution_id"]))
+    if int(stored.get("dataset_id") or -1) != int(runtime.dataset["id"]):
+        return None
+    found = find_decision(runtime.findings, decision_id)
+    if found is None:
+        return None
+    _, decision = found
+    figures = [
+        figure
+        for ref in DECISION_FIGURES.get(decision_id, ())
+        if (figure := _finding_view(request, int(row["institution_id"]), ref))
+        is not None
+    ]
+    return {
+        "decision_id": decision_id,
+        "title": decision["title"],
+        "office": decision["follow_up"]["office"],
+        "action": decision["follow_up"]["description"],
+        "due": stored.get("due"),
+        "figures": figures,
+        "dataset": runtime.dataset.get("name"),
+    }
+
+
 def _resolve(
     request: Request, row: dict[str, Any], viewer_role: str
 ) -> tuple[dict[str, Any] | None, bool]:
@@ -174,6 +353,11 @@ def _resolve(
     """
     kind = str(row["source_kind"])
     ref = str(row["source_ref"] or "")
+    if _is_decision(row):
+        if viewer_role not in READ_ROLES:
+            return None, False
+        view = _decision_view(request, row)
+        return view, view is not None
     if kind == "note":
         return None, True
     if not attachment_allowed(kind, ref, viewer_role):
@@ -211,7 +395,7 @@ def _message_body(
         "to": _person(people.get(int(row["recipient_id"]))),
         "note": row["note"],
         "review_by": row["review_by"],
-        "source_kind": row["source_kind"],
+        "source_kind": "decision" if _is_decision(row) else row["source_kind"],
         "source_ref": row["source_ref"],
         "snapshot": snapshot,
         "attachment_available": available,

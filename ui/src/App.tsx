@@ -1247,14 +1247,15 @@ function BriefingPage({
           ...previous,
           [decisionId]: { task: response.task, created: response.created },
         }))
-        await Promise.all([loadDecisions(), loadEvents()])
+        // The dispatch state carries the department's inbox delivery.
+        await Promise.all([loadDecisions(), loadEvents(), loadDispatch(decisionId)])
       } catch (error) {
         setApproveError(friendlyError(error, 'Your approval'))
       } finally {
         setApproving(false)
       }
     },
-    [flags, loadDecisions, loadEvents],
+    [flags, loadDecisions, loadEvents, loadDispatch],
   )
 
   // The governed execution step: Prepare composes the draft on the API
@@ -1917,24 +1918,13 @@ function BriefingPage({
                 }
               : null
           }
+          actions={{
+            role,
+            onSend: (quote) =>
+              setAlertSource({ kind: 'explore', question: item.question, answer: quote }),
+            asksBriefing: act,
+          }}
         />
-        {!state.response.refused && state.response.answer.length > 0 && (
-          <div className="alert-action">
-            <button
-              type="button"
-              className="link-button"
-              onClick={() =>
-                setAlertSource({
-                  kind: 'explore',
-                  question: item.question,
-                  answer: state.response.answer.slice(0, 6).map((sentence) => sentence.text),
-                })
-              }
-            >
-              Send alert about this answer
-            </button>
-          </div>
-        )}
         </>
       )
     }

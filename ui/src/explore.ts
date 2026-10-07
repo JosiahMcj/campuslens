@@ -5,6 +5,7 @@
 // table cells, and the session's question list. Nothing here computes a
 // number; every figure on screen is a cell the API returned.
 
+import { isTemplateId, type AnswerCard, type ChartSpec } from './answerCard'
 import type { Role } from './auth'
 
 /** One number (or name) in a sentence and the cell it came from. */
@@ -45,6 +46,8 @@ export interface ExploreStep {
  * answer that could not be finished. */
 export interface ExploreResponse {
   refused: boolean
+  /** The answer card: key points, chart template, follow-ups (answerCard.ts). */
+  card?: AnswerCard
   message?: string
   answer: ExploreSentence[]
   steps: ExploreStep[]
@@ -166,6 +169,40 @@ export function exploreResponseFrom(raw: unknown): ExploreResponse {
     ...(Array.isArray(body.suggestions) ? { suggestions: strings(body.suggestions) } : {}),
     ...(Array.isArray(body.answered_by) ? { answered_by: strings(body.answered_by) } : {}),
     ...(typeof body.delegated_by === 'string' ? { delegated_by: body.delegated_by } : {}),
+    ...(isObject(body.card) ? { card: cardOf(body.card) } : {}),
+  }
+}
+
+/** The answer card, read defensively: an unknown chart template draws no
+ * chart, never a guess. */
+function cardOf(raw: Record<string, unknown>): AnswerCard {
+  const sentences = (value: unknown) =>
+    Array.isArray(value)
+      ? value.map(sentenceOf).filter((s): s is ExploreSentence => s !== null)
+      : []
+  const chart = isObject(raw.chart) && isTemplateId(raw.chart.template) ? (raw.chart as unknown as ChartSpec) : null
+  const follow = isObject(raw.followups) ? raw.followups : {}
+  const breakdowns = Array.isArray(follow.breakdowns)
+    ? follow.breakdowns.filter(
+        (b): b is { grouping: string; label: string; question: string } =>
+          isObject(b) &&
+          typeof b.grouping === 'string' &&
+          typeof b.label === 'string' &&
+          typeof b.question === 'string',
+      )
+    : []
+  return {
+    key_points: sentences(raw.key_points),
+    chart,
+    extra_steps: Array.isArray(raw.extra_steps)
+      ? raw.extra_steps.map(stepOf).filter((s): s is ExploreStep => s !== null)
+      : [],
+    plan: sentences(raw.plan),
+    followups: {
+      trend: typeof follow.trend === 'string' ? follow.trend : null,
+      breakdowns,
+      topic: follow.topic === 'registration' ? 'registration' : null,
+    },
   }
 }
 
