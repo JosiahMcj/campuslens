@@ -147,6 +147,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -208,6 +209,7 @@ from cabinet.followup import EMPLOYEE_TITLES as FOLLOW_UP_TITLES
 from cabinet.followup import Context as FollowUpContext
 from cabinet.followup import answer as answer_follow_up
 from cabinet.followup import classify as classify_follow_up
+from cabinet.inbox import decision_deliveries, department_roles, notify_decision
 from cabinet.inbox import router as inbox_router
 from cabinet.metrics import findings as compute_findings
 from cabinet.migrations import (
@@ -466,6 +468,20 @@ class InstitutionRuntime:
                 if question.id == latest.get("question_id"):
                     self.last_question = question
                     break
+
+
+def proposed_due_from(today: date, close: Any) -> str:
+    """Today plus seven days, capped at the registration close date when
+    that date is still ahead of today (``proposed_due`` in ``create_app``)."""
+    due = today + timedelta(days=7)
+    if close is not None:
+        try:
+            closes = date.fromisoformat(str(close))
+        except ValueError:
+            closes = None
+        if closes is not None and closes > today:
+            due = min(due, closes)
+    return due.isoformat()
 
 
 def create_app(
@@ -1701,10 +1717,34 @@ def create_app(
             actor="chief_of_staff",
             payload={"decision_id": body.decision_id, "task": task},
         )
+        # The owning department's accounts get it in their inbox (never
+        # emailed): the decision, the approved action, the deadline and the
+        # figures, re-read whenever it is shown (cabinet.inbox).
+        # The approval is already recorded; a failed notification must not
+        # turn it into an error (the president would see a 500 for a decision
+        # that stands). It is logged and reported instead.
+        notify_failed = False
+        try:
+            notified = notify_decision(
+                store,
+                institution_id,
+                user,
+                decision,
+                int(runtime.dataset["id"]),
+                proposed_due(runtime),
+            )
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "notifying the department of %s failed", body.decision_id
+            )
+            notified = []
+            notify_failed = True
         return {
             "task": task,
             "created": True,
             "event_ids": [approved_event["id"], created_event["id"]],
+            "department_inbox": notified,
+            "notify_failed": notify_failed,
         }
 
     # -- the governed execution step: dispatches ------------------------------
@@ -1800,20 +1840,15 @@ def create_app(
 
     def proposed_due(runtime: InstitutionRuntime) -> str | None:
         """A proposed follow-up deadline for the fictional demonstration
-        dataset only: one week after the data date, never later than the
-        day registration closes. It is a suggestion shown on screen; nothing
-        is stored and no real institution's decision gets a date from it."""
+        dataset only: one week from today (the server's date), never later
+        than the day registration closes while that day is still ahead; once
+        it has passed, today plus a week. It is a suggestion shown on screen
+        and carried on the department's inbox message; nothing is stored as
+        a deadline and no real institution's decision gets a date from it."""
         if not runtime.fictional:
             return None
-        meta = runtime.findings["meta"]
-        try:
-            due = date.fromisoformat(str(meta["as_of"])) + timedelta(days=7)
-        except ValueError:
-            return None
-        close = meta["terms"].get("registration_close_date")
-        if close is not None:
-            due = min(due, date.fromisoformat(str(close)))
-        return due.isoformat()
+        terms = runtime.findings["meta"]["terms"]
+        return proposed_due_from(date.today(), terms.get("registration_close_date"))
 
     @app.get("/decisions/{decision_id}/dispatch")
     def get_decision_dispatch(decision_id: str, request: Request) -> JSONResponse:
@@ -1848,6 +1883,12 @@ def create_app(
                 "delivery": delivery_mode(),
                 "proposed_due": proposed_due(runtime),
                 "aid_queue": aid_queue_summary(institution_id, decision_id, dataset_id),
+                # The owning department's inbox: delivered, opened,
+                # acknowledged (cabinet.inbox.notify_decision).
+                "department_roles": list(department_roles(office)),
+                "department_inbox": decision_deliveries(
+                    store, institution_id, decision_id, dataset_id
+                ),
             }
         )
 
