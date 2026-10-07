@@ -1022,7 +1022,15 @@ def test_full_scale_owner_example(full_env: None, app: FastAPI, question: str) -
     gpa, hardest, instructors = (s["table"] for s in body["steps"])
     assert gpa["rows"][0][:2] == ["MEEN", "Mechanical Engineering"]
     assert gpa["rows"][0][3:] == [1242, 2.663]
-    assert hardest["rows"][0] == ["MEEN 3310", "Thermodynamics I", 15, 11, 495, 196, 39.6]
+    assert hardest["rows"][0] == [
+        "MEEN 3310",
+        "Thermodynamics I",
+        15,
+        11,
+        495,
+        196,
+        39.6,
+    ]
     assert hardest["rows"][1][0] == "MEEN 3350" and hardest["rows"][1][-1] == 30.9
     assert instructors["rows"][0] == [
         "I-0001",

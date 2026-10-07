@@ -716,8 +716,8 @@ fixture renders every metric as `--` per the contract.
 
 `data/school/` generates a whole fictional university (Fall 2020 to Spring 2026)
 as an Ellucian-shaped SQLite database for specific historical questions. Build it
-with `make school-data`, which writes `var/school/school.db` (about 33 MB, about
-3 s) and then runs the checker. Re-check an existing database with
+with `make school-data`, which writes `var/school/school.db` (about 245 MB, about
+25 s) and then runs the checker (about 20 s). Re-check an existing database with
 `make school-check`, which exits non-zero if any GPA, standing, schedule,
 capacity, or planted fact in `data/school/VERIFY.md` disagrees with the raw rows.
 Nothing runs in the background, so there is nothing to stop. To reset, delete
@@ -735,15 +735,15 @@ Every number comes from code over the records, each number in the answer links t
 table cell, and a "How this was answered" fold shows each step.
 
 1. Build the school data once: `make school-data` (writes `var/school/school.db`, about
-   3 s, and checks it). Without it, `POST /explore` and `GET /explore/catalog` answer
+   45 s with the check). Without it, `POST /explore` and `GET /explore/catalog` answer
    503 with "The demonstration university data is not installed. Run make
    school-data." Explore runs inside the API process, so starting, stopping, and
    restarting the API covers it.
 2. Sign in as an executive, admin, staff member, or reviewer (the Financial Aid role
    gets a 403) and type the question into the composer, for example "Which major has
    the lowest GPA, what is its hardest class, and who has taught it?" The answer is
-   Mechanical Engineering at 2.623, MEEN 3310 Thermodynamics I at 41.8 %, and Alicia
-   Shelby (fictional), 7 sections at 56.7 %.
+   Mechanical Engineering at 2.663, MEEN 3310 Thermodynamics I at 39.6 %, and Alicia
+   Shelby (fictional), 10 sections at 52.0 %.
 3. `make explore-check` runs the full-scale check (the owner's question in both
    wordings and five more planted facts) and prints the answer with its three tables.
 

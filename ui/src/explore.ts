@@ -657,7 +657,7 @@ export function traceSummary(elapsedMs: number, lineCount: number): string {
   return `Thought for ${seconds} s · ${lineCount} ${lineCount === 1 ? 'step' : 'steps'}`
 }
 
-/** A line's text split into words and numbers ("6,225 students"), so a
+/** A line's text split into words and numbers ("38,374 students"), so a
  * number can count up the first time it appears. */
 export function numberParts(text: string): Array<{ text: string; value: number | null }> {
   const parts: Array<{ text: string; value: number | null }> = []
