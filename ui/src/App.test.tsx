@@ -618,7 +618,7 @@ describe('the briefing before any question', () => {
     }
   })
 
-  it('says "the latest briefing", not "your", for a briefing restored on load', async () => {
+  it('starts on a new question even when a decision waits; the restored briefing opens from history and says "the latest briefing"', async () => {
     mockApi({
       '/briefing': () => json(BRIEFING),
       '/decisions': () =>
@@ -638,6 +638,16 @@ describe('the briefing before any question', () => {
         json({ decision_id: 'D-1', task_id: 'T', office: 'Financial Aid', office_contact: null, approved: false, dispatch: null }),
     })
     render(<App />)
+    // Signing in lands on the empty question screen, not the restored answer.
+    await screen.findByText('What would you like to know?')
+    await waitFor(() => expect(document.querySelector('.recent-row')).not.toBeNull())
+    expect(document.body.textContent).not.toContain('Showing the latest briefing')
+    // The restored briefing is one click away in the history.
+    const row = Array.from(document.querySelectorAll<HTMLButtonElement>('.recent-row')).find(
+      (button) => button.textContent?.includes('Latest briefing'),
+    )
+    expect(row).toBeTruthy()
+    fireEvent.click(row!)
     expect(await screen.findByText(/Showing the latest briefing/)).toBeTruthy()
     expect(document.body.textContent).not.toContain('Showing your last briefing')
     // The work line opens the one AI employees panel, with each job named.
