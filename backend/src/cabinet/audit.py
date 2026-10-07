@@ -104,6 +104,17 @@ EVENT_TYPES: tuple[str, ...] = (
     # matches, shown, directory). Never the search text and never a student
     # id or name: the log records that a lookup happened and by whom.
     "student.searched",
+    # Support-program outreach lists (cabinet.outreach). outreach.prepared:
+    # a person prepared the list a program's rule names for a term
+    # (payload: list_id, program_id, term, count). outreach.decided: an
+    # executive or admin approved or declined it (payload adds decision).
+    # outreach.viewed: a person opened its rows (payload: list_id,
+    # program_id, rows). outreach.updated: a person set one row's status
+    # (payload: list_id, row_id, status_from, status_to). Never a student id.
+    "outreach.prepared",
+    "outreach.decided",
+    "outreach.viewed",
+    "outreach.updated",
 )
 
 ENV_VAR = "CABINET_AUDIT_PATH"

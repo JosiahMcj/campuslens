@@ -141,6 +141,10 @@ _PEOPLE_COUNTS = frozenset(
         "suspension",
         "advised",
         "records",
+        "n_a",
+        "n_b",
+        "eligible",
+        "accepted",
     }
 )
 
@@ -483,6 +487,17 @@ def _primary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
             b.t("Over all years, ")
         b.t(f"{step.cell(0, 'major_name')} had the most graduates, ")
         return b.c(step, 0, "graduates").t(".").done()
+    if a == "program_impact":
+        return _program_impact_sentence(step, b)
+    if a == "program_reach":
+        last = len(step.rows) - 1
+        name = _PROGRAM_NAMES.get(str(p.get("program")), "the program")
+        b.t("In ").c(step, last, "term_name").t(", ").c(step, last, "eligible")
+        b.t(f" students were eligible for {name}")
+        if isinstance(step.cell(last, "take_up"), (int, float)):
+            b.t(" and ").c(step, last, "accepted").t(" took part (")
+            b.c(step, last, "take_up").t(")")
+        return b.t(".").done()
     if a == "holds_by_office":
         b.t(f"{step.cell(0, 'office')} holds the most: ").c(step, 0, "holds")
         b.t(" holds on ").c(step, 0, "students").t(" students")
@@ -503,6 +518,32 @@ def _primary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
         )
         return b.c(step, last, "average_attempted").t(" on average.").done()
     return None
+
+
+_PROGRAM_NAMES = {
+    "ai_tutoring": "AI tutoring and coaching",
+    "theology_bridge": "the theology and ministry funding bridge",
+    "fit_advising": "early major-fit advising",
+}
+
+
+def _program_impact_sentence(step: StepResult, b: _Builder) -> Sentence:
+    """The fairer comparison (the last row), its range, and the naive gap."""
+    fair = len(step.rows) - 1
+    outcome = next(c.label for c in step.columns if c.key == "value_a")
+    if step.cell(fair, "difference") == SUPPRESSED_DISPLAY:
+        return Sentence(
+            f"{outcome}: too few students to compare participants with similar "
+            "students fairly yet."
+        )
+    b.t(f"{outcome}: participants ").c(step, fair, "value_a")
+    b.t(" against ").c(step, fair, "value_b")
+    b.t(" for similar students who did not take part, a difference of ")
+    b.c(step, fair, "difference").t(" (likely between ").c(step, fair, "low")
+    b.t(" and ").c(step, fair, "high").t(")")
+    if step.cell(1, "difference") != SUPPRESSED_DISPLAY:
+        b.t("; the naive comparison shows ").c(step, 1, "difference")
+    return b.t(". This isn't a randomized trial.").done()
 
 
 # --- the general analysis -------------------------------------------------------

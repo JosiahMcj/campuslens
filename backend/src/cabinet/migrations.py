@@ -68,7 +68,7 @@ def ensure_private_db_file(path: str | os.PathLike[str]) -> None:
             os.chmod(side, DB_FILE_MODE)
 
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 
 class SchemaVersionError(RuntimeError):
@@ -546,6 +546,54 @@ def _migration_9(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _migration_10(conn: sqlite3.Connection) -> None:
+    """Support-program outreach lists (``cabinet.outreach``).
+
+    A person allowed per-student rows prepares the list of students a
+    program's eligibility rule names in a term; it waits in
+    ``pending_approval`` until an executive or admin approves or declines
+    it, and nothing is sent to anyone either way. Rows carry the
+    pseudonymous student id, the facts the rule used, and an outreach
+    status a person sets. The UNIQUE constraint makes preparing idempotent
+    per program and term.
+    """
+    for statement in (
+        """
+        CREATE TABLE IF NOT EXISTS outreach_lists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            institution_id INTEGER NOT NULL REFERENCES institutions(id),
+            program_id TEXT NOT NULL,
+            term_code TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending_approval'
+                CHECK (status IN ('pending_approval', 'approved', 'declined')),
+            student_count INTEGER NOT NULL,
+            prepared_by TEXT NOT NULL,
+            prepared_at TEXT NOT NULL,
+            decided_by TEXT,
+            decided_at TEXT,
+            UNIQUE (institution_id, program_id, term_code)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS outreach_rows (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            list_id INTEGER NOT NULL REFERENCES outreach_lists(id),
+            institution_id INTEGER NOT NULL REFERENCES institutions(id),
+            student_id TEXT NOT NULL,
+            facts TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'not_contacted'
+                CHECK (status IN ('not_contacted', 'offered', 'accepted',
+                                  'declined')),
+            updated_by TEXT,
+            updated_at TEXT,
+            UNIQUE (list_id, student_id)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_outreach_rows_list ON outreach_rows (list_id)",
+    ):
+        conn.execute(statement)
+
+
 MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (1, "h2 tenancy baseline", _migration_1),
     (2, "r3 dataset pinning and audit index", _migration_2),
@@ -555,7 +603,8 @@ MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (6, "financial aid review queue", _migration_6),
     (7, "counseling aggregate authorization", _migration_7),
     (8, "demonstration institution display name", _migration_8),
-    (SCHEMA_VERSION, "staff action worklist", _migration_9),
+    (9, "staff action worklist", _migration_9),
+    (SCHEMA_VERSION, "support-program outreach lists", _migration_10),
 ]
 
 

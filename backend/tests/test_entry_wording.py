@@ -212,7 +212,7 @@ def _name(conn: sqlite3.Connection, slug: str = BOOTSTRAP_SLUG) -> str:
 
 
 def test_the_names() -> None:
-    assert SCHEMA_VERSION == 9
+    assert SCHEMA_VERSION == 10
     assert BOOTSTRAP_NAME == "Demonstration University"
     assert LEGACY_BOOTSTRAP_NAME == "Bootstrap Institution"
     assert BOOTSTRAP_SLUG == "bootstrap"

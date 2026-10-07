@@ -168,6 +168,8 @@ def _sample_params(analysis_id: str) -> dict[str, Any]:
         "instructor_history": {"instructor": "I-0001"},
         "equity_gap": {"course": "MATH 1314"},
         "measure_by_group": {"measure": "dropout_rate", "group_by": "college"},
+        "program_impact": {"program": "ai_tutoring"},
+        "program_reach": {"program": "theology_bridge"},
     }
     return samples.get(analysis_id, {})
 
@@ -191,8 +193,8 @@ class StubProvider:
 # --- the catalog and the executor --------------------------------------------
 
 
-def test_catalog_has_the_eighteen_analyses(catalog: Catalog) -> None:
-    assert len(ANALYSES) == 18
+def test_catalog_has_the_twenty_analyses(catalog: Catalog) -> None:
+    assert len(ANALYSES) == 20
     for analysis in ANALYSES:
         assert analysis.title and analysis.description and analysis.fields_read
         assert analysis.columns
@@ -464,7 +466,7 @@ def test_rules_only_never_asks_a_model(
 
 def test_catalog_route(app: FastAPI) -> None:
     body = _client(app, "staff").get("/explore/catalog").json()
-    assert len(body["analyses"]) == 18
+    assert len(body["analyses"]) == 20
     assert all(set(a) == {"id", "title", "description"} for a in body["analyses"])
     assert len(body["examples"]) == 17
     assert body["fictional"] is True

@@ -174,6 +174,9 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     # that returns named student records, so only the roles that may open
     # the records behind a figure. Every search is logged.
     ("GET", "/students/search"): ROW_ROLES,
+    # Support programs (cabinet.outreach): the aggregate page is open to
+    # every role.
+    ("GET", "/interventions"): READ_ROLES,
 }
 
 # Prefix rules, checked when the exact table misses (routes with path
@@ -202,6 +205,14 @@ ROUTE_ROLE_PREFIXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     # 403, like the decision dispatch).
     ("PATCH", "/staff-actions/", (ROLE_ADMIN, ROLE_STAFF)),
     ("POST", "/staff-actions/", (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF)),
+    # Support-program outreach lists name students: the executive and admin
+    # (ROW_ROLES) and the aid role, which the route narrows to the program
+    # its office runs (the theology funding bridge). Approving is the
+    # executive's or admin's; the decision route narrows itself.
+    ("POST", "/interventions/", ROW_ROLES + (ROLE_AID,)),
+    ("GET", "/outreach/", ROW_ROLES + (ROLE_AID,)),
+    ("POST", "/outreach/", ROW_ROLES + (ROLE_AID,)),
+    ("PATCH", "/outreach/", ROW_ROLES + (ROLE_AID,)),
 )
 
 # No session needed: liveness, readiness, and login itself.

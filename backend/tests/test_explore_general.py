@@ -90,7 +90,7 @@ GENERAL_PHRASINGS: list[tuple[str, dict[str, Any]]] = [
     ),
     (
         "Which majors lose the most students to attrition?",
-        {"measure": "dropout_rate", "group_by": "major"},
+        {"measure": "major_attrition_rate", "group_by": "major"},
     ),
     (
         "What is the attrition rate for athletes vs non-athletes?",
@@ -252,7 +252,7 @@ GENERAL_PHRASINGS: list[tuple[str, dict[str, Any]]] = [
     ),
     (
         "Which majors do students switch out of most?",
-        {"measure": "major_change_rate", "group_by": "major"},
+        {"measure": "major_change_out_rate", "group_by": "major"},
     ),
     (
         "What share of students are Pell recipients by major?",

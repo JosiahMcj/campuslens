@@ -33,7 +33,13 @@ import re
 from typing import Any
 
 from cabinet.explore import general
-from cabinet.explore.catalog import ANALYSES, ANALYSIS_BY_ID, Catalog, Param
+from cabinet.explore.catalog import (
+    ANALYSES,
+    ANALYSIS_BY_ID,
+    ORDER_LOW_HIGH,
+    Catalog,
+    Param,
+)
 
 # One line per analysis: what it answers, in the planner's words.
 PURPOSE: dict[str, str] = {
@@ -65,6 +71,9 @@ PURPOSE: dict[str, str] = {
     "credit_hours_by_term": "credit hours attempted and earned in each term",
     "measure_by_group": "ONE measure (below) for all students, or broken down by "
     "up to two groupings, with filters; counts and rates for any student group",
+    "program_impact": "did a support program work (AI tutoring, theology funding "
+    "bridge, major-fit advising)",
+    "program_reach": "students eligible for a support program, and take-up",
 }
 
 # One line per measure of measure_by_group.
@@ -74,12 +83,16 @@ MEASURE_LINES: dict[str, str] = {
     "avg_credits_earned": "average credits earned",
     "dropout_rate": "share who left without a degree and did not come back",
     "transfer_out_rate": "share who left and enrolled at another college",
-    "major_change_rate": "share who changed major",
-    "pell_share": "share of students with a Pell grant",
-    "first_gen_share": "share of students who are first-generation",
-    "international_share": "share of students who are international",
-    "part_time_share": "share of students who are part-time",
-    "on_campus_share": "share of students living on campus",
+    "major_change_rate": "share who changed major (in their final major)",
+    "major_change_out_rate": "share of a major's students who switched out of it",
+    "major_attrition_rate": "attrition: share who left the university from the major",
+    "fit_flag_rate": "share of first-year students not a good fit for their major",
+    "first_year_major_dfw_rate": "first-year DFW rate in major courses",
+    "pell_share": "share with a Pell grant",
+    "first_gen_share": "share first-generation",
+    "international_share": "share international",
+    "part_time_share": "share part-time",
+    "on_campus_share": "share living on campus",
     "probation_rate": "share of student terms on academic probation",
     "suspension_rate": "share of student terms ending in suspension",
     "stop_out_rate": "share who skipped the next fall or spring term",
@@ -207,6 +220,15 @@ _KIND_TYPES = {
 
 
 def _param_text(param: Param, catalog: Catalog) -> str:
+    # Long lists the catalog spells out once, below or in the header.
+    if param.name == "measure" and param.choices == general.MEASURE_KEYS:
+        return "measure*: an id from MEASURES"
+    if param.name == "group_by" and param.choices == general.GROUPING_KEYS:
+        return "group_by: an id from GROUPINGS"
+    if param.name == "top":
+        return "top"
+    if param.name == "order" and tuple(param.choices) == ORDER_LOW_HIGH:
+        return f"order (default {param.default})" if param.default else "order"
     if param.kind == "choice":
         kind = "|".join(str(c) for c in param.choices)
     elif param.kind == "category":
@@ -243,7 +265,12 @@ def compact_catalog(catalog: Catalog) -> str:
 
 def _build(catalog: Catalog) -> str:
     v = catalog.vocab
-    lines = [INTRO, "", "ANALYSES (id: purpose. params; * = required):"]
+    lines = [
+        INTRO,
+        "",
+        "ANALYSES (id: purpose. params; * = required; top: 5|10|20|50; order: "
+        "lowest_first|highest_first unless listed):",
+    ]
     filter_keys = set(general.GROUPING_KEYS) - {"term"}
     for analysis in ANALYSES:
         params = [

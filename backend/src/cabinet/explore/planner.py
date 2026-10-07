@@ -228,6 +228,10 @@ RULE_PHRASINGS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "term?",
         ("dfw_by_course", "course_dfw_trend"),
     ),
+    ("Did the AI tutoring program work?", ("program_impact", "program_impact")),
+    ("Is the theology funding bridge helping?", ("program_impact", "program_impact")),
+    ("How many students are eligible for tutoring this term?", ("program_reach",)),
+    ("What is the take-up of major-fit advising?", ("program_reach",)),
 )
 
 
@@ -1020,6 +1024,54 @@ def _has(pattern: str, text: str) -> bool:
     return re.search(pattern, text, re.I) is not None
 
 
+# Support programs (cabinet.interventions): the program a question names, and
+# whether it asks who is reached or whether it worked.
+_PROGRAM_WORDS: tuple[tuple[str, str], ...] = (
+    ("ai_tutoring", r"\btutor|\bcoaching\b"),
+    (
+        "theology_bridge",
+        r"funding bridge|\bbridge\b.*\b(?:program|grant|fund)|"
+        r"\b(?:theology|ministry)\b.*\b(?:fund|grant|bridge|emergency aid|"
+        r"financial (?:help|support|aid)|balance|payment plan)",
+    ),
+    (
+        "fit_advising",
+        r"(?:major[- ]?fit|fit|exploration)\s+advising|advising\s+(?:for|on)\s+"
+        r"(?:major\s+)?fit|early[- ](?:major[- ])?fit\s+(?:program|advising)",
+    ),
+)
+_PROGRAM_OUTCOMES: dict[str, tuple[str, str]] = {
+    "ai_tutoring": ("term_gpa", "returned_next_term"),
+    "theology_bridge": ("returned_next_term", "financial_hold_next_term"),
+    "fit_advising": ("returned_next_term", "changed_major_next_term"),
+}
+_IMPACT_WORDS = (
+    r"\bwork(?:ed|s|ing)?\b|\bhelp(?:ed|s|ing)?\b|impact|effect|succe|"
+    r"difference|outcome|improv|repair|pay off|paid off|worth"
+)
+_REACH_WORDS = (
+    r"eligib|qualif|how many|number of|take[- ]?up|signed up|sign up|participat|"
+    r"took part|taking part|\breach|offered|enrol"
+)
+_NOW_WORDS = r"this (?:term|semester)|\bnow\b|currently|right now|current term"
+_OUTCOME_WORDS: tuple[tuple[str, str], ...] = (
+    ("term_gpa", r"\bgpas?\b|\bgrades?\b"),
+    (
+        "returned_next_term",
+        r"come back|came back|return|retention|retain|persist|stay(?:ed)? enrolled",
+    ),
+    ("financial_hold_next_term", r"\bholds?\b"),
+    ("changed_major_next_term", r"chang\w* (?:their )?majors?|switch\w* majors?"),
+)
+
+
+def _program_named(text: str) -> str | None:
+    for program, pattern in _PROGRAM_WORDS:
+        if re.search(pattern, text, re.I):
+            return program
+    return None
+
+
 class _ClausePlanner:
     def __init__(self, matcher: _Matcher, question_entities: _Entities) -> None:
         self.m = matcher
@@ -1064,11 +1116,39 @@ class _ClausePlanner:
             return terms[0], terms[-1]
         return (terms[0], None) if terms else (None, None)
 
+    def program(self, text: str, e: _Entities) -> Step | None:
+        """A support program question: did it work (``program_impact``), or
+        who is eligible and took part (``program_reach``)."""
+        program = _program_named(text)
+        if program is None:
+            return None
+        if _has(_REACH_WORDS, text) and not _has(_IMPACT_WORDS, text):
+            p: dict[str, Any] = {"program": program}
+            if e.terms:
+                p["term"] = e.terms[0]
+            elif _has(_NOW_WORDS, text):
+                p["term"] = _current_regular_term_of(self.m.vocab)
+            return Step("program_reach", p)
+        named = [k for k, pattern in _OUTCOME_WORDS if _has(pattern, text)]
+        named = [k for k in named if k in _PROGRAM_OUTCOMES[program]]
+        if named:
+            return Step("program_impact", {"program": program, "outcome": named[0]})
+        primary, secondary = _PROGRAM_OUTCOMES[program]
+        first = Step("program_impact", {"program": program})
+        if first not in self.steps and len(self.steps) < MAX_STEPS - 1:
+            self.steps.append(first)
+            return Step("program_impact", {"program": program, "outcome": secondary})
+        return first
+
     def plan(self, text: str) -> Step | None:  # noqa: C901 - one rule per analysis
         e = self.m.extract(text)
         low = _LOW_RE.search(text) is not None
         high = _HIGH_RE.search(text) is not None
         p: dict[str, Any] = {}
+
+        program_step = self.program(text, e)
+        if program_step is not None:
+            return program_step
 
         if (
             _has(r"\bcontinuing\b|\breturning\b", text)
@@ -1460,6 +1540,17 @@ _NEW_MEASURES: tuple[tuple[str, str], ...] = (
         r"return(?:ed|ing)? (?:for|their|a) (?:second|sophomore)|second[- ]year return",
     ),
     (
+        "fit_flag_rate",
+        r"(?:not|n't|never)\s+(?:a\s+)?(?:good\s+)?fit|poor(?:ly)?[- ]fit|"
+        r"\b(?:bad|wrong|good|early)\s+(?:major[- ])?fit|major[- ]fit|"
+        r"fit (?:signals?|rule|flags?)|wrong major",
+    ),
+    (
+        "first_year_major_dfw_rate",
+        r"first[- ]year\b.*\b(?:dfw|d/f/w|fail\w*|d, f)\b.*\bmajor courses|"
+        r"(?:dfw|d/f/w|fail\w*)\b.*\bmajor courses\b.*\bfirst[- ]year",
+    ),
+    (
         "major_change_rate",
         r"chang(?:e|ed|es|ing) (?:their |of |a )?majors?|"
         r"switch(?:ed|es|ing)? (?:their )?majors?|major chang|"
@@ -1743,6 +1834,23 @@ def _general_params(text: str, e: _Entities, v: Vocab) -> dict[str, Any] | None:
             groups = [(at, g) for at, g in groups if g != "entry_cohort"]
             filters["entry_cohort"] = cohort
     group_keys = [g for _, g in groups]
+    # Per major, a change of major and attrition are read from the major the
+    # student was in (each major a student passed through), not the major
+    # they ended in.
+    per_major = "major" in group_keys or bool(e.majors)
+    if per_major and (
+        measure_id == "major_change_rate"
+        or (measure_id == "dropout_rate" and _has(r"attrition", text))
+    ):
+        measure_id = (
+            "major_change_out_rate"
+            if measure_id == "major_change_rate"
+            else "major_attrition_rate"
+        )
+        measure = general.MEASURES[measure_id]
+        allowed = set(general.allowed_groupings(measure))
+        group_keys = [g for g in group_keys if g in allowed]
+        filters = {k: val for k, val in filters.items() if k in allowed}
     # Section modality is new for the D, F or withdrawal rate (the older
     # analyses compare modalities only for withdrawals).
     skip = ("major", "college", "term", *_EQUITY_GROUPS) + (
