@@ -129,7 +129,7 @@ class UploadReport:
     fictional: bool
     # The bytes to store: the upload itself, or, when it carried counseling
     # note text, the document re-serialized with that text removed.
-    stored_raw: bytes = b""
+    stored_raw: bytes
 
     @property
     def counseling_note(self) -> str:

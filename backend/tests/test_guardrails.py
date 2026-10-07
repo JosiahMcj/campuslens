@@ -300,7 +300,7 @@ def test_ellucian_allow_list_accepts_its_own_paths_and_version_overrides(
     "url",
     [
         "http://model.example.edu/v1",
-        "http://10.0.0.1:8100/v1",
+        "http://192.0.2.10:8000/v1",
         "http://127.0.0.1.attacker.example/v1",
         "ftp://model.example.edu/v1",
         "model.example.edu/v1",

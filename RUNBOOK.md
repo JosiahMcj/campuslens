@@ -233,7 +233,12 @@ servers are running, verifies the backup's hashes first, moves any existing
 `var/cabinet.db` and `var/data/` aside as `*.pre-restore-<timestamp>`, copies
 the backup in, and verifies what it wrote. Nothing in a backup or restore path
 is ever deleted. A backup directory is 0700 and every file in it is 0600, and the
-restored database and dataset files are written back at 0600.
+restored database and dataset files are written back at 0600. These modes apply to
+what this version writes: snapshots and `*.pre-restore-*` copies made before it keep
+their old modes (startup tightens only the live `cabinet.db`), so tighten them once
+after upgrading with `chmod -R go-rwx var/backups var/*.pre-restore-*`. A newly
+created `var/backups/` parent directory keeps the default mode; everything inside it
+is private.
 
 ## Migrations
 
