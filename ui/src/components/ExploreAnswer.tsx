@@ -62,8 +62,14 @@ interface ExploreAnswerProps {
 
 /** "Working it out…": the reply while an Explore question is answered,
  * with the live trace when the server streams one. */
-export function ExploreWorking({ trace }: { trace?: readonly ExploreTraceEvent[] }) {
-  return <Thinking trace={trace !== undefined ? traceLines(trace) : undefined} />
+export function ExploreWorking({
+  trace,
+  mark = true,
+}: {
+  trace?: readonly ExploreTraceEvent[]
+  mark?: boolean
+}) {
+  return <Thinking trace={trace !== undefined ? traceLines(trace) : undefined} mark={mark} />
 }
 
 /**
