@@ -584,9 +584,10 @@ def plan_question(
     ``rules-first`` and ``rules-only`` keep the earlier orders. Fake and
     replay modes never call a model.
 
-    ``forward``: the question asks what will happen. The model gets the
-    question with ``FORWARD_HINT``; the rules read ``historical_form`` of it
-    (``forward_rule_plan_detail``)."""
+    ``forward``: the question asks what will happen. The rules read
+    ``historical_form`` of it (``forward_rule_plan_detail``) and go first
+    even in the model-first order; the model, when asked, gets the question
+    with ``FORWARD_HINT``."""
     rules = forward_rule_plan_detail if forward else rule_plan_detail
     hint = FORWARD_HINT if forward else None
     if provider.name == "replay":
@@ -597,6 +598,12 @@ def plan_question(
         steps, notes = rules(question, catalog)
         return PlanOutcome(steps, "rule", None, notes)
     order = planner_order_from_env()
+    if forward and order == MODEL_FIRST:
+        # The rules read a forward question as history by a fixed table
+        # (12 of 12 on the forward evaluation set, the model 8 of 12: it
+        # planned the hold rate for "have holds and will drop"), so they go
+        # first and the model plans only what they cannot map.
+        order = RULES_FIRST
     if order == RULES_ONLY:
         # Never ask a model to plan: a question the rules cannot map gets
         # the example questions at once (a live demo on a slow model).

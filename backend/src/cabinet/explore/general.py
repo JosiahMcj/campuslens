@@ -770,6 +770,9 @@ def allowed_groupings(measure: Measure) -> tuple[str, ...]:
     out = [k for k, g in GROUPINGS.items() if measure.unit in g.units]
     if measure.scope in ("latest", "cohort"):
         out = [k for k in out if k != "term"]
+    if measure.id == "hold_rate":
+        # Split by hold status, the hold rate is always 0% or 100%.
+        out = [k for k in out if k != "hold"]
     return tuple(out)
 
 
@@ -1197,6 +1200,7 @@ def check_request(
         clean.append(g)
     if len(clean) > 2:
         raise GeneralError("at most two groupings")
+
     for key in filters:
         if key not in allowed and key != "term":
             raise GeneralError(f"the {m.label} cannot be filtered by {key}")

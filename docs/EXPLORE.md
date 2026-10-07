@@ -18,9 +18,39 @@ Four rules hold for every answer.
    every number it uses to the table cell it came from. A sentence writes its numbers for
    a reader (a GPA to 2 decimals, "41.8%", a growth of 100% or more as a whole number);
    the table keeps full precision.
-4. **Refusals come first.** A question about counseling or spiritual care, about one
-   student, or asking to predict what a student will do is refused in code before any
-   planning or model call, and the refusal is recorded.
+4. **Protected data is checked first, then answered around.** A question about
+   counseling or spiritual care, about one student, or asking to predict what a student
+   will do is caught in code before any planning or model call, and recorded as
+   `data.refused`. The protected data is never answered, but the reply is not a dead end:
+   totals for students like that, or related questions. A forward-looking question about
+   a group ("how many will drop out", "will enrollment fall") is answered with the closest
+   historical totals. Only off-topic requests ("code me a website") get the "Not something
+   CampusLens answers" card.
+
+## Questions about the future
+
+CampusLens does not forecast. A question about what a group will do ("how many students
+have holds and will drop", "what % will graduate", "will enrollment fall next year",
+"at-risk students in nursing") is marked forward-looking (`is_forward_looking`) and
+answered with the closest historical totals, led by one plain line: "CampusLens doesn't
+forecast, so here's what the records show." It never produces a risk score, a list, or
+anything per student.
+
+- The rule planner reads `historical_form` of the question: "will drop out" or "at risk"
+  is the dropout rate (with the stop-out rate beside it), "will graduate" the
+  graduation rate, "will come back" retention, "will enrollment fall" enrollment by term.
+  A "how many" question also counts the group now ("356 students with a hold were
+  enrolled in Spring 2026").
+- Forward questions go to the rules first even in the `model-first` order (rules 12 of
+  12 on the forward evaluation set, the model 8 of 12; docs/EXPLORE-EVAL.md). A question
+  the rules cannot map goes to the model with a short instruction after the question
+  (`FORWARD_HINT`, in the user message; the cached catalog is unchanged).
+- **Holds.** The general analysis has a `hold` grouping and filter: a hold placed on the
+  student's account in the term counted (the hold rate's definition; for a figure read
+  once per student, such as the dropout rate, their latest term). "How many students have
+  holds" is a headcount of students with a hold this term; "dropout rate for students with
+  holds" compares students with and without one. The hold rate itself cannot be split by
+  hold status.
 
 ## Set up
 
@@ -152,13 +182,37 @@ in one plain sentence.
 
 ## How an answer is computed
 
-1. **Refusal check** (`explore/privacy.py`). Counseling and spiritual care, a student id or
-   a numbered student, a request for individual students, and predictions about students
-   are refused here. The API records `question.asked` and `data.refused`, and nothing else
-   runs. The screen shows a refusal as a calm note headed "Not something CampusLens
-   answers", not as an error: "CampusLens does not answer questions about counseling or
-   spiritual care, even as totals." for counseling (the briefing may still show an authorized aggregate count),
-   and a line about totals only for a single student or a prediction.
+1. **Privacy check** (`explore/privacy.py`). Counseling and spiritual care, a student id or
+   a numbered student, a request for individual students, and predictions about one
+   student or risk scores are caught here; the API records `question.asked` and
+   `data.refused` (categories `counseling`, `individual_student`, `prediction`) before
+   anything else runs. None of them is answered with the protected data, and none gets
+   a dead-end card:
+   - **Counseling**: no figure at all, not even a total. The reply is "CampusLens keeps
+     counseling and spiritual care out of its answers, even as totals. It can help with
+     related questions like these." with three related questions (retention, holds,
+     advising). The briefing may still show its one authorized aggregate count.
+   - **One student or a list of students**: the question is rewritten as a question about
+     totals (`aggregate_form`: ids and names removed, "which students" read as "how
+     many students") and planned by the **rule planner only**, so a typed name or id never
+     reaches a model. The answer starts "CampusLens can't look up one student, but here
+     are totals for students like that." ("Which students are on probation in Nursing?"
+     gets probation in Nursing; "Did Jane Doe pass MEEN 3310?" gets the course's D, F or
+     withdrawal rate). A student named only by id or name, with no group, course or major,
+     gets that line and example questions instead. Small-cell withholding applies as
+     everywhere.
+   - **A prediction about students** ("Who will be suspended next term?") is answered the
+     same way, led by "CampusLens doesn't forecast or name students, so here's what the
+     records show for the group."
+   - **Off-topic** requests with nothing to do with the student records ("code me a
+     website", "write a poem", "what's the weather") are matched by rules
+     (`is_off_topic`), recorded as `data.refused` with category `off_topic`, and get the
+     card headed "Not something CampusLens answers". A model planner's empty plan for a
+     question that names nothing in the records (no student, course, major, term, ...)
+     gets the same card; one that does gets "can't answer that from the approved analyses
+     yet" with suggestions.
+   - **Forward-looking questions about groups** are not caught: see "Questions about
+     the future" below.
 2. **Plan** (`explore/planner.py`). The question becomes a list of steps, each an analysis
    id with parameters. A later step can take a parameter from an earlier step's top row, so
    the owner's question becomes three steps: the lowest-GPA major, the hardest course that
@@ -273,9 +327,9 @@ events:
   faith, mental health, and similar words) are refused before planning anyway, so the
   refusal is recorded. Course titles and major names are set aside before that check, so
   "What is the DFW rate in Theories of Counseling?" is answered. Questions that rank or
-  list students, name an id in any form, or ask who will do something are refused as
-  questions about individuals, and any id or long number a person types is replaced
-  before the question is recorded.
+  list students, name an id in any form, or ask who will do something are treated as
+  questions about individuals (answered only with totals for students like that), and any
+  id or long number a person types is replaced before the question is recorded.
 - **Instructor identities are for the executive and admin roles.** Staff and
   reviewers never see an instructor's id or name, not even in the parameters under "How
   this was answered", and the model planner receives the instructor list only for those
@@ -300,8 +354,10 @@ The aid role gets a 403 on both. The response of `POST /explore` is
 `{refused, message?, answer: [{text, claims: [{table, row, column}]}], steps: [{analysis_id,
 title, params_plain, fields_read, table: {columns, rows}, notes}], source}` plus `planner`
 (rule, model, or recorded), `notes` (a named term or college the chosen analysis does not
-filter by, and any part of the question no analysis answered), `fallbacks`, and
-`suggestions` when the question could not be mapped. `params_plain` holds only the
+filter by, and any part of the question no analysis answered), `fallbacks`,
+`suggestions` when the question could not be mapped, and `redirect` (`counseling`,
+`individual_student` or `prediction`) when protected data was asked for and answered
+around. `refused: true` is only for off-topic requests. `params_plain` holds only the
 parameters a reader cares about, in plain words ("Ranked: lowest first", "Only majors with
 at least 20 students"); codes and the number of rows shown stay out of it, and the command
 line tool prints the exact record. The screen hides code columns (term codes, major and

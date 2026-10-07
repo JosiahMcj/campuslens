@@ -253,7 +253,12 @@ def test_the_model_planner_gets_the_forward_instruction(
     )
     monkeypatch.setattr(explore_api, "provider_from_env", lambda: stub)
     monkeypatch.setenv("CABINET_EXPLORE_WRITER", "template")
+    # A forward question the rules map is planned by the rules first.
     body = _ask(_client(app), "how many nursing students will drop out?")
+    assert body["planner"] == "rule" and not stub.calls
+    assert body["answer"][0]["text"] == FORWARD_LEAD
+    # One they cannot map goes to the model, with the instruction.
+    body = _ask(_client(app), "what will next year look like for nursing?")
     assert body["planner"] == "model"
     assert body["answer"][0]["text"] == FORWARD_LEAD
     role, payload = stub.calls[0]
@@ -399,3 +404,13 @@ def test_greetings_keep_their_instant_reply(
     for text in ("hi", "Hello!", "thanks"):
         body = _ask(_client(app), text)
         assert body["refused"] is False and body["message"] == GREETING_MESSAGE
+
+
+def test_the_hold_rate_is_never_split_by_hold_status() -> None:
+    from cabinet.explore.general import GeneralError, check_request
+
+    with pytest.raises(GeneralError):
+        check_request("hold_rate", [], {"hold": "hold"})
+    with pytest.raises(GeneralError):
+        check_request("hold_rate", ["hold"], {})
+    check_request("dropout_rate", ["hold"], {})
