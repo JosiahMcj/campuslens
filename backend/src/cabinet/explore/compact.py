@@ -67,7 +67,7 @@ PURPOSE: dict[str, str] = {
     "up to two groupings, with filters; counts and rates for any student group",
     "budget_vs_actual": "spending vs budget",
     "revenue_by_source": "revenue vs budget",
-    "tuition_discount": "tuition and discount rate by FY",
+    "tuition_discount": "tuition, discount rate",
 }
 
 # One line per measure of measure_by_group.
@@ -107,11 +107,11 @@ MEASURE_LINES: dict[str, str] = {
     "avg_balance_owed": "avg $ past due",
 }
 
-# Short names people use, beyond the names in the lists.
+# Short names people use, beyond the names in the lists. (Short major names
+# the resolver maps itself, such as psych, bio, chem, nurses, mech e and
+# business, are not repeated here: the model may write them as they are.)
 SYNONYMS = (
-    "CS, comp sci = Computer Science; mech e, mechanical = Mechanical "
-    "Engineering; psych = Psychology; bio = Biology; chem = Chemistry; nurses = "
-    "Nursing; business = Business Administration; engineering (the college) = "
+    "CS, comp sci = Computer Science; engineering (the college) = "
     "College of Engineering and Computing; freshmen, first-years = class_level "
     "Freshman; DFW = D, F or withdrawal; "
     "first gen = first_generation; this semester, now, currently = the current "
@@ -185,7 +185,7 @@ RULES = (
     "course_instructors.\n"
     "- Set a term only when the question names one. Name terms like "
     '"Fall 2024"; courses by code or title; majors and '
-    "colleges by name from the lists; instructors as written.\n"
+    "colleges by name or code from the lists; instructors as written.\n"
     "- A later step may use an earlier step's top row: "
     '{"from_step": <index from 0>, "column": "<column>"} (columns: major, '
     "college, course, term, instructor).\n"
@@ -264,10 +264,8 @@ def _build(catalog: Catalog) -> str:
             "measure": "measure*: "
             + "|".join(
                 m for m in general.MEASURE_KEYS if m not in general.ACCOUNT_MEASURES
-            )
-            + "|...",
-            "group_by": "group_by: "
-            + "|".join(k for k in general.GROUPING_KEYS if k != "aging"),
+            ),
+            "group_by": "group_by: one of GROUPINGS",
             "then_by": "then_by: same as group_by",
         }
         params = [
@@ -301,19 +299,17 @@ def _build(catalog: Catalog) -> str:
         lines.append(f"- {key}: {values_text}")
     lines.append("")
     lines.append(
-        # Names only: the model writes a major by name and code resolves it
-        # (``_major``), so the codes are not needed here.
-        "MAJORS: " + "; ".join(v.majors.values())
+        "MAJORS: " + "; ".join(f"{code} {name}" for code, name in v.majors.items())
     )
-    lines.append("COLLEGES: " + "; ".join(v.colleges.values()))
+    lines.append(
+        "COLLEGES: " + "; ".join(f"{code} {name}" for code, name in v.colleges.items())
+    )
     terms = list(v.terms.values())
     current = v.terms[_current_term(catalog)]
     lines.append(
         f"TERMS: {terms[0]} to {terms[-1]} (Fall, Spring, Summer); the current "
         f"term is {current}."
     )
-    if v.fiscal_years:
-        lines.append(f"FISCAL YEARS: {v.fiscal_years[0]}-{v.fiscal_years[-1]}.")
     lines.append("SYNONYMS: " + SYNONYMS)
     lines.append("")
     lines.append(RULES)
