@@ -109,6 +109,10 @@ BODY_CAP_OVERRIDES: tuple[tuple[str, int], ...] = (
 ALL_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF, ROLE_REVIEWER, ROLE_AID)
 READ_ROLES = ALL_ROLES  # every logged-in role may read
 ACT_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE)  # ask / approve / refresh
+# The student ids behind a finding (GET /findings row lists, M5's per-office
+# holds, M8's per-student indicators): the executive and admin, whose work
+# acts on the records. Every other role reads the figures and counts only.
+ROW_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE)
 # The audit log itself: admin and reviewer, and the executive (the
 # president runs the Beat 6 audit walkthrough; staff still may not).
 AUDIT_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_REVIEWER)

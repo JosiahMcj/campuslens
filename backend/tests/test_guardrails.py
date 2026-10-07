@@ -1,0 +1,563 @@
+"""Regression tests for the 2026-10-06 leak audit.
+
+Each section pins one fix: student ids in GET /findings by role, the /ask
+question redaction, counseling free text and file modes at rest, the
+Ellucian resource allow list, the production model endpoint and redirects,
+and the small operational counts in the live model prompt.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from typing import Any
+
+import pytest
+
+from cabinet.api import create_app
+from conftest import make_authenticated_client
+
+# Any pseudonymous student id the demonstration fixture carries.
+STUDENT_ID_RE = re.compile(r"\b(?:STU|PRI)-\d{3,}\b")
+
+
+# --- 1. GET /findings: student ids for the executive and admin only -------------
+
+
+@pytest.mark.parametrize("role", ["staff", "reviewer", "aid"])
+def test_findings_carry_no_student_ids_for_non_row_roles(role: str) -> None:
+    client = make_authenticated_client(create_app(), role=role)
+    response = client.get("/findings")
+    assert response.status_code == 200
+    body = response.json()
+    assert STUDENT_ID_RE.search(response.text) is None
+    # The figures and counts are all still there, and say what was withheld.
+    m1 = body["M1"]
+    assert m1["rows_withheld"] is True
+    assert m1["row_ids"] == {"numerator": [], "denominator": []}
+    assert m1["row_counts"]["numerator"] > 0
+    assert m1["row_counts"]["denominator"] > 0
+    m2 = body["M2"]
+    assert m2["row_ids"] == []
+    assert m2["row_counts"] == m2["value"]
+    offices = body["M5"]["value"]
+    assert offices and all(o["hold_row_ids"] == [] for o in offices)
+    assert all(o["count"] > 0 for o in offices)
+    m8 = body["M8"]
+    assert m8["row_rules"] == {}
+    assert all(rule["row_ids"] == [] for rule in m8["rules"])
+    assert m8["row_counts"] == m8["value"]
+
+
+@pytest.mark.parametrize("role", ["admin", "executive"])
+def test_findings_carry_student_ids_for_row_roles(role: str) -> None:
+    client = make_authenticated_client(create_app(), role=role)
+    response = client.get("/findings")
+    assert response.status_code == 200
+    body = response.json()
+    assert STUDENT_ID_RE.search(response.text) is not None
+    assert "rows_withheld" not in body["M2"]
+    assert len(body["M2"]["row_ids"]) == body["M2"]["value"]
+    assert body["M8"]["row_rules"]
+
+
+def test_stripping_for_one_role_leaves_the_cached_findings_whole() -> None:
+    app = create_app()
+    staff = make_authenticated_client(app, role="staff")
+    assert STUDENT_ID_RE.search(staff.get("/findings").text) is None
+    executive = make_authenticated_client(app, role="executive")
+    body: dict[str, Any] = executive.get("/findings").json()
+    assert body["M2"]["row_ids"]
+    assert any(o["hold_row_ids"] for o in body["M5"]["value"])
+    assert json.dumps(body).count("rows_withheld") == 0
+
+
+# --- 2. /ask: the typed question is redacted before the audit log -------------
+
+
+def test_ask_redacts_student_ids_before_the_audit_log() -> None:
+    from cabinet.questions import QUESTIONS
+
+    app = create_app()
+    executive = make_authenticated_client(app, role="executive")
+    typed = "Why has S-100023 not registered? Also student 4471 and 20261234."
+    response = executive.post("/ask", json={"question": typed})
+    assert response.status_code == 200
+    assert response.json()["accepted"] is False
+
+    reviewer = make_authenticated_client(app, role="reviewer")
+    events = reviewer.get("/events").json()["events"]
+    text = json.dumps(events)
+    for token in ("S-100023", "20261234"):
+        assert token not in text
+    asked = [e for e in events if e["type"] == "question.asked"]
+    refused = [
+        e
+        for e in events
+        if e["type"] == "data.refused" and "question" in e["payload"]
+    ]
+    assert asked and refused
+    assert "[number withheld]" in asked[-1]["payload"]["question"]
+    assert "[number withheld]" in refused[-1]["payload"]["question"]
+
+    # An approved question is unchanged by the redaction, so matching and the
+    # recorded question text stay exactly as before.
+    from cabinet.explore.privacy import redact_question
+
+    for question in QUESTIONS:
+        assert redact_question(question.text) == question.text
+
+
+# --- 3. counseling free text and file modes at rest -----------------------------
+
+
+def _fixture_document() -> dict[str, Any]:
+    from cabinet.api import DEFAULT_FIXTURE_PATH
+
+    document: dict[str, Any] = json.loads(
+        DEFAULT_FIXTURE_PATH.read_text(encoding="utf-8")
+    )
+    return document
+
+
+def _note_texts(document: dict[str, Any]) -> list[str]:
+    return [
+        record["counseling"]["counseling_notes"]
+        for key in ("students", "prior_year_students")
+        for record in document[key]
+        if isinstance(record.get("counseling"), dict)
+        and isinstance(record["counseling"].get("counseling_notes"), str)
+        and record["counseling"]["counseling_notes"].strip()
+    ]
+
+
+def _mode(path: Any) -> int:
+    import os
+    import stat
+
+    return stat.S_IMODE(os.stat(path).st_mode)
+
+
+def test_upload_stores_no_counseling_note_text_and_keeps_the_m9_count() -> None:
+    from cabinet.counseling import m9_count
+    from cabinet.datasets import COUNSELING_NOTE_MARKER
+
+    document = _fixture_document()
+    notes = _note_texts(document)
+    assert notes  # the fixture carries note text on purpose
+    app = create_app()
+    admin = make_authenticated_client(app, role="admin")
+    response = admin.post(
+        "/admin/datasets",
+        content=json.dumps(document).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["validation"]["counseling"] == "present, will always be refused"
+
+    store = app.state.auth
+    dataset = store.dataset_row(
+        int(store.user_by_email("admin@test.example")["institution_id"]),
+        body["dataset"]["id"],
+    )
+    path = store.dataset_path(dataset)
+    stored_bytes = path.read_bytes()
+    stored_text = stored_bytes.decode("utf-8")
+    for note in notes:
+        assert note not in stored_text
+    stored = json.loads(stored_text)
+    assert _note_texts(stored) == [COUNSELING_NOTE_MARKER] * len(notes)
+    # The sha256 the row carries is of the stored (stripped) bytes.
+    import hashlib
+
+    assert dataset["sha256"] == hashlib.sha256(stored_bytes).hexdigest()
+    # M9's authorized count reads only the fact of contact: unchanged.
+    m2_ids = admin.get("/findings").json()["M2"]["row_ids"]
+    assert m9_count(document, m2_ids) > 0
+    assert m9_count(stored, m2_ids) == m9_count(document, m2_ids)
+    assert _mode(path) == 0o600
+
+
+def test_strip_counseling_text_blanks_empty_and_non_text_notes() -> None:
+    from cabinet.datasets import COUNSELING_NOTE_MARKER, strip_counseling_text
+
+    document: dict[str, Any] = {
+        "students": [
+            {
+                "counseling": {
+                    "counseling_notes": "Grief support.",
+                    "chaplain_contact": True,
+                }
+            },
+            {"counseling": {"counseling_notes": "   "}},
+            {"counseling": {"counseling_notes": {"text": "nested"}}},
+            {"counseling": {"counseling_notes": None}},
+            {"profile": {}},
+        ],
+        "prior_year_students": [{"counseling": {"counseling_notes": "Old note"}}],
+    }
+    assert strip_counseling_text(document) is True
+    notes = [
+        r.get("counseling", {}).get("counseling_notes") for r in document["students"]
+    ]
+    assert notes == [COUNSELING_NOTE_MARKER, None, None, None, None]
+    assert document["students"][0]["counseling"]["chaplain_contact"] is True
+    assert (
+        document["prior_year_students"][0]["counseling"]["counseling_notes"]
+        == COUNSELING_NOTE_MARKER
+    )
+    assert strip_counseling_text(document) is False  # idempotent
+
+
+def test_database_is_created_and_tightened_to_0600(tmp_path: Any) -> None:
+    import os
+
+    from cabinet.store import CabinetStore
+
+    db = tmp_path / "fresh" / "cabinet.db"
+    store = CabinetStore(db)
+    store.close()
+    assert _mode(db) == 0o600
+    os.chmod(db, 0o644)
+    CabinetStore(db).close()
+    assert _mode(db) == 0o600
+
+
+def test_backup_and_restore_write_private_files(tmp_path: Any) -> None:
+    from cabinet.backup import create_backup, restore_backup
+
+    app = create_app()
+    admin = make_authenticated_client(app, role="admin")
+    assert admin.get("/findings").status_code == 200
+    store = app.state.auth
+    db_path, data_dir = store.path, store.data_dir
+    store.close()
+
+    backup = create_backup(db_path, data_dir, tmp_path / "backups" / "b1")
+    assert _mode(backup) == 0o700
+    files = [p for p in backup.rglob("*") if p.is_file()]
+    assert files
+    assert {_mode(p) for p in files} == {0o600}
+    assert {_mode(p) for p in backup.rglob("*") if p.is_dir()} <= {0o700}
+
+    restore_backup(backup, db_path, data_dir)
+    assert _mode(db_path) == 0o600
+    restored = [p for p in data_dir.rglob("*") if p.is_file()]
+    assert restored and {_mode(p) for p in restored} == {0o600}
+
+
+# --- 4. Ellucian: an exact allow list of resource paths -------------------------
+
+REFUSED_ETHOS_PATHS = [
+    "person-emails",
+    "person-addresses",
+    "health-records",
+    "person-emergency-contacts",
+    "persons",
+    "person-holds-v2",
+    "students-detail",
+]
+
+
+@pytest.mark.parametrize("path", REFUSED_ETHOS_PATHS)
+@pytest.mark.parametrize("key", ["students", "person_holds", "student_appointments"])
+def test_ellucian_refuses_any_path_off_the_allow_list(
+    monkeypatch: pytest.MonkeyPatch, key: str, path: str
+) -> None:
+    from cabinet import ellucian
+
+    monkeypatch.setenv("CABINET_ETHOS_RESOURCES", json.dumps({key: {"path": path}}))
+    with pytest.raises(ellucian.EthosError, match="allow list"):
+        ellucian.resources_from_env()
+
+
+def test_ellucian_allow_list_accepts_its_own_paths_and_version_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cabinet import ellucian
+
+    monkeypatch.setenv(
+        "CABINET_ETHOS_RESOURCES",
+        json.dumps({"person_holds": {"path": "person-holds", "version": 5}}),
+    )
+    resources = ellucian.resources_from_env()
+    assert resources["person_holds"] == {"path": "person-holds", "version": 5}
+    assert {key: spec["path"] for key, spec in resources.items()} == (
+        ellucian.ALLOWED_RESOURCE_PATHS
+    )
+    # Swapping two allowed paths between resources is refused too.
+    config = ellucian.default_resources()
+    config["students"]["path"] = "person-holds"
+    with pytest.raises(ellucian.EthosError, match="allow list"):
+        ellucian.validate_resource_config(config)
+
+
+# --- 5. the model endpoint: https or loopback in production, no redirects -----
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://model.example.edu/v1",
+        "http://192.0.2.10:8000/v1",
+        "http://127.0.0.1.attacker.example/v1",
+        "ftp://model.example.edu/v1",
+        "model.example.edu/v1",
+        "https:///v1",
+    ],
+)
+def test_production_refuses_a_model_endpoint_that_is_not_https_or_loopback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], url: str
+) -> None:
+    monkeypatch.setenv("CABINET_ENV", "production")
+    monkeypatch.setenv("CABINET_BIND", "127.0.0.1")
+    monkeypatch.setenv("CABINET_LLM_BASE_URL", url)
+    with pytest.raises(SystemExit) as excinfo:
+        create_app()
+    assert excinfo.value.code == 1
+    err = capsys.readouterr().err
+    assert err.startswith("cabinet: cannot start: CABINET_LLM_BASE_URL")
+    assert err.count("\n") == 1
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://model.example.edu/v1",
+        "http://127.0.0.1:8000/v1",
+        "http://localhost:8000/v1",
+        "http://[::1]:8000/v1",
+        "HTTP://LOCALHOST/v1",
+    ],
+)
+def test_production_starts_with_an_https_or_loopback_model_endpoint(
+    monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    monkeypatch.setenv("CABINET_ENV", "production")
+    monkeypatch.setenv("CABINET_BIND", "127.0.0.1")
+    monkeypatch.setenv("CABINET_LLM_BASE_URL", url)
+    create_app()
+
+
+def test_outside_production_any_model_endpoint_still_starts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("CABINET_ENV", raising=False)
+    monkeypatch.setenv("CABINET_LLM_BASE_URL", "http://model.example.edu/v1")
+    create_app()
+
+
+def test_model_client_refuses_a_redirect_and_never_forwards_the_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A real local endpoint answering 302 to a second local server: the call
+    is unavailable, made once, and nothing reaches the redirect target."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from cabinet.provider import ChatProvider, ProviderUnavailable
+
+    target_hits: list[str | None] = []
+
+    class Target(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802 (http.server's name)
+            target_hits.append(self.headers.get("Authorization"))
+            self.send_response(200)
+            self.end_headers()
+
+        # urllib turns a followed 302 into a GET that still carries the
+        # Authorization header; record that too.
+        do_GET = do_POST  # noqa: N815
+
+        def log_message(self, *args: Any) -> None:
+            return
+
+    target = HTTPServer(("127.0.0.1", 0), Target)
+    origin_hits: list[str] = []
+
+    class Origin(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802
+            origin_hits.append(self.path)
+            self.send_response(302)
+            self.send_header(
+                "Location",
+                f"http://127.0.0.1:{target.server_port}/v1/chat/completions",
+            )
+            self.end_headers()
+
+        def log_message(self, *args: Any) -> None:
+            return
+
+    origin = HTTPServer(("127.0.0.1", 0), Origin)
+    threads = [
+        threading.Thread(target=server.serve_forever, daemon=True)
+        for server in (target, origin)
+    ]
+    for thread in threads:
+        thread.start()
+    try:
+        monkeypatch.setenv(
+            "CABINET_LLM_BASE_URL", f"http://127.0.0.1:{origin.server_port}/v1"
+        )
+        monkeypatch.setenv("CABINET_LLM_MODEL", "test-model")
+        monkeypatch.setenv("CABINET_LLM_API_KEY", "sk-test-secret-key")
+        with pytest.raises(ProviderUnavailable) as excinfo:
+            ChatProvider().explain(
+                {"M2": {"value": 3, "display": "3"}}, "enrollment_analyst"
+            )
+    finally:
+        for server in (target, origin):
+            server.shutdown()
+            server.server_close()
+    assert "redirect" in excinfo.value.reason
+    assert "sk-test-secret-key" not in excinfo.value.reason
+    assert origin_hits == ["/v1/chat/completions"]
+    assert target_hits == []
+
+
+# --- 6. small operational counts never reach the live model -------------------
+
+
+def _demo_findings() -> dict[str, Any]:
+    from cabinet.api import DEFAULT_FIXTURE_PATH
+    from cabinet.fixture import load_fixture
+    from cabinet.metrics import findings
+
+    fixture = load_fixture(DEFAULT_FIXTURE_PATH)
+    return findings(fixture, fixture_path=DEFAULT_FIXTURE_PATH)
+
+
+def _capture_live_prompt(
+    monkeypatch: pytest.MonkeyPatch, received: dict[str, Any], role: str, answer: str
+) -> tuple[str, Any]:
+    """Run ChatProvider.explain against a fake endpoint; return the user prompt
+    it sent and the explanation."""
+    import cabinet.provider as provider_module
+    from cabinet.provider import ChatProvider
+
+    sent: list[dict[str, Any]] = []
+
+    class Response:
+        def __init__(self) -> None:
+            self.body = json.dumps(
+                {
+                    "choices": [
+                        {
+                            "message": {"role": "assistant", "content": answer},
+                            "finish_reason": "stop",
+                        }
+                    ]
+                }
+            ).encode("utf-8")
+
+        def read(self) -> bytes:
+            return self.body
+
+        def __enter__(self) -> Response:
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            return None
+
+    def fake_urlopen(request: Any, timeout: float) -> Response:
+        sent.append(json.loads(request.data.decode("utf-8")))
+        return Response()
+
+    monkeypatch.setattr(provider_module, "_urlopen", fake_urlopen)
+    monkeypatch.setenv("CABINET_LLM_BASE_URL", "https://model.example.edu/v1")
+    monkeypatch.setenv("CABINET_LLM_MODEL", "test-model")
+    monkeypatch.setenv("CABINET_LLM_API_KEY", "sk-test")
+    explanation = ChatProvider().explain(received, role)
+    assert len(sent) == 1
+    return str(sent[0]["messages"][1]["content"]), explanation
+
+
+def test_live_analyst_prompt_carries_no_office_or_indicator_count_under_10(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cabinet.analysts import STUDENT_SUCCESS_ANALYST
+    from cabinet.provider import canonical_findings_json
+    from cabinet.questions import DEFAULT_QUESTION, received_for
+
+    findings_obj = _demo_findings()
+    small_offices = [o for o in findings_obj["M5"]["value"] if o["count"] < 10]
+    small_rules = [r for r in findings_obj["M8"]["rules"] if r["count"] < 10]
+    assert small_offices and small_rules  # the demo data has both
+    received = received_for(DEFAULT_QUESTION, STUDENT_SUCCESS_ANALYST, findings_obj)
+    before = canonical_findings_json(received)
+
+    prompt, _ = _capture_live_prompt(
+        monkeypatch, received, STUDENT_SUCCESS_ANALYST, "Holds are spread out [M5]."
+    )
+    payload = json.loads(prompt[prompt.index("{") :])
+    for office in payload["M5"]["value"]:
+        original = next(
+            o for o in findings_obj["M5"]["value"] if o["office"] == office["office"]
+        )
+        if original["count"] < 10:
+            assert office["count"] == "fewer than 10"
+        else:
+            assert office["count"] == original["count"]
+    for rule in payload["M8"]["rules"]:
+        original = next(r for r in findings_obj["M8"]["rules"] if r["id"] == rule["id"])
+        expected = "fewer than 10" if original["count"] < 10 else original["count"]
+        assert rule["count"] == expected
+    # The received findings (the replay key) are untouched.
+    assert canonical_findings_json(received) == before
+
+
+def test_live_chief_prompt_carries_no_office_or_indicator_count_under_10(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cabinet.analysts import CHIEF_OF_STAFF, chief_received
+
+    findings_obj = _demo_findings()
+    received = chief_received(findings_obj, {"enrollment_analyst": "x [M2]."})
+    prompt, _ = _capture_live_prompt(
+        monkeypatch,
+        received,
+        CHIEF_OF_STAFF,
+        json.dumps({"executive_summary": "s [M2].", "limitations": "l [M2]."}),
+    )
+    start = prompt.index("{")
+    aggregate, _ = json.JSONDecoder().raw_decode(prompt[start:])
+    counts = [o["count"] for o in aggregate["M5"]["value"]] + [
+        r["count"] for r in aggregate["M8"]["rules"]
+    ]
+    assert "fewer than 10" in counts
+    assert all(c == "fewer than 10" or c >= 10 for c in counts)
+    assert received["findings"]["M5"]["value"] == [
+        {"office": o["office"], "count": o["count"]}
+        for o in findings_obj["M5"]["value"]
+    ]
+
+
+def test_validator_accepts_fewer_than_10_only_with_a_small_count() -> None:
+    from cabinet.analysts import OutputRejected, validate_explanation
+
+    small = {
+        "M5": {
+            "value": [
+                {"office": "Library", "count": 1},
+                {"office": "Bursar", "count": 40},
+            ],
+            "display": "41 unresolved holds",
+        }
+    }
+    validate_explanation("The Library has fewer than 10 unresolved holds [M5].", small)
+    validate_explanation("Fewer than ten holds sit with the Library [M5].", small)
+    validate_explanation("The Bursar has 40 unresolved holds [M5].", small)
+    # A bare 10 is still not a number in the findings.
+    with pytest.raises(OutputRejected):
+        validate_explanation("The Library has 10 unresolved holds [M5].", small)
+    large = {
+        "M5": {
+            "value": [{"office": "Bursar", "count": 40}],
+            "display": "40 unresolved holds",
+        }
+    }
+    with pytest.raises(OutputRejected):
+        validate_explanation(
+            "The Bursar has fewer than 10 unresolved holds [M5].", large
+        )

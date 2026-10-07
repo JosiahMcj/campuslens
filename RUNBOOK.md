@@ -232,7 +232,13 @@ before the command reports success. `make restore FROM=...` refuses while the
 servers are running, verifies the backup's hashes first, moves any existing
 `var/cabinet.db` and `var/data/` aside as `*.pre-restore-<timestamp>`, copies
 the backup in, and verifies what it wrote. Nothing in a backup or restore path
-is ever deleted.
+is ever deleted. A backup directory is 0700 and every file in it is 0600, and the
+restored database and dataset files are written back at 0600. These modes apply to
+what this version writes: snapshots and `*.pre-restore-*` copies made before it keep
+their old modes (startup tightens only the live `cabinet.db`), so tighten them once
+after upgrading with `chmod -R go-rwx var/backups var/*.pre-restore-*`. A newly
+created `var/backups/` parent directory keeps the default mode; everything inside it
+is private.
 
 ## Migrations
 
@@ -354,14 +360,27 @@ are in `deploy/checklist.md`, the full first-deploy walkthrough.
   `cabinet.local.env` at the repo root (copy `cabinet.local.env.example`), and the
   real environment wins.
 
+  The usual setup is a hosted chat-completions endpoint over https:
+
   ```
-  CABINET_LLM_BASE_URL=https://your-endpoint.example/v1
-  CABINET_LLM_MODEL=your-model-id
+  CABINET_LLM_BASE_URL=https://<provider host>/v1
+  CABINET_LLM_MODEL=<model name>
   CABINET_LLM_LABEL=live model        # what the UI shows as the source
   CABINET_LLM_REASONING_EFFORT=low    # keeps reasoning models from thinking past the answer
   CABINET_LLM_MAX_TOKENS=2048         # output budget per call; hidden reasoning counts against it
-  CABINET_LLM_API_KEY=your-key-here
+  CABINET_LLM_API_KEY=<your key>      # from the provider; never committed
   ```
+
+  The key lives in `CABINET_LLM_API_KEY` in the environment or the gitignored
+  `cabinet.local.env`, never in the repository. With `CABINET_ENV=production` the
+  app refuses to start unless `CABINET_LLM_BASE_URL` is `https`, or plain `http` to a
+  loopback address (`127.0.0.1`, `localhost`, `::1`) for a self-hosted model on the
+  same machine, with the one line
+  `cabinet: cannot start: CABINET_LLM_BASE_URL must be an https URL or a loopback
+  address ...`. Fix the URL and start again. The model client never follows a
+  redirect: a 3xx answer makes the section unavailable with a reason naming the
+  redirect, so the key is never sent to another host. Set the base URL to the
+  endpoint's final address.
 
   Or read the endpoint key from one named variable's line in another env file
   (`CABINET_LLM_API_KEY_FILE` + `CABINET_LLM_API_KEY_VAR`), and no other line of that
@@ -370,16 +389,10 @@ are in `deploy/checklist.md`, the full first-deploy walkthrough.
   keeps working. The endpoint key and the model id are never logged, recorded, or
   returned to the UI, because responses carry the label only.
 
-  A local thinking model needs two settings. On our local chat-completions server,
-  `reasoning_effort: low` changed nothing (about 950 characters of hidden reasoning per
-  short answer, the same as no setting), and the server's `think: false` field and a
-  `/no_think` prefix were ignored, while `none` turned the hidden reasoning off
-  (0 characters, 0.6 s instead of 4 to 5 s). With `low` and 2,048 tokens, 1 of 8
-  approved-question asks lost the Student Success Analyst to `finish_reason 'length'`
-  (and with it sections 1 and 7), and an ask took 25 to 51 s. With `none` and 2,048,
-  all 24 sections of 6 fresh asks came back on the first try in 6 to 16 s. So the
-  local `cabinet.local.env` sets `CABINET_LLM_REASONING_EFFORT=none` and
-  `CABINET_LLM_MAX_TOKENS=2048`. A hosted endpoint keeps the defaults.
+  Some reasoning models spend the output budget thinking. If sections come back
+  unavailable with `finish_reason 'length'`, set `CABINET_LLM_REASONING_EFFORT` (some
+  endpoints ignore `low` and honour only `none`, which turns hidden reasoning off) or
+  raise `CABINET_LLM_MAX_TOKENS`. Most hosted endpoints work with the defaults.
 
   When the model's answer fails validation (for example it cites a finding its
   role did not receive), we ask it once more with the same inputs plus one
@@ -667,11 +680,11 @@ Questions about counseling or spiritual care, about one student, or about what a
 student will do next are refused before planning, and the refusal is recorded.
 
 The reviewed rule planner maps every question it can, and the live model plans only
-the rest (`CABINET_EXPLORE_PLANNER=model-first` asks the model first). We measured
-why: on our local model, reading the catalog took longer than the 55 s request
-budget every time, while the rules map all forty test wordings of the planted
-questions. The live model is configured in the gitignored `cabinet.local.env` (any
-standard chat-completions endpoint; we run a local model), and it may reword the answer,
+the rest (`CABINET_EXPLORE_PLANNER=model-first` asks the model first), because
+reading the whole catalog can take a slow endpoint longer than the 55 s request
+budget, while the rules map all forty test wordings of the planted questions. The
+live model is configured in the gitignored `cabinet.local.env` (a hosted https
+chat-completions endpoint, set up as in "The three providers"), and it may reword the answer,
 which is checked number by number or replaced by the template.
 
 With the API running, the same question over HTTP:

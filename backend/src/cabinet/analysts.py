@@ -68,12 +68,13 @@ from typing import Any
 from weakref import WeakKeyDictionary
 
 from cabinet.audit import AuditSink
-from cabinet.counseling import M9_ID
+from cabinet.counseling import M9_ID, MINIMUM_CELL_SIZE
 from cabinet.permissions import (
     ROLE_TASK_FIELDS,
     findings_for_role,
     grant_aggregates,
     grant_authorized_aggregate,
+    has_small_count,
     normalize_field,
     request_fields,
 )
@@ -431,6 +432,12 @@ def _parse_number_word_token(phrase: str) -> tuple[Decimal, bool] | None:
 
 # Finding IDs mentioned in prose (e.g. "finding M2") are not numerals.
 _PROSE_ID_RE = re.compile(r"\bM\d+\b")
+
+# "fewer than 10" (or "less than ten"): what the live model reads for an M5
+# office or M8 indicator count under the minimum (permissions.coarsen_small_counts).
+_FEWER_THAN_SMALL_RE = re.compile(
+    rf"\b(?:fewer|less)\s+than\s+(?:{MINIMUM_CELL_SIZE}|ten)\b", re.IGNORECASE
+)
 
 _ISO_DATE_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 
@@ -853,6 +860,11 @@ def check_numerals(text: str, findings: dict[str, Any]) -> None:
     """
     numbers, dates = allowed_numerals(findings)
     cited = ", ".join(sorted(findings)) or "none"
+    if any(has_small_count(finding) for finding in findings.values()):
+        # The live model reads an office's or an indicator's count under 10
+        # as "fewer than 10" (permissions.coarsen_small_counts); the phrase
+        # is accepted in a claim citing such a finding, and only as a whole.
+        text = _FEWER_THAN_SMALL_RE.sub(" ", text)
     check_numbers_against(_PROSE_ID_RE.sub("", text), numbers, dates, cited)
 
 

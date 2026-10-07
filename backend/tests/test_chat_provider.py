@@ -1,6 +1,6 @@
 """Tests for the chat provider (any OpenAI-compatible chat-completions endpoint).
 
-All tests run against a fake ``urllib.request.urlopen`` — no network, no real
+All tests run against a fake ``cabinet.provider._urlopen`` — no network, no real
 key, no real endpoint (``https://llm.example.invalid`` is reserved-invalid per
 RFC 2606). Covers: request shape (URL, auth header, model, messages, timeout),
 success, ``finish_reason`` handling, retry policy, configuration resolution
@@ -20,6 +20,7 @@ from typing import Any
 
 import pytest
 
+import cabinet.provider as provider_module
 from cabinet.provider import (
     ChatProvider,
     ProviderUnavailable,
@@ -95,7 +96,8 @@ def _install_urlopen(
     handler: Any,
     calls: list[dict[str, Any]],
 ) -> None:
-    """Replace urllib.request.urlopen with a recording fake (no network)."""
+    """Replace the model client's network call (``cabinet.provider._urlopen``,
+    urllib with redirects refused) with a recording fake (no network)."""
 
     def fake_urlopen(request: Any, timeout: float | None = None) -> Any:
         calls.append(
@@ -108,7 +110,7 @@ def _install_urlopen(
         )
         return handler(request)
 
-    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(provider_module, "_urlopen", fake_urlopen)
 
 
 @pytest.fixture(autouse=True)

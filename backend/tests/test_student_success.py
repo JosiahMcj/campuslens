@@ -368,6 +368,7 @@ def test_briefing_student_success_replay_roundtrip_sockets_blocked(
 
     # The provider's only network path is urllib (ChatProvider); block it.
     monkeypatch.setattr("urllib.request.urlopen", no_network)
+    monkeypatch.setattr("cabinet.provider._urlopen", no_network)
     monkeypatch.setenv("CABINET_PROVIDER", "replay")
     monkeypatch.delenv("CABINET_RECORD", raising=False)
     replayed = client.get("/briefing/student-success")
