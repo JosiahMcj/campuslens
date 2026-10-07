@@ -12,7 +12,7 @@ PYBIN := $(VENV)/bin
 	lint lint-python lint-ui \
 	typecheck typecheck-python typecheck-ui \
 	test test-python test-ui \
-	check audit check-config bootstrap-admin institution user import-ethos api ui stop record-golden \
+	check audit check-config bootstrap-admin institution user demo-mailboxes import-ethos api ui stop record-golden \
 	migrate backup restore purge-deleted build serve school-data school-check explore-check
 
 setup: setup-python setup-ui
@@ -83,6 +83,21 @@ user:
 		$(PYBIN)/python -m cabinet.users add --email "$(EMAIL)" --role "$(ROLE)" --institution "$(INSTITUTION)"; \
 	else \
 		$(PYBIN)/python -m cabinet.users add --email "$(EMAIL)" --role "$(ROLE)"; \
+	fi
+
+# Demonstration only: give every office the fictional demonstration data
+# names a mailbox <office-slug>@demo.test (a reserved domain that can never
+# reach a real mailbox), so Send can be shown working into the on-machine
+# outbox. Adds missing mailboxes only, never replaces one, and refuses unless
+# the institution's active dataset is the fictional demonstration data.
+# Uses CABINET_DB like every other command.
+# Example: make demo-mailboxes
+#          CABINET_DB=/path/to/cabinet.db make demo-mailboxes INSTITUTION=bootstrap
+demo-mailboxes:
+	@if [ -n "$(INSTITUTION)" ]; then \
+		$(PYBIN)/python -m cabinet.users demo-mailboxes --institution "$(INSTITUTION)"; \
+	else \
+		$(PYBIN)/python -m cabinet.users demo-mailboxes; \
 	fi
 
 # Import one term from the institution's Ellucian Ethos Integration API
