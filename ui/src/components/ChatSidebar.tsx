@@ -22,7 +22,6 @@ import {
   DecisionNavIcon,
   EvidenceNavIcon,
   FiguresNavIcon,
-  CheckSmallIcon,
   ChevronDownIcon,
   CrossSmallIcon,
   EditIcon,
@@ -50,9 +49,10 @@ export interface HistoryItem {
   id: number
   question: string
   refused: boolean
-  /** The briefing this cabinet produced before this page view. */
+  /** The briefing this cabinet produced before this page view: marked
+   * "Latest briefing" under the question. */
   restored: boolean
-  /** An Explore question (not a briefing): marked in the list. */
+  /** An Explore question (not a briefing). Not marked in the list. */
   explore: boolean
 }
 
@@ -91,7 +91,9 @@ const PANEL_ROWS: Record<NavPanel, { label: string; icon: ReactNode }> = {
   evidence: { label: 'Evidence & sources', icon: <EvidenceNavIcon /> },
   actions: { label: 'Staff actions', icon: <ActionsNavIcon /> },
   decision: { label: 'Decision', icon: <DecisionNavIcon /> },
-  access: { label: 'AI employees and data access', icon: <AccessNavIcon /> },
+  // The page itself is titled "AI employees and data access"; the row's
+  // short name fits the sidebar at every width.
+  access: { label: 'Data access', icon: <AccessNavIcon /> },
   audit: { label: 'Audit log', icon: <AuditNavIcon /> },
   aid: { label: 'Financial Aid review', icon: <AidQueueNavIcon /> },
 }
@@ -99,7 +101,7 @@ const PANEL_ROWS: Record<NavPanel, { label: string; icon: ReactNode }> = {
 /** The capability groups, in sidebar order. Key figures, Evidence and the
  * AI employees' task cards are not rows: the figures sit under every
  * answer, the evidence opens from each number (and the Full briefing lists
- * it), and the employees are in "AI employees and data access". */
+ * it), and the employees are in "Data access". */
 const NAV_GROUPS: { label: string; panels: NavPanel[] }[] = [
   { label: 'Briefing', panels: ['briefing', 'actions', 'decision'] },
   { label: 'Governance', panels: ['access', 'audit', 'aid'] },
@@ -156,8 +158,8 @@ function RailButton({
 
 /**
  * The workspace menu, opened from the sidebar's top row: the institution
- * (checked, the only one), who is signed in, Institution settings for an
- * admin, and sign out. Rendered into <body> so the collapsing sidebar never
+ * (a heading: it is the only one, so there is nothing to choose), who is
+ * signed in, Institution settings for an admin, and sign out. Rendered into <body> so the collapsing sidebar never
  * clips it; positioned under its trigger through the style object (CSSOM).
  */
 function WorkspaceMenu({
@@ -248,24 +250,11 @@ function WorkspaceMenu({
       aria-label="Workspace"
       onKeyDown={onKeyDown}
     >
+      <div className="menu-row menu-row-tall menu-heading" role="presentation">
+        <LensMark className="menu-monogram" />
+        <span className="menu-label menu-label-strong">{institutionName}</span>
+      </div>
       <GlideGroup className="menu-glide">
-        <button
-          data-row
-          type="button"
-          role="menuitem"
-          tabIndex={-1}
-          className="menu-row menu-row-tall"
-          onClick={() => {
-            onClose()
-            anchor.focus()
-          }}
-        >
-          <LensMark className="menu-monogram" />
-          <span className="menu-label menu-label-strong">{institutionName}</span>
-          <span className="menu-check">
-            <CheckSmallIcon />
-          </span>
-        </button>
         <div className="menu-rule" />
         <p className="menu-account">
           {session.user.email}
@@ -602,18 +591,16 @@ export function ChatSidebar({
                   onClick={() => onSelectHistory(item.id)}
                 >
                   <span className="sidebar-copy rail-label">{item.question}</span>
-                  {item.refused && <span className="sidebar-copy rail-note">Refused</span>}
-                  {!item.refused && item.explore && (
-                    <span className="sidebar-copy rail-note" title="An Explore question, not a briefing">
-                      Explore
+                  {(item.refused || item.restored) && (
+                    <span className="sidebar-copy recent-meta">
+                      {item.refused ? 'Refused' : 'Latest briefing'}
                     </span>
                   )}
-                  {item.restored && <span className="sidebar-copy rail-note">Last</span>}
                 </button>
               ))}
               {historyError !== null && (
                 <div className="sidebar-copy recents-empty" role="alert">
-                  <p>Couldn't load your questions.</p>
+                  <p>We couldn't load your questions.</p>
                   <button type="button" className="link-button" onClick={onRetryHistory}>
                     Retry
                   </button>

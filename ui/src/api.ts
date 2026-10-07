@@ -288,8 +288,8 @@ export async function postAsk(question: string, flags: UiFlags): Promise<AskResp
 
 /**
  * GET /briefing — the last briefing this API process produced, so a page
- * reload renders it without re-running anything. 404 (none yet) maps to
- * null, exactly like first load. Fetched once per page load; after Ask the
+ * reload renders it without re-running anything. Only 404 (none yet) maps
+ * to null, exactly like first load; any other failure throws. Fetched once per page load; after Ask the
  * /ask response itself carries the briefing.
  */
 export function fetchCabinetBriefingOnce(
@@ -300,13 +300,10 @@ export function fetchCabinetBriefingOnce(
     pending = (async () => {
       if (flags.modelDown) return null
       await maybeSlow(flags)
-      let response: Response
-      try {
-        response = await apiFetch('/briefing')
-      } catch (error) {
-        if (error instanceof SessionEndedError) throw error
-        return null
-      }
+      // A network failure or a server error is NOT "no briefing yet": it
+      // throws, so the page says the briefing could not be loaded (with
+      // Retry) instead of offering to ask the question again.
+      const response = await apiFetch('/briefing')
       if (response.status === 404) return null
       if (!response.ok) {
         throw new ApiError(
