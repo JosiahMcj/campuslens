@@ -359,6 +359,58 @@ At full scale: first-year retention 81.4 % (first-time fall entrants Fall 2020 t
 where the data ends; 41 % within four years), 12 % of enrolled terms part-time. `check.py` keeps these inside
 plausible bands.
 
+## Student billing
+
+These three tables are written by `data/school/billing.py` at the very end of generation,
+from its own seeded random stream, so all the tables above are unchanged by them. They stand
+in for the Ellucian Ethos student accounts resources: `student-charges`,
+`student-payments`, and `payment-plans`. Every enrolled fall and spring term inside the
+calendar (Fall 2020 to Spring 2026) is billed and then paid in full by the due date, in
+full within 30 days after it, partially with a balance left outstanding, or carried on an
+enrolled installment plan.
+
+### `student_charges`
+**Ethos: `student-charges`.** One row per billed amount. A term is billed tuition by
+academic load (about $16,000-$19,000 per full-time term, half for part time), housing
+(about $3,500) and a meal plan (about $2,400) for students who live on campus, and fees
+(about $600).
+
+| Column | Meaning |
+|---|---|
+| `charge_id` | `SC-` plus digits |
+| `student_id`, `term_code` | The billed student and term (the pair is an enrolled row in `student_term_enrollment`) |
+| `category` | `tuition`, `housing`, `fees`, or `meal_plan` |
+| `amount` | Positive, rounded to cents |
+| `due_date` | Payment due date for the term (census date + 21 days); the same for every charge of that term |
+
+### `student_payments`
+**Ethos: `student-payments`.** One row per payment event. A term's payments may total
+less than its charges, leaving an outstanding balance.
+
+| Column | Meaning |
+|---|---|
+| `payment_id` | `SP-` plus digits |
+| `student_id`, `term_code` | The paying student and the billed term |
+| `amount` | Positive, rounded to cents |
+| `paid_on` | Date of the payment |
+| `method` | `card`, `ach`, `aid_disbursement` (Pell recipients often pay from aid), `payment_plan` (an installment of an enrolled plan), or `third_party` (a sponsor pays) |
+
+About 85-90 % of billed terms without a plan are paid in full by the due date or within
+30 days of it. Pell recipients and first-generation students are somewhat more often
+late or partial payers, and theology and ministry majors (Biblical Studies, Theology,
+Christian and Youth Ministry, Christian Studies) somewhat more often pay partially.
+
+### `payment_plans`
+**Ethos: `payment-plans`.** One row per student per term enrolled in an installment plan
+(about 20 % of billed terms). Installments are paid monthly from shortly before the term
+starts and sum to the term's billed amount.
+
+| Column | Meaning |
+|---|---|
+| `student_id`, `term_code` | The pair; at most one plan per billed term |
+| `installments` | Number of installments (4 or 5) |
+| `enrolled_on` | Date the plan was enrolled, shortly before the term starts |
+
 ## Deliberately absent
 
 - **Course evaluations.** They are personnel-sensitive, so we do not invent them.

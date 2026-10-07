@@ -1564,6 +1564,7 @@ def write_db(g: Generator, out: Path) -> None:
     con.executemany("INSERT INTO student_profiles VALUES (?,?,?,?,?,?)", profiles)
     con.executemany("INSERT INTO student_term_enrollment VALUES (?,?,?,?,?,?)", term_rows)
     con.executemany("INSERT INTO subsequent_enrollment VALUES (?,?,?)", elsewhere)
+    import billing; billing.build_billing(con, SEED)
     con.commit()
     con.execute("VACUUM")
     con.close()
