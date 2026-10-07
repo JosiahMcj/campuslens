@@ -181,8 +181,10 @@ from cabinet.audit import EVENT_TYPES
 from cabinet.auth import (
     COOKIE_NAME,
     ENV_ENV,
+    IT_MANAGED_ROLES,
     PRODUCTION,
     ROLE_ADMIN,
+    ROLE_IT,
     ROLE_STAFF,
     USER_ROLES,
     AuthStore,
@@ -196,9 +198,11 @@ from cabinet.auth import (
 from cabinet.connections import router as connections_router
 from cabinet.counseling import M9_ID, authorization_block, m9_finding
 from cabinet.datasets import UploadError, validate_upload
+from cabinet.departments import router as departments_router
 from cabinet.explore.api import router as explore_router
 from cabinet.explore.privacy import redact_question
 from cabinet.fixture import parse_fixture
+from cabinet.inbox import router as inbox_router
 from cabinet.metrics import findings as compute_findings
 from cabinet.migrations import (
     BOOTSTRAP_SLUG,
@@ -2375,9 +2379,30 @@ def create_app(
                 "sha256": dataset["sha256"],
             },
         )
+        disable_demo_accounts(institution_id, user)
         dataset = store.dataset_row(institution_id, dataset_id)
         assert dataset is not None
         return JSONResponse(content={"dataset": dataset_body(dataset)})
+
+    def disable_demo_accounts(institution_id: int, by: dict[str, Any]) -> None:
+        """Real data switches the demonstration sign-ins off: once the active
+        dataset is not the fictional one, every enabled ``@demo.test``
+        account of the institution is disabled (one admin.changed event
+        each), except administrators and the person activating, so nobody
+        is locked out. Re-enabling one is a deliberate admin action."""
+        if runtime_for(institution_id).fictional:
+            return
+        for row in store.users_for(institution_id):
+            if (
+                row["disabled"]
+                or row["role"] == ROLE_ADMIN
+                or int(row["id"]) == int(by["id"])
+                or not str(row["email"]).endswith("@demo.test")
+            ):
+                continue
+            updated = store.set_user_disabled(institution_id, int(row["id"]), True)
+            if updated is not None:
+                admin_changed(institution_id, "disabled", updated, by)
 
     @app.delete("/admin/datasets/{dataset_id}")
     def delete_admin_dataset(dataset_id: int, request: Request) -> JSONResponse:
@@ -2445,6 +2470,30 @@ def create_app(
             },
         )
 
+    def it_refusal(
+        request: Request, caller: dict[str, Any], *roles: str
+    ) -> JSONResponse | None:
+        """IT manages the department and staff accounts only: an IT caller
+        touching an admin, executive or IT account (or giving one of those
+        roles) is a logged 403. None for every other caller and case."""
+        if caller["role"] != ROLE_IT or all(r in IT_MANAGED_ROLES for r in roles):
+            return None
+        detail = (
+            "IT manages department and staff accounts; an administrator "
+            "changes admin, executive and IT accounts"
+        )
+        store.audit_append(
+            int(caller["institution_id"]),
+            "data.refused",
+            actor=str(caller["id"]),
+            payload={
+                "reason": detail,
+                "method": request.method,
+                "path": request.url.path,
+            },
+        )
+        return JSONResponse(status_code=403, content={"detail": detail})
+
     @app.get("/admin/users")
     def get_admin_users(request: Request) -> list[dict[str, Any]]:
         """Every user of the caller's institution (the admin's own row
@@ -2472,6 +2521,9 @@ def create_app(
                     f"expected one of {', '.join(USER_ROLES)}"
                 ),
             )
+        refused = it_refusal(request, admin, body.role)
+        if refused is not None:
+            return refused
         password = generate_password()
         try:
             user_id = store.create_user(
@@ -2483,13 +2535,18 @@ def create_app(
         target = store.user_in_institution(institution_id, user_id)
         assert target is not None  # just created
         admin_changed(institution_id, "created", target, admin)
+        # IT creates the account but never learns its password: whoever
+        # holds it could sign in as a role that reads the briefing. An
+        # administrator issues the first password (make reset-password).
+        issued_by_admin = admin["role"] == ROLE_IT
         return JSONResponse(
             status_code=201,
             content={
                 "id": user_id,
                 "email": email,
                 "role": body.role,
-                "one_time_password": password,
+                "one_time_password": None if issued_by_admin else password,
+                "password_issued_by_admin": issued_by_admin,
             },
         )
 
@@ -2509,6 +2566,9 @@ def create_app(
             return JSONResponse(
                 status_code=404, content={"detail": f"unknown user id {user_id}"}
             )
+        refused = it_refusal(request, admin, str(target["role"]))
+        if refused is not None:
+            return refused
         if disabled:
             if int(target["id"]) == int(admin["id"]):
                 return JSONResponse(
@@ -2573,6 +2633,9 @@ def create_app(
             return JSONResponse(
                 status_code=404, content={"detail": f"unknown user id {user_id}"}
             )
+        refused = it_refusal(request, admin, str(target["role"]), body.role)
+        if refused is not None:
+            return refused
         if target["role"] == body.role:
             return JSONResponse(
                 content={"user": admin_user_body(target), "changed": False}
@@ -2601,6 +2664,11 @@ def create_app(
     app.include_router(staff_actions_router)
     app.include_router(connections_router)  # GET /admin/connections
     app.include_router(roster_router)  # GET /students/search
+    # GET /departments/overview (cabinet.departments)
+    app.include_router(departments_router)
+    # GET/POST /inbox, /inbox/recipients, /inbox/{id}/read|reviewed,
+    # GET /admin/sessions (cabinet.inbox)
+    app.include_router(inbox_router)
 
     # The built UI, served by the same process. Mounted after every API
     # route so an API path always wins over the static mount; a missing

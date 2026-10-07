@@ -67,6 +67,10 @@ const SIGN_IN_ROLES: Record<string, string> = {
   staff: 'staff',
   reviewer: 'the reviewer',
   aid: 'Financial Aid',
+  finance: 'Finance — Student Accounts',
+  registrar: 'the Registrar',
+  studentlife: 'Student Life',
+  it: 'IT',
 }
 
 function capitalize(text: string): string {
@@ -447,6 +451,23 @@ function describeEvent(
           return { sentence: `${by} changed an institution setting.`, mark: null, details }
       }
     }
+    case 'inbox.sent': {
+      const to = SIGN_IN_ROLES[str(payload.recipient_role) ?? ''] ?? 'another person'
+      const what: Record<string, string> = {
+        finding: ' about a briefing figure',
+        overview: ' about a department figure',
+        explore: ' about an answer',
+      }
+      return {
+        sentence: `${Who} sent an alert to ${to}${what[str(payload.source_kind) ?? ''] ?? ''}.`,
+        mark: 'sent',
+        details,
+      }
+    }
+    case 'inbox.read':
+      return { sentence: `${Who} opened an alert.`, mark: null, details }
+    case 'inbox.reviewed':
+      return { sentence: `${Who} marked an alert reviewed.`, mark: 'approved', details }
     case 'dataset.uploaded':
       add('Data', str(payload.name))
       return { sentence: `${Who} uploaded new briefing data.`, mark: null, details }

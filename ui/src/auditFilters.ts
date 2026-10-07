@@ -46,6 +46,7 @@ export const AUDIT_FILTERS = [
     label: 'Data and people',
     types: ['admin.changed', 'dataset.uploaded', 'dataset.activated', 'dataset.deleted'],
   },
+  { id: 'inbox', label: 'Inbox alerts', types: ['inbox.sent', 'inbox.read', 'inbox.reviewed'] },
   { id: 'refusals', label: 'Refusals', types: ['data.refused'] },
 ] as const
 
