@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 
 import {
   answerNotes,
@@ -10,6 +10,10 @@ import {
   plannerLabel,
   sourceLabel,
   SUPPRESSED,
+  motionAllowed,
+  traceLines,
+  traceSummary,
+  type ExploreTraceEvent,
   visibleColumns,
   type ExploreClaim,
   type ExploreResponse,
@@ -17,7 +21,8 @@ import {
 } from '../explore'
 import { FIELD_LABELS, fieldLabels, normalizeField } from '../fieldLabels'
 import './Explore.css'
-import { Thinking } from './Thinking'
+import { LensMark } from './LensMark'
+import { Thinking, TraceList } from './Thinking'
 
 /** Rows a step's table shows before "Show all N". */
 export const TABLE_PREVIEW_ROWS = 10
@@ -45,11 +50,71 @@ interface ExploreAnswerProps {
   busy: boolean
   /** Opens the audit log (roles that may read it); null hides the link. */
   onSeeAuditLog: (() => void) | null
+  /** The live trace of this answer, when the server streamed one. */
+  trace?: readonly ExploreTraceEvent[]
+  /** How long the answer took, for "Thought for 6 s". */
+  elapsedMs?: number
+  /** The answer has just arrived: the trace collapses and the answer rises in. */
+  live?: boolean
 }
 
-/** "Working it out…": the reply while an Explore question is answered. */
-export function ExploreWorking() {
-  return <Thinking />
+/** "Working it out…": the reply while an Explore question is answered,
+ * with the live trace when the server streams one. */
+export function ExploreWorking({ trace }: { trace?: readonly ExploreTraceEvent[] }) {
+  return <Thinking trace={trace !== undefined ? traceLines(trace) : undefined} />
+}
+
+/**
+ * The finished trace above an answer: one line, "Thought for 6 s · 4 steps",
+ * that opens the full trace again. Right after the answer arrives it starts
+ * open and folds shut (height and opacity, about 280 ms), so the live trace
+ * visibly collapses into it; reopening unfolds with the same motion.
+ */
+export function Thought({
+  trace,
+  elapsedMs,
+  live = false,
+}: {
+  trace: readonly ExploreTraceEvent[]
+  elapsedMs: number
+  live?: boolean
+}) {
+  const lines = traceLines(trace)
+  const [open, setOpen] = useState(() => live && motionAllowed())
+  const bodyId = useId()
+  useEffect(() => {
+    if (!open || !live) return
+    // Fold the just-finished trace on the next frame, so the fold animates.
+    const frame = window.requestAnimationFrame(() =>
+      window.requestAnimationFrame(() => setOpen(false)),
+    )
+    return () => window.cancelAnimationFrame(frame)
+    // Only once, when the answer first arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  if (lines.length === 0) return null
+  return (
+    <div className="thought">
+      <button
+        type="button"
+        className="thought-toggle"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <LensMark className={`thought-mark${live ? ' is-settling' : ''}`} />
+        <span>{traceSummary(elapsedMs, lines.length)}</span>
+        <svg className="chevron thought-chevron" viewBox="0 0 12 12" aria-hidden="true">
+          <path d="M4 2.5 L7.5 6 L4 9.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+        </svg>
+      </button>
+      <div id={bodyId} className="thought-body" data-open={open} inert={!open}>
+        <div className="thought-inner">
+          <TraceList lines={lines} animate={false} />
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function Suggestions({
@@ -175,6 +240,9 @@ export function ExploreAnswer({
   onAsk,
   busy,
   onSeeAuditLog,
+  trace,
+  elapsedMs = 0,
+  live = false,
 }: ExploreAnswerProps) {
   const [open, setOpen] = useState(false)
   const [expanded, setExpanded] = useState<Record<number, boolean>>({})
@@ -231,6 +299,12 @@ export function ExploreAnswer({
     setJump((value) => value + 1)
   }
 
+  const thought =
+    trace !== undefined && trace.length > 0 ? (
+      <Thought trace={trace} elapsedMs={elapsedMs} live={live} />
+    ) : null
+  const answerClass = `explore-answer${live && trace !== undefined && trace.length > 0 ? ' is-rising' : ''}`
+
   if (response.refused) {
     return (
       <div className="explore-answer">
@@ -265,7 +339,8 @@ export function ExploreAnswer({
 
   if (response.answer.length === 0) {
     return (
-      <div className="explore-answer">
+      <div className={answerClass}>
+        {thought}
         <p className="explore-message">
           {response.message ?? 'CampusLens could not answer that question.'}
         </p>
@@ -285,7 +360,8 @@ export function ExploreAnswer({
   const fellBack = (response.fallbacks ?? []).length > 0
 
   return (
-    <div className="explore-answer">
+    <div className={answerClass}>
+      {thought}
       <div className="explore-sentences">
         {response.answer.map((sentence, s) => (
           <p key={s}>

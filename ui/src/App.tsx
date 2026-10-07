@@ -12,7 +12,7 @@ import {
   postApprove,
   postAsk,
   postComposeDispatch,
-  postExplore,
+  askExplore,
   postGovernanceRequest,
   postSendDispatch,
   resetBriefingOnce,
@@ -77,6 +77,7 @@ import {
   redactQuestion,
   saveExploreHistory,
   withQuestion,
+  type ExploreTraceEvent,
 } from './explore'
 import {
   APPROVED_QUESTION,
@@ -476,8 +477,14 @@ function InstitutionPage({
 type ExchangeState =
   | AskState
   | { kind: 'restored' }
-  | { kind: 'explore-sending' }
-  | { kind: 'explore'; response: ExploreResponse }
+  | { kind: 'explore-sending'; trace?: ExploreTraceEvent[] }
+  | {
+      kind: 'explore'
+      response: ExploreResponse
+      trace?: ExploreTraceEvent[]
+      elapsedMs?: number
+      live?: boolean
+    }
 
 interface Exchange {
   id: number
@@ -847,11 +854,28 @@ function BriefingPage({
         ...previous,
         { id: exchangeId, question, state: { kind: 'explore-sending' } },
       ])
-      try {
-        const response = await postExplore(question, flags)
+      // The live trace: each stage the server reports joins the reply.
+      const startedAt = Date.now()
+      let trace: ExploreTraceEvent[] = []
+      const onEvent = (event: ExploreTraceEvent) => {
+        trace = [...trace, event]
+        const current = trace
         setThread((previous) =>
           previous.map((item) =>
-            item.id === exchangeId ? { ...item, state: { kind: 'explore', response } } : item,
+            item.id === exchangeId && item.state.kind === 'explore-sending'
+              ? { ...item, state: { kind: 'explore-sending', trace: current } }
+              : item,
+          ),
+        )
+      }
+      try {
+        const response = await askExplore(question, flags, onEvent)
+        const elapsedMs = Date.now() - startedAt
+        setThread((previous) =>
+          previous.map((item) =>
+            item.id === exchangeId
+              ? { ...item, state: { kind: 'explore', response, trace, elapsedMs, live: true } }
+              : item,
           ),
         )
         // Only answered questions are kept for after a reload: reopening one
@@ -1453,12 +1477,15 @@ function BriefingPage({
 
   const reply = (item: Exchange) => {
     const state = item.state
-    if (state.kind === 'explore-sending') return <ExploreWorking />
+    if (state.kind === 'explore-sending') return <ExploreWorking trace={state.trace} />
     if (state.kind === 'explore') {
       return (
         <ExploreAnswer
           answerKey={String(item.id)}
           response={state.response}
+          trace={state.trace}
+          elapsedMs={state.elapsedMs}
+          live={state.live}
           fallbackSuggestions={examples ?? []}
           onAsk={submit}
           busy={sending}

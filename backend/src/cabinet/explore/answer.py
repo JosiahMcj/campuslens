@@ -40,6 +40,7 @@ from cabinet.analysts import (
     check_numbers_against,
 )
 from cabinet.counseling import SUPPRESSED_DISPLAY
+from cabinet.explore import general
 from cabinet.explore.execute import STUDENT_ID_RE, StepResult
 from cabinet.provider import Provider, ProviderUnavailable
 
@@ -107,7 +108,7 @@ def _fmt(value: Any, kind: str) -> str:
 
 
 def growth_words(value: Any) -> str:
-    """" (more than doubled)" and the like for a growth percentage, else ""."""
+    """ " (more than doubled)" and the like for a growth percentage, else ""."""
     if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 100:
         return ""
     times = int(value // 100) + 1  # growth of 100 % to 199 % ends 2 to 3 times as big
@@ -168,10 +169,21 @@ def _primary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
         return Sentence(STEP_ERROR_SENTENCE)
     if step.instructor_rows_withheld and a == "instructor_history":
         return Sentence("Instructor results are shown to the executive and admin only.")
+    if (
+        not step.rows
+        and a == general.ANALYSIS_ID
+        and any("withheld" in note for note in step.notes)
+    ):
+        return Sentence(
+            "That figure is withheld: the group is too small to show without "
+            "risking identifying someone."
+        )
     if not step.rows:
         return Sentence(
             f"No results matched {step.analysis.title.lower()} with these settings."
         )
+    if a == general.ANALYSIS_ID:
+        return _general_primary(step, steps)
     if step.instructor_rows_withheld and a == "course_instructors":
         b.t(
             "Instructor results are shown to the executive and admin only, so this "
@@ -422,11 +434,234 @@ def _primary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
     return None
 
 
+# --- the general analysis -------------------------------------------------------
+
+
+def _row_name(step: StepResult, row: int) -> str:
+    """A row's group in words ("Mechanical Engineering", "Women, Freshmen")."""
+    cells = step.rows[row]
+    parts = [
+        str(cells[key])
+        for key in ("major_name", "college_name", "term_name", "group", "group_2")
+        if key in cells
+    ]
+    return ", ".join(parts)
+
+
+def _is_total(step: StepResult, row: int) -> bool:
+    return "All students" in _row_name(step, row)
+
+
+def _subject(step: StepResult) -> tuple[str, str]:
+    """(who, where) from the filters: ("International students", " in Nursing")."""
+    p = step.params
+    who: list[str] = []
+    for key in general.GROUPING_KEYS:
+        if key in ("major", "college", "term") or key not in p:
+            continue
+        grouping = general.GROUPINGS[key]
+        if key == "entry_cohort":
+            who.append(f"students who entered in {p[key]}")
+        elif key == "class_level":
+            who.append(grouping.values.get(str(p[key]), str(p[key])))
+        else:
+            who.append(grouping.values.get(str(p[key]), str(p[key])))
+    subject = who[0] if who else "Students"
+    for extra in who[1:]:
+        subject += f" ({extra.lower()})"
+    where = ""
+    if p.get("major"):
+        where = f" in {_major_name([], step)}"
+    elif p.get("college"):
+        for line in step.params_plain:
+            if line.startswith("College: "):
+                where = f" in the {line.split(': ', 1)[1]}"
+    return subject, where
+
+
+def _number(value: Any) -> float:
+    return float(value) if isinstance(value, (int, float)) else float("-inf")
+
+
+_PROPER_START = (
+    "Pell",
+    "U.S.",
+    "Hispanic",
+    "Black",
+    "Asian",
+    "White",
+    "American",
+    "Native",
+    "GPA",
+)
+
+
+def _lower_first(text: str) -> str:
+    """Lowercase the first letter unless it starts a name or an acronym."""
+    if text.startswith(_PROPER_START) or text[:2] == text[:2].upper():
+        return text
+    return text[:1].lower() + text[1:]
+
+
+def _a(word: str) -> str:
+    return f"an {word}" if word[:1].lower() in "aeiou" else f"a {word}"
+
+
+def _plural(step: StepResult) -> bool:
+    """The row names a group of people ("Women"), not a major or a term."""
+    groups = [step.params.get("group_by"), step.params.get("then_by")]
+    return any(g and g not in ("major", "college", "term") for g in groups)
+
+
+def _in_words(name: str) -> str:
+    """A row name inside a sentence: "Entered in 2020-2021" reads "students
+    who entered in 2020-2021"."""
+    if name.startswith("Entered in "):
+        return "students who e" + name[1:]
+    return name
+
+
+def _mid(step: StepResult, row: int) -> str:
+    """A row's name in the middle of a sentence: groups of people in lower
+    case ("students under 20 at entry", "freshmen"), names as they are."""
+    name = _in_words(_row_name(step, row))
+    return _lower_first(name) if _plural(step) else name
+
+
+def _in_scope(b: _Builder, step: StepResult) -> _Builder:
+    """ " in Spring 2026" for a measure read in one term (its scope cell)."""
+    if any(c.key == "scope" for c in step.columns) and step.rows:
+        b.t(" in ").c(step, 0, "scope")
+    return b
+
+
+def _value_phrase(b: _Builder, step: StepResult, row: int) -> _Builder:
+    """The value with its counts: "39.5% (66 of 167 students)"."""
+    keys = {c.key for c in step.columns}
+    b.c(step, row, "value")
+    if step.cell(row, "value") == SUPPRESSED_DISPLAY:
+        return b
+    if general.MEASURES[str(step.params["measure"])].kind == "years":
+        b.t(" years")
+    if "numerator" in keys and "denominator" in keys:
+        den = _lower_first(
+            next(c.label for c in step.columns if c.key == "denominator")
+        )
+        b.t(" (").c(step, row, "numerator").t(" of ").c(step, row, "denominator")
+        b.t(f" {den})")
+    elif "numerator" in keys:
+        den = _lower_first(next(c.label for c in step.columns if c.key == "students"))
+        b.t(" (").c(step, row, "numerator").t(" of ").c(step, row, "students")
+        b.t(f" {den})")
+    elif "students" in keys:
+        den = _lower_first(next(c.label for c in step.columns if c.key == "students"))
+        b.t(" (").c(step, row, "students").t(f" {den})")
+    return b
+
+
+def _general_primary(step: StepResult, steps: list[StepResult]) -> Sentence:
+    p = step.params
+    m = general.MEASURES[str(p["measure"])]
+    groups = [g for g in (p.get("group_by"), p.get("then_by")) if g]
+    b = _Builder(steps)
+    subject, where = _subject(step)
+    ranked = [i for i in range(len(step.rows)) if not _is_total(step, i)]
+    total = next((i for i in range(len(step.rows)) if _is_total(step, i)), None)
+    has_scope = any(c.key == "scope" for c in step.columns)
+    if not groups:
+        if m.id == "headcount":
+            b.c(step, 0, "value").t(f" {_lower_first(subject)} were enrolled{where}")
+            if has_scope:
+                b.t(" in ").c(step, 0, "scope")
+            return b.t(".").done()
+        if m.id == "graduates":
+            b.c(step, 0, "value").t(f" {_lower_first(subject)}{where} graduated from ")
+            return b.t("the start of the records to the latest term.").done()
+        b.t(f"{subject}{where} have {_a(m.label)} of ")
+        _value_phrase(b, step, 0)
+        if has_scope:
+            b.t(" in ").c(step, 0, "scope")
+        return b.t(".").done()
+    if not ranked:
+        return Sentence(
+            "Every group is withheld: each is too small to show without risking "
+            "identifying someone."
+        )
+    natural = p.get("order") == "natural" or (
+        not p.get("order") and all(general.GROUPINGS[g].ordinal for g in groups)
+    )
+    scope_text = (
+        f" for {_lower_first(subject)}{where}"
+        if (subject != "Students" or where)
+        else ""
+    )
+    if natural and len(ranked) >= 2:
+        first, last = ranked[0], ranked[-1]
+        b.t(f"The {m.label}{scope_text} was ")
+        b.c(step, first, "value").t(f" for {_mid(step, first)} and ")
+        b.c(step, last, "value").t(f" for {_mid(step, last)}")
+        if total is not None:
+            b.t(", ").c(step, total, "value").t(" overall")
+        return _in_scope(b, step).t(".").done()
+    if len(ranked) == 2 and _plural(step) and len(groups) == 1:
+        # Two groups of people: one compared with the other.
+        hi, lo = sorted(ranked, key=lambda i: -_number(step.cell(i, "value")))
+        name = _in_words(_row_name(step, hi))
+        b.t(f"{name[:1].upper() + name[1:]}{scope_text} have {_a(m.label)} of ")
+        _value_phrase(b, step, hi).t(", against ").c(step, lo, "value")
+        b.t(f" for {_lower_first(_in_words(_row_name(step, lo)))}")
+        if total is not None:
+            b.t(" (").c(step, total, "value").t(" overall)")
+        return _in_scope(b, step).t(".").done()
+    low = p.get("order", m.default_order) == "lowest_first" and not natural
+    word = "lowest" if low else "highest"
+    top = ranked[0]
+    verb = "have" if _plural(step) else "has"
+    name = _in_words(_row_name(step, top))
+    name = name[:1].upper() + name[1:]
+    if len(ranked) == 1:
+        b.t(f"{name}{scope_text} {verb} {_a(m.label)} of ")
+    else:
+        b.t(f"{name} {verb} the {word} {m.label}{scope_text}: ")
+    _value_phrase(b, step, top)
+    if total is not None:
+        b.t(", against ").c(step, total, "value").t(" overall")
+    return _in_scope(b, step).t(".").done()
+
+
+def _general_secondary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
+    p = step.params
+    ranked = [i for i in range(len(step.rows)) if not _is_total(step, i)]
+    groups = [g for g in (p.get("group_by"), p.get("then_by")) if g]
+    natural = p.get("order") == "natural" or (
+        not p.get("order")
+        and groups
+        and all(general.GROUPINGS[g].ordinal for g in groups)
+    )
+    if len(ranked) < 2 or natural:
+        return None
+    if len(ranked) == 2 and _plural(step) and len(groups) == 1:
+        return None
+    b = _Builder(steps)
+    b.t(f"Next is {_mid(step, ranked[1])} at ").c(step, ranked[1], "value")
+    return b.t(".").done()
+
+
+def _definition(step: StepResult) -> Sentence | None:
+    """The measure's definition in one plain sentence, when it has one."""
+    if step.analysis.id != general.ANALYSIS_ID or step.error or not step.rows:
+        return None
+    short = general.MEASURES[str(step.params["measure"])].short
+    return Sentence(short) if short else None
+
+
 def _secondary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
     """An optional second sentence (the runner-up or a contrast)."""
     a = step.analysis.id
     if step.error or step.instructor_rows_withheld or len(step.rows) < 2:
         return None
+    if a == general.ANALYSIS_ID:
+        return _general_secondary(step, steps)
     b = _Builder(steps)
     if a == "course_instructors":
         b.c(step, 1, "instructor").t(f" {step.cell(1, 'name')} taught ")
@@ -480,6 +715,14 @@ def template_answer(steps: list[StepResult]) -> list[Sentence]:
     step backward while there is room."""
     primaries = [_primary(step, steps) for step in steps]
     room = MAX_SENTENCES - sum(1 for s in primaries if s is not None)
+    definitions: dict[int, Sentence] = {}
+    for step in steps:
+        if room <= 0:
+            break
+        definition = _definition(step)
+        if definition is not None:
+            definitions[step.index] = definition
+            room -= 1
     extras: dict[int, Sentence] = {}
     for step in reversed(steps):
         if room <= 0:
@@ -494,6 +737,8 @@ def template_answer(steps: list[StepResult]) -> list[Sentence]:
             out.append(primary)
         if step.index in extras:
             out.append(extras[step.index])
+        if step.index in definitions:
+            out.append(definitions[step.index])
     return out[:MAX_SENTENCES] or [Sentence("No results matched this question.")]
 
 

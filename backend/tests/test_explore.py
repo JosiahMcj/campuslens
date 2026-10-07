@@ -159,6 +159,7 @@ def _sample_params(analysis_id: str) -> dict[str, Any]:
         "course_instructors": {"course": "MEEN 3310"},
         "instructor_history": {"instructor": "I-0001"},
         "equity_gap": {"course": "MATH 1314"},
+        "measure_by_group": {"measure": "dropout_rate", "group_by": "college"},
     }
     return samples.get(analysis_id, {})
 
@@ -182,8 +183,8 @@ class StubProvider:
 # --- the catalog and the executor --------------------------------------------
 
 
-def test_catalog_has_the_seventeen_analyses(catalog: Catalog) -> None:
-    assert len(ANALYSES) == 17
+def test_catalog_has_the_eighteen_analyses(catalog: Catalog) -> None:
+    assert len(ANALYSES) == 18
     for analysis in ANALYSES:
         assert analysis.title and analysis.description and analysis.fields_read
         assert analysis.columns
@@ -403,9 +404,9 @@ def test_unmappable_question_suggests_three_examples(app: FastAPI) -> None:
 
 def test_catalog_route(app: FastAPI) -> None:
     body = _client(app, "staff").get("/explore/catalog").json()
-    assert len(body["analyses"]) == 17
+    assert len(body["analyses"]) == 18
     assert all(set(a) == {"id", "title", "description"} for a in body["analyses"])
-    assert len(body["examples"]) == 12
+    assert len(body["examples"]) == 17
     assert body["fictional"] is True
 
 

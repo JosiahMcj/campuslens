@@ -473,3 +473,148 @@ export function withQuestion(questions: readonly string[], question: string): st
   const safe = redactQuestion(question)
   return [...questions.filter((item) => item !== safe), safe].slice(-HISTORY_LIMIT)
 }
+
+// --- The live trace (POST /explore/stream) ----------------------------------
+//
+// While a question is answered the API reports each stage as it really
+// happens. Events carry plain words and figures already computed and
+// suppressed; never a student row, an id, or the question's text.
+
+export type ExploreTraceEvent =
+  | { type: 'planning'; text: string }
+  | { type: 'understood'; text: string }
+  | { type: 'plan'; steps: string[]; planner: 'rules' | 'model' }
+  | { type: 'reading'; text: string }
+  | { type: 'step'; index: number; total: number; title: string }
+  | { type: 'suppression'; count: number; text: string }
+  | { type: 'writing'; text: string }
+  | { type: 'verifying'; checked: number; matched: number; text: string }
+
+/** One line of the trace as the screen shows it. */
+export interface TraceLine {
+  /** Stable per line (its position): the screen animates only new lines. */
+  key: string
+  text: string
+  /** True for a step line, the only lines a screen reader hears. */
+  announce: boolean
+}
+
+const TRACE_TYPES = new Set([
+  'planning',
+  'understood',
+  'plan',
+  'reading',
+  'step',
+  'suppression',
+  'writing',
+  'verifying',
+])
+
+/** A stream event as a trace event, or null for anything else (an unknown
+ * type, a malformed field): the trace shows only what it understands. */
+export function traceEventFrom(raw: unknown): ExploreTraceEvent | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const event = raw as Record<string, unknown>
+  const type = event.type
+  if (typeof type !== 'string' || !TRACE_TYPES.has(type)) return null
+  const text = typeof event.text === 'string' ? event.text : ''
+  switch (type) {
+    case 'plan': {
+      const steps = Array.isArray(event.steps)
+        ? event.steps.filter((s): s is string => typeof s === 'string')
+        : []
+      return { type, steps, planner: event.planner === 'model' ? 'model' : 'rules' }
+    }
+    case 'step': {
+      const index = typeof event.index === 'number' ? event.index : 0
+      const total = typeof event.total === 'number' ? event.total : 1
+      const title = typeof event.title === 'string' ? event.title : ''
+      return { type, index, total, title }
+    }
+    case 'suppression':
+      return { type, count: typeof event.count === 'number' ? event.count : 0, text }
+    case 'verifying':
+      return {
+        type,
+        checked: typeof event.checked === 'number' ? event.checked : 0,
+        matched: typeof event.matched === 'number' ? event.matched : 0,
+        text,
+      }
+    default:
+      return text ? ({ type, text } as ExploreTraceEvent) : null
+  }
+}
+
+/** The trace as short lines, in the order the events arrived. */
+export function traceLines(events: readonly ExploreTraceEvent[]): TraceLine[] {
+  const lines: TraceLine[] = []
+  for (const event of events) {
+    let text: string
+    let announce = false
+    switch (event.type) {
+      case 'planning':
+        text = 'Reading your question'
+        break
+      case 'understood':
+        text = `Understood: ${event.text}`
+        break
+      case 'plan':
+        text =
+          event.steps.length === 1
+            ? 'Chose 1 approved analysis'
+            : `Chose ${event.steps.length} approved analyses, one after another`
+        break
+      case 'step':
+        text =
+          event.total > 1
+            ? `Step ${event.index + 1} of ${event.total}: ${event.title}`
+            : `Computing: ${event.title}`
+        announce = true
+        break
+      case 'verifying':
+        text =
+          event.checked === event.matched
+            ? event.text
+            : `Checked ${event.checked} numbers; ${event.matched} matched the tables`
+        break
+      default:
+        text = event.text
+    }
+    lines.push({ key: String(lines.length), text, announce })
+  }
+  return lines
+}
+
+/** "Thought for 6 s · 4 steps": the collapsed trace above an answer. */
+export function traceSummary(elapsedMs: number, lineCount: number): string {
+  const seconds = Math.max(1, Math.round(elapsedMs / 1000))
+  return `Thought for ${seconds} s · ${lineCount} ${lineCount === 1 ? 'step' : 'steps'}`
+}
+
+/** A line's text split into words and numbers ("6,225 students"), so a
+ * number can count up the first time it appears. */
+export function numberParts(text: string): Array<{ text: string; value: number | null }> {
+  const parts: Array<{ text: string; value: number | null }> = []
+  const pattern = /\d{1,3}(?:,\d{3})+|\d+/g
+  let last = 0
+  for (const match of text.matchAll(pattern)) {
+    const start = match.index ?? 0
+    // A year or a term code is a name, not a figure to count.
+    const isYear = /^(?:19|20)\d\d$/.test(match[0])
+    if (start > last) parts.push({ text: text.slice(last, start), value: null })
+    parts.push({ text: match[0], value: isYear ? null : Number(match[0].replace(/,/g, '')) })
+    last = start + match[0].length
+  }
+  if (last < text.length) parts.push({ text: text.slice(last), value: null })
+  return parts
+}
+
+/** Lines of the trace that arrive together enter this far apart. */
+export const TRACE_STAGGER_MS = 60
+
+/** Motion is off under the system setting and the app's own (html.reduce-motion). */
+export function motionAllowed(): boolean {
+  if (typeof window === 'undefined') return false
+  if (document.documentElement.classList.contains('reduce-motion')) return false
+  return !(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
+}

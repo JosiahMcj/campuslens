@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import catalog as C  # noqa: E402
 
 SEED = 20261005
-GENERATOR_VERSION = "1"
+GENERATOR_VERSION = "2"
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUT = ROOT / "var" / "school" / "school.db"
 
@@ -1117,6 +1117,196 @@ class Generator:
                 "dismissed": "academic_dismissal"}[s.status]
 
 
+# --------------------------------------------------------------------------
+# Student profiles, term-by-term enrollment, and outcomes elsewhere.
+#
+# These three tables are filled after the simulation from their own seeded
+# random streams (one per student), so the 21 simulated tables, and every
+# planted fact in VERIFY.md, are unchanged by them. Assignments are drawn
+# from what the simulation produced (program, ability, entry type, course
+# load, whether the student came back), so the patterns a real registrar
+# would see are there: honors students have stronger records, on-campus
+# first-year students return more often, transfers and part-time students
+# are older. Race and ethnicity depend only on first-generation and Pell
+# status (and on international residency), never on ability.
+# --------------------------------------------------------------------------
+REGULAR_SEASONS = ("Fall", "Spring")
+FULL_TIME_HOURS = 12
+
+# Share of women by major (the rest are men); other majors use the default.
+FEMALE_SHARE = {
+    "NURS": 0.88, "EDEL": 0.86, "EDSP": 0.84, "SOWK": 0.86, "PSYC": 0.76, "HLSC": 0.72,
+    "PUBH": 0.70, "EDSE": 0.64, "COMM": 0.62, "ENGL": 0.66, "ARTS": 0.64, "THEA": 0.62,
+    "BIOL": 0.60, "WRSP": 0.52, "MUSC": 0.48, "SOCI": 0.66, "CRIJ": 0.52, "EXSC": 0.48,
+    "KINE": 0.44, "MKTG": 0.52, "ACCT": 0.52, "BUAD": 0.46, "MGMT": 0.42, "FINC": 0.32,
+    "SPMT": 0.30, "BIBL": 0.34, "THEO": 0.30, "MINS": 0.38, "CHEM": 0.50, "MATH": 0.42,
+    "ENVS": 0.50, "MEEN": 0.16, "ELEN": 0.14, "CVEN": 0.22, "CSCI": 0.22, "INFT": 0.20,
+    "CYBR": 0.18,
+}
+DEFAULT_FEMALE_SHARE = 0.56
+
+# IPEDS race and ethnicity categories (U.S. Nonresident for international students).
+RACE_CODES = ("white", "hispanic", "black", "asian", "two_or_more", "american_indian",
+              "pacific_islander", "unknown")
+RACE_WEIGHTS = (0.58, 0.14, 0.12, 0.04, 0.05, 0.02, 0.005, 0.045)
+# Multiplied in for a first-generation or Pell student (the gaps a real
+# registrar sees by race run through these, not through ability).
+RACE_SHIFT_NEED = (0.80, 1.55, 1.60, 0.90, 1.10, 1.40, 1.20, 1.00)
+
+AGE_BANDS = ("under_20", "20_24", "25_34", "35_plus")
+AGE_WEIGHTS = {
+    ("first_time", "FT"): (0.93, 0.06, 0.01, 0.0),
+    ("first_time", "PT"): (0.55, 0.25, 0.14, 0.06),
+    ("transfer", "FT"): (0.15, 0.65, 0.15, 0.05),
+    ("transfer", "PT"): (0.03, 0.32, 0.38, 0.27),
+}
+ATHLETE_MAJOR_LIFT = {"KINE": 1.8, "SPMT": 2.0, "EXSC": 1.6, "BUAD": 1.3, "COMM": 1.2}
+
+
+def regular_terms(g: Generator) -> list[str]:
+    return [t.code for t in g.terms if t.season in REGULAR_SEASONS]
+
+
+def next_regular(g: Generator, code: str) -> str | None:
+    t = g.term_by_code[code]
+    for later in g.terms[t.index + 1:]:
+        if later.season in REGULAR_SEASONS:
+            return later.code
+    return None
+
+
+def derive_extras(g: Generator) -> tuple[list[tuple], list[tuple], list[tuple]]:
+    """(profiles, term enrollment rows, subsequent-enrollment rows) for every
+    student written to the database. Pure function of the simulated state and
+    the seed: nothing here draws from the simulation's own random streams."""
+    enrolled = [s for s in g.students if s.last_term is not None]
+    terms_of: dict[str, list[str]] = {}
+    program_of: dict[tuple[str, str], str] = {}
+    for rec in g.term_records:
+        terms_of.setdefault(rec[0], []).append(rec[1])
+        program_of[(rec[0], rec[1])] = rec[2]
+    standing_of = {(sid, term): st for sid, term, st in g.standings}
+    hours: dict[tuple[str, str], int] = {}
+    for _rid, sid, section_id, term, _date, _status in g.registrations:
+        course = g.courses[g.section_by_id[section_id].course]
+        hours[(sid, term)] = hours.get((sid, term), 0) + course.credits
+    first_program: dict[str, str] = {}
+    for row in g.program_rows:
+        first_program.setdefault(row[1], row[2])
+    major_by_code = {p.code: p.major for p in g.programs.values()}
+    regular = regular_terms(g)
+    first_window = g.terms[0].code
+
+    profiles: list[tuple] = []
+    term_rows: list[tuple] = []
+    elsewhere: list[tuple] = []
+    for s in enrolled:
+        rng = random.Random(f"{SEED}:profile:{s.sid}")
+        enrolled_terms = sorted(terms_of.get(s.sid, []))
+        enrolled_set = set(enrolled_terms)
+        entry_major = major_by_code[first_program[s.sid]]
+        # Returned for a second fall: first-time fall entrants in the window.
+        next_fall = f"{int(s.entry_term[:4]) + 1}10"
+        retained = (s.entry_term >= first_window and s.entry_term.endswith("10")
+                    and next_fall in enrolled_set)
+        left_after_first_year = (
+            s.entry_term >= first_window and s.entry_term.endswith("10")
+            and next_fall in g.term_by_code and not retained and s.status != "graduated")
+
+        female = rng.random() < FEMALE_SHARE.get(entry_major, DEFAULT_FEMALE_SHARE)
+        gender = "female" if female else "male"
+        if s.residency == "international":
+            race = "nonresident"
+        else:
+            weights = list(RACE_WEIGHTS)
+            if s.first_gen or s.pell:
+                weights = [w * k for w, k in zip(weights, RACE_SHIFT_NEED)]
+            race = rng.choices(RACE_CODES, weights)[0]
+        age_band = rng.choices(AGE_BANDS, AGE_WEIGHTS[(s.entry_type, s.load)])[0]
+        p_athlete = 0.0
+        if s.entry_type == "first_time" and s.load == "FT":
+            p_athlete = 0.11 * ATHLETE_MAJOR_LIFT.get(entry_major, 1.0)
+        elif s.entry_type == "transfer" and s.load == "FT":
+            p_athlete = 0.03
+        if left_after_first_year:
+            p_athlete *= 0.55
+        athlete = 1 if rng.random() < p_athlete else 0
+        if s.entry_type == "first_time":
+            p_honors = 0.30 if s.ability > 0.7 else 0.10 if s.ability > 0.35 else 0.012
+        else:
+            p_honors = 0.0
+        honors = 1 if rng.random() < p_honors else 0
+        profiles.append((s.sid, gender, race, age_band, athlete, honors))
+
+        # Clearinghouse-style match: a student who left without a degree and
+        # was later found enrolled at another college.
+        match_term: str | None = None
+        if s.status in ("withdrawn", "stopped") and s.last_term is not None:
+            cum = s.cum_gpa() or 0.0
+            p = 0.30 + (0.15 if cum >= 3.0 else 0.0) - (0.12 if cum < 2.0 else 0.0)
+            p += 0.10 if s.status == "withdrawn" else 0.0
+            nxt = next_regular(g, s.last_term)
+            if nxt is not None and rng.random() < p:
+                later = next_regular(g, nxt) if rng.random() < 0.3 else None
+                match_term = later or nxt
+                sector = "two_year" if rng.random() < 0.38 else "four_year"
+                elsewhere.append((s.sid, match_term, sector))
+
+        # One row per fall and spring term from entry (or Fall 2020) on.
+        start = max(s.entry_term, first_window)
+        housing_by_year: dict[str, str] = {}
+        last_enrolled_before: str | None = None
+        for code in regular:
+            if code < start:
+                continue
+            t = g.term_by_code[code]
+            if code in enrolled_set:
+                load_hours = hours.get((s.sid, code), 0)
+                year = t.academic_year
+                if year not in housing_by_year:
+                    years_in = int(code[:4]) - int(s.entry_term[:4])
+                    if s.entry_type == "first_time":
+                        p_on = (0.88, 0.62, 0.42)[min(years_in, 2)] if years_in < 3 else 0.30
+                        if years_in == 0 and left_after_first_year:
+                            p_on -= 0.22
+                    else:
+                        p_on = 0.30 if years_in == 0 else 0.20
+                    if s.residency == "international":
+                        p_on += 0.15
+                    if athlete:
+                        p_on += 0.15
+                    if age_band in ("25_34", "35_plus") or s.load == "PT":
+                        p_on = 0.04
+                    housing_by_year[year] = ("on_campus" if rng.random() < max(0.0, p_on)
+                                             else "off_campus")
+                load = "full_time" if load_hours >= FULL_TIME_HOURS else "part_time"
+                term_rows.append((s.sid, code, "enrolled", load, load_hours,
+                                  housing_by_year[year]))
+                last_enrolled_before = code
+                continue
+            later = [x for x in enrolled_terms if x > code]
+            if s.status == "graduated" and s.exit_term is not None and s.exit_term < code:
+                status = "graduated"
+            elif later:
+                prev = last_enrolled_before
+                suspended = prev is not None and standing_of.get(
+                    (s.sid, prev)) == "Academic Suspension"
+                status = "suspended" if suspended else "stopped_out"
+            elif match_term is not None and code >= match_term:
+                status = "transferred_out"
+            elif s.status == "dismissed":
+                status = "dismissed"
+            elif s.status in ("suspended", "suspension_exit"):
+                after = [x for x in regular if s.last_term < x <= code]
+                status = "suspended" if len(after) <= 1 else "stopped_out"
+            elif s.status == "withdrawn":
+                status = "withdrawn"
+            else:
+                status = "stopped_out"
+            term_rows.append((s.sid, code, status, None, None, None))
+    return profiles, term_rows, elsewhere
+
+
 SCHEMA_SQL = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE grade_scale (
@@ -1216,6 +1406,26 @@ CREATE TABLE student_appointments (
     advisor_id TEXT NOT NULL REFERENCES instructors(instructor_id),
     term_code TEXT NOT NULL REFERENCES academic_periods(term_code),
     appointment_date TEXT NOT NULL, appointment_type TEXT NOT NULL, status TEXT NOT NULL);
+CREATE TABLE student_profiles (
+    student_id TEXT PRIMARY KEY REFERENCES students(student_id),
+    gender TEXT NOT NULL CHECK (gender IN ('female','male')),
+    race_ethnicity TEXT NOT NULL CHECK (race_ethnicity IN ('white','hispanic','black','asian',
+        'two_or_more','american_indian','pacific_islander','unknown','nonresident')),
+    age_band_at_entry TEXT NOT NULL CHECK (age_band_at_entry IN ('under_20','20_24','25_34','35_plus')),
+    athlete INTEGER NOT NULL CHECK (athlete IN (0, 1)),
+    honors INTEGER NOT NULL CHECK (honors IN (0, 1)));
+CREATE TABLE student_term_enrollment (
+    student_id TEXT NOT NULL REFERENCES students(student_id),
+    term_code TEXT NOT NULL REFERENCES academic_periods(term_code),
+    status TEXT NOT NULL CHECK (status IN ('enrolled','stopped_out','withdrawn','transferred_out',
+        'suspended','dismissed','graduated')),
+    academic_load TEXT CHECK (academic_load IN ('full_time','part_time')),
+    census_hours INTEGER, housing TEXT CHECK (housing IN ('on_campus','off_campus')),
+    PRIMARY KEY (student_id, term_code));
+CREATE TABLE subsequent_enrollment (
+    student_id TEXT PRIMARY KEY REFERENCES students(student_id),
+    found_term TEXT NOT NULL REFERENCES academic_periods(term_code),
+    sector TEXT NOT NULL CHECK (sector IN ('four_year','two_year')));
 CREATE INDEX idx_sections_course ON sections(course_id, term_code);
 CREATE INDEX idx_regs_student ON section_registrations(student_id, term_code);
 CREATE INDEX idx_regs_section ON section_registrations(section_id);
@@ -1223,6 +1433,7 @@ CREATE INDEX idx_terms_term ON student_term_records(term_code);
 CREATE INDEX idx_sap_student ON student_academic_programs(student_id);
 CREATE INDEX idx_holds_student ON person_holds(student_id);
 CREATE INDEX idx_appts_student ON student_appointments(student_id);
+CREATE INDEX idx_ste_term ON student_term_enrollment(term_code, status);
 """
 
 GRADE_SCALE_ROWS = [
@@ -1304,6 +1515,10 @@ def write_db(g: Generator, out: Path) -> None:
         tuple(r) for r in g.advisor_rows if r[1] in enrolled_ids])
     con.executemany("INSERT INTO student_appointments VALUES (?,?,?,?,?,?,?)", [
         (n, *a) for n, a in enumerate(g.appointments, start=1)])
+    profiles, term_rows, elsewhere = derive_extras(g)
+    con.executemany("INSERT INTO student_profiles VALUES (?,?,?,?,?,?)", profiles)
+    con.executemany("INSERT INTO student_term_enrollment VALUES (?,?,?,?,?,?)", term_rows)
+    con.executemany("INSERT INTO subsequent_enrollment VALUES (?,?,?)", elsewhere)
     con.commit()
     con.execute("VACUUM")
     con.close()
