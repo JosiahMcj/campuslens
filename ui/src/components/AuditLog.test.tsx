@@ -281,6 +281,38 @@ describe('AuditLog — grants, refusals, people and paging', () => {
     expect(other).not.toContain('counseling')
   })
 
+  it('says a single-student question was answered with group totals, and names an off-topic refusal', () => {
+    mount({
+      events: [
+        event(21, 'data.refused', 'chief_of_staff', {
+          task_id: 'explore-20',
+          category: 'individual_student',
+          reason: 'CampusLens answers with totals only, never about a single student, by id or by description.',
+          before: 'planning and any model call',
+        }),
+        event(22, 'data.refused', 'chief_of_staff', {
+          task_id: 'explore-21',
+          category: 'prediction',
+          reason: 'CampusLens does not predict what an individual student will do or score students.',
+          before: 'planning and any model call',
+        }),
+        event(23, 'data.refused', 'chief_of_staff', {
+          task_id: 'explore-22',
+          category: 'off_topic',
+          reason: 'The request is not about the university records.',
+          before: 'planning and any model call',
+        }),
+      ],
+    })
+    const single = document.querySelector('#event-21')?.textContent ?? ''
+    expect(single).toContain('answered with group totals only')
+    expect(single).not.toContain('was refused')
+    expect(document.querySelector('#event-22')?.textContent).toContain('answered with group totals from the records only')
+    expect(document.querySelector('#event-23')?.textContent).toContain(
+      'A request that was not about the student records was turned away before any analysis ran.',
+    )
+  })
+
   it('says what kind of refusal each one was, with the reason and the question in Details', () => {
     mount({
       events: [

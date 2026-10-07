@@ -1525,9 +1525,17 @@ _HOLD_FILTER = (
     r"|\b(?:on|under)\s+(?:an?\s+)?(?:active\s+)?hold\b"
 )
 
+_HOLD_GROUP_WORDS = (
+    _HOLD_FILTER
+    + r"|\b(?:have|has|having|had|with)\s+no\s+holds?\b|\bwithout\s+(?:a\s+|any\s+)?"
+    r"holds?\b|\bno\s+holds?\b|\bhold\s+status\b|\bby\s+holds?\b"
+    r"|\bwith\s+(?:and|or|vs\.?|versus)\s+without\s+(?:a\s+|any\s+)?holds?\b"
+)
+
 # Grouping words: (grouping, as a grouping, as filter values).
 _GROUPING_WORDS: dict[str, str] = {
     "major": r"\b(?:which|what)\s+(?:\w+\s+)?(?:majors?|programs?)\b|"
+    r"\b(?:status|by\s+\w+)\s+and\s+(?:by\s+)?majors?\b|"
     r"\b(?:by|per|each|every|across|among)\s+(?:the\s+)?(?:majors?|programs?)\b|"
     r"\bmajors? (?:have|has|with|had)\b",
     "college": r"\b(?:which|what)\s+colleges?\b|\b(?:by|per|each|every|across)\s+"
@@ -1542,7 +1550,7 @@ _GROUPING_WORDS: dict[str, str] = {
     r"out[- ]of[- ]state|out[- ]of[- ]state (?:vs\.?|versus|and|or) in[- ]state",
     "first_generation": r"first[- ]?gen(?:eration)?(?: college)?(?: students?)? status|"
     r"first[- ]?gen(?:eration)? (?:vs\.?|versus|and|or|compared)|"
-    r"(?:vs\.?|versus|and|or) (?:first[- ]?gen|continuing[- ]gen)|"
+    r"\b(?:vs\.?|versus|and|or) (?:first[- ]?gen|continuing[- ]gen)|"
     r"continuing[- ]generation",
     "pell": r"pell status|pell (?:vs\.?|versus|and|or) (?:non[- ]?pell|not)|"
     r"non[- ]?pell|"
@@ -1649,7 +1657,9 @@ _EQUITY_GROUPS = {"first_generation", "pell", "residency", "entry_cohort", "admi
 
 def _detect_measure(text: str) -> tuple[str | None, bool]:
     """(measure id, whether only the general analysis computes it)."""
-    text = re.sub(_HOLD_FILTER, " ", text, flags=re.I)
+    # Hold words that name the group ("students with holds", "no hold", "by
+    # hold status"), not the hold-rate measure.
+    text = re.sub(_HOLD_GROUP_WORDS, " ", text, flags=re.I)
     for measure, pattern in _NEW_MEASURES:
         if _has(pattern, text):
             return measure, True
