@@ -385,7 +385,74 @@ FORWARD_SET: tuple[tuple[str, list[Plan] | None], ...] = (
     ("what is S-1234's gpa", None),
 )
 
-SETS = {"main": EVAL_SET, "held-out": HELD_OUT, "forward": FORWARD_SET}
+# Graduate outcomes (the owner's questions of 2026-10-07, then casual
+# variants): salaries, grades and earnings, graduate and medical school,
+# employment, alumni giving. Written before the rules and the compact catalog
+# were extended; the last two are not answerable (no employer names, no loan
+# records).
+OUTCOMES_SET: tuple[tuple[str, list[Plan] | None], ...] = (
+    (
+        "What do various majors make after graduation?",
+        [_mbg("median_salary", group_by="major")],
+    ),
+    (
+        "Do grades matter for earning potential?",
+        [_mbg("median_salary", group_by="gpa_band")],
+    ),
+    (
+        "What % of biology students got into med school?",
+        [_mbg("med_acceptance_rate", major="BIOL")],
+    ),
+    ("What % of graduates went to grad school?", [_mbg("grad_school_rate")]),
+    ("What % of alumni have given back?", [_mbg("giving_rate")]),
+    (
+        "Which majors give back the most?",
+        [_mbg("giving_rate", group_by="major", order="highest_first")],
+    ),
+    ("Do athletes give back more?", [_mbg("giving_rate", group_by="athlete")]),
+    (
+        "How many nursing grads are employed?",
+        [_mbg("employment_rate", major="NURS")],
+    ),
+    ("starting salary for comp sci grads", [_mbg("median_salary", major="CSCI")]),
+    ("whats our med school acceptance rate", [_mbg("med_acceptance_rate")]),
+    (
+        "do honors students earn more after college",
+        [_mbg("median_salary", group_by="honors")],
+    ),
+    (
+        "which college has the highest alumni giving",
+        [
+            _mbg("giving_rate", group_by="college", order="highest_first"),
+            _mbg("total_giving", group_by="college", order="highest_first"),
+        ],
+    ),
+    ("average gift from alumni", [_mbg("avg_gift")]),
+    ("how much have alumni donated in total", [_mbg("total_giving")]),
+    ("employment rate by major", [_mbg("employment_rate", group_by="major")]),
+    ("whats the first destination survey knowledge rate", [_mbg("knowledge_rate")]),
+    (
+        "do first gen grads make less money",
+        [_mbg("median_salary", group_by="first_generation")],
+    ),
+    (
+        "med school acceptance by gpa",
+        [_mbg("med_acceptance_rate", group_by="gpa_band")],
+    ),
+    (
+        "what percent of psych majors go on to grad school",
+        [_mbg("grad_school_rate", major="PSYC")],
+    ),
+    ("which companies hire the most of our graduates", None),
+    ("what is the average student loan debt of our graduates", None),
+)
+
+SETS = {
+    "main": EVAL_SET,
+    "held-out": HELD_OUT,
+    "forward": FORWARD_SET,
+    "outcomes": OUTCOMES_SET,
+}
 
 # Parameters that only shape the table; an extra one is not a wrong plan.
 LENIENT = {
