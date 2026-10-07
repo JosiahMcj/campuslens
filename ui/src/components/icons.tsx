@@ -250,6 +250,24 @@ export function GearIcon({ size = 16 }: { size?: number }) {
   )
 }
 
+export function MailIcon() {
+  return (
+    <NavGlyph size={20}>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3.5 7 8.5 6 8.5-6" />
+    </NavGlyph>
+  )
+}
+
+export function LockIcon() {
+  return (
+    <NavGlyph size={20}>
+      <rect x="4.5" y="10.5" width="15" height="10" rx="2" />
+      <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+    </NavGlyph>
+  )
+}
+
 export function EyeIcon() {
   return (
     <NavGlyph size={20}>

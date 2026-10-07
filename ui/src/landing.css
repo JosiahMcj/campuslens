@@ -1,27 +1,90 @@
 /* The sign-in screen. Drawn from the app's tokens (DESIGN.md), so it follows
    the chosen theme: light by default, dark when the person picked dark in
-   Settings (the .dark class on <html>). One typeface (the app's), sizes in
-   rem so enlarged text scales everything together, and the page scrolls
-   whenever it is taller than the screen. The fallbacks after each token are
-   the DESIGN.md values, for a stylesheet loaded before the token block. */
+   Settings (the .dark class on <html>). One centred column over a slow
+   backdrop in the mark's colours, with a frosted card for the form. One
+   typeface (the app's), sizes in rem so enlarged text scales everything
+   together, and the page scrolls whenever it is taller than the screen. The
+   fallbacks after each token are the DESIGN.md values, for a stylesheet
+   loaded before the token block. */
 
 .landing {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
-  gap: var(--space-6, 32px);
+  gap: var(--space-5, 24px);
   min-height: 100vh;
   min-height: 100dvh;
+  overflow-x: hidden;
   overflow-y: auto;
   box-sizing: border-box;
-  padding: var(--space-4, 16px) var(--space-6, 32px) var(--space-6, 32px);
+  padding: var(--space-4, 16px) var(--space-6, 32px) var(--space-5, 24px);
   background: var(--paper);
   color: var(--ink);
   font-family: var(--document, 'Inter Variable', Inter, system-ui, sans-serif);
 }
 
+/* --- The backdrop: three soft shapes in the mark's colours -------------------- */
+
+.landing-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.landing-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(5rem);
+}
+
+.landing-glow-deep {
+  top: -14rem;
+  left: -10rem;
+  width: 34rem;
+  height: 30rem;
+  background: var(--brand-deep);
+  opacity: 0.22;
+}
+
+.landing-glow-mid {
+  right: -12rem;
+  bottom: -14rem;
+  width: 40rem;
+  height: 32rem;
+  background: var(--brand-mid);
+  opacity: 0.24;
+}
+
+.landing-glow-teal {
+  top: 34%;
+  left: 52%;
+  width: 24rem;
+  height: 20rem;
+  background: var(--brand-teal);
+  opacity: 0.14;
+}
+
+.dark .landing-glow-deep {
+  opacity: 0.3;
+}
+
+.dark .landing-glow-mid {
+  opacity: 0.26;
+}
+
+.dark .landing-glow-teal {
+  opacity: 0.12;
+}
+
+/* --- The name ------------------------------------------------------------------- */
+
 .landing-brand {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-3, 12px);
   min-width: 0;
   font-size: var(--text-md, 1rem);
@@ -36,44 +99,75 @@
 }
 
 .landing-grid {
-  display: grid;
+  display: flex;
   flex: 1;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 26rem);
+  flex-direction: column;
   align-items: center;
-  gap: var(--space-7, 48px);
+  justify-content: center;
+  gap: var(--space-5, 24px);
   width: 100%;
-  max-width: 72rem;
+  max-width: 40rem;
   margin: 0 auto;
+  padding-bottom: var(--space-5, 24px);
 }
 
 /* --- The description ------------------------------------------------------------ */
 
+.landing-hero {
+  text-align: center;
+}
+
 .landing-hero h1 {
-  max-width: 16ch;
-  margin: 0;
+  max-width: 18ch;
+  margin: 0 auto;
   color: var(--ink);
   font-size: var(--text-3xl, 2.25rem);
   font-weight: 600;
   line-height: 1.25;
+  letter-spacing: -0.02em;
   text-wrap: balance;
 }
 
 .landing-lede {
-  max-width: 34rem;
-  margin: var(--space-4, 16px) 0 0;
+  max-width: 38rem;
+  margin: var(--space-3, 12px) auto 0;
   color: var(--ink-soft);
   font-size: var(--text-lg, 1.125rem);
   line-height: 1.5;
+  text-wrap: pretty;
 }
 
-/* --- The sign-in card ------------------------------------------------------------ */
+/* --- The sign-in card: frosted, so the backdrop shows through ------------------ */
 
 .landing-card {
+  width: 100%;
+  max-width: 26rem;
   min-width: 0;
+  box-sizing: border-box;
   padding: var(--space-5, 24px);
-  border: 1px solid var(--rule);
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
   border-radius: var(--radius-surface, 12px);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--paper) 62%, transparent);
+  box-shadow:
+    var(--shadow),
+    inset 0 1px 0 color-mix(in srgb, var(--paper) 55%, transparent);
+  -webkit-backdrop-filter: blur(1.5rem) saturate(1.4);
+  backdrop-filter: blur(1.5rem) saturate(1.4);
+}
+
+.dark .landing-card {
+  background: color-mix(in srgb, var(--surface) 58%, transparent);
+  box-shadow:
+    var(--shadow),
+    inset 0 1px 0 color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+/* Where the browser cannot blur what is behind, the card is simply solid. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .landing-card,
+  .dark .landing-card {
+    background: var(--surface);
+  }
 }
 
 .landing-card h2 {
@@ -122,18 +216,51 @@
   line-height: 1.25;
 }
 
+/* A field: its icon inside the left edge, the input filling the row. */
+.landing-input {
+  position: relative;
+}
+
+.landing-input-icon {
+  position: absolute;
+  top: 50%;
+  left: var(--space-3, 12px);
+  display: grid;
+  place-items: center;
+  color: var(--ink-soft);
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: color 150ms ease-out;
+}
+
+.landing-input:focus-within .landing-input-icon {
+  color: var(--navy);
+}
+
 .landing-field input {
   display: block;
   width: 100%;
   min-height: 2.75rem;
   box-sizing: border-box;
-  padding: var(--space-2, 8px) var(--space-3, 12px);
+  padding: var(--space-2, 8px) var(--space-3, 12px) var(--space-2, 8px) 2.75rem;
   border: 1px solid var(--rule-strong);
   border-radius: var(--radius-control, 8px);
-  background: var(--paper);
+  background: color-mix(in srgb, var(--paper) 78%, transparent);
   color: var(--ink);
   font: inherit;
   font-size: var(--text-md, 1rem);
+  transition:
+    border-color 150ms ease-out,
+    background-color 150ms ease-out;
+}
+
+.landing-field input:hover:not(:disabled) {
+  border-color: var(--ink-soft);
+}
+
+.landing-field input:focus-visible {
+  border-color: var(--navy);
+  background: var(--paper);
 }
 
 .landing-field input::placeholder {
@@ -148,11 +275,7 @@
   opacity: 0.7;
 }
 
-/* The password field holds the show/hide button inside its right edge. */
-.landing-password {
-  position: relative;
-}
-
+/* The password field also holds the show/hide button inside its right edge. */
 .landing-password input {
   padding-right: 3rem;
 }
@@ -186,9 +309,9 @@
   line-height: 1.5;
 }
 
-/* The main button: filled accent, white text (DESIGN.md "Buttons"). The
-   shared .btn-primary carries the same look; these rules keep this screen
-   right on its own. */
+/* The main button: filled accent (DESIGN.md "Buttons"). The shared
+   .btn-primary carries the same look; these rules keep this screen right on
+   its own. */
 .landing-submit {
   display: flex;
   align-items: center;
@@ -201,19 +324,24 @@
   border: 1px solid var(--navy);
   border-radius: var(--radius-control, 8px);
   background: var(--navy);
-  color: var(--paper);
+  color: var(--on-navy, var(--paper));
   font: inherit;
   font-size: var(--text-md, 1rem);
   font-weight: 600;
   cursor: pointer;
+  transition:
+    background-color 150ms ease-out,
+    border-color 150ms ease-out;
 }
 
 .landing-submit:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--navy), black 12%);
+  border-color: var(--navy-hover, var(--navy));
+  background: var(--navy-hover, var(--navy));
 }
 
 .landing-submit:active:not(:disabled) {
-  background: color-mix(in srgb, var(--navy), black 22%);
+  border-color: var(--navy-pressed, var(--navy));
+  background: var(--navy-pressed, var(--navy));
 }
 
 .landing-submit:disabled {
@@ -222,28 +350,70 @@
 }
 
 .landing-help {
-  margin: var(--space-5, 24px) 0 0;
+  margin: var(--space-4, 16px) 0 0;
   color: var(--ink-soft);
   font-size: var(--text-sm, 0.875rem);
   line-height: 1.5;
   text-align: center;
 }
 
-/* The card rises in once, gently; never under reduced motion. */
+/* --- Motion: each part settles in once, in order, and the backdrop drifts.
+   Never under reduced motion (the system setting, or Settings). ------------- */
+
 @media (prefers-reduced-motion: no-preference) {
+  :root:not(.reduce-motion) .landing-brand,
+  :root:not(.reduce-motion) .landing-hero h1,
+  :root:not(.reduce-motion) .landing-lede,
   :root:not(.reduce-motion) .landing-card {
-    animation: landing-rise 200ms ease-out both;
+    animation: landing-settle 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  :root:not(.reduce-motion) .landing-hero h1 {
+    animation-delay: 80ms;
+  }
+
+  :root:not(.reduce-motion) .landing-lede {
+    animation-delay: 160ms;
+  }
+
+  :root:not(.reduce-motion) .landing-card {
+    animation-delay: 240ms;
+  }
+
+  :root:not(.reduce-motion) .landing-glow-deep {
+    animation: landing-drift-a 22s ease-in-out infinite;
+  }
+
+  :root:not(.reduce-motion) .landing-glow-mid {
+    animation: landing-drift-b 26s ease-in-out infinite;
+  }
+
+  :root:not(.reduce-motion) .landing-glow-teal {
+    animation: landing-drift-a 30s ease-in-out infinite reverse;
   }
 }
 
-@keyframes landing-rise {
+@keyframes landing-settle {
   from {
     opacity: 0;
+    filter: blur(6px);
     transform: translateY(0.5rem);
   }
 }
 
-/* --- Phones and narrow windows: stacked, the description first ---------------- */
+@keyframes landing-drift-a {
+  50% {
+    transform: translate(2.5rem, 1.5rem) scale(1.06);
+  }
+}
+
+@keyframes landing-drift-b {
+  50% {
+    transform: translate(-2rem, -2rem) scale(1.08);
+  }
+}
+
+/* --- Phones and narrow windows ------------------------------------------------- */
 
 @media (max-width: 899px) {
   .landing {
@@ -253,10 +423,9 @@
 
   .landing-grid {
     flex: none;
-    grid-template-columns: minmax(0, 1fr);
-    align-items: start;
+    justify-content: flex-start;
     gap: var(--space-5, 24px);
-    max-width: 28rem;
+    padding-bottom: 0;
   }
 
   .landing-hero h1 {
@@ -270,6 +439,10 @@
 
   .landing-card {
     padding: var(--space-5, 24px) var(--space-4, 16px);
+  }
+
+  .landing-glow {
+    filter: blur(4rem);
   }
 }
 

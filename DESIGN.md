@@ -38,7 +38,7 @@ and approvals use the same marks everywhere.
 | `--alert` | `#B91C1C` | `#F87171` | refusals, errors, destructive actions |
 | `--alert-wash` | `#FEF2F2` | `#2E1F1F` | the ground of refusals and error panels |
 | `--scrim` | black 35 % | black 50 % | behind a slide-over panel or the phone drawer |
-| `--brand-deep` / `--brand-mid` / `--brand-teal` | `#0B2A5B` / `#1667C7` / `#1DB89A` | `#3D7FE0` / `#3B9BE8` / `#2FD0B0` | the CampusLens mark's gradient, nothing else |
+| `--brand-deep` / `--brand-mid` / `--brand-teal` | `#0B2A5B` / `#1667C7` / `#1DB89A` | `#3D7FE0` / `#3B9BE8` / `#2FD0B0` | the CampusLens mark's gradient and the sign-in screen's backdrop, nothing else |
 | `--brand-glint` / `--brand-glint-soft` | `#5EA2EE` / `#9CC6F4` | `#9CC6F4` / `#C6DEFA` | the two highlights inside the mark's lens |
 
 Shadows are tokens too: `--shadow` (cards that float, the composer), `--shadow-float` (menus),
@@ -47,7 +47,7 @@ declared once, in the token block at the top of `ui/src/index.css`; no other sty
 one.
 
 Rules: one accent (`--navy`) for action; gold belongs only to the decision; red only to refusals,
-errors and destructive actions. The `--brand-*` colours belong to the mark only. No other hues. No raw hex or rgb outside the token block.
+errors and destructive actions. The `--brand-*` colours belong to the mark and the sign-in screen's backdrop only. No other hues. No raw hex or rgb outside the token block.
 A question CampusLens does not answer from Explore (counseling records, a single student, a
 prediction) is not an error: it is a calm `--surface` card with a `--rule` border, headed "Not
 something CampusLens answers", with a plain line saying why. Red stays for real errors and
@@ -103,6 +103,14 @@ measure 68ch.
   44 px tall, `--radius-control`, `--text-sm` weight 600. Every button has hover, pressed,
   disabled and focus looks; a working button sets `aria-busy="true"` and shows
   `<span class="spinner">` beside its working label ("Saving…").
+- **Sign-in screen:** one centred column: the name, the one-line description, then the sign-in
+  card. Behind it, a backdrop of three soft blurred shapes in `--brand-deep`, `--brand-mid` and
+  `--brand-teal` at low opacity, the only place those colours appear outside the mark. The card
+  is frosted (a translucent `--paper` or `--surface` with a backdrop blur, a hairline and
+  `--shadow`) so the backdrop shows through; where the browser cannot blur, it is solid
+  `--surface`. Its fields carry a mail and a lock icon inside the left edge, which turn `--navy`
+  on focus. Each part settles in once, in order (500 ms, 80 ms apart), and the backdrop drifts
+  slowly; no motion under reduced motion.
 - **Inputs:** `.field`, 44 px tall, `--text-md`, `--rule-strong` border, `--radius-control`,
   label above, help text below, error text below in `--alert` linked with `aria-describedby`
   and `aria-invalid="true"` (red border). Placeholders start with "e.g.", except the question box, whose placeholder says what can be
