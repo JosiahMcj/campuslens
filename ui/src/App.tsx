@@ -710,15 +710,12 @@ function BriefingPage({
   const nextExchangeId = useRef(1)
   const [viewFrom, setViewFrom] = useState(0)
   // The exchange restored on load (GET /briefing). Someone who may ask
-  // starts on the empty screen with the question front and centre, unless a
-  // decision is still waiting on them: then the restored answer stays open.
+  // always starts on the empty screen with the question front and centre.
   // Settled for good once they choose anything (ask, New question, history).
   const [restoredId, setRestoredId] = useState<number | null>(null)
   const [restoredSettled, setRestoredSettled] = useState(false)
-  // Decided ONCE, when both the restored briefing and the decisions have
-  // loaded: 'show' keeps the restored answer open (a decision waits, or the
-  // decisions could not be checked), 'hide' starts on the empty screen.
-  // Approving later never hides the answer the person is looking at.
+  // Decided once the restored briefing has loaded: 'hide' starts on the
+  // empty screen ('show' is kept for the type; nothing sets it now).
   const [restoredView, setRestoredView] = useState<'pending' | 'show' | 'hide'>('pending')
   // The Financial Aid role's work is the review queue, so it lands there.
   const [panel, setPanel] = useState<PanelId | null>(
@@ -897,15 +894,13 @@ function BriefingPage({
     )
   }, [])
 
-  // Whether the restored answer is hidden behind the empty home screen.
+  // Signing in always starts on the empty home screen with a new question.
+  // The restored answer stays in the history, and a waiting decision is
+  // still one click away in the decisions panel.
   useEffect(() => {
     if (restoredView !== 'pending' || restoredId === null) return
-    if (decisionsStatus.kind === 'loading') return
-    const waiting =
-      decisionsStatus.kind === 'error' ||
-      (decisions ?? []).some((decision) => !decision.approved)
-    setRestoredView(waiting ? 'show' : 'hide')
-  }, [restoredView, restoredId, decisionsStatus, decisions])
+    setRestoredView('hide')
+  }, [restoredView, restoredId])
   const restoredOpenable = act && restoredId !== null && !restoredSettled
   const restoredHidden = restoredOpenable && restoredView !== 'show'
   // Both loads still settling: a skeleton, not an empty screen that then
