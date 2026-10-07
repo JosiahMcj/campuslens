@@ -338,3 +338,157 @@ export function describePoint(point: Point | undefined, data: Pick<ChartData, 'k
   }
   return value
 }
+
+// --- asking about a chart, and sending it ----------------------------------------
+
+/** One place on a chart: a term (an index into `x`) and a group, either or
+ * both left open. `{index: null, seriesKey: null}` is the whole chart. */
+export interface ChartFocus {
+  index: number | null
+  seriesKey: string | null
+}
+
+export const WHOLE_CHART: ChartFocus = { index: null, seriesKey: null }
+
+/** The group a chart was narrowed to with the Students choice. */
+export interface ChartGroup {
+  label: string
+  value: string
+}
+
+/** How a question names each chart's measure: [about it, how it changed]. */
+const MEASURE_PHRASES: Record<string, [string, string]> = {
+  headcount: ['students enrolled', 'enrollment'],
+  headcount_by_college: ['students enrolled', 'enrollment'],
+  new_students: ['new students', 'the number of new students'],
+  retention: ['first-year retention', 'first-year retention'],
+  retention_by_pell: ['first-year retention', 'first-year retention'],
+  grad4: ['the 4-year graduation rate', 'the 4-year graduation rate'],
+  grad4_by_pell: ['the 4-year graduation rate', 'the 4-year graduation rate'],
+  grad6: ['the 6-year graduation rate', 'the 6-year graduation rate'],
+  stop_out: ['the stop-out rate', 'the stop-out rate'],
+  dropout: ['the dropout rate', 'the dropout rate'],
+  avg_gpa: ['average GPA', 'average GPA'],
+  financial_hold_students: [
+    'students with a financial hold',
+    'the number of students with a financial hold',
+  ],
+  financial_hold_rate: [
+    'the share of students with a financial hold',
+    'the share of students with a financial hold',
+  ],
+  financial_balance_total: [
+    'the total balance on financial holds',
+    'the total balance on financial holds',
+  ],
+  financial_balance_median: [
+    'the median balance on financial holds',
+    'the median balance on financial holds',
+  ],
+  pell_share: ['the share of Pell grant recipients', 'the share of Pell grant recipients'],
+  on_campus: ['the share living on campus', 'the share living on campus'],
+  athletes: ['the share of athletes', 'the share of athletes'],
+  part_time: ['the share studying part-time', 'the share studying part-time'],
+  dfw: ['the D, F or withdrawal rate', 'the D, F or withdrawal rate'],
+  probation: ['the probation rate', 'the probation rate'],
+  advising: ['the share who met an advisor', 'the share who met an advisor'],
+}
+
+function measurePhrases(data: Pick<ChartData, 'chart' | 'title'>): [string, string] {
+  const known = MEASURE_PHRASES[data.chart]
+  if (known !== undefined) return known
+  const title = data.title.length > 1 && /^[A-Z][a-z]/.test(data.title)
+    ? data.title[0].toLowerCase() + data.title.slice(1)
+    : data.title
+  return [title, title]
+}
+
+/** The series a focus names, or the only series when there is one. */
+function focusSeries(data: ChartData, focus: ChartFocus): Series | null {
+  if (focus.seriesKey !== null) return data.series.find((s) => s.key === focus.seriesKey) ?? null
+  return data.series.length === 1 ? data.series[0] : null
+}
+
+/** The last term with a shown figure in any series (the "latest" a card
+ * leads with), or null when nothing is shown. */
+export function latestShownIndex(data: ChartData): number | null {
+  for (let i = data.x.length - 1; i >= 0; i -= 1) {
+    if (data.series.some((s) => s.points[i]?.status === 'ok')) return i
+  }
+  return null
+}
+
+/** Where a question is about: the group's name (a compared group, else the
+ * Students choice; never the "All students" reference) and the term. */
+function focusParts(data: ChartData, group: ChartGroup | null, focus: ChartFocus) {
+  const series = focusSeries(data, focus)
+  const groupName =
+    series !== null && series.slot !== null && data.split !== null ? series.label : (group?.value ?? null)
+  const index = focus.index ?? latestShownIndex(data)
+  const term = index !== null ? (data.x[index]?.label ?? null) : null
+  return { series, groupName, index, term }
+}
+
+/**
+ * The question "Ask about this" starts a new chat with, built from the
+ * chart's measure, the group and the term. A point that fell or rose from
+ * the term before asks why ("Why did first-year retention for College of
+ * Engineering and Computing drop in Fall 2024?"); otherwise it asks for more
+ * ("Tell me more about students enrolled in Spring 2026 by college."). It
+ * never carries a figure, so a withheld point's question reveals nothing.
+ */
+export function chartQuestion(data: ChartData, group: ChartGroup | null, focus: ChartFocus): string {
+  const [about, change] = measurePhrases(data)
+  const { series, groupName, index, term } = focusParts(data, group, focus)
+  const forGroup = groupName !== null ? ` for ${groupName}` : ''
+  const inTerm = term !== null ? ` in ${term}` : ''
+  const bySplit =
+    series === null && data.split !== null && data.series.length > 1 ? ` by ${data.split.label.toLowerCase()}` : ''
+  if (focus.index !== null && series !== null && index !== null && index > 0) {
+    const point = series.points[index]
+    const before = series.points[index - 1]
+    if (
+      point?.status === 'ok' &&
+      before?.status === 'ok' &&
+      point.value !== null &&
+      before.value !== null &&
+      point.value !== before.value
+    ) {
+      const direction = point.value < before.value ? 'drop' : 'rise'
+      return `Why did ${change}${forGroup} ${direction}${inTerm}?`
+    }
+  }
+  return `Tell me more about ${about}${forGroup}${inTerm}${bySplit}.`
+}
+
+/** The chip a chat started from a chart carries: "About: <chart> · <group> · <term>". */
+export function chartAbout(data: ChartData, group: ChartGroup | null, focus: ChartFocus): string {
+  const { groupName, term } = focusParts(data, group, focus)
+  return ['About: ' + data.title, groupName, term].filter((part) => part !== null).join(' · ')
+}
+
+/** The reference an alert stores for a chart (the server re-reads the
+ * series from it for whoever opens the alert): the series query, then the
+ * term and the group when one point was chosen. */
+export function chartRef(
+  chart: string,
+  compare: string,
+  filters: Record<string, string>,
+  data: Pick<ChartData, 'x'> | null,
+  focus: ChartFocus,
+): string {
+  const params = new URLSearchParams(seriesQuery(chart, compare, filters))
+  const at = focus.index !== null && data !== null ? data.x[focus.index]?.key : undefined
+  if (at !== undefined) params.set('at', at)
+  if (focus.seriesKey !== null) params.set('series', focus.seriesKey)
+  return params.toString()
+}
+
+/** How many legend chips fit in `rows` rows, given each chip's top offset
+ * as laid out in one wrapping row (all of them when they fit). */
+export function chipsThatFit(tops: number[], rows: number): number {
+  const lines = [...new Set(tops)].sort((a, b) => a - b)
+  if (lines.length <= rows) return tops.length
+  const last = lines[rows - 1]
+  return tops.filter((top) => top <= last).length
+}

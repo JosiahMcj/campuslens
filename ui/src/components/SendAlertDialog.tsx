@@ -21,6 +21,7 @@ function sourceLine(source: AlertSource): string | null {
       return null
     case 'finding':
     case 'overview':
+    case 'chart':
       return `Attached: ${source.label}`
     case 'explore':
       return `Attached: the answer to “${source.question}”`

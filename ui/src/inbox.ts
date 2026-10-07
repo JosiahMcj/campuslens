@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { apiFailure, type KnownDetails } from './adminErrors'
 import { ApiError, apiFetch, roleDisplayName, type Department, type Role } from './auth'
+import type { ChartData } from './dataPage'
 
 export const INBOX_NOTE_MAX_CHARS = 1000
 
@@ -43,7 +44,18 @@ export interface ExploreSnapshot {
   quoted_by_sender?: boolean
 }
 
-export type SourceKind = 'note' | 'finding' | 'overview' | 'explore'
+/** A Data page chart, computed again for the reader whenever the alert is
+ * shown: the series as the reader's role may see them, the group the sender
+ * narrowed to, and the term (`at`, an x key) and group (`focus_series`) they
+ * pointed at, if any. */
+export interface ChartSnapshot extends ChartData {
+  ref: string
+  group: { key: string; label: string; value: string } | null
+  at: string | null
+  focus_series: string | null
+}
+
+export type SourceKind = 'note' | 'finding' | 'overview' | 'explore' | 'chart'
 
 export interface InboxMessage {
   id: number
@@ -53,7 +65,7 @@ export interface InboxMessage {
   review_by: string | null
   source_kind: SourceKind
   source_ref: string | null
-  snapshot: FindingSnapshot | OverviewSnapshot | ExploreSnapshot | null
+  snapshot: FindingSnapshot | OverviewSnapshot | ExploreSnapshot | ChartSnapshot | null
   /** False when the attachment is no longer there for this reader (the
    * figure was withdrawn, or their role may no longer read it). */
   attachment_available?: boolean
@@ -73,6 +85,7 @@ export type AlertSource =
   | { kind: 'note' }
   | { kind: 'finding'; ref: string; label: string }
   | { kind: 'overview'; ref: string; label: string }
+  | { kind: 'chart'; ref: string; label: string }
   | { kind: 'explore'; question: string; answer: string[] }
 
 const SEND_REFUSALS: KnownDetails = [
@@ -82,6 +95,8 @@ const SEND_REFUSALS: KnownDetails = [
   ['unknown recipient', 'That person can no longer receive alerts. Choose someone else.'],
   ['other than yourself', 'Choose someone other than yourself.'],
   ['does not', 'Your role cannot attach this. Send the note on its own.'],
+  ["recipient's role may not", "That person's role can't see this. Choose someone else."],
+  ['unknown chart', 'This chart can no longer be sent from here. Reload the page and try again.'],
 ]
 
 async function json<T>(response: Response, known: KnownDetails = []): Promise<T> {
@@ -96,7 +111,8 @@ export async function fetchInbox(): Promise<Inbox> {
 /** The people who may receive an alert with this attachment (the API
  * offers only those allowed to read it). */
 export async function fetchRecipients(source: AlertSource = { kind: 'note' }): Promise<InboxPerson[]> {
-  const ref = source.kind === 'finding' || source.kind === 'overview' ? source.ref : ''
+  const ref =
+    source.kind === 'finding' || source.kind === 'overview' || source.kind === 'chart' ? source.ref : ''
   const query = new URLSearchParams({ kind: source.kind, ref })
   return json<InboxPerson[]>(await apiFetch(`/inbox/recipients?${query.toString()}`))
 }
