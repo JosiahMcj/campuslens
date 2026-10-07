@@ -298,6 +298,7 @@ _COMMON_WORDS_TEXT = """
     charge charges late on-time money dollars salaries salary benefits operations
     travel technology facilities auxiliary restricted operating source sources
     ledger books spiritual chapel advancement administration plan plans
+    mech mechanical nurses business psychology biology chemistry engineering
 """
 # Short and common names of subjects people type ("failed Calc").
 _ABBREVIATIONS_TEXT = """
