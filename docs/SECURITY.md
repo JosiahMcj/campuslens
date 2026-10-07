@@ -328,6 +328,25 @@ and `python -m cabinet.datasets purge-deleted` hard-deletes datasets past the
 30 day retention window. An institution can ask us to delete its data at any
 time, and the audit log then retains only the fact of deletion.
 
+Counseling free text is never stored. An upload (the admin screen or the Ellucian
+import) may carry `counseling.counseling_notes`, but before the document is written
+every note that carries text is replaced by the fixed marker "note on file; text
+removed at upload", and an empty or non-text note becomes null. M9, the authorized
+aggregate, counts a student when a note exists or the chaplain flag is set, so its
+count is the same and the words never reach the disk, a backup, or a model. The
+bundled fictional fixture keeps its five invented notes, because it is committed demo
+data loaded from the repository rather than uploaded, and the refusal of the field is
+real only if the field has content.
+
+Files at rest are readable by the service's own user only. `cabinet.db` is created
+with mode 0600 before SQLite opens it, and an existing one (with any journal, `-wal`,
+or `-shm` file) is tightened to 0600 at startup and by `make migrate`. Dataset
+documents are 0600 in 0700 directories. A backup directory is 0700 and every file in
+it (the database copy, the dataset copies, and `manifest.json`) is 0600, and
+`make restore` writes the database and dataset files back at 0600. The generated
+Demonstration University database for Explore is fictional and is not covered by this
+rule.
+
 ## Reporting a vulnerability
 
 Email us at **contact@example.edu**, a placeholder mailbox that we will replace

@@ -293,7 +293,10 @@ Notes on the tables.
   `var/data/<institution slug>/<dataset id>.json`, mode 0600, with
   institution directories at 0700. We compute the row's `sha256` from the
   stored bytes and verify it on every load, so a file changed on disk fails
-  loudly.
+  loudly. An upload's `counseling.counseling_notes` text is replaced before
+  the document is stored (a note with text becomes "note on file; text
+  removed at upload", any other value null), so the stored bytes, and the
+  `sha256`, are of the document without the note text.
 - `row_counts` is JSON of the form `{"students": N, "prior_year_students": M}`.
 - `is_active` marks the dataset the institution's findings compute from.
   Activating a dataset recomputes findings, and the previous dataset stays

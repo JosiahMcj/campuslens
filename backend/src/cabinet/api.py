@@ -2271,10 +2271,12 @@ def create_app(
             if isinstance(meta, dict) and meta.get("title")
             else "Uploaded dataset"
         )
+        # The stored bytes carry no counseling note text (validate_upload
+        # removed it); the sha256 is of what is stored.
         dataset = store.add_dataset(
             institution_id,
             name=name,
-            raw=raw,
+            raw=report.stored_raw,
             uploaded_by=str(user["email"]),
             row_counts=report.row_counts,
         )

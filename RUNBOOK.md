@@ -232,7 +232,8 @@ before the command reports success. `make restore FROM=...` refuses while the
 servers are running, verifies the backup's hashes first, moves any existing
 `var/cabinet.db` and `var/data/` aside as `*.pre-restore-<timestamp>`, copies
 the backup in, and verifies what it wrote. Nothing in a backup or restore path
-is ever deleted.
+is ever deleted. A backup directory is 0700 and every file in it is 0600, and the
+restored database and dataset files are written back at 0600.
 
 ## Migrations
 

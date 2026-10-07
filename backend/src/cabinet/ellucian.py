@@ -1197,7 +1197,7 @@ def _import(args: argparse.Namespace) -> int:
         dataset = store.add_dataset_with_audit(
             institution_id,
             name=name,
-            raw=raw,
+            raw=report.stored_raw,
             uploaded_by="ethos-import",
             audit_actor="system",
             audit_extra={
