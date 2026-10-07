@@ -104,7 +104,7 @@ then has its own bucket of 120 requests per minute, which is what paces one
 person. `POST /ask`, `POST /explore` and the dispatch Send are capped at 5 per minute per
 session and per IP, because they spend model calls or send a message, and the
 login throttling above applies on top. Over the limit is a 429 with
-`Retry-After` and the plain message "The Cabinet is busy. Wait a minute and try
+`Retry-After` and the plain message "CampusLens is busy. Wait a minute and try
 again." The variables `CABINET_RATE_GENERAL_PER_MIN`,
 `CABINET_RATE_SESSION_PER_MIN` and `CABINET_RATE_ASK_PER_MIN` change the three
 limits. These are single-process limits, which the "What is NOT covered"

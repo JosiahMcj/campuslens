@@ -1,4 +1,4 @@
-# deploy/Caddyfile — Golden Eagle AI Cabinet, public HTTPS front.
+# deploy/Caddyfile — CampusLens, public HTTPS front.
 #
 # The hostname comes from the environment, never from this file:
 #

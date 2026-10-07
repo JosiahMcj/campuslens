@@ -4,7 +4,7 @@
 # Validate on the target host: systemd-analyze verify cabinet-backup.service
 
 [Unit]
-Description=Golden Eagle AI Cabinet backup (snapshot + rotation)
+Description=CampusLens backup (snapshot + rotation)
 
 [Service]
 Type=oneshot

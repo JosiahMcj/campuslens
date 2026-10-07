@@ -1,8 +1,10 @@
-# Golden Eagle AI Cabinet
+<p align="center"><img src="docs/brand/campuslens-logo.png" alt="CampusLens" width="320"></p>
+
+# CampusLens
 
 *Governed AI employees helping university leaders turn SIS data into human-centered action.*
 We built this for the Gloo AI Hackathon (Boulder, Oct 6-8, 2026), and `ROADMAP.md` is the
-plan. In one sentence, Golden Eagle AI Cabinet transforms Ellucian SIS data into an
+plan. In one sentence, CampusLens transforms Ellucian SIS data into an
 executive briefing by coordinating permission-limited AI employees across enrollment and
 student success. It helps university leaders see what matters, understand why, and direct
 timely human action.
@@ -138,7 +140,7 @@ production configuration fail closed. The API refuses to start without a
 Beyond the two approved briefing questions, anyone who may ask can put a specific
 question to Demonstration University, the fictional school in `data/school/`. We ask
 it the way a president would: "Which major has the lowest GPA, what is its hardest
-class, and who has taught it?" The Cabinet answers in a few plain sentences, and each
+class, and who has taught it?" CampusLens answers in a few plain sentences, and each
 number in them links to the table cell it came from. A "How this was answered" fold
 shows every step, the fields it read, and its table.
 
@@ -264,7 +266,7 @@ email pair, after 5 failures in 15 minutes, answering 429 with a `Retry-After`
 header. The bare email is never hard-blocked and instead pays a progressive
 delay of 1, 2, 4, and 8 seconds, capped at 30. Every address may make 600
 requests a minute, because a whole campus can share one address, and each
-signed-in session may make 120. Over either limit the answer is "The Cabinet is
+signed-in session may make 120. Over either limit the answer is "CampusLens is
 busy. Wait a minute and try again." Request bodies are capped at
 256 KB (20 MB on the dataset upload route). We enforce the cap on the bytes
 actually read, and on admin routes it applies only after authentication. The
@@ -349,6 +351,10 @@ data/               fixture.json (fictional, seeded), golden/ (committed
 cabinet.local.env.example   template for local live-model config (gitignored copy)
 RUNBOOK.md          setup, run, stop, restart, replay, record, reset
 ```
+
+## Team
+
+We are Josiah McJunkin, Sharon Li, Dylan Poirier and Obinna Amadi.
 
 ## Contributing
 

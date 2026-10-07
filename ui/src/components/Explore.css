@@ -43,7 +43,7 @@
   margin-top: var(--space-2);
 }
 
-/* A question the Cabinet does not answer (counseling records, a single
+/* A question CampusLens does not answer (counseling records, a single
    student, a prediction): a calm note, not an error. Red stays for real
    errors. */
 .explore-declined {

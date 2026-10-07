@@ -61,7 +61,7 @@ PLANNER_ROLE = "explore_planner"
 MAX_STEPS = 4
 RECORDING_SUBDIR = "explore"
 
-UNANSWERABLE_MESSAGE = "The Cabinet can't answer that from the approved analyses yet."
+UNANSWERABLE_MESSAGE = "CampusLens can't answer that from the approved analyses yet."
 
 # The owner's example, answered in one plan of three chained steps.
 OWNER_EXAMPLE = (

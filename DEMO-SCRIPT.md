@@ -87,7 +87,7 @@ Enter.
 **Said.**
 > "Every fall, a president asks a simple question. What should I know about spring
 > registration? Today the answer lives in six spreadsheets and three inboxes. This is
-> the Golden Eagle AI Cabinet, governed AI employees that turn student-system data into
+> CampusLens, governed AI employees that turn student-system data into
 > one briefing a leader can act on. Watch what happens when we ask."
 
 ## Beat 2, 0:30 to 1:10 · The cabinet goes to work, visibly scoped

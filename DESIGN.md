@@ -1,6 +1,6 @@
 # Design record
 
-The visual authority for the Cabinet's interface. Every colour, size, spacing step and corner
+The visual authority for the CampusLens interface. Every colour, size, spacing step and corner
 radius in `ui/src` follows this file. Change this file first when the look changes.
 
 ## Concept
@@ -28,9 +28,9 @@ and approvals use the same marks everywhere.
 | `--ink-soft` | `#595959` | `#B4B4B4` | secondary text (4.5:1 or better on its surface) |
 | `--rule` | `#E3E3E3` | `#393939` | hairlines |
 | `--rule-strong` | `#CDCDCD` | `#595959` | input borders, table rules |
-| `--navy` (accent) | `#126E6B` | `#41A79D` | links, focus rings, the main button |
-| `--navy-hover` / `--navy-pressed` | `#0F5D5B` / `#0C4D4B` | `#56B5AB` / `#6CC2B8` | the main button's hover and pressed fills |
-| `--on-navy` | `#FFFFFF` | `#171717` | text on a filled accent button (6.0:1 and 6.2:1) |
+| `--navy` (accent, the logo blue) | `#1667C7` | `#5EA2EE` | links, focus rings, the main button |
+| `--navy-hover` / `--navy-pressed` | `#1257A8` / `#0F4A8F` | `#78B2F1` / `#93C2F4` | the main button's hover and pressed fills |
+| `--on-navy` | `#FFFFFF` | `#171717` | text on a filled accent button (5.5:1 and 6.7:1) |
 | `--gold` | `#B45309` | `#F59E0B` | the leadership decision and its Approve, nothing else |
 | `--gold-hover` / `--gold-pressed` | `#9A4708` / `#823C07` | `#F7AD35` / `#F9BD5C` | Approve's hover and pressed fills |
 | `--on-gold` | `#FFFFFF` | `#171717` | text on the Approve button (5.0:1 and 8.4:1) |
@@ -38,6 +38,8 @@ and approvals use the same marks everywhere.
 | `--alert` | `#B91C1C` | `#F87171` | refusals, errors, destructive actions |
 | `--alert-wash` | `#FEF2F2` | `#2E1F1F` | the ground of refusals and error panels |
 | `--scrim` | black 35 % | black 50 % | behind a slide-over panel or the phone drawer |
+| `--brand-deep` / `--brand-mid` / `--brand-teal` | `#0B2A5B` / `#1667C7` / `#1DB89A` | `#3D7FE0` / `#3B9BE8` / `#2FD0B0` | the CampusLens mark's gradient, nothing else |
+| `--brand-glint` / `--brand-glint-soft` | `#5EA2EE` / `#9CC6F4` | `#9CC6F4` / `#C6DEFA` | the two highlights inside the mark's lens |
 
 Shadows are tokens too: `--shadow` (cards that float, the composer), `--shadow-float` (menus),
 `--shadow-panel` (the slide-over panel), `--shadow-drawer` (the phone drawer). Every token is
@@ -45,16 +47,13 @@ declared once, in the token block at the top of `ui/src/index.css`; no other sty
 one.
 
 Rules: one accent (`--navy`) for action; gold belongs only to the decision; red only to refusals,
-errors and destructive actions. No other hues. No raw hex or rgb outside the token block.
-A question the Cabinet does not answer from Explore (counseling records, a single student, a
+errors and destructive actions. The `--brand-*` colours belong to the mark only. No other hues. No raw hex or rgb outside the token block.
+A question CampusLens does not answer from Explore (counseling records, a single student, a
 prediction) is not an error: it is a calm `--surface` card with a `--rule` border, headed "Not
-something the Cabinet answers", with a plain line saying why. Red stays for real errors and
+something CampusLens answers", with a plain line saying why. Red stays for real errors and
 the briefing's data refusals.
 
-**Theme:** light is the default for everyone (the demo is projected in a lit room). Dark is
-available from Settings and the theme switch and remembered per browser. The operating system's
-setting does not switch the theme on its own, and there is no "System" option (an old stored
-"system" choice reads as light).
+**Theme:** by default the theme follows the computer's own light or dark setting and changes with it. Settings offers Automatic, Light and Dark, and the sidebar's theme switch picks Light or Dark; an explicit choice is remembered per browser.
 
 ## Type
 
@@ -99,7 +98,7 @@ measure 68ch.
   - `.btn-approve`: filled `--gold`, `--on-gold` text. The leadership decision only.
 
   The text on a filled button is white in light and dark ink (`#171717`) in dark: dark text on
-  the light gold is 3.2:1 and white on the dark teal is 2.9:1, both under the 4.5:1 this file
+  the light gold is 3.2:1 and white on the dark blue is 2.7:1, both under the 4.5:1 this file
   requires, so these are the only foregrounds that pass on both fills. All four are at least
   44 px tall, `--radius-control`, `--text-sm` weight 600. Every button has hover, pressed,
   disabled and focus looks; a working button sets `aria-busy="true"` and shows

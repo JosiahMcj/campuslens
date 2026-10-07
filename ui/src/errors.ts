@@ -6,8 +6,8 @@
 import { ApiError, LoginError, SessionEndedError } from './auth'
 
 export const NETWORK_MESSAGE =
-  "We couldn't reach the Cabinet. Check your connection and try again."
-export const BUSY_MESSAGE = 'The Cabinet is busy. Wait a minute and try again.'
+  "We couldn't reach CampusLens. Check your connection and try again."
+export const BUSY_MESSAGE = 'CampusLens is busy. Wait a minute and try again.'
 export const SERVER_MESSAGE = 'Something went wrong on our side. Try again in a minute.'
 
 /** Words and marks that never belong in a sentence shown to a reader. */

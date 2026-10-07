@@ -1,7 +1,7 @@
 import { roleDisplayName, type Role, type Session } from '../auth'
 import { fieldLabels } from '../fieldLabels'
 import { findingLabel } from '../findingLabels'
-import { setPrefs, usePrefs, type Motion, type TextSize } from '../theme'
+import { setPrefs, usePrefs, type Motion, type TextSize, type ThemeChoice } from '../theme'
 
 /** What each human role may do, mirroring the API's role table (auth.ts). */
 /** The Explore line: every role but Financial Aid may ask it. */
@@ -151,10 +151,11 @@ export function SettingsPanel({
     <div className="account-panel">
       <h3 className="panel-subhead">Display</h3>
       <p className="panel-text">Saved in this browser only.</p>
-      <Segmented<'light' | 'dark'>
+      <Segmented<ThemeChoice>
         label="Theme"
-        value={prefs.theme === 'dark' ? 'dark' : 'light'}
+        value={prefs.theme}
         options={[
+          { value: 'system', label: 'Automatic' },
           { value: 'light', label: 'Light' },
           { value: 'dark', label: 'Dark' },
         ]}

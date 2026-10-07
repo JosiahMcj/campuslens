@@ -212,7 +212,7 @@ DEFAULT_RATE_ASK_PER_MIN = 5
 
 # The body of every rate-limit 429: plain words a person can act on. The
 # Retry-After header carries the seconds.
-RATE_LIMIT_MESSAGE = "The Cabinet is busy. Wait a minute and try again."
+RATE_LIMIT_MESSAGE = "CampusLens is busy. Wait a minute and try again."
 
 GENERIC_LOGIN_ERROR = "invalid email or password"
 

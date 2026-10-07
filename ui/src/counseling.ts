@@ -3,7 +3,7 @@
 // the Institution settings section and the briefing render with.
 //
 // Recording the authorization never opens per-student counseling data to
-// anyone. It lets the Cabinet compute one count (M9), shown with no rows and
+// anyone. It lets CampusLens compute one count (M9), shown with no rows and
 // withheld below the minimum group size.
 
 import { apiFailure, failureFrom } from './adminErrors'

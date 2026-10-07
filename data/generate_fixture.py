@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Seeded generator for data/fixture.json.
 
-Produces fictional Ellucian-style student records for the Golden Eagle AI
-Cabinet demo. Field names and nesting follow ROADMAP.md sections 4 and 5
+Produces fictional Ellucian-style student records for CampusLens demo. Field names and nesting follow ROADMAP.md sections 4 and 5
 (SCHEMA.md is being written in parallel and will be reconciled against the
 real fixture). Stdlib only; runs on Python 3.9.
 
@@ -316,7 +315,7 @@ def build_fixture():
     rng = random.Random(SEED)
     fixture = {
         "meta": {
-            "title": "Golden Eagle AI Cabinet - fictional spring registration fixture",
+            "title": "CampusLens - fictional spring registration fixture",
             "description": (
                 "Fictional Ellucian-style student records for the President Weekly "
                 "Student Success Briefing demo. No real student data. Field groups "

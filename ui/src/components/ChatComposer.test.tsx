@@ -34,7 +34,7 @@ describe('ChatComposer', () => {
   it('keeps the free-text field (an off-registry question is still refused)', () => {
     const html = render(true)
     expect(html).toContain('id="question-input"')
-    expect(html).toContain('Ask the Cabinet')
+    expect(html).toContain('Ask CampusLens')
   })
 
   it('renders no starter cards before the questions load', () => {
@@ -50,7 +50,7 @@ describe('ChatComposer', () => {
   it('takes any question: an example placeholder and no "will be refused" warning', () => {
     const html = render(true)
     expect(html).toContain('placeholder="Ask about students, courses or majors"')
-    expect(html).toContain('Ask the Cabinet a question')
+    expect(html).toContain('Ask CampusLens a question')
     expect(html).not.toContain('will be refused')
   })
 })
@@ -109,7 +109,7 @@ describe('ChatComposer after a failed ask', () => {
         sending={false}
         starters={false}
         onAsk={() => {}}
-        error="We couldn't reach the Cabinet. Check your connection and try again."
+        error="We couldn't reach CampusLens. Check your connection and try again."
         onAskAgain={() => {}}
       />,
     )
@@ -153,7 +153,7 @@ describe('ChatComposer — the approved questions failed to load', () => {
         sending={false}
         starters={false}
         onAsk={() => {}}
-        error="The Cabinet is busy. Wait a minute and try again."
+        error="CampusLens is busy. Wait a minute and try again."
       />,
     )
     expect(html).toContain('class="ask-error state-error"')

@@ -1,6 +1,6 @@
 {
-  "name": "Golden Eagle AI Cabinet",
-  "short_name": "Cabinet",
+  "name": "CampusLens",
+  "short_name": "CampusLens",
   "description": "The weekly student success briefing for your president, with every number traced to its source.",
   "start_url": "/",
   "scope": "/",

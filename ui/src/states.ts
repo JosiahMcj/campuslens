@@ -297,7 +297,7 @@ export function analystSourceDetail(
 
 // --- Shell helpers: page titles, routes, polling --------------------------------
 
-export const PRODUCT_NAME = 'Golden Eagle AI Cabinet'
+export const PRODUCT_NAME = 'CampusLens'
 
 /** The browser tab title: the screen (or open panel) first, then the product. */
 export function documentTitle(screen: string | null): string {

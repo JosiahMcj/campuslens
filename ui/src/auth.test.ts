@@ -112,7 +112,7 @@ describe('login — sign-in and its named errors', () => {
     const failure = await login('admin@example.edu', 'x').catch((error) => error)
 
     expect(failure).toBeInstanceOf(LoginError)
-    expect(failure.message).toContain("couldn't reach the Cabinet")
+    expect(failure.message).toContain("couldn't reach CampusLens")
   })
 })
 

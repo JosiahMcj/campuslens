@@ -672,11 +672,11 @@
   }
 }
 
-/* --- The Ascent mark ----------------------------------------------------------------*/
+/* --- The CampusLens mark ------------------------------------------------------------*/
 
-/* The mark draws its own rounded tile, so the placeholder boxes it replaces
+/* The mark is drawn on the page ground, so the placeholder boxes it replaces
    lose their fill and their text styling. */
-svg.ascent-mark {
+svg.lens-mark {
   display: block;
   flex: none;
   background: transparent;

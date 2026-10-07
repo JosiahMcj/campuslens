@@ -881,7 +881,7 @@ describe('Institution Data — upload, activate, failures', () => {
     renderInstitution()
     await waitFor(() => screen.getByText('We couldn’t load the uploads'))
     expect(
-      screen.getByText("We couldn't reach the Cabinet. Check your connection and try again."),
+      screen.getByText("We couldn't reach CampusLens. Check your connection and try again."),
     ).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/was not saved/)
     expect(screen.queryByText(/Nothing has been uploaded yet/)).toBeNull()

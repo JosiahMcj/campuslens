@@ -1,4 +1,4 @@
-# Golden Eagle AI Cabinet Roadmap
+# CampusLens Roadmap
 
 *Governed AI employees helping university leaders turn SIS data into human-centered action.*
 
@@ -234,7 +234,7 @@ harmlessly the first time, with no fixing by us.
 - [ ] The full demonstration runs in four minutes.
 - [ ] Every reported metric matches the fictional source data (hand-verified by the reviewer).
 - [ ] Every major statement exposes its evidence (the numeral test passes, and the evidence drawer opens every claim).
-- [ ] The AI Cabinet produces one coherent briefing in the seven-section format.
+- [ ] CampusLens produces one coherent briefing in the seven-section format.
 - [ ] A human approves the leadership follow-up and the approval is logged.
 - [ ] One unauthorized request is visibly refused and recorded.
 

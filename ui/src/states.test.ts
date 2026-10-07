@@ -602,9 +602,9 @@ describe('analystSourceDetail', () => {
 
 describe('documentTitle', () => {
   it('puts the screen before the product name', () => {
-    expect(documentTitle(null)).toBe('Golden Eagle AI Cabinet')
-    expect(documentTitle('Sign in')).toBe('Sign in · Golden Eagle AI Cabinet')
-    expect(documentTitle('Audit log')).toBe('Audit log · Golden Eagle AI Cabinet')
+    expect(documentTitle(null)).toBe('CampusLens')
+    expect(documentTitle('Sign in')).toBe('Sign in · CampusLens')
+    expect(documentTitle('Audit log')).toBe('Audit log · CampusLens')
   })
 })
 

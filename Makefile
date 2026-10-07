@@ -1,4 +1,4 @@
-# Golden Eagle AI Cabinet — one-command entrypoints.
+# CampusLens — one-command entrypoints.
 # Toolchain: a user-local bin directory may hold python3.12, node, and npm;
 # it is prepended to PATH if present and never required. CI provides them on PATH.
 

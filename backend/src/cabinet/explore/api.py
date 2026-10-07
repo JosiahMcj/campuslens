@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 MAX_QUESTION_CHARS = 500
 UNFINISHED_MESSAGE = (
-    "The Cabinet could not finish this answer. The question was recorded, and "
+    "CampusLens could not finish this answer. The question was recorded, and "
     "nothing was guessed."
 )
 EXPLORE_ACTOR = "chief_of_staff"

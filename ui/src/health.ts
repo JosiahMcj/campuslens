@@ -22,9 +22,9 @@ export async function fetchHealth(): Promise<boolean> {
 export function healthMessage(state: HealthState): string {
   switch (state.kind) {
     case 'loading':
-      return 'Checking the Cabinet…'
+      return 'Checking CampusLens…'
     case 'ok':
-      return 'The Cabinet is running.'
+      return 'CampusLens is running.'
     case 'error':
       return NETWORK_MESSAGE
   }

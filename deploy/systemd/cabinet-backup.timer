@@ -3,7 +3,7 @@
 # Validate on the target host: systemd-analyze verify cabinet-backup.timer
 
 [Unit]
-Description=Golden Eagle AI Cabinet daily backup
+Description=CampusLens daily backup
 
 [Timer]
 OnCalendar=*-*-* 03:17:00

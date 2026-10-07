@@ -1,6 +1,6 @@
 # ui
 
-React + TypeScript UI for the Golden Eagle AI Cabinet. We document the commands
+React + TypeScript UI for CampusLens. We document the commands
 and run instructions in the top-level `README.md` (`make setup`, `make ui`),
 and the dev server runs on `http://127.0.0.1:5200` while proxying `/api/*` to
 the API on 8910 (`vite.config.ts`). Setting `CABINET_API_TARGET` points the

@@ -24,8 +24,8 @@ describe('the web-app manifest', () => {
   }
 
   it('names the app and starts standalone at /', () => {
-    expect(manifest.name).toBe('Golden Eagle AI Cabinet')
-    expect(manifest.short_name).toBe('Cabinet')
+    expect(manifest.name).toBe('CampusLens')
+    expect(manifest.short_name).toBe('CampusLens')
     expect(manifest.start_url).toBe('/')
     expect(manifest.display).toBe('standalone')
   })
@@ -101,7 +101,7 @@ describe('the service worker', () => {
     expect(sw).toContain('cacheableStaticPath')
     expect(sw).toContain("'/assets/'")
     expect(sw).toContain('NEVER stored')
-    expect(sw).toContain('cabinet-shell-v3')
+    expect(sw).toContain('cabinet-shell-v4')
     // Every icon the manifest and the page name is in the shell.
     for (const icon of [
       '/icons/icon-192.png',

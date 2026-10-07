@@ -1,4 +1,4 @@
-/* Golden Eagle AI Cabinet. Visual authority: DESIGN.md at the repo root.
+/* CampusLens. Visual authority: DESIGN.md at the repo root.
 
    This is the one token block for the whole interface: every colour, type
    step, spacing step, radius and shadow in ui/src is read from here, and no
@@ -19,9 +19,9 @@
   --ink-soft: #595959;
   --rule: #e3e3e3;
   --rule-strong: #cdcdcd;
-  --navy: #126e6b;
-  --navy-hover: #0f5d5b;
-  --navy-pressed: #0c4d4b;
+  --navy: #1667c7;
+  --navy-hover: #1257a8;
+  --navy-pressed: #0f4a8f;
   --on-navy: #ffffff;
   --gold: #b45309;
   --gold-hover: #9a4708;
@@ -30,8 +30,13 @@
   --gold-wash: #fffbeb;
   --alert: #b91c1c;
   --alert-wash: #fef2f2;
-  --navy-wash: #e7f1f0;
+  --navy-wash: #e8f0fb;
   --scrim: rgb(0 0 0 / 0.35);
+  --brand-deep: #0b2a5b;
+  --brand-mid: #1667c7;
+  --brand-teal: #1db89a;
+  --brand-glint: #5ea2ee;
+  --brand-glint-soft: #9cc6f4;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 4px 12px rgb(0 0 0 / 0.06);
   --shadow-float: 0 12px 32px rgb(0 0 0 / 0.16), 0 0 0 1px var(--rule);
   --shadow-panel: -8px 0 32px rgb(0 0 0 / 0.2);
@@ -85,9 +90,9 @@
   --ink-soft: #b4b4b4;
   --rule: #393939;
   --rule-strong: #595959;
-  --navy: #41a79d;
-  --navy-hover: #56b5ab;
-  --navy-pressed: #6cc2b8;
+  --navy: #5ea2ee;
+  --navy-hover: #78b2f1;
+  --navy-pressed: #93c2f4;
   --on-navy: #171717;
   --gold: #f59e0b;
   --gold-hover: #f7ad35;
@@ -96,8 +101,13 @@
   --gold-wash: #2a2419;
   --alert: #f87171;
   --alert-wash: #2e1f1f;
-  --navy-wash: #1d2f2d;
+  --navy-wash: #1b2738;
   --scrim: rgb(0 0 0 / 0.5);
+  --brand-deep: #3d7fe0;
+  --brand-mid: #3b9be8;
+  --brand-teal: #2fd0b0;
+  --brand-glint: #9cc6f4;
+  --brand-glint-soft: #c6defa;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 12px rgb(0 0 0 / 0.25);
   --shadow-float: 0 12px 32px rgb(0 0 0 / 0.45), 0 0 0 1px var(--rule);
   --shadow-panel: -8px 0 32px rgb(0 0 0 / 0.45);

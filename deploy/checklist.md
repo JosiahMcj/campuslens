@@ -1,4 +1,4 @@
-# Deployment checklist — Golden Eagle AI Cabinet
+# Deployment checklist — CampusLens
 
 One pass, in order, for a new production host. Everything is environment or
 files under the deploy directory; no code changes per deployment.

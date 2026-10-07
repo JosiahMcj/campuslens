@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 
-# Calm, plain lines: a refusal is the Cabinet working as designed, not an
+# Calm, plain lines: a refusal is CampusLens working as designed, not an
 # error. The counseling line does not say the data is absent: the briefing
 # may show an authorized aggregate count, and individual records are what is
 # never disclosed.
@@ -24,11 +24,11 @@ COUNSELING_REFUSAL = (
     "Individual counseling and spiritual-care records are never disclosed."
 )
 INDIVIDUAL_REFUSAL = (
-    "The Cabinet answers with totals only, never about a single student, by id or "
+    "CampusLens answers with totals only, never about a single student, by id or "
     "by description."
 )
 PREDICTION_REFUSAL = (
-    "The Cabinet does not predict what an individual student will do. It can show "
+    "CampusLens does not predict what an individual student will do. It can show "
     "totals, such as withdrawal or probation rates by major."
 )
 

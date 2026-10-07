@@ -223,7 +223,7 @@ def _dispatch_body(
         "The numbers behind this request:",
         *[f"- {line}" for line in evidence_lines],
         "",
-        "This message was composed by the Golden Eagle AI Cabinet from "
+        "This message was composed by CampusLens from "
         "the verified findings of the current briefing, and it is sent by "
         "a named member of staff, not by the model. It contains no student "
         "records and no student identifiers.",
@@ -477,7 +477,7 @@ QUESTIONS: tuple[Question, ...] = (
 DEFAULT_QUESTION = SPRING_REGISTRATION
 
 OUT_OF_SCOPE_REFUSAL = (
-    "I'm sorry, but the Cabinet only answers the approved questions — "
+    "I'm sorry, but CampusLens only answers the approved questions — "
     + " and ".join(f'"{question.text}"' for question in QUESTIONS)
     + " — and it never discloses counseling or spiritual-care information."
 )

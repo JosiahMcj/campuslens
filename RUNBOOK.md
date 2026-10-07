@@ -1,4 +1,4 @@
-# Runbook for the Golden Eagle AI Cabinet
+# Runbook for CampusLens
 
 This runbook covers setup, run, stop, restart, replay, reset, backup, and
 production, and we run everything on `127.0.0.1` only until the production

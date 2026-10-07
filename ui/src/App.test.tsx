@@ -104,7 +104,7 @@ function sessionAs(role: string) {
 
 /** Type a question into the composer and send it. */
 async function askQuestion(text: string) {
-  const input = (await screen.findByLabelText('Ask the Cabinet a question')) as HTMLInputElement
+  const input = (await screen.findByLabelText('Ask CampusLens a question')) as HTMLInputElement
   fireEvent.change(input, { target: { value: text } })
   fireEvent.submit(input.closest('form') as HTMLFormElement)
 }
@@ -166,7 +166,7 @@ afterEach(() => {
 })
 
 describe('the session check', () => {
-  it('shows a plain sentence and Try again when the Cabinet cannot be reached', async () => {
+  it('shows a plain sentence and Try again when CampusLens cannot be reached', async () => {
     mockApi({
       '/auth/me': () => {
         throw new TypeError('Failed to fetch')
@@ -178,7 +178,7 @@ describe('the session check', () => {
     expect(document.body.textContent).not.toMatch(/make api|8910|Failed to fetch|HTTP/)
   })
 
-  it('says the Cabinet is busy on 429 and checks again after Retry-After', async () => {
+  it('says CampusLens is busy on 429 and checks again after Retry-After', async () => {
     let answers = 0
     const calls = mockApi({
       '/auth/me': () => {
@@ -209,7 +209,7 @@ describe('the conversation', () => {
     })
     render(<App />)
     const input = (await screen.findByLabelText(
-      'Ask the Cabinet a question',
+      'Ask CampusLens a question',
     )) as HTMLInputElement
     fireEvent.change(input, { target: { value: QUESTION } })
     fireEvent.submit(input.closest('form') as HTMLFormElement)
@@ -338,13 +338,13 @@ describe('routes and titles', () => {
     render(<App />)
     await screen.findByText('What would you like to know?')
     expect(window.location.pathname).toBe('/')
-    expect(document.title).toBe('Briefing · Golden Eagle AI Cabinet')
+    expect(document.title).toBe('Briefing · CampusLens')
   })
 
   it('titles the sign-in screen and keeps the address at /login', async () => {
     mockApi({ '/auth/me': () => json({ detail: 'signed out' }, 401) })
     render(<App />)
-    await waitFor(() => expect(document.title).toBe('Sign in · Golden Eagle AI Cabinet'))
+    await waitFor(() => expect(document.title).toBe('Sign in · CampusLens'))
     expect(window.location.pathname).toBe('/login')
   })
 
@@ -353,13 +353,13 @@ describe('routes and titles', () => {
     render(<App />)
     await screen.findByText('What would you like to know?')
     fireEvent.click(screen.getByRole('button', { name: 'Staff actions' }))
-    await waitFor(() => expect(document.title).toBe('Staff actions · Golden Eagle AI Cabinet'))
+    await waitFor(() => expect(document.title).toBe('Staff actions · CampusLens'))
     const dialog = screen.getByRole('dialog', { name: 'Staff actions' })
     act(() => {
       fireEvent.keyDown(dialog, { key: 'Escape' })
     })
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Staff actions' })).toBeNull())
-    expect(document.title).toBe('Briefing · Golden Eagle AI Cabinet')
+    expect(document.title).toBe('Briefing · CampusLens')
   })
 })
 
@@ -443,7 +443,7 @@ describe('Explore', () => {
     render(<App />)
     await screen.findByText('What would you like to know?')
     await askQuestion('Which students are in counseling?')
-    const heading = await screen.findByText('Not something the Cabinet answers')
+    const heading = await screen.findByText('Not something CampusLens answers')
     const card = heading.closest('.explore-declined') as HTMLElement
     expect(card.getAttribute('role')).toBe('status')
     expect(card.textContent).toContain(
@@ -523,7 +523,7 @@ describe('the sidebar clean-up', () => {
     mockApi()
     render(<App />)
     await screen.findByText('What would you like to know?')
-    const nav = screen.getByRole('complementary', { name: 'Cabinet navigation' })
+    const nav = screen.getByRole('complementary', { name: 'CampusLens navigation' })
     const rows = within(nav)
     expect(rows.getByRole('button', { name: 'AI employees and data access' })).toBeTruthy()
     expect(rows.queryByRole('button', { name: 'Key figures' })).toBeNull()
@@ -538,7 +538,7 @@ describe('the sidebar clean-up', () => {
     let fail = true
     mockApi({ '/briefing': () => (fail ? json({ detail: 'boom' }, 500) : json({ detail: 'none' }, 404)) })
     render(<App />)
-    const nav = await screen.findByRole('complementary', { name: 'Cabinet navigation' })
+    const nav = await screen.findByRole('complementary', { name: 'CampusLens navigation' })
     expect(await within(nav).findByText("Couldn't load your questions.")).toBeTruthy()
     expect(within(nav).queryByText('Questions you ask appear here.')).toBeNull()
     fail = false
