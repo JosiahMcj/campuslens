@@ -51,7 +51,7 @@ PURPOSE: dict[str, str] = {
     "headcount_growth": "each major's headcount in two terms and its growth or "
     "decline, ranked",
     "enrollment_by_term": "students enrolled in EVERY term (a trend over time), new "
-    "and continuing; optionally one major, college or season",
+    "and continuing",
     "continuing_registration_change": "continuing students registered in a term "
     "against the same term a year earlier",
     "withdrawal_by_modality": "withdrawal rate online against in person, by term",
@@ -110,7 +110,7 @@ SYNONYMS = (
     "CS, comp sci = Computer Science; mech e, mechanical = Mechanical "
     "Engineering; psych = Psychology; bio = Biology; chem = Chemistry; nurses = "
     "Nursing; business = Business Administration; engineering (the college) = "
-    "College of Engineering and Computing; freshmen, first-years = class_level "
+    "CEC; freshmen, first-years = class_level "
     "Freshman; grads = graduates; kids = students; DFW = D, F or withdrawal; "
     "first gen = first_generation; this semester, now, currently = the current "
     "term; alumni = graduates; med school = medical school; give back, donate = "
@@ -185,8 +185,7 @@ RULES = (
     "- Course difficulty: hardest/easiest classes is dfw_by_course; one named "
     "course's rate is course_dfw_trend; who taught a course is "
     "course_instructors.\n"
-    "- Set a term only when the question names one; headcount_growth compares "
-    "Fall 2020 with Fall 2025 unless other terms are named. Name terms like "
+    "- Set a term only when the question names one. Name terms like "
     '"Fall 2024"; courses by code or title; majors and '
     "colleges by name or code from the lists; instructors as written.\n"
     "- A later step may use an earlier step's top row: "
@@ -210,7 +209,7 @@ _KIND_TYPES = {
     "major": "major",
     "college": "college",
     "subject": "subject (code or name)",
-    "course": "course (code or title)",
+    "course": "course",
     "term": "term",
     "advising_term": "term (fall or spring)",
     "instructor": "instructor name",
@@ -231,6 +230,9 @@ def _param_text(param: Param, catalog: Catalog) -> str:
         if param.kind in ("term", "advising_term"):
             default = catalog.vocab.terms.get(str(default), default)
         kind += f" (default {default})"
+    if kind == param.name:
+        # "major: major" says nothing the name does not.
+        return f"{param.name}{'*' if param.required else ''}"
     return f"{param.name}{'*' if param.required else ''}: {kind}"
 
 

@@ -31,6 +31,7 @@ from cabinet.explore.catalog import Catalog, catalog_for, connect_readonly
 from cabinet.explore.compact import compact_catalog
 from cabinet.explore.execute import StepResult, execute
 from cabinet.explore.planner import Step, rule_plan
+from cabinet.explore.privacy import mask_names, refusal_for
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GENERATE = REPO_ROOT / "data" / "school" / "generate.py"
@@ -481,3 +482,30 @@ def test_compact_catalog_teaches_the_outcome_measures(catalog: Catalog) -> None:
         assert f"- {measure_id}:" in text
     assert "- gpa_band: graduates' final GPA:" in text
     assert "med school = medical school" in text
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What Do Various Majors Make After Graduation?",
+        "Do Grades Matter For Earning Potential?",
+        "What % of Biology students got into Med School?",
+        "Median Starting Salary by Final GPA band",
+        "Alumni Giving Participation by College",
+        "Knowledge Rate of the First-Destination Survey",
+        "MD or DO acceptance for Biomedical Sciences graduates",
+    ],
+)
+def test_outcome_words_are_not_masked_as_names(catalog: Catalog, question: str) -> None:
+    masked, hidden = mask_names(question, catalog.title_names)
+    assert hidden == [] and masked == question
+    assert refusal_for(question, catalog.title_names) is None
+
+
+def test_a_person_asked_about_outcomes_is_still_masked(catalog: Catalog) -> None:
+    for question in (
+        "Did Kim Lee donate?",
+        "What did Ravi Patel make after graduating?",
+    ):
+        _masked, hidden = mask_names(question, catalog.title_names)
+        assert hidden, question

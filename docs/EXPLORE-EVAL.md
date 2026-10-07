@@ -317,8 +317,17 @@ athlete status beside the participation rate, a reasonable reading the set does 
 accept. In the second, the main set fell to 53 of 56 ("how many kids live on campus"
 became the on-campus share) after we shortened the compact catalog's headcount rule to
 make room; with that rule restored word for word, the misses went away. The compact
-catalog is 11,941 characters (the limit is 12,000): the measure and grouping choices of
-`measure_by_group` are no longer listed twice, and the row-count choices are listed once.
+catalog is 11,562 characters (the limit is 12,000, leaving room for about four more
+measure lines): the measure and grouping choices of `measure_by_group` are no longer
+listed twice, the row-count choices are listed once, a parameter whose type is its name
+("major: major") is written once, and two defaults the parameters already show are not
+repeated in the rules. After the merge with main (department roles, the Data page, name
+masking) the rules scored the same on all four sets and model first scored 21, 54, 21 of
+21, 56, 22.
+
+Name masking: outcome words a question may capitalize ("Median Starting Salary", "Med
+School", "Alumni Giving", "First-Destination Survey", MD, DO) are on the allow list, so
+they are not masked as names; a person asked about by name still is.
 
 The owner's questions on the full-scale data (template writer, model first):
 
