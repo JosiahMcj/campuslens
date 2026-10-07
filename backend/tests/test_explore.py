@@ -719,7 +719,6 @@ def test_model_planner_receives_only_the_catalog_and_the_question(
                 ]
             }
         ),
-        json.dumps({"steps": []}),
         json.dumps(
             {
                 "steps": [{"analysis_id": "gpa_by_major", "params": {}}],

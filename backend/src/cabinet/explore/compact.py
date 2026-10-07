@@ -318,9 +318,40 @@ def _title_forms(text: str) -> list[str]:
     return forms
 
 
+_NUMERAL_RE = re.compile(r"^(?:\d+|i|ii|iii|iv|v|vi)$")
+
+
+def _numerals(text: str) -> list[str]:
+    """The numbers and roman numerals in a normalized title, as roman
+    numerals ("calculus 2" and "calculus ii" both give ["ii"])."""
+    out = []
+    for word in text.split():
+        if _NUMERAL_RE.match(word):
+            out.append(_ROMAN.get(word, word))
+    return out
+
+
+def _same_words(text: str, name: str) -> bool:
+    """Every word of ``text`` is a close spelling of the word in the same
+    place of ``name`` (a typo, never a different word: "Chemical
+    Engineering" is not "Mechanical Engineering"), with the same numbers."""
+    a, b = text.split(), name.split()
+    if len(a) != len(b) or _numerals(text) != _numerals(name):
+        return False
+    return all(
+        x == y or difflib.SequenceMatcher(None, x, y).ratio() >= 0.9
+        for x, y in zip(a, b, strict=True)
+    )
+
+
 def _close(text: str, names: dict[str, str], cutoff: float = 0.85) -> str | None:
-    """The code whose (normalized) name is closest to ``text``, if close."""
-    hits = difflib.get_close_matches(text, list(names), n=2, cutoff=cutoff)
+    """The code whose (normalized) name is a close spelling of ``text``: a
+    typo in a word or two, never another word or another number."""
+    hits = [
+        h
+        for h in difflib.get_close_matches(text, list(names), n=3, cutoff=cutoff)
+        if _same_words(text, h)
+    ][:2]
     if len(hits) == 1 or (
         len(hits) == 2
         and difflib.SequenceMatcher(None, text, hits[0]).ratio()
@@ -353,7 +384,7 @@ def _named(
         if candidate in by_name:
             return by_name[candidate]
     for candidate in candidates:
-        code = _close(candidate, by_name)
+        code = _close(candidate, by_name, cutoff=0.9)
         if code is not None:
             return code
     return None
@@ -409,16 +440,19 @@ def _course(text: str, catalog: Catalog) -> str | None:
         course = f"{match.group(1).upper()} {match.group(2)}"
         if course in v.courses:
             return course
-    by_title: dict[str, str] = {}
+    by_title: dict[str, list[str]] = {}
     for course, title in v.courses.items():
-        by_title.setdefault(_norm(title), course)
+        by_title.setdefault(_norm(title), []).append(course)
+    # A title several subjects share ("Senior Design I") names no one
+    # course: it stays unresolved, unless the text names the subject too.
+    unique = {t: c[0] for t, c in by_title.items() if len(c) == 1}
     for form in _title_forms(text):
         if form in by_title:
-            return by_title[form]
+            return unique.get(form)
     for form in _title_forms(text):
-        code = _close(form, by_title, cutoff=0.9)
+        code = _close(form, {t: t for t in by_title}, cutoff=0.9)
         if code is not None:
-            return code
+            return unique.get(code)
     return None
 
 
@@ -597,7 +631,9 @@ def resolve_plan(raw: Any, catalog: Catalog) -> Any:
         params = {
             name: (
                 {**value, "from_step": moved[value["from_step"]]}
-                if isinstance(value, dict) and value.get("from_step") in moved
+                if isinstance(value, dict)
+                and type(value.get("from_step")) is int
+                and value["from_step"] in moved
                 else value
             )
             for name, value in params.items()
@@ -637,13 +673,27 @@ def resolve_plan(raw: Any, catalog: Catalog) -> Any:
         same = [
             i for i, earlier in enumerate(out_steps) if _same_table(candidate, earlier)
         ]
-        if same:
+        if same and not _referenced(steps, raw_index):
+            # The same table again, only ordered differently, and no later
+            # step takes a value from it: asked once. A step a later step
+            # reads from is kept, since its top row depends on its order.
             moved[raw_index] = same[0]
-            continue  # the same table again, only ordered differently
+            continue
         moved[raw_index] = len(out_steps)
         out_steps.append(candidate)
     plan["steps"] = out_steps
     return plan
+
+
+def _referenced(steps: list[Any], index: int) -> bool:
+    """Whether a later step of the model's plan takes a value from step
+    ``index``."""
+    return any(
+        isinstance(value, dict) and value.get("from_step") == index
+        for later in steps[index + 1 :]
+        if isinstance(later, dict) and isinstance(later.get("params"), dict)
+        for value in later["params"].values()
+    )
 
 
 def _same_table(a: Any, b: Any) -> bool:

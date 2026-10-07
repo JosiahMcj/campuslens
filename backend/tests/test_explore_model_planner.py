@@ -10,6 +10,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -283,7 +284,6 @@ def test_a_ranking_without_a_grouping_ranks_what_the_next_step_uses(
         '{"reasoning": "x", "steps": [{"analysis_id": "measure_by_group", '
         '"params": {"measure": "headcount", "major": "Underwater Basketry"}}]}',
         '{"reasoning": "x", "steps": [{"analysis_id": "student_list", "params": {}}]}',
-        '{"reasoning": "x", "steps": []}',
     ],
 )
 def test_an_unusable_model_plan_falls_back_to_the_rules(
@@ -340,7 +340,8 @@ def test_the_planner_has_its_own_time_budget(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("CABINET_LLM_API_KEY", "k")
     ChatProvider().explain({"question": "q", "catalog": "c"}, "explore_planner")
     ChatProvider().explain({"tables": []}, "explore_writer")
-    assert seen == [20, 55]
+    # One deadline per call: the first attempt gets (almost) all of it.
+    assert 19 < seen[0] <= 20 and 54 < seen[1] <= 55
 
     def slow(_request: Any, timeout: float) -> _Response:
         raise TimeoutError
@@ -527,9 +528,11 @@ def test_a_conversational_lead_in_is_dropped(
         ], question
 
 
-def test_a_reference_after_a_dropped_repeat_still_points_at_its_table(
+def test_a_repeat_another_step_reads_from_is_kept_in_its_order(
     catalog: Catalog,
 ) -> None:
+    """Review finding 1: "GPA lowest; GPA highest; hardest course for step
+    1" must take the HIGHEST-GPA major, so step 1 is never merged away."""
     plan = resolve_plan(
         {
             "steps": [
@@ -544,5 +547,304 @@ def test_a_reference_after_a_dropped_repeat_still_points_at_its_table(
         catalog,
     )
     steps = validate_plan(plan, catalog)
+    assert [s.analysis_id for s in steps] == [
+        "gpa_by_major",
+        "gpa_by_major",
+        "dfw_by_course",
+    ]
+    assert steps[1].params["order"] == "highest_first"
+    assert steps[2].params["major_required"].from_step == 1
+
+
+def test_a_reference_after_a_dropped_identical_step_points_at_the_kept_one(
+    catalog: Catalog,
+) -> None:
+    plan = resolve_plan(
+        {
+            "steps": [
+                {"analysis_id": "gpa_by_major", "params": {"order": "lowest_first"}},
+                {"analysis_id": "gpa_by_major", "params": {"order": "lowest_first"}},
+                {
+                    "analysis_id": "dfw_by_course",
+                    "params": {"major_required": {"from_step": 0, "column": "major"}},
+                },
+            ]
+        },
+        catalog,
+    )
+    steps = validate_plan(plan, catalog)
     assert [s.analysis_id for s in steps] == ["gpa_by_major", "dfw_by_course"]
     assert steps[1].params["major_required"].from_step == 0
+
+
+@pytest.mark.parametrize(
+    ("kind", "text"),
+    [
+        ("major", "Chemical Engineering"),
+        ("major", "Biochemistry"),
+        ("major", "Computer Engineering"),
+        ("major", "Art History"),
+        ("course", "Calculus IV"),
+        ("course", "Organic Chemistry III"),
+        ("course", "Organic Chemistry 3"),
+        ("course", "Senior Design I"),
+    ],
+)
+def test_a_close_name_for_a_different_thing_stays_unresolved(
+    catalog: Catalog, kind: str, text: str
+) -> None:
+    """Review finding 2 and 8: a near spelling of a different major or a
+    different numbered course, or a title several subjects share, never
+    resolves; the plan goes to the rules."""
+    analysis = "measure_by_group" if kind == "major" else "course_dfw_trend"
+    params: dict[str, Any] = (
+        {"measure": "headcount", "major": text} if kind == "major" else {"course": text}
+    )
+    raw = json.dumps({"steps": [{"analysis_id": analysis, "params": params}]})
+    outcome = plan_question("a question", catalog, StubProvider(raw))
+    assert outcome.planner == "rule" and outcome.fallback_reason
+    assert "cannot find" in outcome.fallback_reason
+
+
+def test_typos_still_resolve(catalog: Catalog) -> None:
+    mbg = "measure_by_group"
+    assert (
+        _resolved(catalog, mbg, measure="headcount", major="Nursng")["major"] == "NURS"
+    )
+    assert (
+        _resolved(catalog, mbg, measure="headcount", major="Mechanical Enginering")[
+            "major"
+        ]
+        == "MEEN"
+    )
+    assert _resolved(catalog, "course_dfw_trend", course="Calculus 3") == {
+        "course": "MATH 2415"
+    }
+
+
+@pytest.mark.parametrize(
+    "steps",
+    [
+        [
+            {"analysis_id": "gpa_by_major", "params": {}},
+            {
+                "analysis_id": "dfw_by_course",
+                "params": {"major_required": {"from_step": [0], "column": "major"}},
+            },
+        ],
+        [
+            {"analysis_id": "gpa_by_major", "params": {}},
+            {
+                "analysis_id": "dfw_by_course",
+                "params": {"major_required": {"from_step": "0", "column": "major"}},
+            },
+        ],
+        [{"analysis_id": "gpa_by_major", "params": {"top": [1]}}],
+        [{"analysis_id": "gpa_by_major", "params": {"major": ["CSCI"]}}],
+    ],
+)
+def test_an_odd_shape_falls_back_and_never_raises(
+    catalog: Catalog, steps: list[Any]
+) -> None:
+    """Review finding 7: a reference with a non-integer step once raised
+    TypeError past the fallback."""
+    outcome = plan_question(
+        OWNER_FIRST, catalog, StubProvider(json.dumps({"steps": steps}))
+    )
+    assert outcome.planner == "rule" and outcome.fallback_reason
+
+
+def test_the_models_empty_plan_means_unanswerable(
+    catalog: Catalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review finding 9: the model said no analysis answers; the rules are
+    not asked to stretch one onto the question."""
+    stub = StubProvider('{"reasoning": "Nothing covers parking.", "steps": []}')
+    outcome = plan_question(OWNER_FIRST, catalog, stub)
+    assert outcome.steps is None and outcome.planner == "model"
+    monkeypatch.setenv("CABINET_EXPLORE_PLANNER", "rules-first")
+    outcome = plan_question("Tell me something surprising", catalog, stub)
+    assert outcome.steps is None and outcome.planner == "model"
+
+
+def test_a_retry_uses_only_the_time_left(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review finding 10: the planner's 20 s is one deadline across the
+    first attempt, the pause and the retry."""
+    import urllib.error
+
+    clock = [1000.0]
+    seen: list[float] = []
+
+    def fake_urlopen(_request: Any, timeout: float) -> Any:
+        seen.append(timeout)
+        clock[0] += 15  # the first attempt fails after 15 s
+        raise urllib.error.URLError(ConnectionRefusedError("refused"))
+
+    monkeypatch.setattr(provider_module, "_urlopen", fake_urlopen)
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(time, "sleep", lambda s: clock.__setitem__(0, clock[0] + s))
+    monkeypatch.setenv("CABINET_LLM_BASE_URL", "http://127.0.0.1:9/v1")
+    monkeypatch.setenv("CABINET_LLM_MODEL", "m")
+    monkeypatch.setenv("CABINET_LLM_API_KEY", "k")
+    with pytest.raises(ProviderUnavailable):
+        ChatProvider().explain({"question": "q", "catalog": "c"}, "explore_planner")
+    assert seen[0] == 20
+    assert len(seen) == 2 and seen[1] == pytest.approx(3)  # 20 - 15 - 2
+    assert 15 + 2 + seen[1] <= 20
+    # With under a second left after the pause, no retry at all.
+    clock[0], seen[:] = 1000.0, []
+
+    def slow_fail(_request: Any, timeout: float) -> Any:
+        seen.append(timeout)
+        clock[0] += 17.5
+        raise urllib.error.URLError(ConnectionRefusedError("refused"))
+
+    monkeypatch.setattr(provider_module, "_urlopen", slow_fail)
+    with pytest.raises(ProviderUnavailable):
+        ChatProvider().explain({"question": "q", "catalog": "c"}, "explore_planner")
+    assert len(seen) == 1
+
+
+@pytest.mark.parametrize(
+    ("question", "kept"),
+    [
+        ("no, how many cs students are there", True),
+        ("no how many cs students are there", True),
+        ("Actually what is the average GPA by college?", True),
+        ("No students on probation in nursing?", False),
+        ("So many students in Nursing?", False),
+        ("Well-being of nursing students", False),
+        ("No. of nursing students", False),
+    ],
+)
+def test_a_lead_in_is_stripped_only_before_a_comma_or_a_question(
+    question: str, kept: bool
+) -> None:
+    """Review finding 11."""
+    from cabinet.explore.planner import _fix_typos
+
+    changed = _fix_typos(question) != question
+    assert changed is kept, _fix_typos(question)
+
+
+@pytest.mark.parametrize(
+    ("question", "terms"),
+    [
+        (
+            "How many students were enrolled in Fall 2024 vs Fall 2025?",
+            ["202510", "202610"],
+        ),
+        (
+            "How many students enrolled in Fall 2023 compared to Fall 2025",
+            ["202410", "202610"],
+        ),
+        ("how many CS students enrolled last year", ["202510", "202520"]),
+    ],
+)
+def test_two_terms_or_last_year_count_each_term(
+    question: str, terms: list[str], catalog: Catalog
+) -> None:
+    """Review finding 5: a comparison or "last year" is never one term (or
+    the current one)."""
+    steps = rule_plan(question, catalog)
+    assert steps is not None
+    assert [s.params.get("term_from") for s in steps] == terms
+    assert all(s.params["term_from"] == s.params["term_to"] for s in steps)
+    assert all(s.params["measure"] == "headcount" for s in steps)
+
+
+def test_the_biggest_college_ranks_colleges(catalog: Catalog) -> None:
+    """Review finding 6."""
+    for question in (
+        "What is our biggest college?",
+        "Which college has the most students?",
+    ):
+        assert rule_plan(question, catalog) == [
+            Step(
+                "measure_by_group",
+                {
+                    "measure": "headcount",
+                    "group_by": "college",
+                    "order": "highest_first",
+                },
+            )
+        ], question
+
+
+def test_understood_names_the_window_the_analysis_reads(catalog: Catalog) -> None:
+    """Review finding 4: a term measure over a range reads its end term; a
+    fixed-scope measure ignores named terms."""
+    names = {v: k for k, v in catalog.vocab.terms.items()}
+
+    def said(**params: Any) -> str:
+        steps = validate_plan(
+            resolve_plan(
+                {"steps": [{"analysis_id": "measure_by_group", "params": params}]},
+                catalog,
+            ),
+            catalog,
+        )
+        return understood(steps, catalog)
+
+    assert said(measure="headcount", term_from="Fall 2023", term_to="Fall 2025") == (
+        "Students enrolled in Fall 2025"
+    )
+    assert (
+        said(measure="headcount", term_from="Fall 2023")
+        == "Students enrolled in Fall 2023"
+    )
+    assert said(measure="dropout_rate", term_from="Fall 2023", term_to="Fall 2024") == (
+        "Dropout rate over all the records"
+    )
+    assert said(measure="dropout_rate") == "Dropout rate"
+    assert said(
+        measure="probation_rate", term_from="Fall 2023", term_to="Fall 2024"
+    ) == ("Probation rate from Fall 2023 to Fall 2024")
+    assert "202410" in names.values()
+
+
+def test_fewer_than_10_only_for_a_cell_that_is_itself_small(
+    con: sqlite3.Connection, catalog: Catalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review finding 3: a count withheld only to protect its neighbour may
+    be large, so it reads "a withheld number", never "fewer than 10"."""
+    import cabinet.explore.catalog as catalog_module
+
+    def run(cur: int, prev: int) -> str:
+        def fake_execute(sql: str, args: tuple[Any, ...]) -> Any:
+            class _R:
+                def fetchone(self) -> tuple[int]:
+                    return (cur if args[0] == "202620" else prev,)
+
+            return _R()
+
+        class _Con:
+            execute = staticmethod(fake_execute)
+
+        result = catalog_module.ANALYSIS_BY_ID["continuing_registration_change"].run(
+            _Con(),  # type: ignore[arg-type]
+            {"term": "202620"},
+            catalog.vocab,
+        )
+        step = StepResult(
+            0,
+            catalog_module.ANALYSIS_BY_ID["continuing_registration_change"],
+            {"term": "202620"},
+            [],
+            (),
+            catalog_module.ANALYSIS_BY_ID["continuing_registration_change"].columns,
+            result.rows,
+            result.notes,
+            small_cells=frozenset(result.small),
+        )
+        return " ".join(s.text for s in template_answer([step]))
+
+    text = run(5, 400)
+    assert text.startswith(
+        "Fewer than 10 continuing students registered for Spring 2026"
+    )
+    assert "against a withheld number for Spring 2025" in text
+    assert "fewer than 10" not in text.split("against")[1]
+    text = run(400, 5)
+    assert text.startswith("A withheld number of continuing students registered")
+    assert "against fewer than 10 for Spring 2025" in text

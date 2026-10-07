@@ -145,6 +145,10 @@ _PEOPLE_COUNTS = frozenset(
 )
 
 
+# A withheld count of people not marked as itself under 10.
+_WITHHELD_COUNT = "a withheld number of"
+
+
 class _Builder:
     """Builds one sentence and records a claim for every cell it inserts that
     carries a digit."""
@@ -162,14 +166,20 @@ class _Builder:
         column = next(col for col in step.columns if col.key == key)
         value = step.cell(row, key)
         if value == SUPPRESSED_DISPLAY:
-            # A withheld count of people reads as a count ("fewer than 10
-            # continuing students registered"); any other withheld cell (a
-            # rate, an average, sections, hours) says it is withheld.
-            text = (
-                SUPPRESSED_DISPLAY
-                if column.kind == "count" and key in _PEOPLE_COUNTS
-                else f"withheld ({SUPPRESSED_DISPLAY} students)"
-            )
+            # A withheld count of people reads "fewer than 10" only when the
+            # analysis marked that cell itself as under 10; a cell withheld
+            # to protect a neighbour (complementary suppression) may hold
+            # any number, so it reads "a withheld number of". Any other
+            # withheld cell (a rate, an average, sections, hours) says it
+            # is withheld.
+            if column.kind == "count" and key in _PEOPLE_COUNTS:
+                text = (
+                    SUPPRESSED_DISPLAY
+                    if (row, key) in step.small_cells
+                    else _WITHHELD_COUNT
+                )
+            else:
+                text = f"withheld ({SUPPRESSED_DISPLAY} students)"
         else:
             text = _fmt(value, column.kind)
         self.parts.append(text)
@@ -180,7 +190,17 @@ class _Builder:
         return self
 
     def done(self) -> Sentence:
-        return Sentence("".join(self.parts), self.claims)
+        text = "".join(self.parts)
+        # "against a withheld number of for Spring 2025" -> "... number for".
+        text = re.sub(
+            re.escape(_WITHHELD_COUNT)
+            + r"(?= (?:for|in|to|of|against|and|on)\b|[.,;:)])",
+            _WITHHELD_COUNT.removesuffix(" of"),
+            text,
+        )
+        if text[:1].islower():
+            text = text[:1].upper() + text[1:]
+        return Sentence(text, self.claims)
 
 
 # --- the template answer -----------------------------------------------------

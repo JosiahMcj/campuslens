@@ -185,11 +185,16 @@ in one plain sentence.
      instructors are free text ("Organic Chemistry 1", "Fall 2024", "Alicia Shelby"), and
      code resolves each to a catalog value (codes, names, titles, synonyms, close
      spellings) before the plan is checked against the catalog: every id, parameter,
-     value, and reference. Code also repairs three shapes a small model writes: a
-     ranking with no grouping ranks majors (or the column a later step takes from it),
-     the same table asked twice in two orders is asked once, and a row count the
-     catalog does not offer becomes the next one it does. The model has its own time
-     budget (`CABINET_EXPLORE_PLANNER_TIMEOUT`, default 20 s; every other call has 55 s).
+     value, and reference. A close spelling must match word for word, with the same
+     numbers ("Calculus IV" is never Calculus I), and a title several subjects share
+     stays unresolved. Code also repairs three shapes a small model writes: a ranking
+     with no grouping ranks majors (or the column a later step takes from it), the
+     same table asked twice in two orders is asked once unless a later step reads
+     from it, and a row count the catalog does not offer becomes the next one it
+     does. The model's explicit empty plan means no analysis answers the question,
+     and the rules are not asked. The model has its own time
+     budget (`CABINET_EXPLORE_PLANNER_TIMEOUT`, default 20 s, one deadline that a retry
+     shares; every other call has 55 s).
      A timeout, invalid JSON, a value that resolves to nothing, a value outside the
      catalog, a bad reference, or an unavailable provider sends the question to the
      rule planner, and the response says why in `fallbacks`. The question reaches the

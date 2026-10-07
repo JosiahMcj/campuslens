@@ -66,6 +66,9 @@ class StepResult:
     # The parameters as a reader sees them ("How this was answered"); the
     # exact record (codes included) stays in ``params_plain``.
     params_shown: list[str] = field(default_factory=list)
+    # Withheld cells (row, column) the analysis marked as themselves under
+    # 10; any other withheld cell protects a neighbour and may be large.
+    small_cells: frozenset[tuple[int, str]] = frozenset()
 
     def table(self) -> dict[str, Any]:
         """``{columns: [{key, label}], rows: [[cell, ...]]}`` in column order."""
@@ -229,6 +232,7 @@ def execute(
             notes,
             instructor_rows_withheld=withheld,
             params_shown=shown,
+            small_cells=frozenset(outcome.small) if outcome else frozenset(),
         )
         _check_no_student_ids(result)
         done.append(result)

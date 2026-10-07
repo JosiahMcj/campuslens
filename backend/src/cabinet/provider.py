@@ -545,10 +545,16 @@ class ChatProvider:
         spends the wall-time budget — and a 200 whose body is not a JSON
         object (a gateway's HTML error page, a connection dropped mid-body),
         which is typed unavailability with a plain reason, never a 500.
+
+        ``timeout`` is one deadline for the whole call: a retry gets only
+        the time left after the first attempt and the pause, and is skipped
+        when under a second would remain.
         """
         body = json.dumps(payload).encode("utf-8")
+        deadline = time.monotonic() + timeout
         for attempt in (0, 1):
             retryable = False
+            remaining = timeout if attempt == 0 else deadline - time.monotonic()
             try:
                 request = urllib.request.Request(
                     url,
@@ -559,7 +565,7 @@ class ChatProvider:
                     },
                     method="POST",
                 )
-                with _urlopen(request, timeout=timeout) as response:
+                with _urlopen(request, timeout=remaining) as response:
                     try:
                         parsed: Any = json.loads(response.read().decode("utf-8"))
                     # ValueError covers JSONDecodeError and UnicodeDecodeError;
@@ -601,7 +607,8 @@ class ChatProvider:
                 # A connect-phase timeout surfaces as URLError(reason=
                 # TimeoutError) and, like a read timeout, is never retried.
                 retryable = not isinstance(exc.reason, TimeoutError)
-            if not retryable or attempt == 1:
+            left = deadline - time.monotonic() - RETRY_DELAY_SECONDS
+            if not retryable or attempt == 1 or left < 1:
                 raise ProviderUnavailable(reason, provider=self.name)
             time.sleep(RETRY_DELAY_SECONDS)
         raise AssertionError("unreachable")  # pragma: no cover

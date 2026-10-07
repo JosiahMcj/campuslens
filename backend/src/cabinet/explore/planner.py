@@ -235,6 +235,11 @@ class PlanInvalid(ValueError):
     """A plan that does not validate against the catalog."""
 
 
+class PlanDeclined(Exception):
+    """The model answered, validly, that no approved analysis answers the
+    question (``{"steps": []}``)."""
+
+
 @dataclass(frozen=True)
 class Ref:
     """A parameter taken from an earlier step's top row."""
@@ -459,8 +464,15 @@ def parse_model_plan(text: str, catalog: Catalog) -> list[Step]:
         raw = json.loads(stripped)
     except ValueError as exc:
         raise PlanInvalid(f"the model's plan is not JSON: {exc}") from None
+    if isinstance(raw, dict) and raw.get("steps") == [] and set(raw) <= {
+        "steps",
+        "reasoning",
+    }:
+        raise PlanDeclined()
     try:
         raw = resolve_plan(raw, catalog)
+    except (TypeError, AttributeError, KeyError) as exc:  # an odd shape
+        raise PlanInvalid(f"the model's plan has an unexpected shape: {exc}") from None
     except Unresolved as exc:
         raise PlanInvalid(
             f"the model's plan names something we cannot find: {exc}"
@@ -561,11 +573,19 @@ def plan_question(
         steps, notes = rule_plan_detail(question, catalog)
         if steps is not None:
             return PlanOutcome(steps, "rule", None, notes)
-        model_steps, reason = _try_model(question, catalog, provider, role)
+        try:
+            model_steps, reason = _try_model(question, catalog, provider, role)
+        except PlanDeclined:
+            return PlanOutcome(None, "model")
         if model_steps is not None:
             return PlanOutcome(model_steps, "model")
         return PlanOutcome(None, "rule", reason, ())
-    model_steps, reason = _try_model(question, catalog, provider, role)
+    try:
+        model_steps, reason = _try_model(question, catalog, provider, role)
+    except PlanDeclined:
+        # The model read the catalog and found no analysis for the question;
+        # the rules are not asked to stretch one onto it.
+        return PlanOutcome(None, "model")
     if model_steps is not None:
         return PlanOutcome(model_steps, "model")
     steps, notes = rule_plan_detail(question, catalog)
@@ -577,7 +597,6 @@ def plan_question(
 _MAJOR_SYNONYMS = {
     "comp sci": "CSCI",
     "cs": "CSCI",
-    "computer engineering": "CSCI",
     "mechanical": "MEEN",
     "mech e": "MEEN",
     "mechanical engineers": "MEEN",
@@ -849,9 +868,15 @@ _TYPO_RE = re.compile(r"\b(" + "|".join(map(re.escape, _TYPOS)) + r")\b", re.I)
 
 # A conversational lead-in before the question itself ("no, how many ...",
 # "actually, ..."), dropped before planning.
+_LEAD_IN_WORDS = (
+    r"no(?!\.)|nope|nah|actually|sorry|ok|okay|well|wait|hmm|i mean|i meant|so"
+)
 _LEAD_IN_RE = re.compile(
-    r"^\s*(?:(?:no(?!\.)|nope|nah|actually|sorry|ok|okay|well|wait|hmm|i mean|"
-    r"i meant|so)(?=[\s,.!:;]|$)[\s,.!:;]*)+",
+    # Only before a comma, a question word, or another lead-in: "no, how
+    # many ...", "actually what ..."; never "No students on probation?".
+    rf"^\s*(?:(?:{_LEAD_IN_WORDS})(?:\s*[,.!:;]+\s*|\s+(?=(?:{_LEAD_IN_WORDS}|how|"
+    r"what|whats|what's|which|who|where|when|why|is|are|do|does|did|can|could|"
+    r"show|list|tell|give)\b)))+",
     re.I,
 )
 
@@ -1185,7 +1210,12 @@ class _ClausePlanner:
                 # "How many CS students are enrolled?", "total enrollment":
                 # a count now (the latest fall or spring term), or in the
                 # one term named.
-                return Step(general.ANALYSIS_ID, self._headcount(e, text))
+                counts = self._headcount(e, text)
+                # Two or more terms ("Fall 2024 vs Fall 2025", "last year"):
+                # one count per term, each its own step.
+                for params in counts[:-1]:
+                    self.steps.append(Step(general.ANALYSIS_ID, params))
+                return Step(general.ANALYSIS_ID, counts[-1])
             self._scope(p, e, text, term=False)
             if e.seasons:
                 p["season"] = e.seasons[0]
@@ -1214,13 +1244,17 @@ class _ClausePlanner:
             return Step("gpa_by_major", p)
         return None
 
-    def _headcount(self, e: _Entities, text: str) -> dict[str, Any]:
+    def _headcount(self, e: _Entities, text: str) -> list[dict[str, Any]]:
         p: dict[str, Any] = {"measure": "headcount"}
-        ranked = _has(_BIGGEST_WORDS, text)
-        for key in ("major", "college"):
-            if ranked and key == "major" or _has(_GROUPING_WORDS[key], text):
-                p["group_by"] = key
-                break
+        ranked = re.search(_BIGGEST_WORDS, text, re.I)
+        if ranked:
+            ranks_colleges = "college" in ranked.group(0).lower()
+            p["group_by"] = "college" if ranks_colleges else "major"
+        else:
+            for key in ("major", "college"):
+                if _has(_GROUPING_WORDS[key], text):
+                    p["group_by"] = key
+                    break
         if ranked:
             p["order"] = "lowest_first" if _has(r"smallest|fewest", text) else (
                 "highest_first"
@@ -1229,9 +1263,22 @@ class _ClausePlanner:
             p["major"] = e.majors[0]
         if e.colleges and p.get("group_by") != "college":
             p["college"] = e.colleges[0]
-        if e.terms:
-            p["term_from"] = p["term_to"] = e.terms[0]
-        return p
+        v = self.m.vocab
+        terms = sorted(set(e.terms))
+        if _has(_LAST_YEAR_WORDS, text) and not terms:
+            current_year = v.term_year[_current_regular_term_of(v)]
+            years = list(v.academic_years)
+            if years.index(current_year) > 0:
+                last = years[years.index(current_year) - 1]
+                terms = [
+                    t
+                    for t, y in v.term_year.items()
+                    if y == last and v.term_season[t] != "Summer"
+                ]
+        if not terms:
+            return [p]
+        room = MAX_STEPS - len(self.steps)
+        return [{**p, "term_from": t, "term_to": t} for t in terms[-room:]]
 
     def _scope(self, p: dict[str, Any], e: _Entities, text: str, *, term: bool) -> None:
         if e.majors and not _has(
@@ -1250,7 +1297,10 @@ _HEADCOUNT_WORDS = (
     r"enrol|headcount|student count|"
     r"\b(?:how many|number of|count of)\b(?:\s+[\w-]+){0,4}?\s+"
     r"(?:students|majors|undergrads|undergraduates|kids|people)\b|"
-    r"(?:biggest|largest|smallest|most popular)\s+(?:majors?|programs?|colleges?)"
+    r"(?:biggest|largest|smallest|most popular)\s+(?:majors?|programs?|colleges?)|"
+    r"\b(?:which|what)\s+(?:majors?|programs?|colleges?)\s+(?:has|have|is|are)\s+"
+    r"(?:the\s+)?(?:most|fewest|biggest|largest|smallest)\s+"
+    r"(?:students|majors|people|enrollment)\b"
 )
 _TREND_WORDS = (
     r"\b(?:each|every|per|by)\s+(?:term|semester|year|fall|spring|summer)s?\b|"
@@ -1258,9 +1308,13 @@ _TREND_WORDS = (
     r"year over year|\bgr[eo]w"
 )
 _BIGGEST_WORDS = (
-    r"(?:biggest|largest|smallest|most popular)\s+(?:majors?|programs?)|"
-    r"\b(?:which|what)\s+majors?\s+(?:has|have)\s+the\s+(?:most|fewest)\s+students"
+    r"(?:biggest|largest|smallest|most popular)\s+(?:majors?|programs?|colleges?)|"
+    r"\b(?:which|what)\s+(?:majors?|programs?|colleges?)\s+(?:has|have|is|are)\s+"
+    r"(?:the\s+)?(?:most|fewest|biggest|largest|smallest)\s+"
+    r"(?:students|majors|people|enrollment)\b"
 )
+# Two terms, or last year: a count per term, never one term alone.
+_LAST_YEAR_WORDS = r"\b(?:last|previous|prior)\s+(?:academic\s+)?year\b"
 
 # --- the general analysis: measure words, grouping words, filter words ------
 
@@ -1780,7 +1834,10 @@ _REF_WORDS = {
 
 
 def _current_regular_term(catalog: Catalog) -> str:
-    v = catalog.vocab
+    return _current_regular_term_of(catalog.vocab)
+
+
+def _current_regular_term_of(v: Vocab) -> str:
     regular = [t for t, s in v.term_season.items() if s != "Summer"]
     return regular[-1] if regular else next(reversed(v.terms))
 
@@ -1822,19 +1879,28 @@ def _general_understood(step: Step, catalog: Catalog) -> str:
         for g in (p.get("group_by"), p.get("then_by"))
         if isinstance(g, str)
     ]
+    # The window the analysis really reads (general.term_window), never
+    # the one the plan named: a term measure reads one term, and a fixed or
+    # cohort measure reads all the records.
     terms = catalog.vocab.terms
     start, end = p.get("term_from"), p.get("term_to")
-    if start and end and start == end:
-        when = f"in {terms.get(start, start)}"
-    elif start or end:
-        when = (
-            f"from {terms.get(start, start) if start else terms[next(iter(terms))]} "
-            f"to {terms.get(end, end) if end else terms[next(reversed(terms))]}"
-        )
-    elif measure.scope == "term" and "term" not in groups:
-        when = f"in {terms[_current_regular_term(catalog)]}, the current term"
-    else:
+    window = general.term_window(
+        measure,
+        "term" in (p.get("group_by"), p.get("then_by")),
+        start if isinstance(start, str) else None,
+        end if isinstance(end, str) else None,
+        catalog.vocab,
+    )
+    if not window.applies:
+        when = "over all the records" if (start or end) else ""
+    elif window.term_from == window.term_to:
+        when = f"in {terms[window.term_from]}"
+        if window.term_from == _current_regular_term(catalog) and not (start or end):
+            when += ", the current term"
+    elif window.default and measure.scope != "term":
         when = ""
+    else:
+        when = f"from {terms[window.term_from]} to {terms[window.term_to]}"
     if measure.id == "headcount":
         who = " and ".join(labels) if labels else "Students"
         if places and not labels:
@@ -1883,4 +1949,9 @@ def understood(steps: list[Step], catalog: Catalog, role: str = "staff") -> str:
         if scope:
             text += " (" + "; ".join(scope) + ")"
         parts.append(text)
-    return "; then ".join(parts)
+    # "...; then students enrolled in Fall 2025" (a name stays capitalized).
+    later = [
+        "students" + part[len("Students") :] if part.startswith("Students ") else part
+        for part in parts[1:]
+    ]
+    return "; then ".join(parts[:1] + later)

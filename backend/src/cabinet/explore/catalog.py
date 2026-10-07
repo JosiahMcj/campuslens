@@ -231,6 +231,10 @@ class Result:
     # The columns of this result when they depend on the parameters (the
     # general analysis); None means the analysis's own columns.
     columns: tuple[Column, ...] | None = None
+    # Withheld cells (row index, column key) that are themselves under 10
+    # students. A withheld cell not listed protects a neighbour and may be
+    # large, so an answer never calls it "fewer than 10".
+    small: set[tuple[int, str]] = field(default_factory=set)
 
 
 Runner = Callable[[sqlite3.Connection, dict[str, Any], Vocab], Result]
@@ -1116,6 +1120,7 @@ def _continuing_change(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> 
         "prior_term": prior,
         "prior_term_name": v.terms[prior],
     }
+    small: set[tuple[int, str]] = set()
     if _suppressed(cur) or _suppressed(prev):
         row.update(
             continuing=SUPPRESSED_DISPLAY,
@@ -1123,6 +1128,13 @@ def _continuing_change(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> 
             change=SUPPRESSED_DISPLAY,
             change_pct=SUPPRESSED_DISPLAY,
         )
+        # Only the term that is itself under 10 is; the other is withheld
+        # so it cannot be subtracted from the change.
+        small = {
+            (0, key)
+            for key, n in (("continuing", cur), ("prior_continuing", prev))
+            if _suppressed(n)
+        }
     else:
         row.update(
             continuing=cur,
@@ -1136,6 +1148,7 @@ def _continuing_change(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> 
             "A continuing student registered in the term and entered the "
             "university before it."
         ],
+        small=small,
     )
 
 
@@ -1425,6 +1438,7 @@ def _graduations(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Result
     counts, hidden_my, hidden_totals, hidden_cy = _graduation_hidden(con, v)
     major, college, year = p.get("major"), p.get("college"), p.get("academic_year")
     by_year = p.get("group_by") == "year"
+    small: set[tuple[int, str]] = set()
 
     def in_scope(m: str) -> bool:
         return (not major or m == major) and (
@@ -1447,6 +1461,8 @@ def _graduations(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Result
                 continue
             if hide or _suppressed(n):
                 withheld += 1
+                if _suppressed(n):
+                    small.add((len(out), "graduates"))
                 out.append({"academic_year": y, "graduates": SUPPRESSED_DISPLAY})
             else:
                 out.append({"academic_year": y, "graduates": n})
@@ -1481,7 +1497,9 @@ def _graduations(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Result
             f"{'' if by_year else ' and not ranked'}, with more where needed so a "
             "withheld count cannot be worked out from a total."
         )
-    return Result(_top(out, p.get("top")) if not by_year else out, notes)
+    if not by_year:
+        return Result(_top(out, p.get("top")), notes)
+    return Result(out, notes, small=small)
 
 
 # --- 14. holds by office ---------------------------------------------------------
@@ -1605,6 +1623,7 @@ def _advising_coverage(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> 
 
 def _credit_hours(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Result:
     where, args = _filters(_scope_clauses(p, v))
+    small: set[tuple[int, str]] = set()
     rows = con.execute(
         f"""
         SELECT r.term_code, COUNT(*), SUM(r.attempted_hours), SUM(r.earned_hours)
@@ -1619,6 +1638,8 @@ def _credit_hours(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Resul
         row: dict[str, Any] = {"term": term, "term_name": v.terms[term]}
         if _suppressed(n) or term in hidden:
             withheld += 1
+            if _suppressed(n):
+                small.add((len(out), "students"))
             row.update(
                 students=SUPPRESSED_DISPLAY,
                 attempted_hours=SUPPRESSED_DISPLAY,
@@ -1636,7 +1657,7 @@ def _credit_hours(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Resul
     notes = (
         [f"Terms with {SUPPRESSED_DISPLAY} students are withheld."] if withheld else []
     )
-    return Result(out, notes)
+    return Result(out, notes, small=small)
 
 
 # --- the registry ------------------------------------------------------------------
