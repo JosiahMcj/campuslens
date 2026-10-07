@@ -136,10 +136,13 @@
   }
 }
 
-/* The head: a fixed slot (title, measure, the latest figure), so a card
-   without a big number starts its plot where its neighbour does. */
-.data-card-head {
-  min-height: 4.5rem;
+/* Without subgrid, the head is a fixed slot (title, measure, the latest
+   figure), so a card without a big number starts its plot where its
+   neighbour does. With subgrid the row itself gives every head one height. */
+@supports not (grid-template-rows: subgrid) {
+  .data-card-head {
+    min-height: 4.5rem;
+  }
 }
 
 .data-card-plot {
@@ -395,6 +398,7 @@
    tooltip; under the chart, full width, on a narrow one. */
 .chart-pop {
   position: absolute;
+  box-sizing: border-box;
   top: 0;
   z-index: 3;
   display: grid;
@@ -440,7 +444,7 @@
   flex: none;
   width: var(--tap);
   height: var(--tap);
-  margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) 0 0;
+  margin: calc(-1 * var(--space-2)) 0 0 0;
   border: 0;
   border-radius: var(--radius-control);
   background: transparent;
@@ -467,6 +471,7 @@
   grid-template-columns: auto minmax(0, 1fr);
   column-gap: var(--space-2);
   align-items: baseline;
+  box-sizing: border-box;
   width: 100%;
   padding: var(--space-1) var(--space-2);
   border: 0;
@@ -623,7 +628,7 @@ button.chart-pop-row:hover {
   gap: var(--space-2);
   min-width: 0;
   max-width: 100%;
-  min-height: var(--tap);
+  min-height: 2rem;
   padding: 0 var(--space-3) 0 var(--space-2);
   border: 1px solid var(--rule);
   border-radius: 999px;
@@ -643,6 +648,13 @@ button.chart-pop-row:hover {
 
 .data-legend-item:hover {
   background: var(--surface-hover);
+}
+
+/* Below 900 px every chip is a full tap target. */
+@media (max-width: 900px) {
+  .data-legend-item {
+    min-height: var(--tap);
+  }
 }
 
 .data-legend-more {

@@ -166,7 +166,13 @@ export function DataChart({ data, onPick, onAsk = null, onSend = null, highlight
   // The popover takes focus when it opens, and closes on a click elsewhere.
   useEffect(() => {
     if (pinned === null) return
-    popRef.current?.querySelector<HTMLElement>('button')?.focus()
+    // Focus the first choice: a group (a term opened with several), else
+    // the first action, else Close.
+    const pop = popRef.current
+    const first = ['button.chart-pop-row', '.chart-pop-actions button', 'button']
+      .map((selector) => pop?.querySelector<HTMLElement>(selector))
+      .find((element) => element !== null && element !== undefined)
+    first?.focus()
     const away = (event: Event) => {
       const target = event.target as Node
       if (popRef.current?.contains(target) || svgRef.current?.contains(target)) return
@@ -468,7 +474,7 @@ function PointPopover({
         )}
         {onPick !== null && scoped !== undefined && scoped.slot !== null && data.split !== null && (
           <button type="button" className="btn-secondary" onClick={() => onPick(scoped)}>
-            Show only {scoped.label}
+            Show only this group
           </button>
         )}
       </div>

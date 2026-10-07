@@ -12,6 +12,7 @@ import {
   loadChoices,
   saveChoices,
   seriesQuery,
+  shortLabels,
   sliceYears,
   validChoices,
   WITHHELD_TEXT,
@@ -432,11 +433,19 @@ function Legend({ series, onPick }: { series: Series[]; onPick: ((series: Series
   useLayoutEffect(() => {
     const list = measureRef.current?.firstElementChild
     if (!list) return
-    const tops = [...list.children].map((chip) => (chip as HTMLElement).offsetTop)
-    setFit(chipsThatFit(tops, 2))
+    const items = [...list.children].map((chip) => chip.getBoundingClientRect().width)
+    const more = items.pop() ?? 0
+    const available = list.getBoundingClientRect().width
+    // jsdom (and a list not laid out yet) measures nothing: show every chip.
+    if (available <= 0) return
+    const gap = parseFloat(getComputedStyle(list).columnGap) || 0
+    setFit(chipsThatFit(items, available, gap, 2, more))
   }, [series, width, measureRef])
+  const groups = series.filter((s) => s.slot !== null)
+  const short = new Map(shortLabels(groups.map((s) => s.label)).map((label, i) => [groups[i].key, label]))
+  const name = (s: Series) => short.get(s.key) ?? s.label
   const collapsed = !expanded && fit < series.length
-  const shown = collapsed ? series.slice(0, Math.max(fit - 1, 1)) : series
+  const shown = collapsed ? series.slice(0, fit) : series
   const chip = (s: Series, live: boolean) =>
     live && onPick !== null && s.slot !== null ? (
       <button
@@ -444,19 +453,22 @@ function Legend({ series, onPick }: { series: Series[]; onPick: ((series: Series
         className="data-legend-item"
         onClick={() => onPick(s)}
         aria-label={`${s.label}: show only this group in every chart`}
-        title="Show only this group in every chart"
+        title={`${s.label}: show only this group in every chart`}
       >
         <span className="swatch" style={{ background: `var(--series-${(s.slot % 7) + 1})` }} aria-hidden="true" />
-        <span className="data-legend-label">{s.label}</span>
+        <span className="data-legend-label">{name(s)}</span>
       </button>
     ) : (
-      <span className={`data-legend-item${s.slot === null || onPick === null ? ' is-static' : ''}`}>
+      <span
+        className={`data-legend-item${s.slot === null || onPick === null ? ' is-static' : ''}`}
+        title={name(s) !== s.label ? s.label : undefined}
+      >
         <span
           className={`swatch${s.slot === null ? ' is-reference' : ''}`}
           style={s.slot === null ? undefined : { background: `var(--series-${(s.slot % 7) + 1})` }}
           aria-hidden="true"
         />
-        <span className="data-legend-label">{s.label}</span>
+        <span className="data-legend-label">{name(s)}</span>
       </span>
     )
   return (

@@ -484,11 +484,51 @@ export function chartRef(
   return params.toString()
 }
 
-/** How many legend chips fit in `rows` rows, given each chip's top offset
- * as laid out in one wrapping row (all of them when they fit). */
-export function chipsThatFit(tops: number[], rows: number): number {
-  const lines = [...new Set(tops)].sort((a, b) => a - b)
-  if (lines.length <= rows) return tops.length
-  const last = lines[rows - 1]
-  return tops.filter((top) => top <= last).length
+/** How many legend chips to show in at most `rows` wrapping rows of
+ * `available` pixels: all of them when they fit, else as many as fit
+ * together with the "+N more" chip (`moreWidth`) after them, at least one.
+ * Lays the chips out as flex-wrap does, from their measured widths. */
+export function chipsThatFit(
+  widths: number[],
+  available: number,
+  gap: number,
+  rows: number,
+  moreWidth: number,
+): number {
+  const lines = (items: number[]) => {
+    let count = 1
+    let x = 0
+    for (const raw of items) {
+      const width = Math.min(raw, available)
+      if (x > 0 && x + gap + width > available) {
+        count += 1
+        x = width
+      } else {
+        x = x === 0 ? width : x + gap + width
+      }
+    }
+    return count
+  }
+  if (lines(widths) <= rows) return widths.length
+  for (let k = widths.length - 1; k > 1; k -= 1) {
+    if (lines([...widths.slice(0, k), moreWidth]) <= rows) return k
+  }
+  return 1
+}
+
+/** Legend labels without the words every group shares ("College of Arts
+ * and Sciences" -> "Arts and Sciences" when every group is a "College of"),
+ * so the chips stay short; the full name stays in each chip's accessible
+ * name. Unchanged when fewer than two groups share a leading phrase. */
+export function shortLabels(labels: string[]): string[] {
+  if (labels.length < 2) return labels
+  const words = labels.map((label) => label.split(' '))
+  let shared = 0
+  while (
+    words.every((w) => w.length > shared + 1) &&
+    words.every((w) => w[shared] === words[0][shared])
+  ) {
+    shared += 1
+  }
+  return shared === 0 ? labels : words.map((w) => w.slice(shared).join(' '))
 }
