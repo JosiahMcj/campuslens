@@ -936,3 +936,83 @@ def test_executives_still_see_instructor_parameters() -> None:
         .json()
     )
     assert any("fictional" in p for p in body["steps"][0]["params_plain"])
+
+
+# --- the live trace: POST /explore/stream -------------------------------------------
+
+
+def _stream(client: TestClient, question: str) -> list[dict[str, Any]]:
+    response = client.post("/explore/stream", json={"question": question})
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    return [json.loads(line) for line in response.text.splitlines() if line.strip()]
+
+
+def test_the_stream_reports_each_stage_in_order_and_ends_with_the_answer() -> None:
+    client = _client("executive")
+    question = "what majors have teh highest drop out rate"
+    events = _stream(client, question)
+    types = [e["type"] for e in events]
+    assert types[:4] == ["planning", "understood", "plan", "reading"]
+    assert types[-1] == "done"
+    assert types.index("step") < types.index("writing") < types.index("verifying")
+    assert events[1]["text"] == "Dropout rate by major"
+    assert events[2]["planner"] == "rules"
+    verifying = next(e for e in events if e["type"] == "verifying")
+    assert verifying["checked"] == verifying["matched"] > 0
+    done = events[-1]["response"]
+    plain = client.post("/explore", json={"question": question}).json()
+    assert done["answer"] == plain["answer"] and done["steps"] == plain["steps"]
+    # The trace never carries an id, a student row, or the question's text.
+    trace = json.dumps(events[:-1])
+    assert not STUDENT_ID.search(json.dumps(events))
+    assert "teh" not in trace and question not in trace
+
+
+def test_the_stream_reports_withheld_groups() -> None:
+    events = _stream(_client("executive"), "Average GPA by race and ethnicity")
+    suppression = [e for e in events if e["type"] == "suppression"]
+    assert suppression and suppression[0]["count"] >= 1
+    assert "fewer than 10" in suppression[0]["text"]
+
+
+def test_the_stream_refuses_before_planning_and_records_it() -> None:
+    app = create_app()
+    client = make_authenticated_client(app, role="staff")
+    events = _stream(client, "Tell me about S-100023")
+    assert [e["type"] for e in events] == ["refused"]
+    assert events[0]["response"]["refused"] is True
+    store = app.state.auth
+    institution = store.institution_by_slug("bootstrap")
+    recorded = store.audit_events(int(institution["id"]))
+    types = [e["type"] for e in recorded]
+    assert "data.refused" in types
+    assert "S-100023" not in json.dumps(recorded)
+
+
+def test_the_stream_has_the_same_gates_as_explore() -> None:
+    aid = _client("aid")
+    assert aid.post("/explore/stream", json={"question": "x"}).status_code == 403
+    executive = _client("executive")
+    del executive.headers["X-CSRF-Token"]
+    assert executive.post("/explore/stream", json={"question": "x"}).status_code == 403
+    staff = _client("staff")
+    assert staff.post("/explore/stream", json={"question": " "}).status_code == 422
+
+
+def test_the_stream_shares_the_ask_rate_bucket(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CABINET_RATE_ASK_PER_MIN", "2")
+    client = _client("executive")
+    codes = [
+        client.post(
+            "/explore/stream", json={"question": "What was enrollment by term?"}
+        ).status_code
+        for _ in range(4)
+    ]
+    assert 429 in codes
+
+
+def test_a_staff_stream_names_no_instructor() -> None:
+    events = _stream(_client("staff"), "What has Alicia Shelby taught?")
+    text = json.dumps(events)
+    assert "Alicia Shelby" not in text and "I-0001" not in text

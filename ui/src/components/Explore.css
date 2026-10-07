@@ -357,3 +357,252 @@
   color: var(--ink-soft);
   cursor: default;
 }
+
+/* --- The live trace (Thinking) and the folded "Thought for" line ------------------
+   Motion only under prefers-reduced-motion: no-preference and without the
+   app's html.reduce-motion; transform and opacity only, except the one fold
+   of the finished trace. Text stays still once it has landed. */
+
+.thinking-mark-wrap {
+  display: inline-flex;
+  flex: none;
+}
+
+.trace {
+  --trace-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: var(--text-sm);
+}
+
+.trace-line {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: 0.2rem 0 0.2rem 0;
+  color: var(--ink);
+  line-height: 1.4;
+}
+
+/* The thin guide on the left joining each line to the one above it. */
+.trace-line + .trace-line::before {
+  content: '';
+  position: absolute;
+  left: 0.4375rem;
+  top: -0.35rem;
+  height: 0.75rem;
+  width: 1px;
+  background: var(--rule);
+  transform-origin: top;
+}
+
+.trace-line[data-state='done'] {
+  color: var(--ink-soft);
+}
+
+.trace-mark {
+  flex: none;
+  width: 0.875rem;
+  height: 0.875rem;
+  margin-top: 0.15rem;
+  overflow: visible;
+}
+
+.trace-arc,
+.trace-check {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.trace-arc {
+  stroke: var(--brand-mid);
+  stroke-dasharray: 62 100;
+  transform-origin: 8px 8px;
+  transform-box: view-box;
+}
+
+.trace-check {
+  stroke: var(--brand-teal);
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+}
+
+.trace-line[data-state='done'] .trace-arc {
+  opacity: 0;
+}
+
+.trace-line[data-state='done'] .trace-check {
+  stroke-dashoffset: 0;
+}
+
+.trace-number {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The folded trace above an answer. */
+.thought {
+  margin-bottom: var(--space-2);
+}
+
+.thought-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2rem;
+  padding: 0.15rem var(--space-2) 0.15rem 0;
+  border: none;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.thought-toggle:hover {
+  color: var(--ink);
+}
+
+.thought-toggle:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+}
+
+.thought-mark {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.thought-toggle[aria-expanded='true'] .thought-chevron {
+  transform: rotate(90deg);
+}
+
+.thought-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.thought-body[data-open='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.thought-inner {
+  min-height: 0;
+  overflow: hidden;
+  padding-left: 0.1rem;
+}
+
+@media (max-width: 599px) {
+  .thought-toggle {
+    min-height: var(--tap);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root:not(.reduce-motion) .trace-line.is-entering {
+    animation: trace-line-in 320ms var(--trace-ease) var(--trace-delay, 0ms) both;
+  }
+
+  :root:not(.reduce-motion) .trace-line.is-entering + .trace-line.is-entering::before {
+    animation: trace-guide-grow 320ms var(--trace-ease) var(--trace-delay, 0ms) both;
+  }
+
+  :root:not(.reduce-motion) .trace-line[data-state='active'] .trace-arc {
+    animation: trace-arc-turn 900ms linear infinite;
+  }
+
+  :root:not(.reduce-motion) .trace-line[data-state='active'] .trace-text {
+    background: linear-gradient(
+        90deg,
+        var(--ink) 0%,
+        var(--ink) 35%,
+        var(--brand-mid) 50%,
+        var(--brand-teal) 55%,
+        var(--ink) 70%,
+        var(--ink) 100%
+      )
+      0 0 / 250% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    animation: thinking-shimmer 1.8s linear infinite;
+  }
+
+  :root:not(.reduce-motion) .trace-check {
+    transition: stroke-dashoffset 220ms var(--trace-ease) 60ms;
+  }
+
+  :root:not(.reduce-motion) .trace-arc {
+    transition: opacity 160ms ease-out;
+  }
+
+  :root:not(.reduce-motion) .trace-line {
+    transition: color 220ms ease-out;
+  }
+
+  :root:not(.reduce-motion) .thought-body {
+    transition:
+      grid-template-rows 280ms var(--ease-out),
+      opacity 280ms var(--ease-out);
+  }
+
+  :root:not(.reduce-motion) .thought-chevron {
+    transition: transform 200ms ease-out;
+  }
+
+  :root:not(.reduce-motion) .explore-answer.is-rising > :not(.thought) {
+    animation: answer-rise 320ms var(--ease-out) 180ms both;
+  }
+
+  /* On arrival the mark settles: its glint sweeps once more, then rests. */
+  :root:not(.reduce-motion) .lens-mark.is-settling .lens-mark-glint {
+    transform-box: view-box;
+    transform-origin: 47px 59px;
+    animation: lens-glint 900ms var(--ease-out) 1;
+  }
+}
+
+@keyframes trace-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes trace-guide-grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes trace-arc-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes answer-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

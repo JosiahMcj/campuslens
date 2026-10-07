@@ -428,6 +428,7 @@ def test_every_protected_route_is_in_the_role_table() -> None:
         ("GET", "/aid-queue"),
         # Explore (every role but aid; tests/test_explore.py).
         ("POST", "/explore"),
+        ("POST", "/explore/stream"),
         ("GET", "/explore/catalog"),
     }
     assert set(ROUTE_ROLES) == expected

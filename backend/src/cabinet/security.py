@@ -152,6 +152,12 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     # Explore (cabinet.explore): aggregate questions over the school data;
     # every role but aid.
     ("POST", "/explore"): (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF, ROLE_REVIEWER),
+    ("POST", "/explore/stream"): (
+        ROLE_ADMIN,
+        ROLE_EXECUTIVE,
+        ROLE_STAFF,
+        ROLE_REVIEWER,
+    ),
     ("GET", "/explore/catalog"): AUDIT_ROLES + (ROLE_STAFF,),
 }
 
@@ -201,6 +207,7 @@ def is_api_route(method: str, path: str) -> bool:
         for prefix_method, prefix, _ in ROUTE_ROLE_PREFIXES
     )
 
+
 ENV_RATE_GENERAL = "CABINET_RATE_GENERAL_PER_MIN"
 ENV_RATE_SESSION = "CABINET_RATE_SESSION_PER_MIN"
 ENV_RATE_ASK = "CABINET_RATE_ASK_PER_MIN"
@@ -233,6 +240,7 @@ async def _sleep(seconds: float) -> None:
     """The delay hook — module-level so tests can monkeypatch it away.
     Async: a progressive login delay must not hold a threadpool worker."""
     await asyncio.sleep(seconds)
+
 
 CSP = (
     "default-src 'self'; connect-src 'self'; img-src 'self' data:; "
@@ -664,9 +672,11 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
         # The tighter ask bucket covers POST /ask (it spends model calls)
         # and the dispatch Send (it can make a message leave the machine);
         # both are consequential enough to pace per session and per IP.
-        if (method, path) in (("POST", "/ask"), ("POST", "/explore")) or (
-            method == "POST" and path.endswith("/dispatch/send")
-        ):
+        if (method, path) in (
+            ("POST", "/ask"),
+            ("POST", "/explore"),
+            ("POST", "/explore/stream"),
+        ) or (method == "POST" and path.endswith("/dispatch/send")):
             for key in (f"ask:session:{session['id']}", f"ask:ip:{client_ip}"):
                 allowed, retry_after = self.ask_bucket.allow(key)
                 if not allowed:
