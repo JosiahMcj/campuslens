@@ -230,6 +230,6 @@ paste the `planted` section and `canonical_sha256` of `check.py --json` here.
     "next_term": "202420",
     "next_gap_points": 2.2
   },
-  "canonical_sha256": "322b1006c0689b3380078d1d6b5ac655fb4e8cda6c3cb3e50515677304b5f444"
+  "canonical_sha256": "5463f7014fe01057410da2d69563cdb409edf8254042185ac754211d56a642a4"
 }
 ```

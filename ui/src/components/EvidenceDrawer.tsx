@@ -32,6 +32,10 @@ function hasRowRules(finding: Finding): boolean {
 /** How many records sit behind the figure (0 for a term-level figure). */
 function recordCount(finding: Finding): number {
   if (isAggregateOnly(finding)) return 0
+  if (finding.rows_withheld === true && finding.row_counts !== undefined) {
+    const counts = finding.row_counts
+    return typeof counts === 'number' ? counts : counts.numerator + counts.denominator
+  }
   if (isRatioRowIds(finding.row_ids)) {
     return finding.row_ids.numerator.length + finding.row_ids.denominator.length
   }
@@ -85,8 +89,11 @@ export function EvidenceDrawer({
   const registeredNow =
     finding.comparison?.prior_year_registered_continuing !== undefined &&
     isRatioRowIds(finding.row_ids)
-      ? finding.row_ids.numerator.length
+      ? numeratorCount(finding)
       : null
+  // The student ids go to executives and administrators only; every other
+  // role sees how many records sit behind the figure, never the list.
+  const rowsWithheld = finding.rows_withheld === true
   const recordsLabel =
     registeredNow !== null
       ? `All ${records.toLocaleString('en-US')} continuing students`
@@ -173,6 +180,12 @@ export function EvidenceDrawer({
           <p className="hint">
             This is a term-level figure, so there is no list of students behind it.
           </p>
+        ) : rowsWithheld ? (
+          <p className="hint records-withheld">
+            {records.toLocaleString('en-US')} student{' '}
+            {records === 1 ? 'record sits' : 'records sit'} behind this figure. The list
+            of records is shown to executives and administrators only.
+          </p>
         ) : (
           <details className="fold technical-detail">
             <summary>{recordsLabel}</summary>
@@ -187,6 +200,16 @@ export function EvidenceDrawer({
       </div>
     </SidePanel>
   )
+}
+
+/** M1's count of students registered now: from the ids when they are
+ * present, from the withheld count otherwise. */
+function numeratorCount(finding: Finding): number {
+  const counts = finding.row_counts
+  if (finding.rows_withheld === true && counts !== undefined && typeof counts !== 'number') {
+    return counts.numerator
+  }
+  return isRatioRowIds(finding.row_ids) ? finding.row_ids.numerator.length : 0
 }
 
 function capitalize(text: string): string {

@@ -1366,3 +1366,24 @@
     transform: rotate(360deg);
   }
 }
+
+/* A page of cards or rows (Staff actions, the audit log, the Financial Aid
+   review, the key figures) uses a wider column than a reading page. */
+.side-panel.is-wide .side-panel-header {
+  width: min(76rem, 100%);
+}
+
+.side-panel.is-wide .side-panel-body {
+  padding-inline: max(var(--space-5), calc((100% - 76rem) / 2 + var(--space-5)));
+}
+
+@media (max-width: 899px) {
+  .side-panel.is-wide .side-panel-body {
+    padding-inline: var(--space-4);
+  }
+}
+
+/* The page's one-sentence intro, right under the title. */
+.page-intro {
+  margin-bottom: var(--space-4);
+}

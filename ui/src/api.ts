@@ -6,7 +6,13 @@
 
 import type { AidQueueSummary } from './aid'
 import { ApiError, SessionEndedError, apiDetail, apiFetch, retryAfterFrom } from './auth'
-import { exploreResponseFrom, type ExploreCatalog, type ExploreResponse } from './explore'
+import {
+  exploreResponseFrom,
+  traceEventFrom,
+  type ExploreCatalog,
+  type ExploreResponse,
+  type ExploreTraceEvent,
+} from './explore'
 import {
   analystFromResponse,
   cabinetBriefingFrom,
@@ -58,6 +64,12 @@ export interface Finding {
   rules?: IndicatorRuleRow[]
   /** M8 only: pseudonymous student id -> the rule ids that fired for it. */
   row_rules?: Record<string, string[]>
+  /** True when the student ids were withheld for this role: only the
+   * executive and admin roles receive them. `row_ids` is then empty in its
+   * usual shape and `row_counts` says how many records sit behind it. */
+  rows_withheld?: boolean
+  /** With `rows_withheld`: the record count, in the shape `row_ids` has. */
+  row_counts?: number | { numerator: number; denominator: number }
   /** M9 only: an aggregate with no rows behind it, ever (no drill-down). */
   aggregate_only?: boolean
   /** M9 only: true when the count is withheld below the minimum group size. */
@@ -495,6 +507,104 @@ export function refreshStudentSuccessBriefing(flags: UiFlags): Promise<AnalystBr
 export async function postExplore(question: string, flags: UiFlags): Promise<ExploreResponse> {
   await maybeSlow(flags)
   return exploreResponseFrom(await apiPost<unknown>('/explore', { question }))
+}
+
+/** The stream could not be used (an older server without the route, or a
+ * response that is not a stream): ask POST /explore instead. */
+export class StreamUnavailable extends Error {
+  constructor() {
+    super('The live trace is not available.')
+    this.name = 'StreamUnavailable'
+  }
+}
+
+/**
+ * POST /explore/stream: the same answer as POST /explore, with each stage
+ * reported to `onEvent` as it happens. Resolves with the final response
+ * (an answer or a refusal); throws StreamUnavailable when the stream cannot
+ * be used before anything arrived.
+ */
+export async function streamExplore(
+  question: string,
+  flags: UiFlags,
+  onEvent: (event: ExploreTraceEvent) => void,
+): Promise<ExploreResponse> {
+  await maybeSlow(flags)
+  const response = await apiFetch('/explore/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question }),
+  })
+  if (response.status === 404 || response.status === 405) throw new StreamUnavailable()
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      await apiDetail(response, `POST /explore/stream failed: HTTP ${response.status}`),
+      retryAfterFrom(response),
+    )
+  }
+  const type = response.headers.get('Content-Type') ?? ''
+  if (!type.includes('ndjson') || response.body === null) throw new StreamUnavailable()
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let seen = 0
+  const handle = (line: string): ExploreResponse | null => {
+    if (!line.trim()) return null
+    let raw: unknown
+    try {
+      raw = JSON.parse(line)
+    } catch {
+      return null
+    }
+    const event = raw as { type?: unknown; response?: unknown; message?: unknown }
+    if (event.type === 'done' || event.type === 'refused') {
+      return exploreResponseFrom(event.response)
+    }
+    if (event.type === 'error') {
+      throw new ApiError(
+        500,
+        typeof event.message === 'string' ? event.message : 'The answer could not be finished.',
+      )
+    }
+    const parsed = traceEventFrom(raw)
+    if (parsed !== null) {
+      seen += 1
+      onEvent(parsed)
+    }
+    return null
+  }
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (value !== undefined) buffer += decoder.decode(value, { stream: !done })
+    const lines = buffer.split('\n')
+    buffer = done ? '' : (lines.pop() ?? '')
+    for (const line of lines) {
+      const final = handle(line)
+      if (final !== null) {
+        void reader.cancel().catch(() => undefined)
+        return final
+      }
+    }
+    if (done) break
+  }
+  if (seen === 0) throw new StreamUnavailable()
+  throw new ApiError(500, 'The answer could not be finished.')
+}
+
+/** An Explore answer with the live trace when the server streams it, else
+ * POST /explore (the screen then shows its own timed steps). */
+export async function askExplore(
+  question: string,
+  flags: UiFlags,
+  onEvent: (event: ExploreTraceEvent) => void,
+): Promise<ExploreResponse> {
+  try {
+    return await streamExplore(question, flags, onEvent)
+  } catch (error) {
+    if (error instanceof StreamUnavailable) return postExplore(question, flags)
+    throw error
+  }
 }
 
 export async function fetchExploreCatalog(flags: UiFlags): Promise<ExploreCatalog> {

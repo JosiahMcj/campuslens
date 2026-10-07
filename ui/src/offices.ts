@@ -90,6 +90,34 @@ export async function fetchDecisionOffices(): Promise<string[]> {
 }
 
 /**
+ * The offices the staff actions name (GET /api/staff-actions), so an
+ * administrator sees every office a staff member may send an action to.
+ * Best effort, like the decision offices: any failure yields an empty list.
+ */
+export async function fetchActionOffices(): Promise<string[]> {
+  try {
+    const response = await apiFetch('/staff-actions')
+    if (!response.ok) return []
+    const body: unknown = await response.json().catch(() => null)
+    if (typeof body !== 'object' || body === null) return []
+    const items = (body as Record<string, unknown>).items
+    if (!Array.isArray(items)) return []
+    const offices: string[] = []
+    for (const item of items) {
+      if (typeof item !== 'object' || item === null) continue
+      const office = (item as Record<string, unknown>).office
+      if (typeof office === 'string' && office.trim() !== '' && !offices.includes(office)) {
+        offices.push(office)
+      }
+    }
+    return offices
+  } catch (error) {
+    if (error instanceof SessionEndedError) throw error
+    return []
+  }
+}
+
+/**
  * PUT /api/admin/offices with the whole address book. A 422 carries the
  * API's validation lines; any other failure throws (worded on screen by
  * friendlyError).

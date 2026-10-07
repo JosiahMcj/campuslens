@@ -37,9 +37,10 @@ connection is read-only.
 
 ## What can be asked
 
-Explore runs only the seventeen reviewed analyses in
-`backend/src/cabinet/explore/catalog.py`. `GET /explore/catalog` lists them with twelve
-example questions.
+Explore runs only the eighteen reviewed analyses in
+`backend/src/cabinet/explore/catalog.py` (the general one, `measure_by_group`, lives in
+`explore/general.py`). `GET /explore/catalog` lists them with seventeen example
+questions.
 
 | Analysis | What it computes | Parameters |
 |---|---|---|
@@ -60,6 +61,7 @@ example questions.
 | `holds_by_office` | Holds, students affected, and amounts owed per office | active only, term placed, category |
 | `advising_coverage` | Share of each major's students with a completed advising appointment | term (latest fall or spring), college, major, order |
 | `credit_hours_by_term` | Credit hours attempted and earned per term | major, college, season |
+| `measure_by_group` | One reviewed measure by up to two groupings (below) | measure, group by, then by, a value of any grouping, term window, order, rows |
 
 Every parameter takes a value from a list. Majors, colleges, subjects, courses, terms,
 academic years, instructors, and hold categories come from the database, and the rest are
@@ -72,7 +74,7 @@ graded registrations. A student counts once, in the program and cumulative GPA o
 latest term. Rates are rounded exactly as `data/school/check.py` rounds them, so the
 planted facts come back to the digit.
 
-Some questions the rule planner maps (the tests check all 43 phrasings in
+Some questions the rule planner maps (the tests check all 49 phrasings in
 `RULE_PHRASINGS`, and 40 more wordings of the planted questions with other words
 and typos, such as "worst", "toughest", "lowest-performing", "who teaches", and
 "teh"):
@@ -92,6 +94,61 @@ and typos, such as "worst", "toughest", "lowest-performing", "who teaches", and
 
 A question no analysis answers gets "CampusLens can't answer that from the approved
 analyses yet." with the three example questions closest to it.
+
+## The general analysis: a measure by group
+
+Most questions a university's leaders ask have one shape: a measure, for groups of
+students, sometimes for one part of the school. "What majors have the highest dropout
+rate?", "Retention by first-generation status", "Graduation rate for Pell students by
+college", "How many international students are in Nursing?", "Average GPA of athletes
+vs non-athletes". `measure_by_group` answers that shape with reviewed parts only:
+
+- a **measure**, chosen from the list below. Each is a reviewed SQL aggregate over one
+  of five reviewed row sets (a student once, a student per term, an entering class, a
+  graduate, a graded registration), with a written definition that "How this was
+  answered" shows as the step's first note;
+- up to two **groupings** from an allow-list: major, college, class level, term, entry
+  cohort, residency, first-generation status, Pell status, gender, race and ethnicity
+  (IPEDS categories), age at entry, admit type, full-time or part-time, housing,
+  athletes, honors program, and section modality (registrations only);
+- **filters**: one value of any grouping (a major, "international", "Pell
+  recipients", "women", "Fall 2022 entrants"), and a term window;
+- an order and a row limit.
+
+Every value is checked against the allowed values and bound as a parameter. A
+measure and a grouping that do not fit together (a retention rate by term, a headcount
+by section modality) are refused by the same allow-list for both planners.
+
+| Measure | Definition (short form) |
+|---|---|
+| headcount | Students enrolled in the term, each once (the latest fall or spring by default) |
+| average cumulative GPA | Each student once, at their latest enrolled term (the same as average GPA by major) |
+| average credits earned | Cumulative credit hours earned, each student once at their latest term |
+| dropout rate | Left without a degree, not enrolled in either of the next two fall or spring terms or since, and not found enrolled at another college. Students enrolled Fall 2020 to Spring 2026, in the major of their latest term; a student last enrolled in Fall 2025 without a degree is left out (too recent to tell) |
+| transfer-out rate | Left without a degree and later found enrolled at another college |
+| major-change rate | Students who changed major at least once |
+| Pell, first-generation, international, part-time, on-campus share | Share of enrolled students in the term |
+| probation and suspension rates | Share of enrolled student terms ending on probation (or continued probation), or in suspension |
+| stop-out rate | Fall and spring student terms, without a degree that term, after which the student was not enrolled in the next fall or spring term |
+| credit completion rate | Credit hours earned over credit hours attempted |
+| average credits attempted per term | Per enrolled student term |
+| advising contact rate | Fall and spring student terms with a completed advising appointment |
+| hold rate | Fall and spring student terms in which a hold was placed |
+| first-year retention rate | First-time fall entrants (Fall 2020 to Fall 2024) enrolled the next fall; major and housing as at entry |
+| 4-year graduation rate | First-time fall entrants (Fall 2020 to Fall 2022) who graduated within four academic years |
+| 6-year graduation rate | First-time Fall 2020 entrants who graduated within six academic years (the only class the records follow that long) |
+| average time to degree | Years from a graduate's first term to their graduation term |
+| graduates | Students who graduated, in the major they graduated in |
+| D, F or withdrawal rate; course withdrawal rate | Over graded registrations, with the student's major and class level in that term |
+
+The cohort measures read first-time students unless admit type is asked about, as the
+federal graduation rate does. The rule planner maps common phrasings to this analysis
+(the tests check 66 of them, the owner's "what majors have teh highest drop out rate"
+first), and it chains: "Which major has the highest dropout rate, and what is its
+hardest class?" runs the general analysis, then the hardest required course of its top
+major. The answer names the top group, its figure with its counts, the figure for all
+students, and, for dropout, stop-out, retention, and graduation rates, the definition
+in one plain sentence.
 
 ## How an answer is computed
 
@@ -116,11 +173,12 @@ analyses yet." with the three example questions closest to it.
    - The **model planner** runs only with a live provider, and by default only for a
      question the rules cannot map (`CABINET_EXPLORE_PLANNER`, `rules-first` by default;
      `model-first` asks the model every time and falls back to the rules). We chose
-     rules first after measuring a local model: with the full catalog it did not answer
-     within the 55 s request budget on any of six questions, twice over, while the rules
-     map every planted question. It receives only the catalog (analysis ids, titles,
-     parameter names, and allowed values) and the question, and it must answer with a
-     JSON plan. The plan is checked against the catalog: every id, parameter, value, and
+     rules first because they are fast, reviewed, and map every planted question, while
+     planning from the full catalog can take a model longer than the 55 s request
+     budget. It receives only the catalog (analysis ids, titles, parameter names, and
+     allowed values) and the question, and it must answer with a JSON plan. The question
+     reaches it with any typed id or long number replaced (`redact_question`), and the
+     list of instructors is in its catalog only when an executive or admin asks. The plan is checked against the catalog: every id, parameter, value, and
      reference. Invalid JSON, a value outside the catalog, a bad reference, or an
      unavailable provider is never used, and the response says so in `fallbacks`.
    - Validated model plans are recorded under `var/replay/explore/` when `CABINET_RECORD=1`
@@ -146,10 +204,10 @@ analyses yet." with the three example questions closest to it.
    row: the row named nearest to a number in the sentence must hold that number, so a
    true figure cannot be attached to the wrong major or course. A rewording may change
    the words, never drop a fact: every figure and every major, course, or name the
-   template answer states must also be in it, or the template answer is shown. (On our
-   local model the rewording of the owner's question compared majors and courses the
-   question did not ask about and named no instructor, so this rule now shows the
-   template there.)
+   template answer states must also be in it, or the template answer is shown. (In
+   testing, a rewording of the owner's question compared majors and courses the
+   question did not ask about and named no instructor; this rule shows the template
+   answer in such a case.)
 5. **Record.** `explore.answered` closes the run with the step ids, their row counts, and
    which planner and writer ran. It never carries a value.
 
@@ -171,10 +229,18 @@ events:
   Ranked analyses also set a minimum group size of their own (20 students for majors, 8
   sections in 4 terms for courses, 40 students for growth), named in each step's
   parameters.
-- **Withheld figures stay withheld.** When exactly one row of a table would be withheld,
-  the smallest other row is withheld too, so the hidden figure cannot be worked out by
-  subtracting the visible rows from a total shown elsewhere (a course's all-terms row, a
-  group's whole). This applies to a course's terms, its instructors, and the student groups
+- **Withheld figures stay withheld.** Whenever the withheld rows of a table add up to
+  fewer than 10 students, the next smallest row is withheld too, until they hold 10 or
+  more, so subtracting the visible rows from a total shown elsewhere (a course's
+  all-terms row, a group's whole, a college's total) never recovers a group under 10.
+  Majors are protected within their college, in each term and across terms
+  (enrollment, credit hours, graduates by year, advising, standing, growth). In the
+  general analysis every attribute that defines a cell (its groupings and its filters)
+  is checked this way against its siblings, so two filtered questions ("Nursing,
+  in-state" and "Nursing, out-of-state") cannot be subtracted from Nursing's total to
+  reveal a small third group. A figure over a term window other than all terms is shown
+  only when the same group or course had no term with 1 to 9 students, so two windows
+  cannot be subtracted to reveal one small class. This applies to a course's terms, its instructors, and the student groups
   of an equity gap. Both instructor analyses withhold the same rows. In enrollment by term,
   a withheld new or continuing count withholds the whole row, and a college that holds a
   major under 10 students is withheld from the college ranking.
@@ -191,6 +257,10 @@ events:
   list students, name an id in any form, or ask who will do something are refused as
   questions about individuals, and any id or long number a person types is replaced
   before the question is recorded.
+- **Instructor identities are for the executive and admin roles.** Staff and
+  reviewers never see an instructor's id or name, not even in the parameters under "How
+  this was answered", and the model planner receives the instructor list only for those
+  two roles.
 - **Instructor rows are for the executive and admin roles.** Staff and reviewers asking
   about a course's instructors get the course as a whole (sections, terms, instructor
   count, DFW rate) with one sentence saying instructor results are shown to the executive
@@ -204,7 +274,8 @@ events:
 | Route | Roles | Notes |
 |---|---|---|
 | `POST /explore {question}` | executive, admin, staff, reviewer | CSRF, the ask rate bucket (5 per minute per session and per IP by default), at most 500 characters |
-| `GET /explore/catalog` | executive, admin, staff, reviewer | the analyses (title, description) and 12 example questions |
+| `POST /explore/stream {question}` | executive, admin, staff, reviewer | the same answer as `POST /explore`, streamed (below); same CSRF, rate bucket, refusals, and audit |
+| `GET /explore/catalog` | executive, admin, staff, reviewer | the analyses (title, description) and 17 example questions |
 
 The aid role gets a 403 on both. The response of `POST /explore` is
 `{refused, message?, answer: [{text, claims: [{table, row, column}]}], steps: [{analysis_id,
@@ -240,3 +311,26 @@ institution chain.
    map every phrasing, and check that every template sentence takes its numbers from table
    cells. If the analysis reproduces a planted fact, add it to the full-scale check in
    `backend/tests/test_explore.py`.
+
+## The live trace (POST /explore/stream)
+
+While a question is answered the screen shows what is really happening, line by line,
+under "Thinking": "Understood: Dropout rate by major", "Chose 1 approved analysis",
+"Reading the student records (Ellucian format, fictional data): 6,225 students, Fall
+2020 to Spring 2026", "Computing: Dropout rate by major", "Withheld 2 small groups
+(fewer than 10 students) to protect privacy", "Writing the answer from the tables",
+"Checked 5 numbers against the tables". When the answer arrives the trace folds into
+one line above it, "Thought for 6 s · 7 steps", which opens it again.
+
+`POST /explore/stream` returns `application/x-ndjson`, one JSON event per line, in the
+order the pipeline reaches each point: `planning`, `understood` (text), `plan` (step
+descriptions, `planner` rules or model), `reading` (the school's size), `step` (index,
+total, description) before each step reads anything, `suppression` (count withheld),
+`writing`, `verifying` (numbers checked and matched), then `done` with exactly the body
+`POST /explore` returns, `refused` with the refusal body, or `error`. Events never
+carry a student row, an id, an instructor name for staff, or the question's text; their
+numbers are counts of the whole school or of the finished, suppressed tables. A
+refusal is decided before the first event. The screen falls back to its own timed
+steps when the server does not stream (an older server, or a network that buffers the
+response); screen readers hear only the step lines, politely, and every motion is off
+under reduced motion.

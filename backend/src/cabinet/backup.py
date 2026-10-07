@@ -33,12 +33,24 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import sqlite3
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from cabinet.migrations import DB_FILE_MODE, ensure_private_db_file
+
+# A backup holds the whole database and every dataset: its directories are
+# 0700 and every file in it 0600, like the live copies.
+BACKUP_DIR_MODE = 0o700
+
+
+def _make_private(path: Path) -> None:
+    """0600 for a file, 0700 for a directory (umask cannot loosen it)."""
+    os.chmod(path, BACKUP_DIR_MODE if path.is_dir() else DB_FILE_MODE)
 
 
 def _timestamp() -> str:
@@ -68,6 +80,12 @@ _CABINET_TABLES = (
     "briefings",
     "decisions",
     "recordings",
+    "dispatches",
+    "office_contacts",
+    "aid_reviews",
+    "staff_actions",
+    "staff_action_notes",
+    "staff_action_history",
 )
 
 
@@ -103,6 +121,18 @@ def _row_total(conn: sqlite3.Connection) -> int:
     return total
 
 
+def _make_private_dirs(directory: Path, root: Path) -> None:
+    """Create ``directory`` and make it and every directory between it and
+    ``root`` (both included) 0700."""
+    directory.mkdir(parents=True, exist_ok=True)
+    current = directory
+    while True:
+        _make_private(current)
+        if current == root or current.parent == current or root not in current.parents:
+            break
+        current = current.parent
+
+
 def create_backup(
     db_path: str | Path,
     data_dir: str | Path,
@@ -130,10 +160,12 @@ def create_backup(
             raise SystemExit(
                 f"backup: {out} already exists; backups are never reused"
             )
-        out.mkdir(parents=True)
+        out.mkdir(parents=True, mode=BACKUP_DIR_MODE)
+        _make_private(out)
 
         # The SQLite online backup API — consistent even while the API
-        # process holds the database open.
+        # process holds the database open. The file is created 0600 first.
+        ensure_private_db_file(out / "cabinet.db")
         destination = sqlite3.connect(str(out / "cabinet.db"))
         try:
             source.backup(destination)
@@ -147,8 +179,9 @@ def create_backup(
     for path in _data_files(data_dir):
         relative = path.relative_to(data_dir)
         target = backup_data / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
+        _make_private_dirs(target.parent, out)
         shutil.copy2(path, target)
+        _make_private(target)
         copied[str(relative)] = _sha256(target)
 
     manifest = {
@@ -161,6 +194,7 @@ def create_backup(
     (out / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+    _make_private(out / "manifest.json")
 
     # Verify the backup before reporting success: reread every copied byte.
     problems: list[str] = []
@@ -227,6 +261,7 @@ def restore_backup(
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(backup / "cabinet.db", db_path)
+    ensure_private_db_file(db_path)
     problems: list[str] = []
     if _sha256(db_path) != _sha256(backup / "cabinet.db"):
         problems.append("the restored cabinet.db does not match the backup")
@@ -235,8 +270,9 @@ def restore_backup(
     for relative in manifest.get("data_files", {}):
         source = backup / "data" / relative
         target = data_dir / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
+        _make_private_dirs(target.parent, data_dir)
         shutil.copy2(source, target)
+        _make_private(target)
         if _sha256(target) != _sha256(source):
             problems.append(f"the restored data file {relative} does not match")
         count += 1

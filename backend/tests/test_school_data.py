@@ -113,7 +113,7 @@ def test_schema_tables_and_counts(small: dict[str, Any]) -> None:
     report: dict[str, Any] = small["reports"][0]
     assert by_name(report)["schema"]["ok"], by_name(report)["schema"]["detail"]
     counts: dict[str, int] = report["counts"]
-    assert len(counts) == 21
+    assert len(counts) == 24
     assert counts["academic_periods"] == 17
     assert counts["colleges"] == 6
     assert counts["academic_programs"] == 40

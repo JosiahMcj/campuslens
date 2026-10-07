@@ -83,8 +83,15 @@ class StepResult:
 StepHook = Callable[[int, str, tuple[str, ...], bool], None]
 
 
+INSTRUCTOR_PARAM_WITHHELD = "an instructor (names are shown to the executive and admin)"
+
+
 def _resolve(
-    step: Step, analysis: Analysis, done: list[StepResult], catalog: Catalog
+    step: Step,
+    analysis: Analysis,
+    done: list[StepResult],
+    catalog: Catalog,
+    role: str = "executive",
 ) -> tuple[dict[str, Any], list[str], list[str]]:
     params: dict[str, Any] = {}
     plain: list[str] = []
@@ -113,6 +120,11 @@ def _resolve(
             raise AnalysisError(f"{value!r} is not an allowed {param.label.lower()}")
         value = catalog.normalize(param, value)
         params[param.name] = value
+        if param.kind == "instructor" and role not in INSTRUCTOR_ROLES:
+            # Neither the id nor the (fictional) name reaches another role.
+            plain.append(f"{param.label}: {INSTRUCTOR_PARAM_WITHHELD}")
+            shown.append(f"{param.label}: {INSTRUCTOR_PARAM_WITHHELD}")
+            continue
         plain.append(f"{param.label}: {catalog.plain(param, value)}{source or ''}")
         reader = catalog.shown(param, value)
         if reader is not None:
@@ -151,7 +163,7 @@ def execute(
         analysis = ANALYSIS_BY_ID[step.analysis_id]
         withheld = analysis.instructor_level and role not in INSTRUCTOR_ROLES
         try:
-            params, plain, shown = _resolve(step, analysis, done, catalog)
+            params, plain, shown = _resolve(step, analysis, done, catalog, role)
         except AnalysisError as exc:
             done.append(
                 StepResult(
@@ -203,6 +215,8 @@ def execute(
             {k: val for k, val in row.items() if not k.startswith("_")}
             for row in (outcome.rows if outcome else [])
         ]
+        if outcome is not None and outcome.columns is not None:
+            columns = outcome.columns
         notes = outcome.notes if outcome else [INSTRUCTOR_HISTORY_WITHHELD_NOTE]
         result = StepResult(
             index,

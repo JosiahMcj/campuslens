@@ -1,0 +1,417 @@
+/* The Staff actions worklist (StaffActionsPage.tsx). Tokens only (DESIGN.md):
+   a summary strip of three status tiles, the office and status filters, then
+   one card per action on a hairline, two columns where the page is wide. */
+
+.worklist {
+  display: grid;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+}
+
+.worklist-loading {
+  margin-top: var(--space-3);
+}
+
+/* The summary strip: each tile is a toggle that filters by its status. */
+.worklist-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.summary-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  min-height: var(--tap);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.summary-tile:hover {
+  background: var(--surface-hover);
+}
+
+.summary-tile:active {
+  background: var(--surface-pressed);
+}
+
+.summary-tile:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+}
+
+.summary-tile[aria-pressed='true'] {
+  border-color: var(--navy);
+  box-shadow: inset 0 0 0 1px var(--navy);
+}
+
+.summary-count {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-label {
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
+
+.worklist-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3) var(--space-4);
+}
+
+.filter-field {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.filter-field .field {
+  min-width: 12rem;
+  max-width: 100%;
+  font-weight: 400;
+}
+
+.worklist-shown {
+  margin: 0 0 var(--space-2) auto;
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+}
+
+/* The cards: one column, two where the page has room. */
+.action-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 1200px) {
+  .action-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.action-cards > li {
+  display: flex;
+  min-width: 0;
+}
+
+.action-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-surface);
+  background: var(--paper);
+}
+
+.action-card[data-status='done'] {
+  background: var(--surface);
+}
+
+.action-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.action-office {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-transform: none;
+}
+
+.action-status {
+  flex: none;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.8;
+  white-space: nowrap;
+  color: var(--ink-soft);
+}
+
+.action-status-in_progress {
+  border-color: var(--navy);
+  color: var(--navy);
+}
+
+.action-status-done {
+  background: var(--navy-wash);
+  border-color: var(--navy-wash);
+  color: var(--ink);
+}
+
+.action-title {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xl);
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+.action-count {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-lg);
+}
+
+/* The count is a phrase ("12 students with no advising contact this
+   term"), so unlike a bare figure it wraps. */
+.action-count .finding-link {
+  text-align: start;
+}
+
+.action-count .num {
+  white-space: normal;
+}
+
+.action-what {
+  margin: var(--space-2) 0 0;
+  color: var(--ink-soft);
+  max-width: 68ch;
+  text-wrap: pretty;
+}
+
+.action-facts {
+  margin-top: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.action-facts:empty {
+  display: none;
+}
+
+.past-due {
+  font-weight: 600;
+}
+
+/* The editor: status, owner and due date side by side where they fit. */
+.action-editor {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--rule);
+}
+
+/* Status and due date share a row; the owner (an office or an email
+   address, often long) takes the full width under them. */
+.action-editor-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.editor-field-owner {
+  grid-column: 1 / -1;
+}
+
+.editor-field {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.editor-field label,
+.note-form label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.editor-field .field {
+  width: 100%;
+  min-width: 0;
+}
+
+.action-editor .error-line,
+.action-editor .hint {
+  margin: var(--space-2) 0 0;
+}
+
+.action-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.action-editor-actions:empty {
+  display: none;
+}
+
+.saved-line {
+  margin: 0;
+}
+
+/* The message to the office mailbox. */
+.office-message {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--rule);
+}
+
+.office-message > p {
+  margin: 0;
+}
+
+.office-message > p + p,
+.office-message > * + .error-line {
+  margin-top: var(--space-2);
+}
+
+.message-sent {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.message-sent svg {
+  flex: none;
+  margin-top: 0.15em;
+  color: var(--navy);
+}
+
+.message-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.message-actions .hint {
+  flex: 1 1 14rem;
+  margin: 0;
+}
+
+.message-subject {
+  margin: 0;
+  font-weight: 600;
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.message-body {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  font-family: var(--font);
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Notes and history. */
+.action-fold > summary {
+  font-size: var(--text-sm);
+}
+
+.note-list,
+.history-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note-meta {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--ink-soft);
+}
+
+.note-text {
+  margin: var(--space-1) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.note-form {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.note-form textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.note-form .hint,
+.note-form .field-error,
+.note-form .error-line {
+  margin: 0;
+}
+
+.note-form button {
+  justify-self: start;
+}
+
+.history-list {
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.history-when {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.action-no-history {
+  margin: var(--space-3) 0 0;
+}
+
+@media (max-width: 899px) {
+  .worklist-summary {
+    gap: var(--space-2);
+  }
+
+  .summary-tile {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .summary-count {
+    font-size: var(--text-xl);
+  }
+
+  .worklist-shown {
+    margin: 0;
+    flex-basis: 100%;
+  }
+
+  .filter-field {
+    flex: 1 1 10rem;
+  }
+
+  .filter-field .field {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .action-card {
+    padding: var(--space-3) var(--space-4);
+  }
+}

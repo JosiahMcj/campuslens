@@ -65,6 +65,13 @@ Endpoints:
   required (422 without it), and a save against a row that changed since it
   was opened is a 409. Logs ``aid.updated`` with the acting
   user, the row id, and the status transition, never the student id.
+- ``GET /staff-actions``, ``PATCH /staff-actions/{id}``, ``POST
+  /staff-actions/{id}/notes`` and ``/send`` — the staff action worklist
+  (``cabinet.staffactions_api``): status, owner, due date, notes, history,
+  and Send to office. Logs ``action.*`` events, never a note or a student id.
+- ``GET  /admin/connections`` (admin role) — whether the Ellucian import is
+  configured and its last import, and where office messages go
+  (``cabinet.connections``); never a credential.
 - ``GET  /admin/offices`` / ``PUT /admin/offices`` (admin role) — the
   institution's office address book, the only source of dispatch
   recipients. Offices, never student addresses.
@@ -186,9 +193,11 @@ from cabinet.auth import (
     session_ttl,
     sign_session_id,
 )
+from cabinet.connections import router as connections_router
 from cabinet.counseling import M9_ID, authorization_block, m9_finding
 from cabinet.datasets import UploadError, validate_upload
 from cabinet.explore.api import router as explore_router
+from cabinet.explore.privacy import redact_question
 from cabinet.fixture import parse_fixture
 from cabinet.metrics import findings as compute_findings
 from cabinet.migrations import (
@@ -203,11 +212,13 @@ from cabinet.permissions import (
     ROLE_TASK_FIELDS,
     ROLES,
     FieldRequestRefused,
+    findings_without_rows,
     request_fields,
 )
 from cabinet.provider import (
     Explanation,
     canonical_findings_json,
+    check_production_llm_base_url,
     golden_dir_from_env,
     load_local_env,
     provider_from_env,
@@ -225,9 +236,11 @@ from cabinet.questions import DEMO_DECISION_ID as DEMO_DECISION_ID
 from cabinet.questions import OUT_OF_SCOPE_REFUSAL as OUT_OF_SCOPE_REFUSAL
 from cabinet.security import (
     GENERIC_LOGIN_ERROR,
+    ROW_ROLES,
     CabinetSecurityMiddleware,
     LoginLockout,
 )
+from cabinet.staffactions_api import router as staff_actions_router
 from cabinet.store import AidReviewConflict, CabinetStore, StoreError
 from cabinet.webui import ApiPrefixMiddleware, SpaStaticFiles, ui_dist_from_env
 
@@ -446,6 +459,7 @@ def create_app(
         secret_key, ephemeral_secret = resolve_secret_key(production)
         if production:
             check_production_bind()
+            check_production_llm_base_url()
     except RuntimeError as exc:
         print(f"cabinet: cannot start: {exc}", file=sys.stderr)
         raise SystemExit(1) from None
@@ -736,8 +750,14 @@ def create_app(
     @app.get("/findings")
     def get_findings(request: Request) -> dict[str, Any]:
         """The findings computed from the caller's institution's active
-        dataset (row IDs included, for the evidence drawer)."""
-        return runtime_for(request_institution(request)).findings
+        dataset. The student ids behind each figure (the evidence drawer's
+        records) go to the executive and admin roles only (``ROW_ROLES``);
+        staff, reviewer, and aid get the figures and counts with every id
+        removed (``permissions.findings_without_rows``)."""
+        findings_obj = runtime_for(request_institution(request)).findings
+        if request.scope["cabinet_user"]["role"] in ROW_ROLES:
+            return findings_obj
+        return findings_without_rows(findings_obj)
 
     @app.get("/events")
     def get_events(
@@ -766,6 +786,7 @@ def create_app(
     # app.state for tests.
     app.state.runtime_for = runtime_for
     app.state.ask_lock_for = ask_lock_for
+    app.state.production = production
 
     def analyst_task_id(role: str, runtime: InstitutionRuntime) -> str:
         """The task this briefing run's events belong to.
@@ -935,11 +956,15 @@ def create_app(
         # bound, and this route runs on every ask).
         max_event_id_before = store.audit_max_id(institution_id)
         question = match_question(body.question)
+        # The audit log never stores a student id a person typed: the same
+        # redaction Explore applies, before anything is written. Matching
+        # ran on the typed text; an approved question has no id to redact.
+        logged_question = redact_question(body.question)
         question_event = audit.append(
             "question.asked",
             actor="executive",
             payload={
-                "question": body.question,
+                "question": logged_question,
                 "question_id": question.id if question is not None else None,
             },
         )
@@ -948,7 +973,7 @@ def create_app(
                 "data.refused",
                 actor="chief_of_staff",
                 payload={
-                    "question": body.question,
+                    "question": logged_question,
                     "reason": OUT_OF_SCOPE_REFUSAL,
                 },
             )
@@ -2258,10 +2283,12 @@ def create_app(
             if isinstance(meta, dict) and meta.get("title")
             else "Uploaded dataset"
         )
+        # The stored bytes carry no counseling note text (validate_upload
+        # removed it); the sha256 is of what is stored.
         dataset = store.add_dataset(
             institution_id,
             name=name,
-            raw=raw,
+            raw=report.stored_raw,
             uploaded_by=str(user["email"]),
             row_counts=report.row_counts,
         )
@@ -2538,6 +2565,9 @@ def create_app(
         return JSONResponse(content={"user": admin_user_body(updated), "changed": True})
 
     app.include_router(explore_router)  # POST /explore, GET /explore/catalog
+    # GET /staff-actions, PATCH /staff-actions/{id}, POST .../notes, .../send
+    app.include_router(staff_actions_router)
+    app.include_router(connections_router)  # GET /admin/connections
 
     # The built UI, served by the same process. Mounted after every API
     # route so an API path always wins over the static mount; a missing

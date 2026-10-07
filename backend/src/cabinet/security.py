@@ -109,6 +109,10 @@ BODY_CAP_OVERRIDES: tuple[tuple[str, int], ...] = (
 ALL_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF, ROLE_REVIEWER, ROLE_AID)
 READ_ROLES = ALL_ROLES  # every logged-in role may read
 ACT_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE)  # ask / approve / refresh
+# The student ids behind a finding (GET /findings row lists, M5's per-office
+# holds, M8's per-student indicators): the executive and admin, whose work
+# acts on the records. Every other role reads the figures and counts only.
+ROW_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE)
 # The audit log itself: admin and reviewer, and the executive (the
 # president runs the Beat 6 audit walkthrough; staff still may not).
 AUDIT_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_REVIEWER)
@@ -152,7 +156,20 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     # Explore (cabinet.explore): aggregate questions over the school data;
     # every role but aid.
     ("POST", "/explore"): (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF, ROLE_REVIEWER),
+    ("POST", "/explore/stream"): (
+        ROLE_ADMIN,
+        ROLE_EXECUTIVE,
+        ROLE_STAFF,
+        ROLE_REVIEWER,
+    ),
     ("GET", "/explore/catalog"): AUDIT_ROLES + (ROLE_STAFF,),
+    # The staff action worklist (cabinet.staffactions_api): every role reads
+    # it (the aid role sees Financial Aid's actions only, filtered by the
+    # route).
+    ("GET", "/staff-actions"): READ_ROLES,
+    # The outside connections (Ellucian import, outgoing mail): whether each
+    # is configured, never a credential. Admin only.
+    ("GET", "/admin/connections"): (ROLE_ADMIN,),
 }
 
 # Prefix rules, checked when the exact table misses (routes with path
@@ -175,6 +192,12 @@ ROUTE_ROLE_PREFIXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     # One Financial Aid review row by id: the office records its own status
     # and note. The aid role and the admin only; everyone else is a 403.
     ("PATCH", "/aid-queue/", AID_QUEUE_EDIT_ROLES),
+    # One staff action by id: staff and the admin set its status, owner and
+    # due date; notes are open to the executive too, and the send route
+    # narrows itself to staff and admin (an executive's Send is a logged
+    # 403, like the decision dispatch).
+    ("PATCH", "/staff-actions/", (ROLE_ADMIN, ROLE_STAFF)),
+    ("POST", "/staff-actions/", (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF)),
 )
 
 # No session needed: liveness, readiness, and login itself.
@@ -200,6 +223,7 @@ def is_api_route(method: str, path: str) -> bool:
         method == prefix_method and path.startswith(prefix)
         for prefix_method, prefix, _ in ROUTE_ROLE_PREFIXES
     )
+
 
 ENV_RATE_GENERAL = "CABINET_RATE_GENERAL_PER_MIN"
 ENV_RATE_SESSION = "CABINET_RATE_SESSION_PER_MIN"
@@ -233,6 +257,7 @@ async def _sleep(seconds: float) -> None:
     """The delay hook — module-level so tests can monkeypatch it away.
     Async: a progressive login delay must not hold a threadpool worker."""
     await asyncio.sleep(seconds)
+
 
 CSP = (
     "default-src 'self'; connect-src 'self'; img-src 'self' data:; "
@@ -662,10 +687,15 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
                 headers={"Retry-After": str(retry_after)},
             )
         # The tighter ask bucket covers POST /ask (it spends model calls)
-        # and the dispatch Send (it can make a message leave the machine);
+        # and both Sends (each can make a message leave the machine);
         # both are consequential enough to pace per session and per IP.
-        if (method, path) in (("POST", "/ask"), ("POST", "/explore")) or (
-            method == "POST" and path.endswith("/dispatch/send")
+        if (method, path) in (
+            ("POST", "/ask"),
+            ("POST", "/explore"),
+            ("POST", "/explore/stream"),
+        ) or (
+            # Both Sends (a decision's dispatch, a staff action) end in /send.
+            method == "POST" and path.endswith("/send")
         ):
             for key in (f"ask:session:{session['id']}", f"ask:ip:{client_ip}"):
                 allowed, retry_after = self.ask_bucket.allow(key)

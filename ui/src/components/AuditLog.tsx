@@ -3,6 +3,13 @@ import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import type { AuditEvent } from '../api'
 import { DENIED_REQUEST } from '../api'
 import { aidStatusLabel, type AidStatus } from '../aid'
+import {
+  AUDIT_FILTERS,
+  filterAuditEvents,
+  NO_FILTERS,
+  type AuditFilterId,
+  type AuditFilters,
+} from '../auditFilters'
 import { plainSentence } from '../errors'
 import { fieldLabels } from '../fieldLabels'
 import { findingLabel } from '../findingLabels'
@@ -43,39 +50,6 @@ interface AuditLogProps {
   viewerEmail?: string | null
 }
 
-/** The "Show" filter: five plain groups instead of the raw event types. */
-const AUDIT_FILTERS = [
-  { id: 'all', label: 'Everything', types: null },
-  {
-    id: 'questions',
-    label: 'Questions',
-    types: ['question.asked', 'task.assigned', 'finding.produced', 'briefing.produced'],
-  },
-  { id: 'access', label: 'Data access', types: ['data.granted', 'data.refused'] },
-  {
-    id: 'decisions',
-    label: 'Decisions and messages',
-    types: [
-      'decision.approved',
-      'task.created',
-      'task.dispatched',
-      'task.send_failed',
-      'task.sent',
-      'aid.queued',
-      'aid.updated',
-    ],
-  },
-  { id: 'refusals', label: 'Refusals', types: ['data.refused'] },
-] as const
-
-type AuditFilterId = (typeof AUDIT_FILTERS)[number]['id']
-
-function filterAuditEvents(events: AuditEvent[], filter: AuditFilterId): AuditEvent[] {
-  const group = AUDIT_FILTERS.find((entry) => entry.id === filter)
-  const types: readonly string[] | null = group?.types ?? null
-  return types === null ? events : events.filter((event) => types.includes(event.type))
-}
-
 const ROLE_NAMES: Record<string, string> = {
   enrollment_analyst: 'the Enrollment Analyst',
   student_success_analyst: 'the Student Success Analyst',
@@ -92,7 +66,7 @@ function capitalize(text: string): string {
 function actorName(actor: string, viewerEmail: string | null = null): string {
   if (ROLE_NAMES[actor] !== undefined) return ROLE_NAMES[actor]
   if (actor.includes('@')) return personName(actor, viewerEmail)
-  if (/^\d+$/.test(actor)) return 'a signed-in person'
+  if (/^\d+$/.test(actor)) return 'an administrator'
   return 'CampusLens'
 }
 
@@ -113,6 +87,16 @@ function statusWord(value: unknown): string {
   return value === 'open' || value === 'in_review' || value === 'closed'
     ? aidStatusLabel(value as AidStatus).toLowerCase()
     : 'another status'
+}
+
+function actionStatusWord(value: unknown): string {
+  return value === 'todo'
+    ? 'to do'
+    : value === 'in_progress'
+      ? 'in progress'
+      : value === 'done'
+        ? 'done'
+        : 'another status'
 }
 
 type AuditMark = 'granted' | 'refused' | 'approved' | 'sent' | null
@@ -268,6 +252,54 @@ function describeEvent(event: AuditEvent, viewerEmail: string | null): Described
         details,
       }
     }
+    case 'explore.answered': {
+      const steps = list(payload.steps).length
+      if (payload.answered === false) {
+        return {
+          sentence: `${Who} could not answer a question from the records, and said so.`,
+          mark: null,
+          details,
+        }
+      }
+      return {
+        sentence: `${Who} answered a question from the records${steps > 0 ? `, in ${steps} step${steps === 1 ? '' : 's'}` : ''}. Only totals were used.`,
+        mark: null,
+        details,
+      }
+    }
+    case 'action.updated': {
+      const office = str(payload.office) ?? 'an office'
+      const fields = list(payload.fields)
+      const parts: string[] = []
+      if (fields.includes('status')) {
+        parts.push(`moved the ${office} action from ${actionStatusWord(payload.status_from)} to ${actionStatusWord(payload.status_to)}`)
+      }
+      if (fields.includes('owner')) parts.push(`changed who has the ${office} action`)
+      if (fields.includes('due_date')) parts.push(`changed the ${office} action's due date`)
+      return {
+        sentence: `${Who} ${parts.length > 0 ? parts.join(' and ') : `saved the ${office} action`}.`,
+        mark: null,
+        details,
+      }
+    }
+    case 'action.noted':
+      return {
+        sentence: `${Who} added a note to the ${str(payload.office) ?? 'office'} action.`,
+        mark: null,
+        details,
+      }
+    case 'action.sent':
+      return {
+        sentence: `${Who} sent the ${str(payload.office) ?? 'office'} action to that office's mailbox.`,
+        mark: 'sent',
+        details,
+      }
+    case 'action.send_failed':
+      return {
+        sentence: `${Who} tried to send the ${str(payload.office) ?? 'office'} action to its office, and it did not go through.`,
+        mark: 'refused',
+        details,
+      }
     case 'admin.changed': {
       const byEmail = str(payload.by)
       const by = byEmail !== null ? capitalize(personName(byEmail, viewerEmail)) : 'An administrator'
@@ -342,11 +374,24 @@ export function AuditLog({
   loadError = null,
   viewerEmail = getSession()?.user.email ?? null,
 }: AuditLogProps) {
-  const [filter, setFilter] = useState<AuditFilterId>('all')
+  const [filters, setFilters] = useState<AuditFilters>(NO_FILTERS)
+  const filtered = filters.kind !== 'all' || filters.actor !== 'all' || filters.from !== '' || filters.to !== ''
+  const setFilter = (change: Partial<AuditFilters>) =>
+    setFilters((current) => ({ ...current, ...change }))
   // Newest first: the API returns the chain in order (ascending ids).
-  const visible = filterAuditEvents(events ?? [], filter)
+  const visible = filterAuditEvents(events ?? [], filters)
     .slice()
     .sort((a, b) => b.id - a.id)
+  // Who appears in the log, by name, for the "Who" filter.
+  const actors = [...new Set((events ?? []).map((event) => event.actor))]
+    .map((actor) => {
+      const name = actorName(actor, viewerEmail)
+      return { actor, name: name.includes('@') ? name : capitalize(name) }
+    })
+    .sort((a, b) => a.name.localeCompare(b.name))
+  const actorChoices = actors.filter(
+    (choice, index) => actors.findIndex((other) => other.name === choice.name) === index,
+  )
   const highlightId =
     deniedRequest.kind === 'shown' ? deniedRequest.eventId : (highlightEventId ?? null)
   const highlightPresent =
@@ -366,12 +411,13 @@ export function AuditLog({
         never be changed. Newest entries are first.
       </p>
 
-      <div className="audit-tools">
-        <label className="audit-filter">
-          <span>Show</span>{' '}
+      <div className="audit-filters" role="group" aria-label="Filter the log">
+        <label className="audit-filter-field">
+          <span>Show</span>
           <select
-            value={filter}
-            onChange={(event) => setFilter(event.target.value as AuditFilterId)}
+            className="field"
+            value={filters.kind}
+            onChange={(event) => setFilter({ kind: event.target.value as AuditFilterId })}
           >
             {AUDIT_FILTERS.map((entry) => (
               <option key={entry.id} value={entry.id}>
@@ -380,6 +426,60 @@ export function AuditLog({
             ))}
           </select>
         </label>
+        <label className="audit-filter-field">
+          <span>Who</span>
+          <select
+            className="field"
+            value={filters.actor}
+            onChange={(event) => setFilter({ actor: event.target.value })}
+          >
+            <option value="all">Anyone</option>
+            {actorChoices.map((choice) => (
+              <option key={choice.actor} value={choice.actor}>
+                {choice.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="audit-filter-field">
+          <span>From</span>
+          <input
+            className="field"
+            type="date"
+            value={filters.from}
+            max={filters.to !== '' ? filters.to : undefined}
+            onChange={(event) => setFilter({ from: event.target.value })}
+          />
+        </label>
+        <label className="audit-filter-field">
+          <span>To</span>
+          <input
+            className="field"
+            type="date"
+            value={filters.to}
+            min={filters.from !== '' ? filters.from : undefined}
+            onChange={(event) => setFilter({ to: event.target.value })}
+          />
+        </label>
+        {filtered && (
+          <button
+            type="button"
+            className="btn-secondary secondary audit-clear"
+            onClick={() => setFilters(NO_FILTERS)}
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
+
+      <div className="audit-tools">
+        <p className="audit-count" aria-live="polite">
+          {events === null
+            ? ''
+            : filtered
+              ? `Showing ${visible.length} of ${events.length} entries.`
+              : `${events.length} entr${events.length === 1 ? 'y' : 'ies'}.`}
+        </p>
         {!readOnly && (
           <button
             type="button"
@@ -433,9 +533,9 @@ export function AuditLog({
         )
       ) : visible.length === 0 ? (
         <p className="state-empty hint">
-          {filter === 'all'
+          {!filtered
             ? 'Nothing is recorded yet. Ask an approved question and every step appears here.'
-            : 'No entries of this kind yet. Choose Everything to see the whole log.'}
+            : 'No entries match these filters. Clear the filters to see the whole log.'}
         </p>
       ) : (
         <ol className="event-list">

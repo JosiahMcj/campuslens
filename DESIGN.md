@@ -6,9 +6,10 @@ radius in `ui/src` follows this file. Change this file first when the look chang
 ## Concept
 
 A calm, chat-style workspace. The president asks one of the approved questions in the centre
-of the screen, and everything else is one click away in the sidebar and opens as a slide-over
-panel: Full briefing, Staff actions, Decision, AI employees and data access, Audit log,
-Financial Aid review, and Institution (for administrators, a page rather than a panel). The
+of the screen, and everything else is one click away in the sidebar and opens as a page of its
+own beside the sidebar, with its own address (`/view/<page>`) and a Back button: Full briefing,
+Key figures, Evidence & sources, Staff actions, Decision, AI employees and data access, Audit
+log, Financial Aid review, Profile, Settings, and Institution settings (for administrators). The
 figures and their evidence open from the numbers in an answer. Any other question about the
 demonstration university is an Explore question: the answer is computed from the records, each
 number in it links to the table cell it came from, and a "How this was answered" fold shows
@@ -37,12 +38,12 @@ and approvals use the same marks everywhere.
 | `--gold-wash` | `#FFFBEB` | `#2A2419` | the decision card's ground |
 | `--alert` | `#B91C1C` | `#F87171` | refusals, errors, destructive actions |
 | `--alert-wash` | `#FEF2F2` | `#2E1F1F` | the ground of refusals and error panels |
-| `--scrim` | black 35 % | black 50 % | behind a slide-over panel or the phone drawer |
+| `--scrim` | black 35 % | black 50 % | behind the phone drawer |
 | `--brand-deep` / `--brand-mid` / `--brand-teal` | `#0B2A5B` / `#1667C7` / `#1DB89A` | `#3D7FE0` / `#3B9BE8` / `#2FD0B0` | the CampusLens mark's gradient and the sign-in screen's backdrop, nothing else |
 | `--brand-glint` / `--brand-glint-soft` | `#5EA2EE` / `#9CC6F4` | `#9CC6F4` / `#C6DEFA` | the two highlights inside the mark's lens |
 
 Shadows are tokens too: `--shadow` (cards that float, the composer), `--shadow-float` (menus),
-`--shadow-panel` (the slide-over panel), `--shadow-drawer` (the phone drawer). Every token is
+`--shadow-panel` (kept for a floating panel), `--shadow-drawer` (the phone drawer). Every token is
 declared once, in the token block at the top of `ui/src/index.css`; no other stylesheet declares
 one.
 
@@ -84,7 +85,7 @@ measure 68ch.
 - `--tap` = 2.75rem (44 px): the height of every field, and the smallest control on a phone.
 - Radii: `--radius-control` 8 px (buttons, inputs, selects, chips that are not pills),
   `--radius-surface` 12 px (cards, panels, the composer), 999 px for pills and avatars only.
-- Shadows: `--shadow` on floating things only (slide-over panels, menus, the composer). Cards on
+- Shadows: `--shadow` on floating things only (menus, the composer). Cards on
   the page use a hairline, not a shadow.
 
 ## Components
@@ -115,11 +116,30 @@ measure 68ch.
   label above, help text below, error text below in `--alert` linked with `aria-describedby`
   and `aria-invalid="true"` (red border). Placeholders start with "e.g.", except the question box, whose placeholder says what can be
   asked ("Ask about students, courses or majors") and fits a 390 px phone.
-- **Panels:** the slide-over panel is the one pattern for everything outside the conversation.
-  Title, one-sentence intro, then content. Escape and the close button close it; focus returns.
-  It slides in and out in 200 ms: closing adds `.is-closing` to `.panel-overlay` and
-  `.side-panel` and unmounts them 200 ms later; switching panels gives `.side-panel-body` a new
-  key so the content cross-fades. No motion under reduced motion (system setting or Settings).
+- **Pages:** a page (`SidePanel`) is the one pattern for everything outside the conversation.
+  Back and the title on one line (`--text-2xl`, `--text-xl` on phones), a one-sentence intro in
+  `--ink-soft` (`.panel-intro`) saying what the page is for, then content, and at most one
+  `.btn-primary`. Reading pages (the briefing, evidence, the decision, profile, settings) keep a
+  52rem column; pages of cards or rows (Staff actions, Key figures, Audit log, Financial Aid
+  review) use the wider 76rem column (`.side-panel.is-wide`) so a 1440 px screen is used, not a
+  narrow strip. Institution settings has the same title size and intro. Escape and Back close a
+  page; focus returns. It rises in over 200 ms: closing adds `.is-closing` and unmounts it 200 ms
+  later; switching pages cross-fades the body. No motion under reduced motion.
+- **Worklist (Staff actions):** a summary strip of three status tiles (To do, In progress,
+  Done; each a toggle that filters, `aria-pressed`), then the Office and Status filters with a
+  "Showing N of M" line, then one card per action (`.action-card`, `--surface` once done): the
+  office and a status pill, the title, the count as a finding link to its evidence, what to do,
+  then the editor (Status and Due date on one row, Owner under them; "Save changes" appears
+  only when something changed, so a page of cards never shows a row of main buttons), the
+  message to the office (Send, Sent with who and when, or a failure with Retry; never the raw
+  error), and Notes and History folds. Two columns at 1200 px and wider. Roles that cannot edit
+  see owner and due date as a `.kv` list instead of the form.
+- **Steps:** the Decision page shows where a decision stands as a line of steps
+  (`.decision-steps`): done steps carry a filled accent check, the next step is outlined in the
+  accent, later ones are quiet. The decision card keeps its gold.
+- **Filters:** a filter is a labelled `.field` select or date above its control, on one row that
+  wraps; a "Clear filters" secondary button appears only while a filter is set, and a count
+  line ("Showing 3 of 98 entries.") says what the filters hide.
 - **Figures:** a figure is a link to its evidence. Five figure cards (M1, M2, M3, M4, M8); M9,
   when authorized, appears only in the briefing text and the evidence list.
 - **States:** every list and panel has a loading line (`.skeleton-line`), an empty state that

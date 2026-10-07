@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 
 import { roleDisplayName, type Role } from '../auth'
+import { ConnectionsSection, CONNECTIONS_SECTION_ID } from './ConnectionsSection'
 import { CounselingAuthorizationSection, COUNSELING_SECTION_ID } from './CounselingAuthorization'
 import {
   activateDataset,
@@ -15,6 +16,7 @@ import {
 import { friendlyError, friendlyLoadError } from '../errors'
 import {
   draftRowsFrom,
+  fetchActionOffices,
   fetchDecisionOffices,
   fetchOffices,
   officesForSave,
@@ -88,6 +90,7 @@ const SECTIONS = [
   { id: OFFICES_SECTION_ID, label: 'Offices' },
   { id: COUNSELING_SECTION_ID, label: 'Counseling' },
   { id: DATA_SECTION_ID, label: 'Data' },
+  { id: CONNECTIONS_SECTION_ID, label: 'Connections' },
 ] as const
 
 /** A button's working label: a spinner and the "…ing" words. */
@@ -195,7 +198,12 @@ export function Institution({
   const loadOffices = useCallback(async () => {
     setOfficesState({ kind: 'loading' })
     try {
-      const [book, routed] = await Promise.all([fetchOffices(), fetchDecisionOffices()])
+      const [book, decisionOffices, actionOffices] = await Promise.all([
+        fetchOffices(),
+        fetchDecisionOffices(),
+        fetchActionOffices(),
+      ])
+      const routed = [...new Set([...decisionOffices, ...actionOffices])]
       setDecisionOffices(routed)
       setOfficeRows(draftRowsFrom(book, routed))
       setOfficeErrors({})
@@ -742,8 +750,8 @@ export function Institution({
           Offices
         </h2>
         <p className="hint">
-          Where approved follow-ups are sent. Each office gets one mailbox.
-          Nothing is sent until a staff member presses Send.
+          Where approved follow-ups and staff actions are sent. Each office gets
+          one mailbox. Nothing is sent until a staff member presses Send.
         </p>
         {officesState.kind === 'loading' && (
           <p className="status-line">Loading the office contacts…</p>
@@ -1193,6 +1201,8 @@ export function Institution({
           </div>
         )}
       </section>
+
+      <ConnectionsSection />
     </div>
   )
 }

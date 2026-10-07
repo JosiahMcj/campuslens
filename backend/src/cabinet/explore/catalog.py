@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from cabinet.counseling import MINIMUM_CELL_SIZE, SUPPRESSED_DISPLAY
+from cabinet.explore import general as _general
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 ENV_SCHOOL_DB = "CABINET_SCHOOL_DB"
@@ -127,6 +128,7 @@ class Vocab:
     instructors: dict[str, str]  # instructor id -> "First Last" (fictional)
     hold_categories: tuple[str, ...]
     institution: str
+    entry_cohorts: tuple[str, ...] = ()  # academic years of entry, oldest first
 
     def course_label(self, course: str) -> str:
         return f"{course} {self.courses.get(course, '')}".strip()
@@ -175,6 +177,14 @@ def load_vocab(con: sqlite3.Connection) -> Vocab:
                 0
             ]
         ),
+        entry_cohorts=tuple(
+            str(r[0])
+            for r in con.execute(
+                "SELECT DISTINCT (CAST(substr(entry_term, 1, 4) AS INTEGER) - 1) "
+                "|| '-' "
+                "|| substr(entry_term, 1, 4) FROM students ORDER BY 1"
+            )
+        ),
     )
 
 
@@ -218,6 +228,9 @@ class Column:
 class Result:
     rows: list[dict[str, Any]]
     notes: list[str] = field(default_factory=list)
+    # The columns of this result when they depend on the parameters (the
+    # general analysis); None means the analysis's own columns.
+    columns: tuple[Column, ...] | None = None
 
 
 Runner = Callable[[sqlite3.Connection, dict[str, Any], Vocab], Result]
@@ -267,15 +280,77 @@ PROTECT_NOTE = (
 
 def _complementary(sizes: list[int]) -> set[int]:
     """The rows whose statistics are withheld: every group under the minimum,
-    plus, when exactly one row would be withheld among several, the smallest
-    other row too. Otherwise the withheld row could be recovered by
+    then, while the withheld groups add up to fewer than the minimum, the next
+    smallest other row too. Otherwise the withheld rows could be recovered by
     subtracting the visible rows from a total shown elsewhere (a course's
     all-terms row, a group's whole)."""
-    hidden = {i for i, n in enumerate(sizes) if _suppressed(n)}
-    if len(hidden) == 1 and len(sizes) > 1:
-        others = [i for i in range(len(sizes)) if i not in hidden]
-        hidden.add(min(others, key=lambda i: (sizes[i], i)))
+    return set(_general.complementary(dict(enumerate(sizes))))
+
+
+def _within_college(sizes: dict[str, int], v: Vocab) -> set[str]:
+    """Majors withheld when each college's majors are one partition (the
+    college total is published): ``complementary`` per college."""
+    by_college: dict[str, dict[str, int]] = {}
+    for major, n in sizes.items():
+        by_college.setdefault(v.major_college.get(major, ""), {})[major] = n
+    hidden: set[str] = set()
+    for part in by_college.values():
+        hidden |= _general.complementary(part)
     return hidden
+
+
+def _term_partition_hidden(
+    con: sqlite3.Connection, sql: str, args: tuple[Any, ...]
+) -> dict[str, set[str]]:
+    """key -> its withheld terms, from ``sql`` returning (key, term,
+    students) over every term: a key's terms are one partition (its all-terms
+    figure is published)."""
+    parts: dict[str, dict[str, int]] = {}
+    for key, term, n in con.execute(sql, args):
+        parts.setdefault(str(key), {})[str(term)] = int(n)
+    return {k: _general.complementary(sizes) for k, sizes in parts.items()}
+
+
+def _major_term_hidden(con: sqlite3.Connection, v: Vocab) -> set[tuple[str, str]]:
+    """(major, term) cells of enrolled headcount that are withheld: in each
+    term a college's majors are one partition, and across terms a major's
+    terms are another (the college's term total and the major's all-terms
+    figures are both published)."""
+    counts: dict[tuple[str, str], int] = {}
+    for major, term, n in con.execute(
+        """SELECT ap.major_code, r.term_code, COUNT(*)
+           FROM student_term_records r JOIN academic_programs ap USING (program_code)
+           GROUP BY 1, 2"""
+    ):
+        counts[(str(major), str(term))] = int(n)
+    hidden: set[tuple[str, str]] = set()
+    by_term: dict[str, dict[str, int]] = {}
+    by_major: dict[str, dict[str, int]] = {}
+    for (major, term), n in counts.items():
+        by_term.setdefault(term, {})[major] = n
+        by_major.setdefault(major, {})[term] = n
+    for term, sizes in by_term.items():
+        hidden |= {(m, term) for m in _within_college(sizes, v)}
+    for major, sizes in by_major.items():
+        hidden |= {(major, t) for t in _general.complementary(sizes)}
+    return hidden
+
+
+def _college_term_hidden(con: sqlite3.Connection) -> set[tuple[str, str]]:
+    """(college, term) cells withheld: in each term the colleges are one
+    partition of the university's total."""
+    by_term: dict[str, dict[str, int]] = {}
+    for college, term, n in con.execute(
+        """SELECT ap.college_code, r.term_code, COUNT(*)
+           FROM student_term_records r JOIN academic_programs ap USING (program_code)
+           GROUP BY 1, 2"""
+    ):
+        by_term.setdefault(str(term), {})[str(college)] = int(n)
+    return {
+        (c, term)
+        for term, sizes in by_term.items()
+        for c in _general.complementary(sizes)
+    }
 
 
 def _withhold(row: dict[str, Any], keys: tuple[str, ...] = _STAT_KEYS) -> None:
@@ -349,9 +424,19 @@ def _gpa_by_major(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Resul
         args,
     ).fetchall()
     minimum = int(p.get("min_students") or 20)
+    sizes = {
+        str(code): int(n)
+        for code, n in con.execute(
+            LATEST_RECORD_CTE
+            + """
+        SELECT ap.major_code, COUNT(*) FROM last
+        JOIN academic_programs ap USING (program_code) GROUP BY 1"""
+        )
+    }
+    hidden = _within_college(sizes, v)
     kept, withheld, small = [], 0, 0
     for code, name, college, n, avg in rows:
-        if _suppressed(n):
+        if _suppressed(n) or code in hidden:
             withheld += 1
             continue
         if n < minimum and not p.get("major"):
@@ -460,9 +545,32 @@ def _dfw_by_course(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Resu
                AND COUNT(DISTINCT s.term_code) >= ?""",
         (*args, min_sections, min_terms),
     ).fetchall()
+    # A term window other than all terms: a course is shown only when none of
+    # its terms had 1 to 9 students, so two windows cannot be subtracted to
+    # isolate a small term.
+    windowed = bool(p.get("term_from") or p.get("term_to")) and (
+        (p.get("term_from") or min(v.terms)) != min(v.terms)
+        or (p.get("term_to") or max(v.terms)) != max(v.terms)
+    )
+    small_terms: set[str] = set()
+    if windowed:
+        small_terms = {
+            str(r[0])
+            for r in con.execute(
+                f"""
+            SELECT s.course_id FROM sections s
+            JOIN courses c ON c.course_id = s.course_id
+            JOIN section_registrations r ON r.section_id = s.section_id
+            JOIN final_grades g ON g.registration_id = r.registration_id
+            WHERE g.grade IN {GRADED_SQL} AND c.grade_mode = 'standard'
+            GROUP BY s.course_id, s.term_code
+            HAVING COUNT(DISTINCT r.student_id) < ?""",
+                (MINIMUM_CELL_SIZE,),
+            )
+        }
     kept, withheld = [], 0
     for course, title, sections, terms, dfw, graded, students in rows:
-        if _suppressed(students):
+        if _suppressed(students) or course in small_terms:
             withheld += 1
             continue
         kept.append(
@@ -480,6 +588,12 @@ def _dfw_by_course(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Resu
     descending = p.get("order", "highest_first") == "highest_first"
     kept.sort(key=lambda r: (-r["_sort"] if descending else r["_sort"], r["course"]))
     notes = _withheld_note(withheld, "course")
+    if windowed and small_terms:
+        notes.append(
+            "With a term range, a course is shown only when every term it was taught "
+            f"had at least {MINIMUM_CELL_SIZE} students, so two ranges cannot be "
+            "subtracted to reveal a small class."
+        )
     if min_sections > 1 or min_terms > 1:
         notes.append(
             f"Only courses with at least {min_sections} sections in at least "
@@ -836,10 +950,16 @@ def _headcount_growth(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> R
         (start, end, start, end, *args),
     ).fetchall()
     minimum = int(p.get("min_start") or 40)
+    hidden_cells = _major_term_hidden(con, v)
     kept, withheld, small = [], 0, 0
     for code, name, a, b in rows:
         a, b = int(a), int(b)
-        if _suppressed(a) or _suppressed(b):
+        if (
+            _suppressed(a)
+            or _suppressed(b)
+            or (code, start) in hidden_cells
+            or (code, end) in hidden_cells
+        ):
             withheld += 1
             continue
         if a < minimum and not p.get("major"):
@@ -898,6 +1018,47 @@ def _scope_clauses(
     return clauses
 
 
+def _scope_hidden(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> set[str]:
+    """Terms withheld for a major or college scope (its headcount in the term
+    is a withheld cell of a partition whose total is published)."""
+    if p.get("major"):
+        return {t for m, t in _major_term_hidden(con, v) if m == p["major"]}
+    if p.get("college"):
+        return {t for c, t in _college_term_hidden(con) if c == p["college"]}
+    return set()
+
+
+def _enrollment_parts_hidden(
+    con: sqlite3.Connection, p: dict[str, Any], v: Vocab
+) -> set[str]:
+    """Terms withheld for a major or college because, in the term, the
+    withheld rows of its partition (a college's majors, or the colleges)
+    hold fewer than 10 students in some part (all, new, or continuing):
+    each row is sized by its smallest part, so the withheld rows' new and
+    continuing counts cannot be worked out from the parent either."""
+    if not (p.get("major") or p.get("college")):
+        return set()
+    level = "major_code" if p.get("major") else "college_code"
+    sizes: dict[tuple[str, str], dict[str, int]] = {}
+    for unit, college, term, n, new, cont in con.execute(
+        f"""SELECT ap.{level}, ap.college_code, r.term_code, COUNT(*),
+               SUM(st.entry_term = r.term_code), SUM(st.entry_term < r.term_code)
+        FROM student_term_records r JOIN students st ON st.student_id = r.student_id
+        JOIN academic_programs ap ON ap.program_code = r.program_code
+        GROUP BY 1, 2, 3"""
+    ):
+        part = (str(college) if p.get("major") else "", str(term))
+        smallest = min(int(n), int(new), int(cont))
+        bucket = sizes.setdefault(part, {})
+        bucket[str(unit)] = min(bucket.get(str(unit), smallest), smallest)
+    target = p.get("major") or p.get("college")
+    return {
+        term
+        for (_, term), part in sizes.items()
+        if target in _general.complementary(part)
+    }
+
+
 def _enrollment_by_term(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Result:
     where, args = _filters(_scope_clauses(p, v))
     rows = con.execute(
@@ -911,10 +1072,11 @@ def _enrollment_by_term(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) ->
     ).fetchall()
     out: list[dict[str, Any]] = []
     withheld = 0
+    hidden = _scope_hidden(con, p, v) | _enrollment_parts_hidden(con, p, v)
     for term, n, new, cont in rows:
         row: dict[str, Any] = {"term": term, "term_name": v.terms[term]}
         values = {"students": int(n), "new_students": int(new), "continuing": int(cont)}
-        if any(_suppressed(value) for value in values.values()):
+        if term in hidden or any(_suppressed(value) for value in values.values()):
             # Students = new + continuing, so one withheld part withholds all.
             withheld += 1
             _withhold(row, tuple(values))
@@ -1150,9 +1312,42 @@ def _standing_by_major(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> 
         GROUP BY ap.major_code""",
         args,
     ).fetchall()
+    scope_sql, scope_args = (
+        ("a.term_code = ?", (p["term"],))
+        if p.get("term")
+        else (
+            "1 = 1",
+            (),
+        )
+    )
+    sizes = {
+        str(m): int(n)
+        for m, n in con.execute(
+            f"""SELECT ap.major_code, COUNT(DISTINCT a.student_id)
+            FROM academic_standings a
+            JOIN student_term_records t ON t.student_id = a.student_id
+                   AND t.term_code = a.term_code
+            JOIN academic_programs ap ON ap.program_code = t.program_code
+            WHERE {scope_sql} GROUP BY 1""",
+            scope_args,
+        )
+    }
+    hidden = _within_college(sizes, v)
+    if p.get("term"):
+        by_major = _term_partition_hidden(
+            con,
+            """SELECT ap.major_code, a.term_code, COUNT(DISTINCT a.student_id)
+            FROM academic_standings a
+            JOIN student_term_records t ON t.student_id = a.student_id
+                   AND t.term_code = a.term_code
+            JOIN academic_programs ap ON ap.program_code = t.program_code
+            GROUP BY 1, 2""",
+            (),
+        )
+        hidden |= {m for m, terms in by_major.items() if p["term"] in terms}
     kept, withheld = [], 0
     for code, name, records, students, probation, suspension in rows:
-        if _suppressed(students):
+        if _suppressed(students) or code in hidden:
             withheld += 1
             continue
         kept.append(
@@ -1179,50 +1374,103 @@ def _standing_by_major(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> 
 # --- 13. graduation counts by major and year --------------------------------------
 
 
-def _graduations(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Result:
-    clauses: list[tuple[str, Any]] = []
-    if p.get("major"):
-        clauses.append(("ap.major_code = ?", p["major"]))
-    if p.get("academic_year"):
-        clauses.append(("t.academic_year = ?", p["academic_year"]))
-    if p.get("college"):
-        clauses.append(("ap.college_code = ?", p["college"]))
-    where, args = _filters(clauses)
-    by_year = p.get("group_by") == "year"
-    key_sql = "t.academic_year" if by_year else "ap.major_code"
-    rows = con.execute(
-        f"""
-        SELECT {key_sql}, COUNT(DISTINCT sap.student_id)
+def _graduation_hidden(
+    con: sqlite3.Connection, v: Vocab
+) -> tuple[
+    dict[tuple[str, str], int], set[tuple[str, str]], set[str], set[tuple[str, str]]
+]:
+    """(counts per (major, year), withheld (major, year), withheld major
+    totals, withheld (college, year)). Every partition with a published total
+    is protected: a college's majors in a year and over all years, a major's
+    years, the colleges in a year, and a college's years."""
+    counts: dict[tuple[str, str], int] = {}
+    for major, year, n in con.execute(
+        """SELECT ap.major_code, t.academic_year, COUNT(DISTINCT sap.student_id)
         FROM student_academic_programs sap
         JOIN academic_programs ap ON ap.program_code = sap.program_code
         JOIN academic_periods t ON t.term_code = sap.end_term
-        WHERE sap.status = 'graduated' {where}
-        GROUP BY 1 ORDER BY 1""",
-        args,
-    ).fetchall()
+        WHERE sap.status = 'graduated' GROUP BY 1, 2"""
+    ):
+        counts[(str(major), str(year))] = int(n)
+    by_year: dict[str, dict[str, int]] = {}
+    by_major: dict[str, dict[str, int]] = {}
+    totals: dict[str, int] = {}
+    college_year: dict[tuple[str, str], int] = {}
+    for (major, year), n in counts.items():
+        by_year.setdefault(year, {})[major] = n
+        by_major.setdefault(major, {})[year] = n
+        totals[major] = totals.get(major, 0) + n
+        key = (v.major_college.get(major, ""), year)
+        college_year[key] = college_year.get(key, 0) + n
+    hidden_my: set[tuple[str, str]] = set()
+    for year, sizes in by_year.items():
+        hidden_my |= {(m, year) for m in _within_college(sizes, v)}
+    for major, sizes in by_major.items():
+        hidden_my |= {(major, y) for y in _general.complementary(sizes)}
+    hidden_totals = _within_college(totals, v)
+    hidden_cy: set[tuple[str, str]] = set()
+    cy_by_year: dict[str, dict[str, int]] = {}
+    cy_by_college: dict[str, dict[str, int]] = {}
+    for (college, year), n in college_year.items():
+        cy_by_year.setdefault(year, {})[college] = n
+        cy_by_college.setdefault(college, {})[year] = n
+    for year, sizes in cy_by_year.items():
+        hidden_cy |= {(c, year) for c in _general.complementary(sizes)}
+    for college, sizes in cy_by_college.items():
+        hidden_cy |= {(college, y) for y in _general.complementary(sizes)}
+    return counts, hidden_my, hidden_totals, hidden_cy
+
+
+def _graduations(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Result:
+    counts, hidden_my, hidden_totals, hidden_cy = _graduation_hidden(con, v)
+    major, college, year = p.get("major"), p.get("college"), p.get("academic_year")
+    by_year = p.get("group_by") == "year"
+
+    def in_scope(m: str) -> bool:
+        return (not major or m == major) and (
+            not college or v.major_college.get(m) == college
+        )
+
     out: list[dict[str, Any]] = []
     withheld = 0
     if by_year:
-        for year, n in rows:
-            out.append(
-                {
-                    "academic_year": year,
-                    "graduates": SUPPRESSED_DISPLAY if _suppressed(n) else int(n),
-                }
-            )
-            withheld += _suppressed(n)
+        years = sorted({y for _, y in counts if not year or y == year})
+        for y in years:
+            n = sum(c for (m, yy), c in counts.items() if yy == y and in_scope(m))
+            if major:
+                hide = (major, y) in hidden_my
+            elif college:
+                hide = (college, y) in hidden_cy
+            else:
+                hide = False
+            if n == 0:
+                continue
+            if hide or _suppressed(n):
+                withheld += 1
+                out.append({"academic_year": y, "graduates": SUPPRESSED_DISPLAY})
+            else:
+                out.append({"academic_year": y, "graduates": n})
     else:
-        for code, n in rows:
-            if _suppressed(n):
+        majors = sorted({m for m, _ in counts if in_scope(m)})
+        for m in majors:
+            if year:
+                n = counts.get((m, year), 0)
+                hide = (m, year) in hidden_my
+            else:
+                n = sum(c for (mm, _), c in counts.items() if mm == m)
+                hide = m in hidden_totals
+            if n == 0:
+                continue
+            if hide or _suppressed(n):
                 withheld += 1
                 continue
             out.append(
                 {
-                    "major": code,
-                    "major_name": v.majors[code],
-                    "academic_year": p.get("academic_year") or "All years",
-                    "graduates": int(n),
-                    "_sort": int(n),
+                    "major": m,
+                    "major_name": v.majors[m],
+                    "academic_year": year or "All years",
+                    "graduates": n,
+                    "_sort": n,
                 }
             )
         out.sort(key=lambda r: (-r["_sort"], r["major"]))
@@ -1230,7 +1478,8 @@ def _graduations(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Result
     if withheld:
         notes.append(
             f"Counts of {SUPPRESSED_DISPLAY} graduates are withheld"
-            f"{'' if by_year else ' and not ranked'}."
+            f"{'' if by_year else ' and not ranked'}, with more where needed so a "
+            "withheld count cannot be worked out from a total."
         )
     return Result(_top(out, p.get("top")) if not by_year else out, notes)
 
@@ -1255,9 +1504,18 @@ def _holds_by_office(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Re
         GROUP BY h.responsible_office""",
         args,
     ).fetchall()
+    hidden: set[str] = set()
+    if p.get("term"):
+        by_office = _term_partition_hidden(
+            con,
+            """SELECT h.responsible_office, h.term_code, COUNT(DISTINCT h.student_id)
+            FROM person_holds h GROUP BY 1, 2""",
+            (),
+        )
+        hidden = {o for o, terms in by_office.items() if p["term"] in terms}
     kept, withheld = [], 0
     for office, holds, students, amount, with_amount in rows:
-        if _suppressed(students):
+        if _suppressed(students) or office in hidden:
             withheld += 1
             continue
         with_amount = int(with_amount or 0)
@@ -1305,9 +1563,20 @@ def _advising_coverage(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> 
         GROUP BY ap.major_code""",
         (term, *args),
     ).fetchall()
+    cells = _major_term_hidden(con, v)
+    sizes = {
+        str(m): int(n)
+        for m, n in con.execute(
+            """SELECT ap.major_code, COUNT(*) FROM student_term_records t
+            JOIN academic_programs ap USING (program_code) WHERE t.term_code = ?
+            GROUP BY 1""",
+            (term,),
+        )
+    }
+    hidden = _within_college(sizes, v) | {m for m, t in cells if t == term}
     kept, withheld = [], 0
     for code, name, students, advised in rows:
-        if _suppressed(students):
+        if _suppressed(students) or code in hidden:
             withheld += 1
             continue
         kept.append(
@@ -1345,9 +1614,10 @@ def _credit_hours(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Resul
     ).fetchall()
     out: list[dict[str, Any]] = []
     withheld = 0
+    hidden = _scope_hidden(con, p, v)
     for term, n, attempted, earned in rows:
         row: dict[str, Any] = {"term": term, "term_name": v.terms[term]}
-        if _suppressed(n):
+        if _suppressed(n) or term in hidden:
             withheld += 1
             row.update(
                 students=SUPPRESSED_DISPLAY,
@@ -1381,6 +1651,129 @@ _DFW_COLS = (
     Column("graded", "Graded registrations", "count"),
     Column("dfw", "D, F, or W", "count"),
     Column("dfw_rate", "D, F or withdrawal rate (%)", "pct"),
+)
+
+
+def _measure_by_group(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Result:
+    try:
+        rows, notes, columns = _general.run(con, p, v)
+    except _general.GeneralError as exc:
+        raise AnalysisError(str(exc)) from None
+    entity = {"major": "major", "college": "college", "term": "term"}
+    return Result(
+        rows,
+        notes,
+        tuple(
+            Column(key, label, kind, entity.get(key)) for key, label, kind in columns
+        ),
+    )
+
+
+def _grouping_param(name: str, label: str) -> Param:
+    return Param(
+        name,
+        label,
+        "choice",
+        choices=_general.GROUPING_KEYS,
+        choice_labels={k: g.noun for k, g in _general.GROUPINGS.items()},
+        shown=label + ": {}",
+    )
+
+
+def _filter_param(key: str) -> Param:
+    g = _general.GROUPINGS[key]
+    if key in ("major", "college"):
+        return Param(key, g.label, key)
+    if key == "entry_cohort":
+        return Param(key, g.label, "entry_cohort", shown="Only students who {}")
+    return Param(
+        key,
+        g.label,
+        "choice",
+        choices=tuple(k for k in g.values if k != _general.NOT_RECORDED),
+        choice_labels=dict(g.values),
+        shown="Only: {}",
+    )
+
+
+MEASURE_BY_GROUP = Analysis(
+    _general.ANALYSIS_ID,
+    "A measure by group",
+    "One reviewed measure (headcount, average GPA, dropout, stop-out, first-year "
+    "retention, 4- and 6-year graduation, time to degree, D, F or withdrawal and "
+    "withdrawal rates, probation, credits, major changes, advising, holds, Pell, "
+    "first-generation, international, part-time and on-campus shares) by up to two "
+    "groupings (major, college, class level, term, entry cohort, residency, "
+    "first-generation, Pell, gender, race and ethnicity, age at entry, admit type, "
+    "full or part time, housing, athletes, honors, modality), with filters on any "
+    "grouping value and the term window.",
+    (
+        Param(
+            "measure",
+            "Measure",
+            "choice",
+            required=True,
+            choices=_general.MEASURE_KEYS,
+            choice_labels={k: m.label for k, m in _general.MEASURES.items()},
+            shown="Measure: {}",
+        ),
+        _grouping_param("group_by", "Grouped by"),
+        _grouping_param("then_by", "Then by"),
+        *(_filter_param(k) for k in _general.GROUPING_KEYS if k != "term"),
+        Param("term_from", "From term", "term"),
+        Param("term_to", "To term", "term"),
+        Param(
+            "order",
+            "Order",
+            "choice",
+            choices=("highest_first", "lowest_first", "natural"),
+            choice_labels={
+                "highest_first": "highest first",
+                "lowest_first": "lowest first",
+                "natural": "in natural order",
+            },
+            shown="Ranked: {}",
+        ),
+        _top_param(None),
+    ),
+    (
+        "students (pseudonymous id counted, never returned)",
+        "student_profiles.gender",
+        "student_profiles.race_ethnicity",
+        "student_profiles.age_band_at_entry",
+        "student_profiles.athlete",
+        "student_profiles.honors",
+        "students.residency",
+        "students.first_generation",
+        "students.pell_recipient",
+        "students.entry_term",
+        "students.entry_type",
+        "students.enrollment_status",
+        "student_term_records (program, class level, hours, GPA)",
+        "student_term_enrollment (status, load, housing)",
+        "subsequent_enrollment.student_id (matched or not)",
+        "academic_standings.standing",
+        "student_academic_programs.status",
+        "student_appointments.status",
+        "person_holds.term_code",
+        "final_grades.grade",
+        "sections.modality",
+    ),
+    (
+        Column("major", "Major code", entity="major"),
+        Column("major_name", "Major"),
+        Column("college", "College code", entity="college"),
+        Column("college_name", "College"),
+        Column("term", "Term code", entity="term"),
+        Column("term_name", "Term"),
+        Column("group", "Group"),
+        Column("group_2", "Group"),
+        Column("students", "Students", "count"),
+        Column("denominator", "Denominator", "count"),
+        Column("numerator", "Numerator", "count"),
+        Column("value", "Value", "pct"),
+    ),
+    _measure_by_group,
 )
 
 ANALYSES: tuple[Analysis, ...] = (
@@ -1927,6 +2320,7 @@ ANALYSES: tuple[Analysis, ...] = (
         ),
         _credit_hours,
     ),
+    MEASURE_BY_GROUP,
 )
 
 ANALYSIS_BY_ID: dict[str, Analysis] = {a.id: a for a in ANALYSES}
@@ -1977,6 +2371,8 @@ class Catalog:
             return v.academic_years
         if param.kind == "category":
             return v.hold_categories
+        if param.kind == "entry_cohort":
+            return v.entry_cohorts
         raise ValueError(f"unknown parameter kind {param.kind!r}")
 
     def is_allowed(self, param: Param, value: Any) -> bool:
@@ -2008,6 +2404,8 @@ class Catalog:
             return v.instructor_label(value)
         if param.kind == "category":
             return str(value).replace("_", " ")
+        if param.kind == "entry_cohort":
+            return f"entered {value}"
         return str(param.choice_labels.get(value, value))
 
     def shown(self, param: Param, value: Any) -> str | None:
@@ -2031,7 +2429,7 @@ class Catalog:
             text = self.plain(param, value)
         return param.shown.replace("{label}", param.label).replace("{}", text)
 
-    def spec(self) -> dict[str, Any]:
+    def spec(self, instructors: bool = True) -> dict[str, Any]:
         """What the model planner receives: ids, titles, descriptions,
         parameter names and their allowed values, and the result columns a
         later step may take a parameter from. Values enumerated from the data
@@ -2050,6 +2448,12 @@ class Catalog:
                 }
                 if param.kind == "choice":
                     entry["allowed"] = list(param.choices)
+                elif param.kind == "instructor" and not instructors:
+                    entry["allowed_list"] = None
+                    entry["note"] = (
+                        "instructor names are given to the executive and admin "
+                        "roles only"
+                    )
                 else:
                     if param.kind not in value_lists:
                         value_lists[param.kind] = {

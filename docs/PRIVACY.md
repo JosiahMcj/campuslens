@@ -73,8 +73,15 @@ or no advising appointment this term, and each rule carries a plain-language rea
 that names the fields it read. Only the aggregate count and the per-rule counts may
 leave the server for the configured model endpoint, like the other findings. The
 per-student list of which rules fired never goes to a model. It appears only in the
-evidence drawer, which every signed-in role may read, and it carries pseudonymous
-identifiers only.
+evidence drawer, and only for executives and administrators, and it carries
+pseudonymous identifiers only.
+
+The student ids behind every figure work the same way. Executives and administrators
+see the list of pseudonymous records behind a figure, because their work acts on those
+records. Staff, reviewers, and Financial Aid staff see the figure, the per-office and
+per-indicator counts, and how many records sit behind it, and the evidence says the
+list is shown to executives and administrators only. The server removes the ids before
+the response leaves it, so they never reach those roles' browsers.
 
 We can see the data ourselves for maintenance and backups. That is the full list.
 
