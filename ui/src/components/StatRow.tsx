@@ -17,13 +17,18 @@ const STAT_IDS = ['M1', 'M2', 'M3', 'M4', 'M8'] as const
 export function StatRow({
   findings,
   onOpenEvidence,
+  ids = STAT_IDS,
+  label = 'The five headline measures',
 }: {
   findings: Findings
   onOpenEvidence: (findingId: string) => void
+  /** Which figures to show; the five headline figures by default. */
+  ids?: readonly string[]
+  label?: string
 }) {
   return (
-    <div className="stat-row" aria-label="The five headline measures">
-      {STAT_IDS.map((id) => {
+    <div className="stat-row" aria-label={label}>
+      {ids.map((id) => {
         const finding = getFinding(findings, id)
         if (!finding) return null
         const display = findingDisplay(finding)

@@ -179,6 +179,19 @@ measure 68ch.
 - **Governance marks:** granted (check in a circle), refused (no-entry circle, `--alert`),
   approved (check in a square, `--gold`), sent (arrow out of a tray). Always with a text label.
 
+- **First result screen:** an answer opens with `FirstResult` (`ui/src/components/FirstResult.tsx`),
+  above the long summary: the registration finding in one sentence (the number is a
+  `FindingLink`), the comparison period in `--ink-soft`, the four student-support counts, and the next step
+  with who decides, its status, the responsible office and any proposed deadline, on `--surface` with a
+  `--rule` border (not gold: gold stays on the decision itself). A `.data-tag` repeats
+  "Fictional data" beside the heading when the dataset is fictional. It closes with two
+  `.btn-lg` actions meant to be read from across a room: "View evidence" (`.btn-secondary`,
+  with a 2 px `--navy` border and `--navy` text at this size) and "Review next steps"
+  (`.btn-primary`). `.btn-lg` changes size only: `--text-lg`, 56 px tall. No number or date
+  here is computed in the UI.
+- **Delivery wording:** "Sent" is only said when email delivery is configured. Otherwise the
+  message is "Recorded, not emailed" and the screen says it was saved on this server.
+
 ## Phones
 
 Below 900 px the sidebar becomes a menu button (44 × 44) and a drawer. Every tap target is at

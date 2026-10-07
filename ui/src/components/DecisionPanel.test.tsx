@@ -50,9 +50,16 @@ const SENT: DispatchInfo = {
     status: 'sent',
     sent_by: 'staff@example.edu',
     sent_at: '2026-09-26T12:30:00+00:00',
-    provider: 'outbox',
-    provider_ref: 'bootstrap/1.eml',
+    provider: 'smtp',
+    provider_ref: '<1@example.edu>',
   },
+}
+
+/** Sent while no email delivery was set up: saved on the server only. */
+const RECORDED: DispatchInfo = {
+  ...SENT,
+  delivery: 'outbox',
+  dispatch: { ...SENT.dispatch!, provider: 'outbox', provider_ref: 'bootstrap/1.eml' },
 }
 
 function ready(info: DispatchInfo): Record<string, DispatchUiState> {
@@ -300,6 +307,48 @@ describe('DecisionPanel — next steps', () => {
     expect(html).not.toContain('dispatch-send')
     expect(html).not.toContain('Prepare the message')
     expect(html).not.toContain('nothing sent')
+  })
+
+  it('says a message was recorded, not emailed, when no email delivery is set up', () => {
+    const html = render(false, { decision: APPROVED, role: 'staff', dispatches: ready(RECORDED) })
+
+    expect(html).toContain('>Recorded, not emailed</span>')
+    expect(html).toContain('Recorded by staff@example.edu at Sep 26, ')
+    expect(html).toContain('nothing was emailed to Financial Aid')
+    expect(html).not.toContain('Sent by')
+    expect(html).not.toContain('>Sent</span>')
+    expect(html).not.toContain('outbox')
+
+    // Before it is recorded, the draft says the same thing up front.
+    const draft = render(false, {
+      decision: APPROVED,
+      role: 'staff',
+      dispatches: ready({ ...DRAFT, delivery: 'outbox' }),
+    })
+    expect(draft).toContain('Email delivery is not set up.')
+    expect(draft).toContain('Record message…')
+    expect(draft).not.toContain('Send…')
+
+    // With email delivery configured, the wording is unchanged.
+    const emailed = render(false, {
+      decision: APPROVED,
+      role: 'staff',
+      dispatches: ready({ ...DRAFT, delivery: 'smtp' }),
+    })
+    expect(emailed).toContain('Send…')
+    expect(emailed).not.toContain('Email delivery is not set up')
+  })
+
+  it('keeps the responsible office visible, with the proposed deadline when there is one', () => {
+    const waiting = render(true)
+    expect(waiting).toContain('Financial Aid carries out the follow-up')
+    expect(waiting).not.toContain('Deadline')
+
+    const proposed = render(true, {
+      dispatches: ready({ ...DRAFT, approved: false, dispatch: null, proposed_due: '2026-11-27' }),
+    })
+    expect(proposed).toContain('Nov 27, 2026 (proposed)')
+    expect(proposed).toContain('No deadline is saved until a person')
   })
 
   it('keeps a failed send plain, with the provider text folded', () => {

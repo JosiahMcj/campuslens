@@ -34,3 +34,15 @@
 .decision-card .decision-steps {
   column-gap: var(--space-3);
 }
+
+/* Who carries the decision out and by when: always visible on the card,
+   before and after approval. */
+.decision-card .decision-owner {
+  margin-top: var(--space-3);
+}
+
+.decision-card .decision-owner-note {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
