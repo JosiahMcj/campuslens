@@ -35,6 +35,7 @@ import time
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
+from statistics import NormalDist
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -1352,6 +1353,300 @@ def derive_extras(g: Generator) -> tuple[list[tuple], list[tuple], list[tuple]]:
     return profiles, term_rows, elsewhere
 
 
+# --------------------------------------------------------------------------
+# Graduate outcomes: a first-destination survey, a Clearinghouse-style match
+# for graduate and professional school, medical school applications, and
+# alumni gifts.
+#
+# Like the profiles above, these four tables are drawn after the simulation
+# from their own seeded stream (one per graduate, "outcomes:<id>"), so every
+# other table, the canonical hash of the 24 original tables, and every planted
+# fact before them are unchanged. One set of draws per graduate feeds all
+# four tables, so they agree: a survey answer of graduate school has a
+# matching enrollment record, and an accepted medical school applicant who
+# has started is enrolled in a medical program.
+#
+# Nothing is observed after the data end (the last day of Spring 2026): the
+# survey covers classes whose six-month point has passed, enrollments and
+# gifts are dated on or before that day, and an application counts only once
+# its decision is known (entering class 2026 or earlier).
+# --------------------------------------------------------------------------
+
+# Median full-time starting salary by major (dollars), before the GPA effect
+# and noise. Shaped like NACE first-destination results for a private
+# university: computing, engineering and nursing high; education, ministry,
+# the arts, and associate degrees lower.
+SALARY_BASE = {
+    "CSCI": 78000, "DATA": 73000, "SWDV": 71000, "ELEN": 72500, "MEEN": 70500,
+    "CVEN": 65000, "CYBR": 67000, "INFT": 60000, "NURS": 68000, "ACCT": 58500,
+    "FINC": 60000, "ECON": 57000, "BUAD": 52000, "MKTG": 48000, "MGMT": 50000,
+    "HRMG": 48000, "SPMT": 42000, "MATH": 58000, "PHYS": 58000, "CHEM": 50000,
+    "BIOL": 40500, "BIMS": 42000, "ENVS": 44000, "FRSC": 44000, "PSYC": 38000,
+    "SOCI": 38000, "CRIJ": 42500, "POLS": 44000, "LGLS": 42000, "INTL": 43000,
+    "HDFS": 36000, "COMM": 42000, "JOUR": 40000, "ENGL": 40000, "HIST": 40000,
+    "PHIL": 42000, "SPAN": 40000, "INDS": 40000, "GNST": 32000, "CHST": 30500,
+    "EDEL": 44000, "EDSE": 45000, "EDSP": 46500, "EDEC": 36000, "KINE": 38000,
+    "EXSC": 40000, "HLSC": 42000, "PUBH": 44000, "SOWK": 40000, "HCAD": 48500,
+    "BIBL": 34000, "THEO": 34500, "MINS": 36000, "YFMN": 34000, "MUSC": 34000,
+    "WRSP": 34500, "MUED": 44000, "ARTS": 38000, "GDES": 42000, "THEA": 33500,
+}
+DEFAULT_SALARY = 40000
+
+# Share of a major's graduates who apply to medical school (MD or DO), at a
+# GPA of 3.50 or more; fewer with lower GPAs (MED_APPLY_GPA).
+MED_APPLY = {"BIOL": 0.30, "BIMS": 0.32, "CHEM": 0.24, "PHYS": 0.06, "EXSC": 0.05,
+             "HLSC": 0.05, "PSYC": 0.03, "MATH": 0.03, "NURS": 0.005, "KINE": 0.02,
+             "PUBH": 0.03, "FRSC": 0.03}
+DEFAULT_MED_APPLY = 0.002
+# (GPA floor, share of the GPA-3.50 application rate, chance of acceptance),
+# highest band first. Shaped like AAMC acceptance by GPA.
+MED_BANDS = ((3.70, 1.10, 0.76), (3.50, 1.00, 0.60), (3.30, 0.75, 0.42),
+             (3.00, 0.45, 0.26), (0.00, 0.06, 0.08))
+
+# Graduate or professional school within a year of graduating, before the
+# GPA effect.
+GRAD_SCHOOL = {
+    "BIOL": 0.26, "BIMS": 0.28, "CHEM": 0.34, "PHYS": 0.40, "MATH": 0.24,
+    "PSYC": 0.32, "EXSC": 0.32, "KINE": 0.22, "HLSC": 0.26, "PUBH": 0.20,
+    "SOWK": 0.30, "HDFS": 0.18, "HIST": 0.22, "PHIL": 0.30, "POLS": 0.26,
+    "LGLS": 0.30, "INTL": 0.22, "ENGL": 0.20, "SPAN": 0.16, "THEO": 0.36,
+    "BIBL": 0.32, "MINS": 0.18, "YFMN": 0.12, "MUSC": 0.20, "MUED": 0.10,
+    "SOCI": 0.20, "CRIJ": 0.14, "COMM": 0.10, "FRSC": 0.18, "ENVS": 0.18,
+    "NURS": 0.05, "CSCI": 0.08, "DATA": 0.12, "EDEL": 0.08, "EDSE": 0.10,
+    "EDSP": 0.12, "ACCT": 0.14, "ECON": 0.18,
+}
+DEFAULT_GRAD_SCHOOL = 0.10
+# Program type of a non-medical graduate enrollment: (law, doctoral, other
+# professional) shares; the rest are master's programs.
+PROGRAM_MIX = {
+    "POLS": (0.35, 0.05, 0.0), "LGLS": (0.55, 0.0, 0.0), "HIST": (0.20, 0.12, 0.0),
+    "PHIL": (0.30, 0.15, 0.0), "CRIJ": (0.20, 0.0, 0.0), "INTL": (0.18, 0.05, 0.0),
+    "ECON": (0.10, 0.10, 0.0), "ENGL": (0.10, 0.10, 0.0), "COMM": (0.06, 0.0, 0.0),
+    "CHEM": (0.0, 0.35, 0.12), "PHYS": (0.0, 0.50, 0.0), "MATH": (0.0, 0.25, 0.0),
+    "PSYC": (0.0, 0.20, 0.05), "BIOL": (0.0, 0.12, 0.30), "BIMS": (0.0, 0.08, 0.40),
+    "EXSC": (0.0, 0.0, 0.55), "KINE": (0.0, 0.0, 0.45), "HLSC": (0.0, 0.0, 0.40),
+    "PUBH": (0.0, 0.0, 0.10), "THEO": (0.0, 0.15, 0.0), "BIBL": (0.0, 0.10, 0.0),
+}
+DEFAULT_PROGRAM_MIX = (0.02, 0.03, 0.02)
+
+# Full-time employment weight among survey answers other than graduate
+# school, by major group.
+EMPLOY_FT = {
+    "NURS": 0.92, "CSCI": 0.82, "DATA": 0.82, "SWDV": 0.82, "ELEN": 0.86,
+    "MEEN": 0.85, "CVEN": 0.86, "CYBR": 0.80, "INFT": 0.78, "ACCT": 0.86,
+    "FINC": 0.80, "EDEL": 0.84, "EDSE": 0.82, "EDSP": 0.86, "MUED": 0.80,
+    "HCAD": 0.78, "BUAD": 0.74, "MGMT": 0.74, "MKTG": 0.72, "ECON": 0.74,
+    "ARTS": 0.56, "GDES": 0.62, "THEA": 0.50, "MUSC": 0.52, "WRSP": 0.58,
+    "MINS": 0.64, "YFMN": 0.66, "BIBL": 0.58, "THEO": 0.56, "GNST": 0.55,
+    "CHST": 0.55, "BIOL": 0.60, "PSYC": 0.60, "HDFS": 0.62, "SOCI": 0.60,
+    "ENGL": 0.60, "HIST": 0.58, "PHIL": 0.56,
+}
+DEFAULT_EMPLOY_FT = 0.68
+SERVICE_MAJORS = {"MINS": 0.10, "YFMN": 0.08, "BIBL": 0.08, "THEO": 0.06, "WRSP": 0.05,
+                  "CRIJ": 0.05, "INTL": 0.06, "SOWK": 0.04}
+SECTOR_BY_COLLEGE = {
+    "CAS": (("business", 0.45), ("education", 0.15), ("nonprofit", 0.12),
+            ("government", 0.13), ("healthcare", 0.15)),
+    "CSB": (("business", 0.30), ("government", 0.25), ("nonprofit", 0.25),
+            ("healthcare", 0.10), ("education", 0.10)),
+    "COB": (("business", 0.86), ("nonprofit", 0.06), ("government", 0.05),
+            ("healthcare", 0.03)),
+    "CEC": (("business", 0.86), ("government", 0.12), ("education", 0.02)),
+    "COE": (("education", 0.85), ("nonprofit", 0.08), ("business", 0.07)),
+    "CNH": (("healthcare", 0.84), ("nonprofit", 0.07), ("government", 0.05),
+            ("business", 0.04)),
+    "CTA": (("church_ministry", 0.50), ("nonprofit", 0.18), ("education", 0.12),
+            ("business", 0.20)),
+}
+
+# Alumni giving. A graduate's yearly chance of a first gift grows with years
+# since graduating (the young-alumni pattern); a past donor gives again with
+# REPEAT_GIFT. Multipliers by major (ministry and theology graduates of a
+# Christian university give most often), athletes, and honors students.
+FIRST_GIFT_BASE = 0.020
+FIRST_GIFT_GROWTH = 0.40  # per fiscal year since the graduation year
+REPEAT_GIFT = 0.48
+GIVE_MAJOR = {"MINS": 2.6, "YFMN": 1.4, "BIBL": 1.4, "THEO": 1.4, "WRSP": 1.4, "CHST": 1.2,
+              "MUED": 1.2, "NURS": 1.15, "EDEL": 1.1, "EDSE": 1.1, "ACCT": 1.1, "FINC": 1.1,
+              "MEEN": 1.0, "ELEN": 1.0, "CSCI": 0.9, "GNST": 0.6, "INDS": 0.8, "ARTS": 0.8,
+              "THEA": 0.8, "CRIJ": 0.8, "SPMT": 1.1, "KINE": 1.05}
+DESIGNATIONS = ("annual_fund", "scholarships", "athletics", "college_department",
+                "missions_ministry")
+
+
+_STANDARD_NORMAL = NormalDist()
+
+
+def _fiscal_year(d: date) -> int:
+    """Fiscal year ending June 30: July 2024 to June 2025 is 2025."""
+    return d.year + 1 if d.month >= 7 else d.year
+
+
+def _snap_start(d: date) -> date:
+    """The next academic start on or after ``d``: January 12 or August 20."""
+    for candidate in (date(d.year, 1, 12), date(d.year, 8, 20), date(d.year + 1, 1, 12)):
+        if candidate >= d:
+            return candidate
+    return date(d.year + 1, 8, 20)
+
+
+def derive_outcomes(g: Generator, profiles: list[tuple]) -> tuple[
+        list[tuple], list[tuple], list[tuple], list[tuple]]:
+    """(first destination, graduate enrollment, medical school applications,
+    alumni gifts) for every graduate. Pure function of the simulated state and
+    the seed; one stream per graduate, separate from every other stream."""
+    data_end = g.terms[-1].end
+    profile_of = {row[0]: row for row in profiles}
+    graduates = sorted((s for s in g.students
+                        if s.status == "graduated" and s.exit_term is not None),
+                       key=lambda s: s.sid)
+    first_dest: list[tuple] = []
+    grad_enroll: list[tuple] = []
+    med_apps: list[tuple] = []
+    gifts: list[tuple] = []
+    for s in graduates:
+        rng = random.Random(f"{SEED}:outcomes:{s.sid}")
+        program = g.programs[s.program]
+        major = program.major
+        bachelor = program.award == "Bachelor"
+        grad_date = g.term_by_code[s.exit_term].end
+        gpa_now = s.cum_gpa() or 2.0
+        _sid, _gender, _race, _age, athlete, honors = profile_of[s.sid]
+
+        # Every draw is made for every graduate, in a fixed order, whether or
+        # not it is used, so one graduate's outcome never shifts another's.
+        u_apply, u_accept, u_gap, u_md = (rng.random() for _ in range(4))
+        u_grad, u_later, u_later_gap, u_mix, u_control, u_dec = (
+            rng.random() for _ in range(6))
+        u_respond, u_outcome, u_sector, u_salary_reported = (rng.random() for _ in range(4))
+        salary_noise = rng.gauss(0.0, 0.14)
+
+        # Medical school (bachelor's graduates only).
+        band = next(b for b in MED_BANDS if gpa_now >= b[0])
+        p_apply = MED_APPLY.get(major, DEFAULT_MED_APPLY) * band[1]
+        med_accepted = False
+        med_year: int | None = None
+        if bachelor and u_apply < p_apply:
+            med_year = grad_date.year + 1 + (1 if u_gap < 0.4 else 0)
+            p_accept = min(0.9, band[2] + (0.05 if honors else 0.0))
+            med_accepted = u_accept < p_accept
+            if med_year <= data_end.year:
+                applied_to = "MD" if u_md < 0.45 else "DO" if u_md < 0.60 else "MD and DO"
+                med_apps.append((s.sid, med_year, applied_to, int(med_accepted)))
+            else:
+                med_accepted = False  # decision not known by the data end
+
+        # Graduate and professional school (Clearinghouse match).
+        gpa_factor = max(0.2, 0.4 + 0.4 * (gpa_now - 2.0))
+        start: date | None = None
+        program_type = "masters"
+        if med_accepted and med_year is not None:
+            start = date(med_year, 8, 1)
+            program_type = "medical"
+        elif bachelor and u_grad < 1.2 * GRAD_SCHOOL.get(major, DEFAULT_GRAD_SCHOOL) * gpa_factor:
+            start = _snap_start(grad_date + timedelta(days=30 if u_dec < 0.6 else 120))
+        elif bachelor and u_later < 0.10 * gpa_factor:
+            months = 13 + int(u_later_gap * 24)
+            start = _snap_start(grad_date + timedelta(days=30 * months))
+        if start is not None and program_type != "medical":
+            law, doctoral, other = PROGRAM_MIX.get(major, DEFAULT_PROGRAM_MIX)
+            program_type = ("law" if u_mix < law else "doctoral" if u_mix < law + doctoral
+                            else "other_professional" if u_mix < law + doctoral + other
+                            else "masters")
+        if start is not None and start <= data_end:
+            control = "private" if u_control < 0.38 else "public"
+            grad_enroll.append((s.sid, start.isoformat(), program_type, control))
+        else:
+            start = None
+
+        # First-destination survey, six months after graduating (bachelor's
+        # graduates whose six-month point is on or before the data end).
+        collected = grad_date + timedelta(days=183)
+        if bachelor and collected <= data_end:
+            p_respond = 0.63 + (0.07 if honors else 0.0) + 0.05 * (gpa_now - 3.0)
+            if u_respond < p_respond:
+                if start is not None and start <= collected:
+                    outcome = "graduate_school"
+                else:
+                    ft = EMPLOY_FT.get(major, DEFAULT_EMPLOY_FT) * (1 + 0.3 * (gpa_now - 3.0))
+                    pt = 0.13 if program.college == "CTA" else 0.07
+                    service = SERVICE_MAJORS.get(major, 0.015)
+                    seeking = max(0.03, 0.10 * (1 - 0.4 * (gpa_now - 3.0)))
+                    weights = (("employed_full_time", ft), ("employed_part_time", pt),
+                               ("military_service", service), ("seeking", seeking),
+                               ("not_seeking", 0.03))
+                    total = sum(w for _, w in weights)
+                    acc = 0.0
+                    outcome = weights[-1][0]
+                    for name, w in weights:
+                        acc += w / total
+                        if u_outcome < acc:
+                            outcome = name
+                            break
+                sector: str | None = None
+                if outcome in ("employed_full_time", "employed_part_time"):
+                    acc = 0.0
+                    options = SECTOR_BY_COLLEGE[program.college]
+                    sector = options[-1][0]
+                    for name, w in options:
+                        acc += w
+                        if u_sector < acc:
+                            sector = name
+                            break
+                elif outcome == "military_service":
+                    sector = "military" if major == "CRIJ" or u_sector < 0.3 else "nonprofit"
+                salary: int | None = None
+                if outcome == "employed_full_time" and u_salary_reported < 0.86:
+                    base = SALARY_BASE.get(major, DEFAULT_SALARY)
+                    value = (base * (1 + 0.14 * (gpa_now - 3.2)) * (1.02 if honors else 1.0)
+                             * math.exp(salary_noise))
+                    salary = int(round(value / 500.0)) * 500
+                first_dest.append((s.sid, s.exit_term, collected.isoformat(), outcome,
+                                   sector, salary))
+
+        # Alumni gifts, from graduation to the data end, by fiscal year.
+        k = GIVE_MAJOR.get(major, 1.0)
+        k *= 1.5 if athlete else 1.0
+        k *= 1.30 if honors else 1.0
+        k *= 0.85 if s.first_gen else 1.0
+        k *= 0.90 if s.pell else 1.0
+        gift_median = 20 + SALARY_BASE.get(major, DEFAULT_SALARY) / 1000.0
+        donor = False
+        for fy in range(_fiscal_year(grad_date), _fiscal_year(data_end) + 1):
+            fy_start = max(date(fy - 1, 7, 1), grad_date + timedelta(days=1))
+            fy_end = min(date(fy, 6, 30), data_end)
+            u_give, u_twice, u_day, u_day2, u_amt, u_amt2, u_des, u_big = (
+                rng.random() for _ in range(8))
+            if fy_end < fy_start:
+                continue
+            years_out = fy - _fiscal_year(grad_date)
+            p = REPEAT_GIFT if donor else FIRST_GIFT_BASE * k * (1 + FIRST_GIFT_GROWTH * years_out)
+            if u_give >= min(0.9, p):
+                continue
+            donor = True
+            span = (fy_end - fy_start).days
+            for u_d, u_a in ((u_day, u_amt), (u_day2, u_amt2))[:2 if u_twice < 0.15 else 1]:
+                gift_day = fy_start + timedelta(days=int(u_d * (span + 1)))
+                # Lognormal around the median, from the uniform draw.
+                z = _STANDARD_NORMAL.inv_cdf(min(max(u_a, 1e-9), 1 - 1e-9))
+                amount = gift_median * math.exp(0.85 * z)
+                if u_big < 0.01:
+                    amount *= 20
+                amount_int = max(5, int(round(amount / 5.0)) * 5)
+                if athlete and u_des < 0.35:
+                    designation = "athletics"
+                elif program.college == "CTA" and u_des < 0.30:
+                    designation = "missions_ministry"
+                else:
+                    designation = DESIGNATIONS[0] if u_des < 0.60 else (
+                        "scholarships" if u_des < 0.78 else "college_department"
+                        if u_des < 0.93 else "missions_ministry")
+                gifts.append((s.sid, gift_day.isoformat(), fy, amount_int, designation))
+    gifts.sort(key=lambda row: (row[1], row[0], row[3]))
+    return first_dest, grad_enroll, med_apps, [(n, *row) for n, row in
+                                               enumerate(gifts, start=1)]
+
+
 SCHEMA_SQL = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE grade_scale (
@@ -1471,6 +1766,33 @@ CREATE TABLE subsequent_enrollment (
     student_id TEXT PRIMARY KEY REFERENCES students(student_id),
     found_term TEXT NOT NULL REFERENCES academic_periods(term_code),
     sector TEXT NOT NULL CHECK (sector IN ('four_year','two_year')));
+CREATE TABLE first_destination (
+    student_id TEXT PRIMARY KEY REFERENCES students(student_id),
+    graduation_term TEXT NOT NULL REFERENCES academic_periods(term_code),
+    collected_date TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('employed_full_time','employed_part_time',
+        'graduate_school','military_service','seeking','not_seeking')),
+    employer_sector TEXT CHECK (employer_sector IN ('business','healthcare','education',
+        'government','nonprofit','church_ministry','military')),
+    starting_salary INTEGER CHECK (starting_salary > 0));
+CREATE TABLE graduate_enrollment (
+    student_id TEXT PRIMARY KEY REFERENCES students(student_id),
+    enrollment_begin_date TEXT NOT NULL,
+    program_type TEXT NOT NULL CHECK (program_type IN ('masters','doctoral','medical','law',
+        'other_professional')),
+    institution_control TEXT NOT NULL CHECK (institution_control IN ('public','private')));
+CREATE TABLE medical_school_applications (
+    student_id TEXT PRIMARY KEY REFERENCES students(student_id),
+    entering_year INTEGER NOT NULL,
+    applied_to TEXT NOT NULL CHECK (applied_to IN ('MD','DO','MD and DO')),
+    accepted INTEGER NOT NULL CHECK (accepted IN (0, 1)));
+CREATE TABLE alumni_gifts (
+    gift_id INTEGER PRIMARY KEY, student_id TEXT NOT NULL REFERENCES students(student_id),
+    gift_date TEXT NOT NULL, fiscal_year INTEGER NOT NULL,
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    designation TEXT NOT NULL CHECK (designation IN ('annual_fund','scholarships','athletics',
+        'college_department','missions_ministry')));
+CREATE INDEX idx_gifts_student ON alumni_gifts(student_id);
 CREATE INDEX idx_sections_course ON sections(course_id, term_code);
 CREATE INDEX idx_regs_student ON section_registrations(student_id, term_code);
 CREATE INDEX idx_regs_section ON section_registrations(section_id);
@@ -1564,6 +1886,11 @@ def write_db(g: Generator, out: Path) -> None:
     con.executemany("INSERT INTO student_profiles VALUES (?,?,?,?,?,?)", profiles)
     con.executemany("INSERT INTO student_term_enrollment VALUES (?,?,?,?,?,?)", term_rows)
     con.executemany("INSERT INTO subsequent_enrollment VALUES (?,?,?)", elsewhere)
+    first_dest, grad_enroll, med_apps, gifts = derive_outcomes(g, profiles)
+    con.executemany("INSERT INTO first_destination VALUES (?,?,?,?,?,?)", first_dest)
+    con.executemany("INSERT INTO graduate_enrollment VALUES (?,?,?,?)", grad_enroll)
+    con.executemany("INSERT INTO medical_school_applications VALUES (?,?,?,?)", med_apps)
+    con.executemany("INSERT INTO alumni_gifts VALUES (?,?,?,?,?,?)", gifts)
     con.commit()
     con.execute("VACUUM")
     con.close()
