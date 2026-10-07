@@ -1811,6 +1811,6 @@ def _outcome_notes(con: sqlite3.Connection, m: Measure) -> list[str]:
     if m.kind == "money":
         notes.append(
             f"Dollar figures are rounded to the nearest ${m.rounding:,}; a figure "
-            f"over {SUPPRESSED_DISPLAY} people is withheld."
+            f"for a group of {SUPPRESSED_DISPLAY} people is withheld."
         )
     return notes
