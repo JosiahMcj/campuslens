@@ -43,6 +43,7 @@ and approvals use the same marks everywhere.
 | `--scrim` | black 35 % | black 50 % | behind the phone drawer |
 | `--brand-deep` / `--brand-mid` / `--brand-teal` | `#0B2A5B` / `#1667C7` / `#1DB89A` | `#3D7FE0` / `#3B9BE8` / `#2FD0B0` | the CampusLens mark's gradient and the sign-in screen's backdrop, nothing else |
 | `--brand-glint` / `--brand-glint-soft` | `#5EA2EE` / `#9CC6F4` | `#9CC6F4` / `#C6DEFA` | the two highlights inside the mark's lens |
+| `--series-1` … `--series-7` | `#2A78D6` `#EB6834` `#1BAF7A` `#EDA100` `#E87BA4` `#008300` `#4A3AA7` | `#3987E5` `#D95926` `#199E70` `#C98500` `#D55181` `#008300` `#9085E9` | the Data page's chart groups only, in this fixed order (a group keeps its slot whatever else is shown); validated for colour-blind separation on `--surface` in both themes. The "All students" reference is a dashed `--ink` line, never a series colour |
 
 Shadows are tokens too: `--shadow` (cards that float, the composer), `--shadow-float` (menus),
 `--shadow-panel` (kept for a floating panel), `--shadow-drawer` (the phone drawer). Every token is
@@ -50,7 +51,7 @@ declared once, in the token block at the top of `ui/src/index.css`; no other sty
 one.
 
 Rules: one accent (`--navy`) for action; gold belongs only to the decision; red only to refusals,
-errors and destructive actions. The `--brand-*` colours belong to the mark and the sign-in screen's backdrop only. No other hues. No raw hex or rgb outside the token block.
+errors and destructive actions. The `--brand-*` colours belong to the mark and the sign-in screen's backdrop only. The `--series-*` colours belong to the Data page's charts only. No other hues. No raw hex or rgb outside the token block.
 A question CampusLens does not answer from Explore (counseling records, a single student, a
 prediction) is not an error: it is a calm `--surface` card with a `--rule` border, headed "Not
 something CampusLens answers", with a plain line saying why. Red stays for real errors and
@@ -192,6 +193,21 @@ measure 68ch.
 - **Delivery wording:** "Sent" is only said when email delivery is configured. Otherwise the
   message is "Recorded, not emailed" and the screen says it was saved on this server.
 
+- **Data page:** `DataPage.tsx` with `DataChart.tsx` (hand-written SVG). The dashboards a role
+  may open (Students, Student finances, Campus life and academics) as segmented toggles, then the
+  filter bar: From and To academic years, Students (one group, chosen from one select grouped
+  by attribute) and Compare by on one row, a line saying a chart shows one group or compares
+  groups, never both (choosing one clears the other), and the chosen group as a removable chip
+  with "Show all students". Cards (`--surface`, `--rule` hairline) fit as many 26rem columns as there is room for,
+  one on a phone. Each card: title, the measure and its x axis in `--ink-soft`, the latest value
+  for a single series, the chart, a legend whose entries are buttons that narrow every chart to
+  that group, notes, and a "Show the figures" fold with the table. Lines are 2 px with dots,
+  bars, counts, money and rates start at zero; an average (GPA) fits its data with a minimum span and a break mark on the foot of its value axis. A
+  withheld point is never drawn: the line breaks and a dashed `--ink-soft` guide marks the place;
+  its tooltip and table cell say "Withheld: fewer than 10 students, or it could reveal a group that
+  small". The chart takes focus; the arrow keys, Home and End move through the terms and the
+  tooltip names the measure, the group and the term. Choices are remembered per account in this
+  browser.
 - **Find a student:** the one page that shows a person's name (`StudentLookup.tsx`). A `.data-tag`
   and one sentence say the directory is fictional and that searches are logged. One labelled
   search field with a `.btn-primary` Search; it searches on Search, never per keystroke.

@@ -334,11 +334,30 @@ events:
   "What is the DFW rate in Theories of Counseling?" is answered. Questions that rank or
   list students, name an id in any form, or ask who will do something are treated as
   questions about individuals (answered only with totals for students like that), and any
-  id or long number a person types is replaced before the question is recorded. A
-  person's name asked about ("Did Jane Doe pass MEEN 3310?", "will jane drop out", "Is
-  José Núñez on probation?", several names in one question) is caught in any case or
-  script, recorded as "[name withheld]", answered only with group totals from the rule
-  planner, and never sent to a model.
+  id or long number a person types is replaced before the question is recorded.
+- **Names are masked before the model and the audit log by an allow list**
+  (`safe_text` in `explore/privacy.py`). The model planner and the audit log receive the
+  question with only allow-listed words kept, in any case or position: common English and
+  campus words, catalog names (majors, colleges, subjects, course codes and titles,
+  instructors, terms), campus phrases (Student Accounts, Main Campus, ...), US states,
+  known acronyms and the planner's own vocabulary. Every other word becomes "[name]"
+  ("[name withheld]" in the log), an email, handle or quoted single word "[id]", and a
+  student id or long number "[number withheld]".
+- **A separate, stricter detector decides the guarded path** (`mask_names`): a person
+  named after did/is/will/how did ("Did May pass", "How did Christian do"), a capitalized
+  name starting a sentence before a record verb ("Ravi failed MEEN 3310"), unknown words
+  in capitals ("Did KIM pass"), lowercase names before a record verb or a possessive
+  ("has jose garcia registered", "mary jane watson's gpa"), emails and handles. Such a
+  question is audited as `individual_student` (or `prediction`) and answered only with
+  group totals from the rule planner, or with suggestions; the model planner is not
+  asked. A counseling word used as a name ("Will Faith graduate?") is read as a person.
+  The words the detector finds are masked in the audit log even when they are common
+  words ("May").
+- **The residual limit.** A name that is also an allow-listed word and is not in a name
+  position the detector knows can still pass unmasked: "Lee" or "May" in a sentence the
+  patterns do not recognize, or a student who shares a course or major name. The tests
+  (`tests/test_explore_name_mask.py`) check every adversarial phrasing we have and that
+  none of 240+ ordinary questions loses a word.
 - **Instructor identities are for the executive and admin roles.** Staff and
   reviewers never see an instructor's id or name, not even in the parameters under "How
   this was answered", and the model planner receives the instructor list only for those
