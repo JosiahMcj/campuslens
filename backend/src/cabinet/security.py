@@ -216,6 +216,9 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/inbox"): ALL_ROLES,
     ("GET", "/inbox/recipients"): ALL_ROLES,
     ("POST", "/inbox"): ALL_ROLES,
+    # The AI employees (cabinet.staff): titles, jobs, scopes in plain words
+    # and how many requests each handled today. No student data.
+    ("GET", "/staff"): ALL_ROLES,
 }
 
 # Prefix rules, checked when the exact table misses (routes with path

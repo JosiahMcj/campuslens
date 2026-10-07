@@ -13,8 +13,11 @@ caller's institution chain:
   related questions or totals for students like that, never the protected
   data), when a request is off-topic, and when instructor rows are withheld
   from a role;
-- ``data.granted`` per step, before the step reads anything: the analysis id,
-  the fields it reads, ``aggregate_only: true``;
+- ``data.granted`` per step and per AI employee, before the step reads
+  anything: the Chief of Staff delegates each step to the employee whose
+  department owns it (``cabinet.staff``), and each employee working the step
+  is the actor of its own event, with the fields it reads (inside its
+  areas, ``permissions.grant_school_fields``), ``aggregate_only: true``;
 - ``explore.answered`` once per answer: step ids and row counts, never values.
 
 The school database is one shared demonstration university; every
@@ -73,14 +76,22 @@ from cabinet.explore.privacy import (
     OFF_TOPIC_REFUSAL,
     PREDICTION_LEAD,
     aggregate_form,
-    counseling_message,
     is_forward_looking,
     is_off_topic,
     mentions_campus_data,
     refusal_for,
     strip_names,
 )
+from cabinet.permissions import grant_school_fields
 from cabinet.provider import Provider, provider_from_env
+from cabinet.staff import (
+    asked_of,
+    delegate_step,
+    delegation_line,
+    denial_message,
+    step_fields,
+    title,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +242,8 @@ async def post_explore_stream(
 ) -> StreamingResponse | JSONResponse:
     """The same answer as POST /explore, streamed as newline-delimited JSON
     events while it is worked on (``understood``, ``plan``, ``reading``,
-    ``step``, ``suppression``, ``writing``, ``verifying``), ending in
+    ``delegation`` (the Chief of Staff hands a step to the AI employees who
+    work it), ``step``, ``suppression``, ``writing``, ``verifying``), ending in
     ``done`` with the body POST /explore returns, ``refused``, or ``error``.
     A request /explore would answer with a status other than 200 (an empty
     or too long question, the school data missing) gets that same plain
@@ -366,10 +378,11 @@ def _explore(
             category: str,
             reason: str,
             before: str = "planning and any model call",
+            actor: str = EXPLORE_ACTOR,
         ) -> None:
             audit.append(
                 "data.refused",
-                actor=EXPLORE_ACTOR,
+                actor=actor,
                 payload={
                     "task_id": task_id,
                     "question_event_id": asked["id"],
@@ -415,7 +428,14 @@ def _explore(
             # Protected data: recorded as a refusal, and never answered. The
             # reply is related questions or totals for students like that.
             category, reason = guard
-            refuse(category, reason)
+            # The AI employee the question was put to (its topic's
+            # department, else the signed-in department's own, else the
+            # Chief of Staff), by keywords only: it is the refusal's actor
+            # and the denial names it.
+            employee = (
+                asked_of(question, role) if category == "counseling" else EXPLORE_ACTOR
+            )
+            refuse(category, reason, actor=employee)
             redirect = category
             if category == "counseling":
                 # No figure at all, not even a total.
@@ -423,9 +443,7 @@ def _explore(
                     content={
                         "refused": False,
                         "redirect": category,
-                        # Explore answers as the Chief of Staff (the
-                        # audit actor), so the denial names it.
-                        "message": counseling_message(EXPLORE_ACTOR),
+                        "message": denial_message(employee),
                         "answer": [],
                         "steps": [],
                         "suggestions": list(COUNSELING_SUGGESTIONS),
@@ -521,10 +539,30 @@ def _explore(
             }
         )
         emit({"type": "reading", "text": _reading_text(con)})
+        # The AI employees who worked the answer, in the order they joined.
+        answered_by: list[str] = []
+        instructor_rows = role in INSTRUCTOR_ROLES
 
         def granted(
             index: int, analysis_id: str, fields: tuple[str, ...], withheld: bool
         ) -> None:
+            params = planned[index].params
+            workers = delegate_step(
+                analysis_id, params, fields, instructor_rows=instructor_rows
+            )
+            roles = [worker for worker, _ in workers]
+            lead = roles[0]
+            for worker in roles:
+                if worker not in answered_by:
+                    answered_by.append(worker)
+            emit(
+                {
+                    "type": "delegation",
+                    "index": index,
+                    "employees": [title(r) for r in roles],
+                    "text": delegation_line(roles, _describe(planned[index])),
+                }
+            )
             emit(
                 {
                     "type": "step",
@@ -533,21 +571,30 @@ def _explore(
                     "title": _describe(planned[index]),
                 }
             )
-            audit.append(
-                "data.granted",
-                actor=EXPLORE_ACTOR,
-                payload={
-                    "task_id": task_id,
+            used = step_fields(analysis_id, params, fields)
+            for worker, worker_fields in workers:
+                extra: dict[str, Any] = {
                     "step": index,
                     "analysis_id": analysis_id,
-                    "fields_read": list(fields),
-                    "aggregate_only": True,
-                },
-            )
+                    "delegated_by": EXPLORE_ACTOR,
+                }
+                if worker == lead and tuple(used) != tuple(fields):
+                    # Everything the step's query touches in building its
+                    # rows (code, not the employee, reads these); the
+                    # employees receive the table over ``fields_read``.
+                    extra["query_fields"] = list(fields)
+                grant_school_fields(
+                    worker,
+                    worker_fields,
+                    task_id,
+                    audit,
+                    instructor_rows=instructor_rows,
+                    extra=extra,
+                )
             if withheld:
                 audit.append(
                     "data.refused",
-                    actor=EXPLORE_ACTOR,
+                    actor=lead,
                     payload={
                         "task_id": task_id,
                         "step": index,
@@ -633,6 +680,7 @@ def _explore(
                 "planner": outcome.planner,
                 "writer": "model" if source == SOURCE_MODEL else "template",
                 "answered": True,
+                "employees": list(answered_by),
                 **({"redirect": redirect} if redirect else {}),
                 **({"lead": "forward"} if lead == FORWARD_LEAD else {}),
             },
@@ -651,6 +699,9 @@ def _explore(
                 ],
                 "institution": catalog.vocab.institution,
                 "fictional": True,
+                # The AI employees who worked the answer, for "Answered by".
+                "answered_by": [title(r) for r in answered_by],
+                "delegated_by": title(EXPLORE_ACTOR),
             }
         )
     finally:

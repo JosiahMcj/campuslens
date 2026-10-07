@@ -36,7 +36,28 @@ REFUSED = "refused"
 ACCESS_LEVELS = (READ, STATUS_ONLY, AGGREGATE_ONLY, REFUSED)
 GRANTABLE = (READ, STATUS_ONLY)
 
-ROLES = ("chief_of_staff", "enrollment_analyst", "student_success_analyst")
+# The AI employees. The first three run the briefing (``/ask``); every one of
+# them answers Explore questions for its department (``cabinet.staff`` has
+# their titles, offices and the routing map). Least privilege throughout:
+# aggregates only, no names, no free-text notes, never counseling.
+BRIEFING_ROLES = ("chief_of_staff", "enrollment_analyst", "student_success_analyst")
+DEPARTMENT_EMPLOYEES = (
+    "registrar_analyst",
+    "student_accounts_analyst",
+    "financial_aid_analyst",
+    "advising_analyst",
+    "student_life_analyst",
+    "academic_affairs_analyst",
+    "institutional_research_analyst",
+    "admissions_analyst",
+    # No career-outcomes or advancement data is connected in this build:
+    # these two exist with an empty scope until it is.
+    "career_outcomes_analyst",
+    "advancement_analyst",
+    # Connections and the data-access audit; never student data.
+    "it_data_steward",
+)
+ROLES = (*BRIEFING_ROLES, *DEPARTMENT_EMPLOYEES)
 
 # Field groups per SCHEMA.md. ROADMAP §4/§5 writes `hold.x`; the fixture group
 # is the list `holds`, so `hold.x` is normalized to `holds.x`.
@@ -94,6 +115,96 @@ _FIELD_OVERRIDES: dict[tuple[str, str], str] = {
 }
 
 
+# The department employees, field by field: each listed field is
+# AGGREGATE_ONLY (the employee receives totals computed from it, never its
+# values); every other field, the pseudonymous student id and both
+# counseling fields included, is REFUSED. An empty tuple is an employee with
+# no briefing data at all.
+_EMPLOYEE_AGGREGATE_FIELDS: dict[str, tuple[str, ...]] = {
+    "registrar_analyst": (
+        "profile.program",
+        "profile.class_level",
+        "profile.continuing",
+        "enrollment.term",
+        "enrollment.registration_status",
+        "enrollment.registered_credit_hours",
+        "enrollment.registration_date",
+        "holds.category",
+        "holds.responsible_office",
+        "holds.resolved",
+        "comparison.prior_year_equivalent_date",
+        "comparison.prior_term_status",
+        "comparison.baseline",
+    ),
+    "student_accounts_analyst": (
+        "profile.continuing",
+        "enrollment.term",
+        "enrollment.registration_status",
+        "holds.category",
+        "holds.amount",
+        "holds.responsible_office",
+        "holds.hold_date",
+        "holds.resolved",
+    ),
+    "financial_aid_analyst": (
+        "profile.continuing",
+        "enrollment.term",
+        "enrollment.registration_status",
+        "enrollment.registered_credit_hours",
+        "holds.category",
+        "holds.amount",
+        "holds.resolved",
+    ),
+    "advising_analyst": (
+        "profile.program",
+        "profile.class_level",
+        "profile.continuing",
+        "enrollment.term",
+        "enrollment.registration_status",
+        "advising.advisor_id",
+        "advising.last_appointment_date",
+        "advising.appointment_status",
+    ),
+    "student_life_analyst": (
+        "profile.class_level",
+        "profile.continuing",
+        "enrollment.term",
+        "enrollment.registration_status",
+        "holds.category",
+        "holds.responsible_office",
+        "holds.resolved",
+    ),
+    "academic_affairs_analyst": (
+        "profile.program",
+        "profile.class_level",
+        "enrollment.term",
+        "enrollment.registered_credit_hours",
+        "comparison.baseline",
+    ),
+    "institutional_research_analyst": (
+        "profile.program",
+        "profile.class_level",
+        "profile.continuing",
+        "enrollment.term",
+        "enrollment.registration_status",
+        "enrollment.registered_credit_hours",
+        "enrollment.registration_date",
+        "comparison.prior_year_equivalent_date",
+        "comparison.prior_term_status",
+        "comparison.baseline",
+    ),
+    "admissions_analyst": (
+        "profile.program",
+        "profile.class_level",
+        "profile.continuing",
+        "enrollment.term",
+    ),
+    "career_outcomes_analyst": (),
+    "advancement_analyst": (),
+    "it_data_steward": (),
+}
+
+
 def _build_table() -> dict[str, dict[str, str]]:
     table: dict[str, dict[str, str]] = {}
     for role, groups in _GROUP_ACCESS.items():
@@ -103,6 +214,16 @@ def _build_table() -> dict[str, dict[str, str]]:
                 path = f"{group}.{name}"
                 fields[path] = _FIELD_OVERRIDES.get((role, path), access)
         table[role] = fields
+    for role, allowed in _EMPLOYEE_AGGREGATE_FIELDS.items():
+        table[role] = {
+            f"{group}.{name}": (
+                AGGREGATE_ONLY
+                if f"{group}.{name}" in allowed and group != "counseling"
+                else REFUSED
+            )
+            for group, names in _FIELD_GROUPS.items()
+            for name in names
+        }
     return table
 
 
@@ -118,6 +239,18 @@ ROLE_FINDINGS: dict[str, tuple[str, ...]] = {
     "enrollment_analyst": ("M1", "M2", "M7"),
     "student_success_analyst": ("M3", "M4", "M5", "M8"),
     "chief_of_staff": ("M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8"),
+    # The department employees: each one's own office's figures, as totals.
+    "registrar_analyst": ("M1", "M2", "M6", "M7"),
+    "student_accounts_analyst": ("M3", "M5"),
+    "financial_aid_analyst": ("M3",),
+    "advising_analyst": ("M4",),
+    "student_life_analyst": ("M5",),
+    "academic_affairs_analyst": ("M7",),
+    "institutional_research_analyst": ("M1", "M2", "M7"),
+    "admissions_analyst": (),
+    "career_outcomes_analyst": (),
+    "advancement_analyst": (),
+    "it_data_steward": (),
 }
 
 # Findings a role may receive only when the institution has recorded the
@@ -155,6 +288,53 @@ ROLE_TASK_FIELDS: dict[str, tuple[str, ...]] = {
         "advising.appointment_status",
         "comparison.prior_year_equivalent_date",
     ),
+    # The department employees: the source fields behind their findings,
+    # granted as aggregates (``grant_aggregates``), never as raw values.
+    "registrar_analyst": (
+        "profile.continuing",
+        "enrollment.term",
+        "enrollment.registration_status",
+        "enrollment.registration_date",
+        "enrollment.registered_credit_hours",
+    ),
+    "student_accounts_analyst": (
+        "profile.continuing",
+        "enrollment.registration_status",
+        "holds.category",
+        "holds.amount",
+        "holds.responsible_office",
+        "holds.resolved",
+    ),
+    "financial_aid_analyst": (
+        "profile.continuing",
+        "enrollment.registration_status",
+        "holds.category",
+        "holds.amount",
+        "holds.resolved",
+    ),
+    "advising_analyst": (
+        "profile.continuing",
+        "enrollment.registration_status",
+        "advising.last_appointment_date",
+        "advising.appointment_status",
+    ),
+    "student_life_analyst": (
+        "holds.category",
+        "holds.responsible_office",
+        "holds.resolved",
+    ),
+    "academic_affairs_analyst": ("enrollment.registered_credit_hours",),
+    "institutional_research_analyst": (
+        "profile.continuing",
+        "enrollment.term",
+        "enrollment.registration_status",
+        "enrollment.registration_date",
+        "enrollment.registered_credit_hours",
+    ),
+    "admissions_analyst": (),
+    "career_outcomes_analyst": (),
+    "advancement_analyst": (),
+    "it_data_steward": (),
 }
 
 
@@ -509,3 +689,202 @@ def coarsen_small_counts(payload: dict[str, Any]) -> dict[str, Any]:
     if isinstance(nested, dict):
         out["findings"] = _coarsen(nested)
     return out
+
+
+# --- Explore: the school records, by data area ----------------------------------
+#
+# Explore reads the school database (cabinet.explore), whose fields are named
+# by table and column ("person_holds.amount"), not by the briefing's fixture
+# groups above. Each field belongs to one data area; each AI employee may
+# receive aggregates over the areas listed for it, and nothing else. A field
+# that is in no area is refused to everyone (fail closed). The routing map
+# that hands each Explore step to an employee lives in ``cabinet.staff``;
+# its tests prove every step it routes stays inside the reading employee's
+# areas.
+
+SCHOOL_AREAS: dict[str, tuple[str, ...]] = {
+    # Shared structure: what a group is (major, college, class level, term).
+    "structure": (
+        "student_term_records.program_code",
+        "student_term_records.term_code",
+        "student_term_records.class_level",
+        "academic_programs.major_code",
+        "academic_programs.name",
+        "academic_programs.college_code",
+        "colleges.name",
+        "academic_periods.season",
+        "academic_periods.academic_year",
+    ),
+    "course_sections": (
+        "sections.course_id",
+        "sections.term_code",
+        "section_registrations.section_id",
+        "section_registrations.term_code",
+        "section_instructors.instructor_id (counted)",
+        "courses.grade_mode",
+        "courses.course_level",
+        "courses.subject_code",
+        "courses.title",
+        "program_requirements.course_id",
+    ),
+    "registration": (
+        "section_registrations.student_id (counted)",
+        "student_term_records.attempted_hours",
+        "student_term_records.earned_hours",
+        "student_term_records.cumulative_earned_hours",
+        "student_term_enrollment.academic_load",
+    ),
+    "standing": ("academic_standings.standing", "academic_standings.term_code"),
+    "grades": (
+        "final_grades.grade",
+        "student_term_records.cumulative_gpa",
+        "sections.modality",
+        "student_profiles.honors",
+    ),
+    # Instructor-level rows: granted only when the person asking may see
+    # them (cabinet.explore.catalog.INSTRUCTOR_ROLES), never by the area alone.
+    "instructors": (
+        "section_instructors.instructor_id",
+        "instructors.first_name",
+        "instructors.last_name",
+        "instructors.academic_rank",
+    ),
+    "programs": (
+        "student_academic_programs.status",
+        "student_academic_programs.end_term",
+        "student_academic_programs.program_code",
+    ),
+    "outcomes": (
+        "students.enrollment_status",
+        "students.exit_term",
+        "subsequent_enrollment (enrolled at another college)",
+        "student_term_records (enrolled the next fall or not)",
+        "student_term_enrollment (enrolled the next term or not)",
+    ),
+    "entry": ("students.entry_term", "students.entry_type"),
+    "demographics": (
+        "student_profiles.gender",
+        "student_profiles.race_ethnicity",
+        "student_profiles.age_band_at_entry",
+        "students.residency",
+        "students.first_generation",
+    ),
+    "aid": ("students.pell_recipient",),
+    "holds": (
+        "person_holds.responsible_office",
+        "person_holds.category",
+        "person_holds.amount",
+        "person_holds.term_code",
+        "person_holds.end_date",
+    ),
+    "advising": ("student_appointments.status", "student_appointments.term_code"),
+    "campus_life": ("student_term_enrollment.housing", "student_profiles.athlete"),
+}
+
+INSTRUCTOR_AREA = "instructors"
+
+SCHOOL_FIELD_AREA: dict[str, str] = {
+    field: area for area, fields in SCHOOL_AREAS.items() for field in fields
+}
+
+# The data areas each AI employee may receive aggregates over in Explore.
+ROLE_SCHOOL_AREAS: dict[str, tuple[str, ...]] = {
+    # The coordinator: receives every employee's checked tables (aggregates),
+    # reads no instructor-level rows of its own.
+    "chief_of_staff": tuple(a for a in SCHOOL_AREAS if a != INSTRUCTOR_AREA),
+    "enrollment_analyst": ("structure", "course_sections", "registration", "entry"),
+    "student_success_analyst": ("structure", "outcomes", "holds", "advising"),
+    "registrar_analyst": (
+        "structure",
+        "course_sections",
+        "registration",
+        "standing",
+        "programs",
+    ),
+    "student_accounts_analyst": ("structure", "holds"),
+    "financial_aid_analyst": ("structure", "registration", "aid"),
+    "advising_analyst": ("structure", "advising", "programs"),
+    "student_life_analyst": ("structure", "campus_life", "holds"),
+    "academic_affairs_analyst": (
+        "structure",
+        "course_sections",
+        "grades",
+        INSTRUCTOR_AREA,
+    ),
+    "institutional_research_analyst": (
+        "structure",
+        "registration",
+        "programs",
+        "outcomes",
+        "entry",
+        "demographics",
+    ),
+    "admissions_analyst": ("structure", "entry", "demographics"),
+    "career_outcomes_analyst": (),
+    "advancement_analyst": (),
+    "it_data_steward": (),
+}
+
+
+def school_access_for(role: str, field: str, *, instructor_rows: bool = False) -> str:
+    """AGGREGATE_ONLY when ``role`` may receive aggregates over the school
+    field, else REFUSED. Instructor-level fields need ``instructor_rows``
+    (the person asking may see them) as well as the area."""
+    area = SCHOOL_FIELD_AREA.get(field)
+    if area is None or area not in ROLE_SCHOOL_AREAS.get(role, ()):
+        return REFUSED
+    if area == INSTRUCTOR_AREA and not instructor_rows:
+        return REFUSED
+    return AGGREGATE_ONLY
+
+
+def grant_school_fields(
+    role: str,
+    fields: list[str] | tuple[str, ...],
+    task_id: str,
+    log: AuditSink,
+    *,
+    instructor_rows: bool = False,
+    extra: dict[str, Any] | None = None,
+) -> list[str]:
+    """The Explore gate for one AI employee and one step: logs one
+    ``data.granted`` event (actor = the employee, ``aggregate_only: true``,
+    the fields it read plus ``extra``), or refuses the whole request (one
+    ``data.refused`` event, then :class:`FieldRequestRefused`) when any field
+    is outside the employee's areas. Nothing is read before this returns."""
+    requested = list(dict.fromkeys(fields))
+    refused = [
+        f
+        for f in requested
+        if school_access_for(role, f, instructor_rows=instructor_rows) == REFUSED
+    ]
+    payload_extra = dict(extra or {})
+    if refused:
+        reason = (
+            f"Role '{role}' is not permitted to access "
+            f"{', '.join(sorted(set(refused)))}; the request was refused "
+            "before anything was read."
+        )
+        event = log.append(
+            "data.refused",
+            actor=role,
+            payload={
+                "task_id": task_id,
+                **payload_extra,
+                "requested_fields": requested,
+                "refused_fields": sorted(set(refused)),
+                "reason": reason,
+            },
+        )
+        raise FieldRequestRefused(role, requested, sorted(set(refused)), reason, event)
+    log.append(
+        "data.granted",
+        actor=role,
+        payload={
+            "task_id": task_id,
+            **payload_extra,
+            "fields_read": requested,
+            "aggregate_only": True,
+        },
+    )
+    return requested
