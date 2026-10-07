@@ -834,6 +834,10 @@ export const EVENT_TYPES = [
   'action.send_failed',
   // The demonstration student directory: a name search (never the text).
   'student.searched',
+  // The per-account inbox (never the note's text).
+  'inbox.sent',
+  'inbox.read',
+  'inbox.reviewed',
 ] as const
 
 export interface AuditEvent {

@@ -201,13 +201,17 @@ export function ItWorkspace({
           </div>
         ) : (
           <div className="it-main-page">
-            <button type="button" className="page-back" onClick={() => setPage(null)}>
-              <BackIcon />
-              <span>Back</span>
-            </button>
-            <h1 id="main-heading" tabIndex={-1}>
-              {TITLES[page]}
-            </h1>
+            <div className="side-panel-header">
+              <div className="page-header-controls">
+                <button type="button" className="page-back" onClick={() => setPage(null)}>
+                  <BackIcon />
+                  <span>Back</span>
+                </button>
+              </div>
+              <h1 id="main-heading" tabIndex={-1}>
+                {TITLES[page]}
+              </h1>
+            </div>
             <p className="page-intro">{INTROS[page]}</p>
             {body}
           </div>

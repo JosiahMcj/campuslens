@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { resetBriefingOnce } from './api'
 import { clearSession } from './auth'
+import { AuditLog } from './components/AuditLog'
 import { InboxPage } from './components/InboxPage'
 import { SendAlertDialog } from './components/SendAlertDialog'
 
@@ -276,5 +277,37 @@ describe('Send alert', () => {
       review_by: '2026-10-15',
       source: { kind: 'finding', ref: 'M5' },
     })
+  })
+})
+
+describe('the audit log', () => {
+  it('says in words who sent, opened and reviewed an alert, never the note', () => {
+    const ts = '2026-10-07T15:00:00+00:00'
+    render(
+      <AuditLog
+        events={[
+          {
+            id: 1,
+            ts,
+            type: 'inbox.sent',
+            actor: 'president@demo.test',
+            payload: { message_id: 7, recipient_id: 9, recipient_role: 'finance', source_kind: 'finding', source_ref: 'M5', has_review_by: true },
+          },
+          { id: 2, ts, type: 'inbox.read', actor: 'finance@demo.test', payload: { message_id: 7, sender_id: 2 } },
+          { id: 3, ts, type: 'inbox.reviewed', actor: 'finance@demo.test', payload: { message_id: 7, sender_id: 2 } },
+        ]}
+        readOnly
+        onRefresh={() => undefined}
+        deniedRequest={{ kind: 'idle' }}
+        onShowDeniedRequest={() => undefined}
+        viewerEmail="it@demo.test"
+      />,
+    )
+    expect(
+      screen.getByText(/sent an alert to Finance — Student Accounts about a briefing figure\./),
+    ).toBeTruthy()
+    expect(screen.getByText(/opened an alert\./)).toBeTruthy()
+    expect(screen.getByText(/marked an alert reviewed\./)).toBeTruthy()
+    expect(screen.queryByText(/recorded an entry/)).toBeNull()
   })
 })

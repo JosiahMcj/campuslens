@@ -27,8 +27,9 @@ import {
   ChevronDownIcon,
   CrossSmallIcon,
   EditIcon,
+  AccountsNavIcon,
+  ActivityNavIcon,
   GearIcon,
-  LockIcon,
   MailIcon,
   MoonIcon,
   SearchIcon,
@@ -114,8 +115,8 @@ const PANEL_ROWS: Record<NavPanel, { label: string; icon: ReactNode }> = {
   students: { label: 'Find a student', icon: <SearchIcon /> },
   overview: { label: 'Department overview', icon: <FiguresNavIcon /> },
   inbox: { label: 'Inbox', icon: <MailIcon /> },
-  accounts: { label: 'Accounts', icon: <AccessNavIcon /> },
-  sessions: { label: 'Sign-in activity', icon: <LockIcon /> },
+  accounts: { label: 'Accounts', icon: <AccountsNavIcon /> },
+  sessions: { label: 'Sign-in activity', icon: <ActivityNavIcon /> },
   connections: { label: 'Connections', icon: <GearIcon /> },
 }
 

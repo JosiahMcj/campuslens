@@ -384,6 +384,17 @@ def test_explore_answer_travels_only_to_roles_allowed_to_read_it(app: FastAPI) -
         "/inbox", json={"recipient_id": admin_id, "note": "See this", "source": source}
     ).json()["snapshot"]
     assert to_admin["answer"] == source["answer"]
+    # An answer that names no instructor travels to every role.
+    plain = {
+        "kind": "explore",
+        "question": "Which offices hold the most active holds?",
+        "answer": ["Student Accounts holds the most: 46 holds on 46 students."],
+    }
+    to_finance_plain = president.post(
+        "/inbox", json={"recipient_id": finance_id, "note": "See this", "source": plain}
+    ).json()["snapshot"]
+    assert to_finance_plain["answer"] == plain["answer"]
+    assert to_finance_plain["answer_withheld"] is False
     too_long = {**source, "answer": ["a"] * 7}
     assert (
         president.post(

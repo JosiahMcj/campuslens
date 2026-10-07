@@ -27,6 +27,15 @@ make bootstrap-admin EMAIL=admin@demo.test          # bootstrap institution + fi
 make user EMAIL=president@demo.test ROLE=executive  # the president the demo signs in as
 ```
 
+For the department demonstration (president, IT, Finance, Financial Aid,
+Registrar, Student Life, staff, reviewer), one command creates every persona's
+sign-in and appends the passwords to a private file outside the repository
+(docs/ROLES.md):
+
+```bash
+make demo-accounts OUT=$HOME/campuslens-demo-accounts.txt
+```
+
 ```bash
 make api
 make ui
@@ -54,7 +63,9 @@ and the generated password prints exactly once and is never logged. The first
 institution is shown as "Demonstration University" and keeps the slug
 `bootstrap`.
 `make institution` adds another tenant, and `make user` adds a login in one of
-five roles, which are admin, executive, staff, reviewer, and aid (the Financial Aid office). Every new
+nine roles: admin, executive, staff, reviewer, aid (the Financial Aid office),
+the department accounts finance, registrar and studentlife, and it (docs/ROLES.md
+says what each one sees). Every new
 institution is seeded with the fictional demonstration dataset ("Demonstration
 (fictional)"), so the demo and onboarding work from the first login.
 

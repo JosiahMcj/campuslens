@@ -19,9 +19,9 @@
   - ``{"kind": "explore", "question": ..., "answer": [...]}`` — an Explore
     answer the sender saw: the question (student-id-shaped tokens redacted)
     and up to six answer sentences, which are aggregate by construction.
-    When the sender may see instructor-level results and the recipient may
-    not, only the question travels: the recipient asks it under their own
-    role. A role that may not use Explore cannot attach one.
+    When the answer names an instructor and the recipient may not see
+    instructor-level results, only the question travels: the recipient asks
+    it under their own role. A role that may not use Explore cannot attach one.
 
   One ``inbox.sent`` event. Rate limited like the other consequential POSTs.
 - ``POST /inbox/{id}/read`` and ``POST /inbox/{id}/reviewed`` — the
@@ -42,6 +42,7 @@ scoped by institution: a recipient id from another institution is a 404.
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import UTC, datetime
 from typing import Any
 
@@ -50,7 +51,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from cabinet.departments import may_read, tile_snapshot
-from cabinet.explore.catalog import INSTRUCTOR_ROLES, SchoolDataMissing
+from cabinet.explore.catalog import (
+    INSTRUCTOR_ROLES,
+    SchoolDataMissing,
+    connect_readonly,
+    school_db_path,
+)
 from cabinet.explore.privacy import redact_question
 from cabinet.security import EXPLORE_ROLES, READ_ROLES
 from cabinet.staffactions import valid_due_date
@@ -186,6 +192,38 @@ def get_recipients(request: Request) -> list[dict[str, Any]]:
     ]
 
 
+_instructor_names: dict[tuple[str, int], frozenset[str]] = {}
+
+
+def _names_an_instructor(sentences: list[str]) -> bool:
+    """True when an answer sentence names an instructor: Explore labels every
+    instructor name "(fictional)", and any full name from the school data's
+    instructor list counts too. Without the school data, any answer from an
+    instructor-level role is treated as naming one (withheld, never leaked)."""
+    if not sentences:
+        return False
+    text = " ".join(sentences)
+    if "(fictional)" in text:
+        return True
+    try:
+        path = school_db_path().expanduser()
+        key = (str(path), path.stat().st_mtime_ns)
+        names = _instructor_names.get(key)
+        if names is None:
+            con = connect_readonly(path)
+            try:
+                rows = con.execute(
+                    "SELECT first_name || ' ' || last_name FROM instructors"
+                ).fetchall()
+            finally:
+                con.close()
+            names = frozenset(str(row[0]) for row in rows)
+            _instructor_names[key] = names
+    except (OSError, SchoolDataMissing, sqlite3.Error):
+        return True
+    return any(name in text for name in names)
+
+
 def _snapshot(
     request: Request,
     source: InboxSource,
@@ -239,9 +277,12 @@ def _snapshot(
                 f"an Explore alert carries at most {ANSWER_MAX_SENTENCES} answer "
                 f"sentences of {SENTENCE_MAX_CHARS} characters",
             )
-        # Instructor-level wording stays with the roles allowed to see it.
+        # Instructor-level wording stays with the roles allowed to see it:
+        # an answer that names an instructor travels only between those roles.
         withheld = (
-            role in INSTRUCTOR_ROLES and recipient["role"] not in INSTRUCTOR_ROLES
+            role in INSTRUCTOR_ROLES
+            and recipient["role"] not in INSTRUCTOR_ROLES
+            and _names_an_instructor(answer)
         )
         return None, {
             "question": redact_question(question),
