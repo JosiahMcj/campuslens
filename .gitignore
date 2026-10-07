@@ -1,10 +1,10 @@
-node_modules/
+node_modules
 dist/
 .env
 __pycache__/
 *.pyc
 var/
 .DS_Store
-.venv/
+.venv
 *.egg-info/
 cabinet.local.env
