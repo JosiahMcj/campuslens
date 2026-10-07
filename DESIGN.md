@@ -192,6 +192,13 @@ measure 68ch.
 - **Delivery wording:** "Sent" is only said when email delivery is configured. Otherwise the
   message is "Recorded, not emailed" and the screen says it was saved on this server.
 
+- **Find a student:** the one page that shows a person's name (`StudentLookup.tsx`). A `.data-tag`
+  and one sentence say the directory is fictional and that searches are logged. One labelled
+  search field with a `.btn-primary` Search; it searches on Search, never per keystroke.
+  Each result is a card on `--surface` with the name, the id in `--font-mono`, and a grid of
+  label/value facts. Degree progress is a native `<progress>` with its percentage in text;
+  GPA change is text with a sign, never colour alone.
+
 ## Phones
 
 Below 900 px the sidebar becomes a menu button (44 × 44) and a drawer. Every tap target is at

@@ -2402,3 +2402,15 @@ details[open]::details-content {
   border-color: var(--navy);
   color: var(--navy);
 }
+
+/* The fictional-data label, repeated where the numbers are. */
+.data-tag {
+  flex: none;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+}

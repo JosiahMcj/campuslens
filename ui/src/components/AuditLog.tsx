@@ -355,6 +355,17 @@ function describeEvent(
         details,
       }
     }
+    case 'student.searched': {
+      const matches = typeof payload.matches === 'number' ? payload.matches : null
+      return {
+        sentence:
+          matches === null
+            ? `${Who} searched the student directory by name.`
+            : `${Who} searched the student directory by name and found ${matches} student${matches === 1 ? '' : 's'}.`,
+        mark: null,
+        details,
+      }
+    }
     case 'explore.answered': {
       const steps = list(payload.steps).length
       if (payload.answered === false) {

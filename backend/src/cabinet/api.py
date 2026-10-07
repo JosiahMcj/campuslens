@@ -234,6 +234,7 @@ from cabinet.questions import (
 )
 from cabinet.questions import DEMO_DECISION_ID as DEMO_DECISION_ID
 from cabinet.questions import OUT_OF_SCOPE_REFUSAL as OUT_OF_SCOPE_REFUSAL
+from cabinet.roster import router as roster_router
 from cabinet.security import (
     GENERIC_LOGIN_ERROR,
     ROW_ROLES,
@@ -2599,6 +2600,7 @@ def create_app(
     # GET /staff-actions, PATCH /staff-actions/{id}, POST .../notes, .../send
     app.include_router(staff_actions_router)
     app.include_router(connections_router)  # GET /admin/connections
+    app.include_router(roster_router)  # GET /students/search
 
     # The built UI, served by the same process. Mounted after every API
     # route so an API path always wins over the static mount; a missing

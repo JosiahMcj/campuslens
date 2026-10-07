@@ -31,6 +31,7 @@ import { postAidQueue } from './aid'
 import {
   canAct,
   canEditAidQueue,
+  canSearchStudents,
   canSeeAidQueue,
   canSeeAuditLog,
   canSeeInstitution,
@@ -71,6 +72,7 @@ import { Thinking } from './components/Thinking'
 import { BackIcon, MenuIcon } from './components/icons'
 import { FirstResult } from './components/FirstResult'
 import { StatRow } from './components/StatRow'
+import { StudentLookup } from './components/StudentLookup'
 import { friendlyError, friendlyLoadError, isRateLimited, retryAfterSeconds } from './errors'
 import {
   canExplore,
@@ -246,6 +248,8 @@ function pageIntro(page: PanelId, role: Role, fictional: boolean): string | unde
       return "Each AI employee sees only the fields its task needs, and never a student's name or identifiers. A request outside those fields is refused before any AI employee is asked, and the refusal is logged."
     case 'audit':
       return 'Every question, data request, refusal and decision is recorded here and can never be changed. Newest entries are first.'
+    case 'students':
+      return 'Look up one student by name to see their program, progress, GPA, holds and advisor.'
     case 'aid':
       return canEditAidQueue(role)
         ? 'Facts for the Financial Aid office to start its own review. CampusLens decides nothing about any student; a person in the office sets each status and note.'
@@ -646,6 +650,8 @@ function BriefingPage({
   const userId = session.user.id
   const audit = canSeeAuditLog(role)
   const aidQueue = canSeeAidQueue(role)
+  // The directory is demonstration data: offered only with the fictional set.
+  const studentSearch = canSearchStudents(role) && fictional
 
   const [events, setEventsState] = useState<AuditEvent[] | null>(audit ? null : [])
   const [eventsStatus, setEventsStatus] = useState<ResourceStatus>(
@@ -1348,6 +1354,7 @@ function BriefingPage({
     'decision',
     'access',
     ...(aidQueue ? (['aid'] as PanelId[]) : []),
+    ...(studentSearch ? (['students'] as PanelId[]) : []),
     ...(audit ? (['audit'] as PanelId[]) : []),
   ]
   // An address for a page this role does not have goes back to the conversation.
@@ -1459,6 +1466,7 @@ function BriefingPage({
     access: 'AI employees and data access',
     audit: 'Audit log',
     aid: 'Financial Aid review',
+    students: 'Find a student',
     profile: 'Profile',
     settings: 'Settings',
   }
@@ -2209,6 +2217,7 @@ function BriefingPage({
           {shownPanel === 'aid' && aidQueue && (
             <AidQueuePanel canEdit={canEditAidQueue(role)} onOpenDecision={() => openPanel('decision')} />
           )}
+          {shownPanel === 'students' && studentSearch && <StudentLookup />}
           {shownPanel === 'profile' && (
             <ProfilePanel session={session} datasetName={datasetName} onSignOut={onSignOut} />
           )}

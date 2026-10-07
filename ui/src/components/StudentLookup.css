@@ -1,0 +1,114 @@
+/* Find a student (StudentLookup.tsx). Tokens only (DESIGN.md). */
+
+.student-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-4);
+  color: var(--ink-soft);
+}
+
+.student-search label {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-weight: 600;
+}
+
+.student-search-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.student-search-row input {
+  flex: 1 1 16rem;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0 var(--space-3);
+  font: inherit;
+}
+
+.student-results {
+  margin-top: var(--space-4);
+}
+
+.student-results:focus {
+  outline: none;
+}
+
+.student-count {
+  margin: 0 0 var(--space-3);
+  color: var(--ink-soft);
+}
+
+.student-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.student-card {
+  padding: var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+}
+
+.student-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+}
+
+.student-head h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+  overflow-wrap: anywhere;
+}
+
+.student-id {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
+
+.student-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: var(--space-3) var(--space-4);
+  margin: var(--space-3) 0 0;
+}
+
+.student-facts dt {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.student-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.student-change {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.student-progress {
+  display: block;
+  width: 100%;
+  height: var(--space-2);
+  margin-top: var(--space-1);
+  accent-color: var(--navy);
+}
+
+.student-holds ul {
+  margin: 0;
+  padding-left: var(--space-4);
+}
