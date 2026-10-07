@@ -49,7 +49,13 @@ function ApprovalCard({ block, decision, canApprove, approving, approveError, on
   return (
     <div className="followup-approval" data-approved={approved}>
       <div className="followup-approval-head">
-        <Label label="recommendation" />
+        {approved ? (
+          <span className="followup-label" data-label="fact">
+            Decision recorded
+          </span>
+        ) : (
+          <Label label="recommendation" />
+        )}
         <span className="followup-approval-status">
           {approved ? 'Approved' : 'Awaiting your approval'}
         </span>
