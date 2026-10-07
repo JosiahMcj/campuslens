@@ -51,9 +51,6 @@ from cabinet.explore.general import GROUPINGS, MEASURES, Measure
 router = APIRouter()
 
 REGULAR = general.REGULAR
-WITHHELD_MESSAGE = (
-    "Withheld: fewer than 10 students, or it could reveal a group that small."
-)
 
 # --- measures the Data page adds ------------------------------------------------
 #

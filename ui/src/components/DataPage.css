@@ -267,7 +267,7 @@
   top: 0;
   z-index: 2;
   width: max-content;
-  max-width: min(19rem, 90%);
+  max-width: min(19rem, 48%);
   margin-left: var(--space-3);
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--rule);
@@ -281,6 +281,16 @@
 .chart-tip.is-left {
   transform: translateX(-100%);
   margin-left: calc(-1 * var(--space-3));
+}
+
+/* Narrow charts: the reading sits under the chart, full width, so it never
+   covers the chart or leaves the screen. */
+.chart-tip.is-below {
+  position: static;
+  width: auto;
+  max-width: none;
+  margin: var(--space-2) 0 0;
+  box-shadow: none;
 }
 
 .chart-tip-head {

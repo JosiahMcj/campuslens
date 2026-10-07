@@ -305,7 +305,7 @@ export function valueDomain(values: number[], kind: ValueKind, form: 'line' | 'b
   return [Math.max(low, floor), high]
 }
 
-export const WITHHELD_TEXT = 'Withheld: fewer than 10 students, or it could reveal a group that small'
+export const WITHHELD_TEXT = 'Withheld: fewer than 10 students, or would reveal a group that small'
 
 /** One point in words, for the tooltip, the live region and the table:
  * the measure's value with how many students it covers, or why it is not shown. */

@@ -160,7 +160,7 @@ export function DataChart({ data, onPick }: DataChartProps) {
         ))}
         {/* Term axis. */}
         {data.x.map((x, i) =>
-          i % labelEvery === 0 || n <= 6 ? (
+          i % labelEvery === 0 || (data.form === 'bar' && n <= 8) ? (
             <text
               key={x.key}
               className="chart-tick"
@@ -168,7 +168,8 @@ export function DataChart({ data, onPick }: DataChartProps) {
               y={HEIGHT - MARGIN.bottom + 18}
               textAnchor="middle"
             >
-              {width < 480 ? x.label.replace(/^(Fall|Spring) (\d{2})(\d{2})$/, (_, s: string, __, yy: string) => `${s === 'Fall' ? 'Fall' : 'Spr'} ’${yy}`) : x.label}
+              {width < 480 ? x.label.replace(/^(Fall|Spring) (\d{2})(\d{2})$/, (_, s: string, __, yy: string) =>
+                    data.form === 'bar' && band < 64 ? `’${yy}` : `${s === 'Fall' ? 'Fall' : 'Spr'} ’${yy}`) : x.label}
             </text>
           ) : null,
         )}
@@ -234,8 +235,8 @@ export function DataChart({ data, onPick }: DataChartProps) {
       {activeX !== undefined && active !== null && (
         <div
           id={tipId}
-          className={`chart-tip${tipLeft > 60 ? ' is-left' : ''}`}
-          style={{ left: `${tipLeft}%` }}
+          className={`chart-tip${width < 520 ? ' is-below' : tipLeft > 50 ? ' is-left' : ''}`}
+          style={width < 520 ? undefined : { left: `${tipLeft}%` }}
           role="status"
           aria-live={keyboard ? 'polite' : 'off'}
         >
