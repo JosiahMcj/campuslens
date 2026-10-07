@@ -325,8 +325,61 @@
   color: var(--ink-soft);
 }
 
+/* The source label sits under the claims as a quiet footnote. */
 .msg-body .analyst-source {
-  font-size: 0.78rem;
+  margin: 12px 0 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+/* The answer: one list of claims, each followed by its evidence chips. */
+.claim-list {
+  display: grid;
+  gap: 10px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.claim-list li {
+  position: relative;
+  padding-inline-start: 18px;
+  line-height: 1.6;
+}
+
+.claim-list li::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 3px;
+  top: 0.68em;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--rule-strong);
+}
+
+.cites {
+  display: inline-flex;
+  gap: 4px;
+  margin-inline-start: 6px;
+  vertical-align: 0.12em;
+  white-space: nowrap;
+}
+
+.finding-link.cite {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--navy) 14%, transparent);
+  color: var(--navy);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+}
+
+.finding-link.cite:hover {
+  background: color-mix(in srgb, var(--navy) 26%, transparent);
 }
 
 .work-line {
@@ -360,8 +413,10 @@
   font-weight: 600;
 }
 
+/* The five figures under the answer: one compact row of equal cards. */
 .msg-body .stat-row {
-  margin-top: 18px;
+  gap: 8px;
+  margin-top: 20px;
 }
 
 @media (min-width: 720px) {
@@ -374,16 +429,61 @@
   }
 }
 
-.msg-body .stat-display {
-  font-size: 1.6rem;
+.msg-body .stat-row .stat-figure {
+  gap: 6px;
+  padding: 12px 12px 13px;
 }
 
+.msg-body .stat-display {
+  font-size: 1.45rem;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.msg-body .stat-title {
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+/* The decision card reads at the answer's own size, one step calmer. */
 .msg-body .decision-panel {
-  margin-top: 20px;
+  margin-top: 16px;
+  padding: 16px 20px 20px;
+  line-height: 1.6;
 }
 
 .msg-body .decision-panel h2 {
-  font-size: 1rem;
+  margin: 0 0 6px;
+  padding: 0;
+  border: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--gold);
+}
+
+.msg-body .decision-panel .panel-note {
+  margin: 0 0 14px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.msg-body .decision-card h3 {
+  margin: 0 0 6px;
+  font-size: 1.02rem;
+  line-height: 1.35;
+}
+
+.msg-body .decision-card > p {
+  margin: 0 0 8px;
+  font-size: 0.94rem;
+}
+
+.msg-body .decision-card .follow-up {
+  font-size: 0.85rem;
+}
+
+.msg-body .decision-card .approve-button {
+  margin-top: 8px;
 }
 
 .reply-actions {

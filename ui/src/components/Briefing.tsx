@@ -303,12 +303,16 @@ export function ExecutiveSummary({
   onOpenEvidence,
   headingId = 's-summary',
   title = '1. Executive summary',
+  layout = 'document',
 }: {
   findings: Findings
   chiefSummary: ModelSection | null
   onOpenEvidence: (findingId: string) => void
   headingId?: string | null
   title?: string
+  /** 'chat' renders the claims as one compact list with citation chips and
+   * the source label beneath; 'document' is the briefing's own layout. */
+  layout?: ClaimsLayout
 }) {
   const m1 = getFinding(findings, 'M1')
   const m2 = getFinding(findings, 'M2')
@@ -325,6 +329,7 @@ export function ExecutiveSummary({
           provenance={chiefSummary.provenance}
           analyst="the Chief of Staff"
           onOpen={onOpenEvidence}
+          layout={layout}
         />
       ) : (
         <p className="headline-text">
@@ -444,6 +449,7 @@ function ModelClaims({
   provenance,
   analyst,
   onOpen,
+  layout = 'document',
 }: {
   claims: AnalystClaim[]
   provenance: {
@@ -454,13 +460,43 @@ function ModelClaims({
   /** Who the source label names, e.g. "the Student Success Analyst". */
   analyst: string
   onOpen: (findingId: string) => void
+  layout?: ClaimsLayout
 }) {
   const source = analystSource(provenance)
+  const sourceLabel = (
+    <p className={source === 'fake' ? 'analyst-source stub-tag' : 'analyst-source'}>
+      {analystSourceLabel(source, analyst, provenance.model_label)}
+    </p>
+  )
+  if (layout === 'chat') {
+    // The chat reply: one list, each claim followed by its evidence as small
+    // chips (the finding id, no brackets), the source label beneath. The
+    // claim text itself is rendered verbatim, exactly as in the document.
+    return (
+      <>
+        <ul className="claim-list">
+          {claims.map((claim, index) => (
+            <li key={index}>
+              {claim.text}
+              {claim.finding_ids.length > 0 && (
+                <span className="cites">
+                  {claim.finding_ids.map((id) => (
+                    <FindingLink key={id} findingId={id} onOpen={onOpen} className="cite">
+                      {id}
+                    </FindingLink>
+                  ))}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+        {sourceLabel}
+      </>
+    )
+  }
   return (
     <>
-      <p className={source === 'fake' ? 'analyst-source stub-tag' : 'analyst-source'}>
-        {analystSourceLabel(source, analyst, provenance.model_label)}
-      </p>
+      {sourceLabel}
       {claims.map((claim, index) => (
         <p key={index}>
           {claim.text}{' '}
@@ -474,6 +510,10 @@ function ModelClaims({
     </>
   )
 }
+
+/** How a section's claims are laid out: the briefing document's paragraphs,
+ * or the chat reply's compact list. */
+export type ClaimsLayout = 'document' | 'chat'
 
 /** M5's per-office rows, or none when the finding is missing/malformed. */
 function officeRows(finding: Finding | undefined): OfficeHolds[] {

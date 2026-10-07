@@ -812,12 +812,24 @@ function BriefingPage({
   const sending = askState.kind === 'sending'
   const ready = findingsState.kind === 'ready'
 
-  // Each new exchange (and each reply landing) scrolls the thread to its end.
+  // A new exchange scrolls the thread to its end, so the question and the
+  // working line are in view. When the reply lands, the exchange scrolls to
+  // its top instead: the answer is read from its first line, not its last.
   const threadLength = thread.length
+  const lastExchangeId = thread.at(-1)?.id
   const lastStateKind = thread.at(-1)?.state.kind
   useEffect(() => {
-    threadEndRef.current?.scrollIntoView({ block: 'end' })
-  }, [threadLength, lastStateKind])
+    const waiting = lastStateKind === 'sending' || lastStateKind === 'idle'
+    const exchange =
+      lastExchangeId === undefined
+        ? null
+        : document.getElementById(`exchange-${lastExchangeId}`)
+    if (waiting || exchange === null) {
+      threadEndRef.current?.scrollIntoView({ block: 'end' })
+    } else {
+      exchange.scrollIntoView({ block: 'start' })
+    }
+  }, [threadLength, lastExchangeId, lastStateKind])
 
   const openPanel = (next: PanelId) => {
     setPanel(next)
@@ -907,6 +919,7 @@ function BriefingPage({
           onOpenEvidence={openEvidence}
           headingId={null}
           title={current ? 'Summary' : 'Earlier answer'}
+          layout="chat"
         />
         {current && (
           <>
