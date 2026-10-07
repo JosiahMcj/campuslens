@@ -167,7 +167,9 @@ audit log is append-only and outlives the dataset purge, so neither event names
 a student. Explore added `explore.answered`, which closes each answered question with
 the task id, the question event id, the analysis ids of its steps, their row counts, and
 which planner and writer ran, never a value. Explore also writes the existing
-`question.asked` (any student-id-shaped token in the question is replaced first),
+`question.asked` (any student-id-shaped token in the question is replaced first, and
+`POST /ask` applies the same redaction to its `question.asked` and `data.refused`
+events before either is written, so a typed id never reaches the chain or a reviewer),
 `data.refused` (counseling, one student, or a prediction, refused before planning, and
 withheld instructor rows), and one `data.granted` per step with the analysis id, the fields
 it read, and `aggregate_only: true`.

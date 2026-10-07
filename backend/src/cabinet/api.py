@@ -189,6 +189,7 @@ from cabinet.auth import (
 from cabinet.counseling import M9_ID, authorization_block, m9_finding
 from cabinet.datasets import UploadError, validate_upload
 from cabinet.explore.api import router as explore_router
+from cabinet.explore.privacy import redact_question
 from cabinet.fixture import parse_fixture
 from cabinet.metrics import findings as compute_findings
 from cabinet.migrations import (
@@ -943,11 +944,15 @@ def create_app(
         # bound, and this route runs on every ask).
         max_event_id_before = store.audit_max_id(institution_id)
         question = match_question(body.question)
+        # The audit log never stores a student id a person typed: the same
+        # redaction Explore applies, before anything is written. Matching
+        # ran on the typed text; an approved question has no id to redact.
+        logged_question = redact_question(body.question)
         question_event = audit.append(
             "question.asked",
             actor="executive",
             payload={
-                "question": body.question,
+                "question": logged_question,
                 "question_id": question.id if question is not None else None,
             },
         )
@@ -956,7 +961,7 @@ def create_app(
                 "data.refused",
                 actor="chief_of_staff",
                 payload={
-                    "question": body.question,
+                    "question": logged_question,
                     "reason": OUT_OF_SCOPE_REFUSAL,
                 },
             )
