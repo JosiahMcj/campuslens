@@ -246,6 +246,20 @@ values redacted. Outside production, a missing secret degrades to an ephemeral k
 sessions do not survive restarts, with a stderr warning rather than a silent
 default.
 
+**The model endpoint.** Teams use a hosted chat-completions endpoint over https:
+`CABINET_LLM_BASE_URL=https://<provider host>/v1`, `CABINET_LLM_MODEL=<model name>`,
+and the key in `CABINET_LLM_API_KEY` (or the variable `CABINET_LLM_API_KEY_VAR` names
+in another env file), in the environment or the gitignored `cabinet.local.env`, never
+committed. With `CABINET_ENV=production` the app refuses to start, with one line on
+stderr, unless the base URL is `https` or plain `http` to a loopback address
+(`127.0.0.1`, `localhost`, `::1`) for a self-hosted model on the same machine, so the
+key and the findings never travel in the clear. An unset base URL still starts, and
+asks then answer unavailable. The model client refuses every redirect: a 3xx answer
+is typed unavailability naming the redirect, the request is never repeated to the
+`Location`, and the `Authorization` header therefore never reaches another host. A
+test runs a real local endpoint that answers 302 and checks that nothing reaches the
+redirect target.
+
 **The model's output and the corrective retry.** The model sees only the
 findings its role received, and we show nothing it writes until the validator
 passes it. Every claim must cite a finding the role received, and every

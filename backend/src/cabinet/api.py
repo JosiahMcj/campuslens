@@ -210,6 +210,7 @@ from cabinet.permissions import (
 from cabinet.provider import (
     Explanation,
     canonical_findings_json,
+    check_production_llm_base_url,
     golden_dir_from_env,
     load_local_env,
     provider_from_env,
@@ -449,6 +450,7 @@ def create_app(
         secret_key, ephemeral_secret = resolve_secret_key(production)
         if production:
             check_production_bind()
+            check_production_llm_base_url()
     except RuntimeError as exc:
         print(f"cabinet: cannot start: {exc}", file=sys.stderr)
         raise SystemExit(1) from None

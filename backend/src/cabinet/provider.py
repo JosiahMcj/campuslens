@@ -14,15 +14,18 @@ endpoint works. Implementations:
   environment variables or a gitignored ``cabinet.local.env`` at the repo root
   (``KEY=VALUE`` lines, loaded at startup, the real environment wins):
 
-  - ``CABINET_LLM_BASE_URL`` — endpoint base, e.g. ``https://your-endpoint.example/v1``.
+  - ``CABINET_LLM_BASE_URL`` — endpoint base, e.g. ``https://<provider host>/v1``.
+    In production it must be ``https`` or a loopback address (127.0.0.1,
+    localhost, ::1, for a self-hosted model), or startup is refused
+    (:func:`check_production_llm_base_url`). Redirects are never followed, so
+    the key is never forwarded to another host.
   - ``CABINET_LLM_MODEL`` — the model id sent to the endpoint. It is never
     logged, recorded, or returned to the UI; responses carry the label instead.
   - ``CABINET_LLM_REASONING_EFFORT`` — sent as ``reasoning_effort`` (default
     ``low``; set it empty to omit the field). Reasoning models otherwise spend
-    the whole output budget thinking and answer nothing. A local thinking
-    model served through an OpenAI-compatible server may ignore ``low`` and
-    honour only ``none``, which turns its hidden reasoning off (we measured
-    this; see RUNBOOK.md). Nothing beyond the setting's value is ever sent.
+    the whole output budget thinking and answer nothing. Some endpoints
+    ignore ``low`` and honour only ``none``, which turns hidden reasoning
+    off. Nothing beyond the setting's value is ever sent.
   - ``CABINET_LLM_MAX_TOKENS`` — the output budget per call, sent as
     ``max_tokens`` (default 2048, a whole number from 256 to 32768). A
     thinking model's hidden reasoning counts against it, and running out is
@@ -83,6 +86,7 @@ import os
 import re
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -125,6 +129,70 @@ ENV_LOCAL_ENV = "CABINET_LOCAL_ENV"
 DEFAULT_LABEL = "live model"
 
 _LOCAL_ENV_KEY_RE = re.compile(r"CABINET_[A-Z0-9_]+")
+
+
+# Plain http is allowed only to these hosts (a self-hosted model on the same
+# machine); anything else must be https.
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def check_production_llm_base_url() -> None:
+    """Fail closed on the model endpoint in production.
+
+    ``CABINET_LLM_BASE_URL``, when set, must be ``https`` or plain ``http``
+    to a loopback host, so the key and the findings never cross a network in
+    the clear. Unset is allowed (replay, or the model is not configured yet;
+    asks then answer unavailable). Raises ``RuntimeError`` with one line.
+    """
+    raw = os.environ.get(ENV_LLM_BASE_URL, "").strip()
+    if not raw:
+        return
+    try:
+        parts = urllib.parse.urlsplit(raw)
+        host = parts.hostname
+    except ValueError:
+        host = None
+        parts = None
+    if parts is not None and host:
+        if parts.scheme == "https":
+            return
+        if parts.scheme == "http" and host.lower() in LOOPBACK_HOSTS:
+            return
+    raise RuntimeError(
+        f"{ENV_LLM_BASE_URL} must be an https URL or a loopback address "
+        "(127.0.0.1, localhost, ::1) when CABINET_ENV=production, so the key "
+        "and the findings never travel in the clear; refusing to start"
+    )
+
+
+class _RedirectRefused(urllib.request.HTTPRedirectHandler):
+    """Refuse every redirect from the model endpoint: following one would
+    send the Authorization header (the key) and the findings to whatever
+    host the redirect names."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> None:
+        raise ProviderUnavailable(
+            f"the chat endpoint answered a redirect (HTTP {code}); redirects "
+            "are never followed, so the key is never sent to another host. "
+            f"Set {ENV_LLM_BASE_URL} to the endpoint's final address",
+            provider="chat",
+        )
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_RedirectRefused())
+
+
+def _urlopen(request: urllib.request.Request, timeout: float) -> Any:
+    """The model client's only network call: urllib with redirects refused."""
+    return _NO_REDIRECT_OPENER.open(request, timeout=timeout)
 
 
 class ProviderUnavailable(Exception):
@@ -442,9 +510,7 @@ class ChatProvider:
                     },
                     method="POST",
                 )
-                with urllib.request.urlopen(
-                    request, timeout=CHAT_TIMEOUT_SECONDS
-                ) as response:
+                with _urlopen(request, timeout=CHAT_TIMEOUT_SECONDS) as response:
                     try:
                         parsed: Any = json.loads(response.read().decode("utf-8"))
                     # ValueError covers JSONDecodeError and UnicodeDecodeError;

@@ -291,3 +291,126 @@ def test_ellucian_allow_list_accepts_its_own_paths_and_version_overrides(
     config["students"]["path"] = "person-holds"
     with pytest.raises(ellucian.EthosError, match="allow list"):
         ellucian.validate_resource_config(config)
+
+
+# --- 5. the model endpoint: https or loopback in production, no redirects -----
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://model.example.edu/v1",
+        "http://10.0.0.1:8100/v1",
+        "http://127.0.0.1.attacker.example/v1",
+        "ftp://model.example.edu/v1",
+        "model.example.edu/v1",
+        "https:///v1",
+    ],
+)
+def test_production_refuses_a_model_endpoint_that_is_not_https_or_loopback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], url: str
+) -> None:
+    monkeypatch.setenv("CABINET_ENV", "production")
+    monkeypatch.setenv("CABINET_BIND", "127.0.0.1")
+    monkeypatch.setenv("CABINET_LLM_BASE_URL", url)
+    with pytest.raises(SystemExit) as excinfo:
+        create_app()
+    assert excinfo.value.code == 1
+    err = capsys.readouterr().err
+    assert err.startswith("cabinet: cannot start: CABINET_LLM_BASE_URL")
+    assert err.count("\n") == 1
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://model.example.edu/v1",
+        "http://127.0.0.1:8000/v1",
+        "http://localhost:8000/v1",
+        "http://[::1]:8000/v1",
+        "HTTP://LOCALHOST/v1",
+    ],
+)
+def test_production_starts_with_an_https_or_loopback_model_endpoint(
+    monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    monkeypatch.setenv("CABINET_ENV", "production")
+    monkeypatch.setenv("CABINET_BIND", "127.0.0.1")
+    monkeypatch.setenv("CABINET_LLM_BASE_URL", url)
+    create_app()
+
+
+def test_outside_production_any_model_endpoint_still_starts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("CABINET_ENV", raising=False)
+    monkeypatch.setenv("CABINET_LLM_BASE_URL", "http://model.example.edu/v1")
+    create_app()
+
+
+def test_model_client_refuses_a_redirect_and_never_forwards_the_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A real local endpoint answering 302 to a second local server: the call
+    is unavailable, made once, and nothing reaches the redirect target."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from cabinet.provider import ChatProvider, ProviderUnavailable
+
+    target_hits: list[str | None] = []
+
+    class Target(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802 (http.server's name)
+            target_hits.append(self.headers.get("Authorization"))
+            self.send_response(200)
+            self.end_headers()
+
+        # urllib turns a followed 302 into a GET that still carries the
+        # Authorization header; record that too.
+        do_GET = do_POST  # noqa: N815
+
+        def log_message(self, *args: Any) -> None:
+            return
+
+    target = HTTPServer(("127.0.0.1", 0), Target)
+    origin_hits: list[str] = []
+
+    class Origin(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802
+            origin_hits.append(self.path)
+            self.send_response(302)
+            self.send_header(
+                "Location",
+                f"http://127.0.0.1:{target.server_port}/v1/chat/completions",
+            )
+            self.end_headers()
+
+        def log_message(self, *args: Any) -> None:
+            return
+
+    origin = HTTPServer(("127.0.0.1", 0), Origin)
+    threads = [
+        threading.Thread(target=server.serve_forever, daemon=True)
+        for server in (target, origin)
+    ]
+    for thread in threads:
+        thread.start()
+    try:
+        monkeypatch.setenv(
+            "CABINET_LLM_BASE_URL", f"http://127.0.0.1:{origin.server_port}/v1"
+        )
+        monkeypatch.setenv("CABINET_LLM_MODEL", "test-model")
+        monkeypatch.setenv("CABINET_LLM_API_KEY", "sk-test-secret-key")
+        with pytest.raises(ProviderUnavailable) as excinfo:
+            ChatProvider().explain(
+                {"M2": {"value": 3, "display": "3"}}, "enrollment_analyst"
+            )
+    finally:
+        for server in (target, origin):
+            server.shutdown()
+            server.server_close()
+    assert "redirect" in excinfo.value.reason
+    assert "sk-test-secret-key" not in excinfo.value.reason
+    assert origin_hits == ["/v1/chat/completions"]
+    assert target_hits == []
