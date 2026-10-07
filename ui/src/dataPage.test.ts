@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { canSeeDataPage, formatTick, formatValue, niceTicks, seriesQuery, valueDomain } from './dataPage'
+import { canSeeDataPage, formatTick, formatValue, niceTicks, seriesQuery, validChoices, valueDomain, type DataCatalog } from './dataPage'
 
 describe('dataPage helpers', () => {
   it('gates the page by the same roles as the API', () => {
@@ -31,5 +31,16 @@ describe('dataPage helpers', () => {
     expect(hi - lo).toBeGreaterThanOrEqual(10)
     expect(valueDomain([97, 99], 'pct', 'line')[1]).toBeLessThanOrEqual(100)
     expect(niceTicks(0, 100)).toEqual([0, 25, 50, 75, 100])
+  })
+
+  it('drops a saved comparison by an attribute that is also a filter', () => {
+    const catalog = {
+      dashboards: [{ id: 'students', title: 'Students', intro: '', charts: [] }],
+      filters: [{ key: 'gender', label: 'Gender', options: [{ value: 'male', label: 'Men' }] }],
+      compare: [{ key: 'gender', label: 'Gender' }],
+      years: ['2020-2021'],
+    } as unknown as DataCatalog
+    const out = validChoices({ dashboard: 'x', from: '', to: '', compare: 'gender', filters: { gender: 'male' } }, catalog)
+    expect(out).toEqual({ dashboard: 'students', from: '', to: '', compare: '', filters: { gender: 'male' } })
   })
 })

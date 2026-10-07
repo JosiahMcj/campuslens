@@ -249,7 +249,8 @@ def test_finance_charts_read_financial_holds(
         assert total["series"][0]["points"][0]["value"] == pytest.approx(expected[1])
     for p in _points(median):
         if p["status"] == "ok":
-            assert p["value"] > 0
+            # Never one student's exact balance: rounded to $10.
+            assert p["value"] > 0 and p["value"] % 10 == 0
     assert total["kind"] == "dollars"
 
 

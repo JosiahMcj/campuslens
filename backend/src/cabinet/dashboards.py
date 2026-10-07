@@ -307,7 +307,7 @@ CHARTS: tuple[Chart, ...] = (
         "line",
         stat="median",
         note="The median: half of the students with a financial hold owed less, "
-        "half owed more.",
+        "half owed more. Rounded to the nearest $10.",
     ),
     _c(
         "pell_share",
@@ -609,7 +609,9 @@ def _point(
     m = chart.measure
     out: dict[str, Any] = {"status": "ok", "students": cell.students}
     if chart.stat == "median":
-        out["value"] = round(median or 0.0, 2)
+        # Rounded to the nearest $10: a median of an odd number of students
+        # is one student's own balance, which is never published exactly.
+        out["value"] = int(round((median or 0.0) / 10.0) * 10)
     elif m.kind == "count":
         out["value"] = int(cell.num)
     elif m.kind == "dollars":

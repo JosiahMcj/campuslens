@@ -197,7 +197,11 @@ export function validChoices(choices: DataChoices, catalog: DataCatalog): DataCh
     dashboard: dashboards.includes(choices.dashboard) ? choices.dashboard : (dashboards[0] ?? ''),
     from,
     to,
-    compare: catalog.compare.some((c) => c.key === choices.compare) ? choices.compare : '',
+    // A comparison by an attribute that is also narrowed to one value is no comparison.
+    compare:
+      catalog.compare.some((c) => c.key === choices.compare) && filters[choices.compare] === undefined
+        ? choices.compare
+        : '',
     filters,
   }
 }
