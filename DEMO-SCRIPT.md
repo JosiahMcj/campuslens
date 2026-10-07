@@ -96,6 +96,9 @@ access** from the sidebar for two seconds, and press **Back**.*
 > behind it. The model only explains numbers it is given, and a checker rejects any
 > sentence whose number doesn't match."
 
+> (Optional) "The support indicators work the same way. There are four named rules,
+> and for each pseudonymous student we show exactly which rules fired and why."
+
 *Press **Back**.*
 
 ## Beat 4, 1:45 to 2:35 · Ask anything
@@ -134,8 +137,8 @@ highest dropout rate".*
 
 *Type: "Which students have met with a counselor this term?"*
 
-> "Some questions it will never answer. Counseling records, one student's file,
-> predictions about a person. It refuses before any model is called, and it writes that
+> "Some questions it will never answer: counseling records, one student's file,
+> or a guess about one person's future. It refuses before any model is called, and it writes that
 > down."
 
 *Open **Audit log**, filter to refusals, point at the entry.*
