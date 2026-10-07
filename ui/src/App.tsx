@@ -1152,7 +1152,6 @@ function BriefingPage({
   // An address for a page this role does not have goes back to the conversation.
   const pageAllowed = panel === null || panel === 'profile' || panel === 'settings' || panels.includes(panel)
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- an address the role cannot open
     if (!pageAllowed) setPanel(null)
   }, [pageAllowed])
   // What each AI employee was granted on the latest run: from the ask
