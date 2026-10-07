@@ -1405,7 +1405,7 @@ function BriefingPage({
         ...(aidQueue ? (['aid'] as PanelId[]) : []),
         ...(studentSearch ? (['students'] as PanelId[]) : []),
         ...(audit ? (['audit'] as PanelId[]) : []),
-        ...(canSeeSessions(role) && role === 'executive' ? (['sessions'] as PanelId[]) : []),
+        ...(canSeeSessions(role) ? (['sessions'] as PanelId[]) : []),
       ]
   // An address for a page this role does not have goes back to the conversation.
   const pageAllowed = panel === null || panel === 'profile' || panel === 'settings' || panels.includes(panel)
