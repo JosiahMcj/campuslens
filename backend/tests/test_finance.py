@@ -299,7 +299,7 @@ QUESTIONS: tuple[tuple[str, str, dict[str, Any]], ...] = (
     (
         "Which departments are over budget?",
         "budget_vs_actual",
-        {"by": "cost_center", "over_budget": "yes"},
+        {"by": "department", "over_budget": "yes"},
     ),
     ("What is our tuition discount rate trend?", "tuition_discount", {}),
     (

@@ -644,6 +644,11 @@ def plan_question(
         # planned the hold rate for "have holds and will drop"), so they go
         # first and the model plans only what they cannot map.
         order = RULES_FIRST
+    if order == MODEL_FIRST and _finance_by_rules(question, catalog):
+        # The same for the finance office's questions the rules map (18 of
+        # 18 on the finance set, the model 15 to 16: it left out "by
+        # department" and planned the payment-plan share by term).
+        order = RULES_FIRST
     if order == RULES_ONLY:
         # Never ask a model to plan: a question the rules cannot map gets
         # the example questions at once (a live demo on a slow model).
@@ -670,6 +675,25 @@ def plan_question(
         return PlanOutcome(model_steps, "model")
     steps, notes = rules(question, catalog)
     return PlanOutcome(steps, "rule", reason, notes)
+
+
+_BUDGET_ANALYSES = frozenset(
+    ("budget_vs_actual", "revenue_by_source", "tuition_discount")
+)
+
+
+def _finance_by_rules(question: str, catalog: Catalog) -> bool:
+    """Whether the rules map the question, and only to the university budget
+    or the student-account measures."""
+    steps, _ = rule_plan_detail(question, catalog)
+    return bool(steps) and all(
+        s.analysis_id in _BUDGET_ANALYSES
+        or (
+            s.analysis_id == general.ANALYSIS_ID
+            and s.params.get("measure") in general.ACCOUNT_MEASURES
+        )
+        for s in steps or []
+    )
 
 
 _SCOPE_PARAMS = frozenset(
@@ -1522,8 +1546,12 @@ def _budget_step(text: str, v: Vocab) -> Step | None:
         if year is not None:
             p["fiscal_year"] = year
         if _has(r"department|cost cent|office|\bunits?\b|program", text):
-            p["by"] = "cost_center"
-        elif _has(r"categor|by type|kind of", text):
+            p["by"] = "department"
+        elif _has(
+            r"categor|by type|kind of|salar|technology|travel|facilities|"
+            r"operations|scholarships",
+            text,
+        ):
             p["by"] = "category"
         elif _has(r"\bfunds?\b", text):
             p["by"] = "fund"
@@ -1570,7 +1598,7 @@ _NEW_MEASURES: tuple[tuple[str, str], ...] = (
     ("collection_rate", r"collection rate|collect(?:ed|ions?)\b"),
     (
         "past_due_balance",
-        r"past[- ]due|overdue|delinquen|outstanding balances?|accounts? receivable|"
+        r"past[- ]due|overdue|delinquen|outstanding balances?|receivables?\b|"
         r"\baging\b",
     ),
     (

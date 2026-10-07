@@ -412,7 +412,7 @@ FINANCE_SET: tuple[tuple[str, list[Plan] | None], ...] = (
     ("What is our budget vs actual this year?", _bva()),
     (
         "Which departments are over budget?",
-        _bva(by="cost_center", over_budget="yes"),
+        _bva(by="department", over_budget="yes"),
     ),
     ("What is our tuition discount rate trend?", [[("tuition_discount", {})]]),
     (
@@ -459,7 +459,56 @@ FINANCE_SET: tuple[tuple[str, list[Plan] | None], ...] = (
     ),
 )
 
+# Written after the rules and the prompt were final for the finance set;
+# nothing was tuned on it.
+FINANCE_HELD_OUT: tuple[tuple[str, list[Plan] | None], ...] = (
+    (
+        "how far over budget is athletics this year",
+        _bva() + _bva(over_budget="yes") + _bva(by="department"),
+    ),
+    (
+        "how much did we give away in institutional aid in fy2023",
+        [
+            [("tuition_discount", {"fiscal_year": "FY2023"})],
+            [("revenue_by_source", {"fiscal_year": "FY2023"})],
+        ],
+    ),
+    ("what share of our students pay late", [_mbg("on_time_payment_rate")]),
+    ("total outstanding receivables", [_mbg("past_due_balance")]),
+    (
+        "which college has the most students behind on their bills",
+        [
+            _mbg("past_due_students", group_by="college"),
+            _mbg("past_due_students", group_by="college", order="highest_first"),
+        ],
+    ),
+    (
+        "how did gifts and grants come in against budget last year",
+        [[("revenue_by_source", {"fiscal_year": "FY2025"})]],
+    ),
+    (
+        "what was the discount rate in 2023-24",
+        [[("tuition_discount", {"fiscal_year": "FY2024"})]],
+    ),
+    (
+        "payment plan use by class level",
+        [_mbg("payment_plan_share", group_by="class_level")],
+    ),
+    (
+        "are we spending more than we planned on technology",
+        _bva(by="category") + _bva(by="category", over_budget="yes"),
+    ),
+    (
+        "how much money do pell students owe that's overdue",
+        [
+            _mbg("past_due_balance", pell="pell"),
+            _mbg("past_due_balance", group_by="pell"),
+        ],
+    ),
+)
+
 SETS = {
+    "finance-held-out": FINANCE_HELD_OUT,
     "main": EVAL_SET,
     "held-out": HELD_OUT,
     "forward": FORWARD_SET,

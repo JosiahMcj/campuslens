@@ -66,8 +66,8 @@ PURPOSE: dict[str, str] = {
     "measure_by_group": "ONE measure (below) for all students, or broken down by "
     "up to two groupings, with filters; counts and rates for any student group",
     "budget_vs_actual": "spending vs budget",
-    "revenue_by_source": "revenue by source vs budget",
-    "tuition_discount": "gross and net tuition, discount rate, by FY",
+    "revenue_by_source": "revenue vs budget",
+    "tuition_discount": "tuition and discount rate by FY",
 }
 
 # One line per measure of measure_by_group.

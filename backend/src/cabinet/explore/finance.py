@@ -58,10 +58,10 @@ SOURCE_LABELS = {
     "other": "Other (athletics, conferences, rentals)",
 }
 SOURCE_ORDER = tuple(SOURCE_LABELS)
-BY_CHOICES = ("division", "cost_center", "category", "fund")
+BY_CHOICES = ("division", "department", "category", "fund")
 BY_LABELS = {
     "division": "division",
-    "cost_center": "department or office",
+    "department": "department or office",
     "category": "expense category",
     "fund": "fund",
 }
@@ -129,7 +129,7 @@ def budget_vs_actual(
     by = str(p.get("by") or "division")
     key_sql = {
         "division": "c.division",
-        "cost_center": "c.name",
+        "department": "c.name",
         "category": "b.category",
         "fund": "b.fund",
     }[by]
