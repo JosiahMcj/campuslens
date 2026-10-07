@@ -85,9 +85,9 @@ export interface Series {
   points: Point[]
 }
 
-/** `pct_of_budget` is a percentage around 100 (actual as a share of budget):
- * its axis fits the data instead of starting at zero. */
-export type ValueKind = 'count' | 'pct' | 'gpa' | 'dollars' | 'average' | 'years' | 'pct_of_budget'
+/** `pct_fit` is a percentage whose axis fits the data instead of starting
+ * at zero (spending as a share of budget, around 100; the discount rate). */
+export type ValueKind = 'count' | 'pct' | 'gpa' | 'dollars' | 'average' | 'years' | 'pct_fit'
 
 export interface XValue {
   key: string
@@ -251,7 +251,7 @@ export function formatValue(value: number, kind: ValueKind): string {
     case 'count':
       return GROUPED.format(value)
     case 'pct':
-    case 'pct_of_budget':
+    case 'pct_fit':
       return `${value.toFixed(1)}%`
     case 'gpa':
       return value.toFixed(2)
@@ -272,7 +272,7 @@ export function formatTick(value: number, kind: ValueKind): string {
   }
   switch (kind) {
     case 'pct':
-    case 'pct_of_budget':
+    case 'pct_fit':
       return `${trim(value)}%`
     case 'gpa':
       return value.toFixed(2)
@@ -311,7 +311,7 @@ export function valueDomain(values: number[], kind: ValueKind, form: 'line' | 'b
   if (form === 'bar' || kind === 'count' || kind === 'dollars' || kind === 'pct') {
     return [0, hi > 0 ? hi : 1]
   }
-  const minimumSpan = kind === 'gpa' ? 0.5 : kind === 'pct_of_budget' ? 10 : Math.max(Math.abs(hi) * 0.1, 1)
+  const minimumSpan = kind === 'gpa' ? 0.5 : kind === 'pct_fit' ? 10 : Math.max(Math.abs(hi) * 0.1, 1)
   const span = Math.max(hi - lo, minimumSpan)
   const middle = (hi + lo) / 2
   let low = middle - span / 2

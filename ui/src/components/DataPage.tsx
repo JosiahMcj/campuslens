@@ -182,7 +182,7 @@ export function DataPage({ account }: DataPageProps) {
         <span>
           {students
             ? `Totals only, never a student's record. A point covering fewer than ${data.minimum_cell_size} students is withheld and shown as a gap.`
-            : "The university's own books by fiscal year (July to June). No student records are in them."}
+            : 'Institutional figures, not student records, so no small-group rule applies.'}
         </span>
       </p>
 
@@ -449,7 +449,11 @@ function ChartBody({
                 </button>
               ) : (
                 <span className="data-legend-item is-static">
-                  <span className="swatch is-reference" aria-hidden="true" />
+                  {s.slot === null ? (
+                    <span className="swatch is-reference" aria-hidden="true" />
+                  ) : (
+                    <span className="swatch" style={{ background: `var(--series-${(s.slot % 7) + 1})` }} aria-hidden="true" />
+                  )}
                   {s.label}
                 </span>
               )}

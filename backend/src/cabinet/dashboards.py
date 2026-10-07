@@ -469,7 +469,7 @@ class BudgetChart:
     id: str
     title: str
     form: str
-    kind: str  # dollars, pct, or pct_of_budget (a percentage around 100)
+    kind: str  # dollars, pct, or pct_fit (a percentage on an axis fitted to the data)
     value_label: str
     definition: str
 
@@ -488,7 +488,7 @@ BUDGET_CHARTS: tuple[BudgetChart, ...] = (
         "budget_divisions",
         "Spending as a share of budget, by division",
         "line",
-        "pct_of_budget",
+        "pct_fit",
         "Actual as a share of budget (%)",
         "Each division's actual spending as a percentage of its budget: above 100 is "
         "over budget. The divisions that strayed furthest from budget are shown, "
@@ -516,7 +516,7 @@ BUDGET_CHARTS: tuple[BudgetChart, ...] = (
         "budget_discount",
         "Tuition discount rate",
         "line",
-        "pct",
+        "pct_fit",
         "Discount rate (%)",
         "Institutional aid as a share of gross tuition.",
     ),
@@ -532,7 +532,9 @@ def budget_series(con: Any, chart: BudgetChart) -> dict[str, Any]:
     years = con.execute(
         "SELECT fiscal_year, academic_year, status FROM fiscal_years ORDER BY 1"
     ).fetchall()
-    xs = [{"key": fy, "label": fy, "year": ay} for fy, ay, _ in years]
+    # Short labels ("FY21", like "Fall '20" on the term charts) fit six bars
+    # side by side on a phone.
+    xs = [{"key": fy, "label": f"FY{fy[-2:]}", "year": ay} for fy, ay, _ in years]
     notes = [
         f"{fy} is preliminary: the books are not closed and June is estimated."
         for fy, _, status in years
@@ -1066,7 +1068,7 @@ def compute(
             )
     if m.unit == "cohort" and not chart.all_entrants and attr != "admit_type":
         notes.append("Entering students are first-time students.")
-    if m.kind == "pct":
+    if m.kind == "pct" and m.id != "collection_rate":  # dollars, not people
         notes.append(
             "A rate is also withheld when fewer than 10 are counted either way "
             "(for example fewer than 10 who returned, or fewer than 10 who did "

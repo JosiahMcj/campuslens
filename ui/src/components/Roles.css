@@ -447,6 +447,12 @@
   font-weight: 650;
 }
 
+/* Figures never break inside ("−$248,948,000", "$462.9 million"): a wide
+   table scrolls sideways in its own box instead. */
+.overview-table td {
+  white-space: nowrap;
+}
+
 .overview-table-note {
   margin: var(--space-2) 0 0;
 }

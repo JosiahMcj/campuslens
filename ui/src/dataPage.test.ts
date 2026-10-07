@@ -9,6 +9,14 @@ describe('dataPage helpers', () => {
     expect(canSeeDataPage(null)).toBe(false)
   })
 
+  it('reads a share of budget around 100 on a fitted axis, as a percentage', () => {
+    expect(formatValue(108.9, 'pct_fit')).toBe('108.9%')
+    expect(formatTick(105, 'pct_fit')).toBe('105%')
+    const [low, high] = valueDomain([99.1, 108.9], 'pct_fit', 'line')
+    expect(low).toBeGreaterThan(90)
+    expect(high).toBeGreaterThanOrEqual(108.9)
+  })
+
   it('builds a stable query: chart, comparison, then filters in key order', () => {
     expect(seriesQuery('dfw', 'gender', { pell: 'pell', college: 'COE', major: '' })).toBe(
       'chart=dfw&compare=gender&college=COE&pell=pell',
