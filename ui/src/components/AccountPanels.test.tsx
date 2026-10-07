@@ -82,10 +82,13 @@ describe('DataAccessPanel', () => {
     const html = renderToStaticMarkup(<DataAccessPanel grants={null} />)
     const ask = 'Ask any question about students, courses and majors (totals only)'
     const rows = html.match(/<tr><th scope="row">[^<]+<\/th><td>[^<]*<\/td><\/tr>/g) ?? []
-    expect(rows).toHaveLength(5)
+    expect(rows).toHaveLength(9)
     for (const row of rows) {
-      // Every role that can ask has the line; Financial Aid does not.
-      expect(row.includes(ask)).toBe(!row.includes('Financial Aid review queue, with a status'))
+      // Every role that can ask has the line; Financial Aid and IT do not.
+      const cannotAsk =
+        row.includes('Financial Aid review queue, with a status') ||
+        row.includes('Manage the department and staff accounts')
+      expect(row.includes(ask)).toBe(!cannotAsk)
     }
     expect(html).toContain('Instructor names are shown to the executive and admin only.')
     // The empty note sits directly above the cards, which keep their own gap.
