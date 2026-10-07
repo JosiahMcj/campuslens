@@ -186,11 +186,11 @@ describe('navigation by role', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Student Accounts Analyst' }))
     const cards = await screen.findAllByRole('article')
     expect(cards[0].getAttribute('aria-label')).toBe('Student Accounts Analyst')
-    expect(within(cards[0]).getByText('Your department')).toBeTruthy()
+    expect(within(cards[0]).getByText('Your AI employee')).toBeTruthy()
     expect(within(cards[0]).getByText('Handled 2 requests today')).toBeTruthy()
     expect(calls.some((call) => call.endsWith('/staff'))).toBe(true)
     expect(calls.some((call) => call.includes('/events'))).toBe(false)
-    expect(screen.queryByText(/Ask a question to see exactly/)).toBeNull()
+    expect(screen.queryByText(/to see exactly what each/)).toBeNull()
   })
 
   it('shows the president every page plus the inbox, the overviews and sign-in activity', async () => {

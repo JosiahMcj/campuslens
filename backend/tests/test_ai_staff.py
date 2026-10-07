@@ -503,6 +503,8 @@ def test_staff_route_lists_everyone_own_department_first_with_todays_counts(
     by_role = {e["role"]: e for e in employees}
     assert by_role["student_accounts_analyst"]["requests_today"] == 1
     assert by_role["registrar_analyst"]["requests_today"] == 0
+    # The Chief of Staff delegated it.
+    assert by_role["chief_of_staff"]["requests_today"] == 1
     for e in employees:
         assert e["title"] and e["job"] and e["office"]
         assert "Counseling and chaplain notes" in e["never_reads"]

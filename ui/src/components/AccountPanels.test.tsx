@@ -117,7 +117,7 @@ describe('DataAccessPanel', () => {
       'Advancement Analyst',
     ])
     const own = within(cards[0])
-    expect(own.getByText('Your department')).toBeTruthy()
+    expect(own.getByText('Your AI employee')).toBeTruthy()
     expect(own.getByText('Serves Finance — Student Accounts (Bursar)')).toBeTruthy()
     expect(own.getByText('Reports account holds and balances owed, by office.')).toBeTruthy()
     expect(own.getByText('May read, as totals')).toBeTruthy()
@@ -128,17 +128,17 @@ describe('DataAccessPanel', () => {
     expect(own.getByText('Outside its job (2)')).toBeTruthy()
     expect(within(cards[1]).getByText('Handled 1 request today')).toBeTruthy()
     expect(within(cards[2]).getByText('No requests today')).toBeTruthy()
-    expect(within(cards[2]).queryByText('Your department')).toBeNull()
+    expect(within(cards[2]).queryByText('Your AI employee')).toBeNull()
     const none = within(cards[3])
     expect(none.getByText('No data connected yet')).toBeTruthy()
     expect(none.getByText('Nothing yet: no data is connected for this office.')).toBeTruthy()
     expect(none.queryByText(/Outside its job/)).toBeNull()
-    expect(screen.getByText('Ask a question to see exactly what each employee was given.')).toBeTruthy()
+    expect(screen.getByText('Ask an approved briefing question to see exactly what each briefing employee was given.')).toBeTruthy()
   })
 
   it('leaves out the "ask a question" note for roles without briefing runs', () => {
     const html = renderToStaticMarkup(<DataAccessPanel staff={STAFF} />)
-    expect(html).not.toContain('Ask a question to see')
+    expect(html).not.toContain('to see exactly what each')
     expect(html.match(/class="grant-job"/g)).toHaveLength(4)
   })
 
@@ -179,7 +179,7 @@ describe('DataAccessPanel', () => {
       />,
     )
     expect(html).toContain('>Retry</button>')
-    expect(html).not.toContain('Ask a question to see')
+    expect(html).not.toContain('to see exactly what each')
   })
 })
 

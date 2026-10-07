@@ -224,6 +224,15 @@ _FIXTURE_GROUP_LABELS = {
 
 def may_read(role: str) -> list[str]:
     """What the employee may receive, in plain words (always as totals)."""
+    if role == COORDINATOR:
+        # The coordinator's areas are everyone's but the instructor rows:
+        # said once rather than listed.
+        return [
+            "Every department's totals, as its analyst reports them "
+            "(never instructor-level rows)",
+            "The briefing's figures, and the counseling count only when the "
+            "institution has authorized it",
+        ]
     words = [AREA_LABELS[a] for a in ROLE_SCHOOL_AREAS.get(role, ())]
     briefing = sorted(
         {
@@ -487,6 +496,8 @@ def denial_message(role: str) -> str:
 
 # --- GET /staff ---------------------------------------------------------------
 
+COUNTED_EVENTS = ("data.granted", "data.refused", "explore.answered")
+
 router = APIRouter()
 
 
@@ -499,11 +510,13 @@ def _local_day(ts: str) -> str:
 
 def requests_today(events: list[dict[str, Any]]) -> dict[str, int]:
     """Requests each employee handled today (server local date): distinct
-    task ids across its ``data.granted`` and ``data.refused`` events."""
+    task ids across its ``data.granted`` and ``data.refused`` events, and for
+    the Chief of Staff also the Explore questions it delegated
+    (``explore.answered``)."""
     today = datetime.now().astimezone().date().isoformat()
     tasks: dict[str, set[str]] = {}
     for event in events:
-        if event.get("type") not in ("data.granted", "data.refused"):
+        if event.get("type") not in COUNTED_EVENTS:
             continue
         actor = str(event.get("actor", ""))
         if actor not in EMPLOYEES or _local_day(str(event.get("ts", ""))) != today:
@@ -551,8 +564,9 @@ def get_staff(request: Request) -> JSONResponse:
     store = request.app.state.auth
     institution_id = int(user["institution_id"])
     events = [
-        *store.audit_events(institution_id, "data.granted"),
-        *store.audit_events(institution_id, "data.refused"),
+        event
+        for event_type in COUNTED_EVENTS
+        for event in store.audit_events(institution_id, event_type)
     ]
     return JSONResponse(content=staff_directory(str(user["role"]), events))
 

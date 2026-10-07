@@ -357,7 +357,7 @@ export function DataAccessPanel({
       )}
       {staff !== null && error === null && grants !== undefined && (grants === null || grants.length === 0) && (
         <p className="panel-text state-empty">
-          Ask a question to see exactly what each employee was given.
+          Ask an approved briefing question to see exactly what each briefing employee was given.
         </p>
       )}
       {staff !== null && (
@@ -372,7 +372,7 @@ export function DataAccessPanel({
               >
                 <p className="grant-name">
                   {employee.title}
-                  {employee.yours && <span className="grant-tag grant-tag-yours">Your department</span>}
+                  {employee.yours && <span className="grant-tag grant-tag-yours">Your AI employee</span>}
                   {employee.no_data && <span className="grant-tag">No data connected yet</span>}
                 </p>
                 <p className="grant-office">Serves {employee.office}</p>

@@ -677,3 +677,8 @@ button.finding-link:not(.stat-figure):not(.evidence-tag):active {
   font-size: var(--text-xs);
   color: var(--ink-soft);
 }
+
+/* Directly under the source line: the two read as one small footer. */
+.explore-source + .explore-answered-by {
+  margin-top: calc(var(--space-1) - var(--space-3));
+}
