@@ -69,6 +69,7 @@ import { StaffActionsPage } from './components/StaffActionsPage'
 import { LensMark } from './components/LensMark'
 import { Thinking } from './components/Thinking'
 import { BackIcon, MenuIcon } from './components/icons'
+import { FirstResult } from './components/FirstResult'
 import { StatRow } from './components/StatRow'
 import { friendlyError, friendlyLoadError, isRateLimited, retryAfterSeconds } from './errors'
 import {
@@ -1816,6 +1817,25 @@ function BriefingPage({
             <span className="work-link">See who worked on this</span>
           </button>
         )}
+        {current && (
+          <FirstResult
+            findings={findings}
+            fictional={fictional}
+            role={role}
+            decision={decisions?.[0] ?? null}
+            dispatch={decisions?.[0] != null ? (dispatches[decisions[0].id]?.info ?? null) : null}
+            onOpenEvidence={openEvidence}
+            onReviewNextSteps={() => {
+              const target = document.getElementById('reply-next-steps')
+              if (target === null) return
+              target.scrollIntoView({
+                behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+                block: 'start',
+              })
+              target.focus({ preventScroll: true })
+            }}
+          />
+        )}
         <ExecutiveSummary
           findings={findings}
           chiefSummary={summarySection}
@@ -1825,8 +1845,9 @@ function BriefingPage({
         />
         {current && (
           <>
-            <StatRow findings={findings} onOpenEvidence={openEvidence} />
-            {decisionPanel('Your decision')}
+            <div id="reply-next-steps" className="reply-next-steps" tabIndex={-1}>
+              {decisionPanel('Your decision')}
+            </div>
             <div className="reply-actions">
               <button type="button" className="link-button" onClick={() => openPanel('briefing')}>
                 Read the full briefing

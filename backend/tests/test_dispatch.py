@@ -15,7 +15,7 @@ import sqlite3
 import ssl
 import threading
 import time
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -247,6 +247,14 @@ def test_get_dispatch_reports_approval_and_contact_state() -> None:
     assert before["dispatch"] is None
     assert before["approved_by"] is None
     assert before["approved_at"] is None
+    # No email delivery is configured in tests: the state says so, and the
+    # fictional dataset carries a proposed deadline (data date + 7 days,
+    # capped at the day registration closes).
+    assert before["delivery"] == "outbox"
+    meta = admin.get("/findings").json()["meta"]
+    proposed = date.fromisoformat(before["proposed_due"])
+    assert proposed > date.fromisoformat(meta["as_of"])
+    assert proposed <= date.fromisoformat(meta["terms"]["registration_close_date"])
 
     _approve(admin)
     _compose(admin)

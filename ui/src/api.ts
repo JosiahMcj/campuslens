@@ -365,6 +365,12 @@ export interface DispatchInfo {
   approved_by?: string | null
   approved_at?: string | null
   dispatch: DispatchRecord | null
+  /** How a sent message leaves the server: 'outbox' means it is saved on
+   * the server and nothing is emailed; 'smtp' means it is emailed. */
+  delivery?: string | null
+  /** A proposed follow-up deadline (ISO date), fictional dataset only. It
+   * is a suggestion computed by the API; nothing is stored. */
+  proposed_due?: string | null
   /** The Financial Aid review queue for this decision: counts only. */
   aid_queue?: AidQueueSummary
 }

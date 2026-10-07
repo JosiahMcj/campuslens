@@ -2388,3 +2388,17 @@ details[open]::details-content {
 .authorization-record li {
   overflow-wrap: anywhere;
 }
+
+/* .btn-lg: a button read from across a room (the first result screen's two
+   actions). A size only; the look still comes from .btn-primary/-secondary. */
+.btn-lg {
+  min-height: calc(var(--tap) + var(--space-3));
+  padding: var(--space-3) var(--space-5);
+  font-size: var(--text-lg);
+}
+
+.btn-secondary.btn-lg {
+  border-width: 2px;
+  border-color: var(--navy);
+  color: var(--navy);
+}
