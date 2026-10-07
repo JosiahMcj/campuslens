@@ -1,0 +1,1863 @@
+{
+ "ranking": {
+  "question": "What majors have the highest dropout rate?",
+  "response": {
+   "refused": false,
+   "answer": [
+    {
+     "text": "Mechanical Engineering has the highest dropout rate: 19.6% (235 of 1,201 students), against 12.1% overall.",
+     "claims": [
+      {
+       "table": 0,
+       "row": 0,
+       "column": "value"
+      },
+      {
+       "table": 0,
+       "row": 0,
+       "column": "numerator"
+      },
+      {
+       "table": 0,
+       "row": 0,
+       "column": "students"
+      },
+      {
+       "table": 0,
+       "row": 10,
+       "column": "value"
+      }
+     ]
+    },
+    {
+     "text": "Next is Human Resources at 16.2%.",
+     "claims": [
+      {
+       "table": 0,
+       "row": 1,
+       "column": "value"
+      }
+     ]
+    },
+    {
+     "text": "Dropping out here means leaving without a degree, missing the following fall and spring terms, and not enrolling at another college.",
+     "claims": []
+    }
+   ],
+   "steps": [
+    {
+     "analysis_id": "measure_by_group",
+     "title": "A measure by group",
+     "params_plain": [
+      "Measure: dropout rate",
+      "Grouped by: major",
+      "Ranked: highest first"
+     ],
+     "fields_read": [
+      "students.enrollment_status",
+      "subsequent_enrollment (enrolled at another college)",
+      "student_term_records.program_code",
+      "student_term_records.term_code"
+     ],
+     "aggregate_only": true,
+     "table": {
+      "columns": [
+       {
+        "key": "major",
+        "label": "Major code",
+        "kind": "text"
+       },
+       {
+        "key": "major_name",
+        "label": "Major",
+        "kind": "text"
+       },
+       {
+        "key": "students",
+        "label": "Students",
+        "kind": "count"
+       },
+       {
+        "key": "numerator",
+        "label": "Dropped out",
+        "kind": "count"
+       },
+       {
+        "key": "value",
+        "label": "Dropout rate (%)",
+        "kind": "pct"
+       }
+      ],
+      "rows": [
+       [
+        "MEEN",
+        "Mechanical Engineering",
+        1201,
+        235,
+        19.6
+       ],
+       [
+        "HRMG",
+        "Human Resources",
+        277,
+        45,
+        16.2
+       ],
+       [
+        "HCAD",
+        "Healthcare Management",
+        515,
+        78,
+        15.1
+       ],
+       [
+        "ELEN",
+        "Electrical Engineering",
+        485,
+        73,
+        15.1
+       ],
+       [
+        "INFT",
+        "Information Technology",
+        611,
+        91,
+        14.9
+       ],
+       [
+        "THEO",
+        "Theology",
+        250,
+        37,
+        14.8
+       ],
+       [
+        "CYBR",
+        "Cybersecurity",
+        392,
+        58,
+        14.8
+       ],
+       [
+        "ENVS",
+        "Environmental Science",
+        367,
+        54,
+        14.7
+       ],
+       [
+        "FRSC",
+        "Forensic Science",
+        201,
+        28,
+        13.9
+       ],
+       [
+        "MKTG",
+        "Marketing",
+        645,
+        89,
+        13.8
+       ],
+       [
+        "All",
+        "All students",
+        37544,
+        4554,
+        12.1
+       ]
+      ]
+     },
+     "notes": [
+      "A student dropped out when they left without a degree, were not enrolled in either of the next two fall or spring terms or any term since, and were not found enrolled at another college (students who transferred out are not dropouts). Denominator: students enrolled at any time from Fall 2020 to Spring 2026, counted in the major of their latest term. Students whose last term was Fall 2025 without a degree are left out (too recent to tell).",
+      "The first 10 of 60 majors in this ranking are shown."
+     ]
+    }
+   ],
+   "source": "Calculated directly from the records",
+   "planner": "rule",
+   "card": {
+    "key_points": [
+     {
+      "text": "Highest: Mechanical Engineering, 19.6%.",
+      "claims": [
+       {
+        "table": 0,
+        "row": 0,
+        "column": "value"
+       }
+      ]
+     },
+     {
+      "text": "Lowest: Marketing, 13.8%.",
+      "claims": [
+       {
+        "table": 0,
+        "row": 9,
+        "column": "value"
+       }
+      ]
+     },
+     {
+      "text": "Mechanical Engineering is 7.5 points above the whole (12.1% for all students).",
+      "claims": [
+       {
+        "table": 1,
+        "row": 0,
+        "column": "change"
+       },
+       {
+        "table": 0,
+        "row": 10,
+        "column": "value"
+       }
+      ]
+     }
+    ],
+    "chart": {
+     "template": "ranking_bar",
+     "form": "bar",
+     "table": 0,
+     "value": "value",
+     "value_label": "Dropout rate (%)",
+     "kind": "pct",
+     "label": [
+      "major_name"
+     ],
+     "series": null,
+     "reference_row": 10
+    },
+    "extra_steps": [
+     {
+      "analysis_id": "key_figures",
+      "title": "Key figures worked out from the tables above",
+      "params_plain": [],
+      "fields_read": [],
+      "aggregate_only": true,
+      "table": {
+       "columns": [
+        {
+         "key": "what",
+         "label": "Figure",
+         "kind": "text"
+        },
+        {
+         "key": "compared",
+         "label": "Worked out from",
+         "kind": "text"
+        },
+        {
+         "key": "change",
+         "label": "Difference",
+         "kind": "points"
+        },
+        {
+         "key": "change_pct",
+         "label": "Change (%)",
+         "kind": "pct"
+        }
+       ],
+       "rows": [
+        [
+         "Gap from the whole",
+         "Mechanical Engineering against All students",
+         7.5,
+         62.0
+        ]
+       ]
+      },
+      "notes": [
+       "Each figure here is worked out in code from two cells of the tables above (a difference, or a change as a share of the earlier figure). It reads no records of its own."
+      ]
+     }
+    ],
+    "plan": [
+     {
+      "text": "Ask Student Success to explain what is behind the highest dropout rate and bring one change to try. Highest: Mechanical Engineering, 19.6%.",
+      "claims": [
+       {
+        "table": 0,
+        "row": 0,
+        "column": "value"
+       }
+      ]
+     },
+     {
+      "text": "Ask Student Success what the group with the lowest dropout rate does differently. Lowest: Marketing, 13.8%.",
+      "claims": [
+       {
+        "table": 0,
+        "row": 9,
+        "column": "value"
+       }
+      ]
+     },
+     {
+      "text": "Look at the dropout rate again with Student Success when the next term's records are in, and compare it with these figures.",
+      "claims": []
+     }
+    ],
+    "followups": {
+     "trend": "Dropout rate by entry cohort",
+     "breakdowns": [
+      {
+       "grouping": "class_level",
+       "label": "Class level",
+       "question": "Dropout rate by major and class level"
+      },
+      {
+       "grouping": "first_generation",
+       "label": "First-generation status",
+       "question": "Dropout rate by major and first-generation status"
+      },
+      {
+       "grouping": "pell",
+       "label": "Pell status",
+       "question": "Dropout rate by major and Pell status"
+      }
+     ],
+     "topic": null
+    }
+   }
+  }
+ },
+ "number": {
+  "question": "How many international students are in Nursing?",
+  "response": {
+   "refused": false,
+   "answer": [
+    {
+     "text": "41 international students were enrolled in Nursing in Spring 2026.",
+     "claims": [
+      {
+       "table": 0,
+       "row": 0,
+       "column": "value"
+      },
+      {
+       "table": 0,
+       "row": 0,
+       "column": "scope"
+      }
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "analysis_id": "measure_by_group",
+     "title": "A measure by group",
+     "params_plain": [
+      "Measure: headcount",
+      "Major: Nursing",
+      "Only: International students"
+     ],
+     "fields_read": [
+      "student_term_records.term_code",
+      "student_term_records.program_code",
+      "students.residency"
+     ],
+     "aggregate_only": true,
+     "table": {
+      "columns": [
+       {
+        "key": "scope",
+        "label": "Term",
+        "kind": "text"
+       },
+       {
+        "key": "value",
+        "label": "Students",
+        "kind": "count"
+       }
+      ],
+      "rows": [
+       [
+        "Spring 2026",
+        41
+       ]
+      ]
+     },
+     "notes": [
+      "Students enrolled in the term (each counted once), by default the latest fall or spring term."
+     ]
+    }
+   ],
+   "source": "Calculated directly from the records",
+   "planner": "rule",
+   "card": {
+    "key_points": [
+     {
+      "text": "Students: 41 in Spring 2026.",
+      "claims": [
+       {
+        "table": 0,
+        "row": 0,
+        "column": "value"
+       },
+       {
+        "table": 0,
+        "row": 0,
+        "column": "scope"
+       }
+      ]
+     },
+     {
+      "text": "A year earlier: the figure was 42 in Spring 2025 and 41 in Spring 2026, down 1 (2.4%).",
+      "claims": [
+       {
+        "table": 1,
+        "row": 0,
+        "column": "value"
+       },
+       {
+        "table": 1,
+        "row": 0,
+        "column": "term_name"
+       },
+       {
+        "table": 1,
+        "row": 2,
+        "column": "value"
+       },
+       {
+        "table": 1,
+        "row": 2,
+        "column": "term_name"
+       },
+       {
+        "table": 2,
+        "row": 0,
+        "column": "change"
+       },
+       {
+        "table": 2,
+        "row": 0,
+        "column": "change_pct"
+       }
+      ]
+     }
+    ],
+    "chart": {
+     "template": "kpi_number",
+     "form": "number",
+     "table": 0,
+     "value": "value",
+     "value_label": "Students",
+     "kind": "count",
+     "label": [],
+     "series": null,
+     "reference_row": null,
+     "trend": {
+      "table": 1,
+      "now_row": 2,
+      "then_row": 0,
+      "change_table": 2,
+      "change_row": 0,
+      "direction": "down",
+      "then_label": "Spring 2025"
+     }
+    },
+    "extra_steps": [
+     {
+      "analysis_id": "measure_by_group",
+      "title": "The same figure by term, for the trend",
+      "params_plain": [
+       "Measure: headcount",
+       "Grouped by: term",
+       "Major: Nursing",
+       "Only: International students",
+       "From term: Spring 2025",
+       "To term: Spring 2026",
+       "Ranked: in natural order"
+      ],
+      "fields_read": [
+       "student_term_records.term_code",
+       "student_term_records.program_code",
+       "students.residency"
+      ],
+      "aggregate_only": true,
+      "table": {
+       "columns": [
+        {
+         "key": "term",
+         "label": "Term code",
+         "kind": "text"
+        },
+        {
+         "key": "term_name",
+         "label": "Term",
+         "kind": "text"
+        },
+        {
+         "key": "value",
+         "label": "Students",
+         "kind": "count"
+        }
+       ],
+       "rows": [
+        [
+         "202520",
+         "Spring 2025",
+         42
+        ],
+        [
+         "202610",
+         "Fall 2025",
+         47
+        ],
+        [
+         "202620",
+         "Spring 2026",
+         41
+        ],
+        [
+         "All",
+         "All students",
+         130
+        ]
+       ]
+      },
+      "notes": [
+       "Students enrolled in the term (each counted once), by default the latest fall or spring term."
+      ],
+      "purpose": "trend"
+     },
+     {
+      "analysis_id": "key_figures",
+      "title": "Key figures worked out from the tables above",
+      "params_plain": [],
+      "fields_read": [],
+      "aggregate_only": true,
+      "table": {
+       "columns": [
+        {
+         "key": "what",
+         "label": "Figure",
+         "kind": "text"
+        },
+        {
+         "key": "compared",
+         "label": "Worked out from",
+         "kind": "text"
+        },
+        {
+         "key": "change",
+         "label": "Difference",
+         "kind": "count"
+        },
+        {
+         "key": "change_pct",
+         "label": "Change (%)",
+         "kind": "pct"
+        }
+       ],
+       "rows": [
+        [
+         "Change in a year",
+         "Spring 2026 against Spring 2025",
+         1,
+         2.4
+        ]
+       ]
+      },
+      "notes": [
+       "Each figure here is worked out in code from two cells of the tables above (a difference, or a change as a share of the earlier figure). It reads no records of its own."
+      ]
+     }
+    ],
+    "plan": [
+     {
+      "text": "Ask the Registrar whether the change in the headcount needs a response this term. A year earlier: the figure was 42 in Spring 2025 and 41 in Spring 2026, down 1 (2.4%).",
+      "claims": [
+       {
+        "table": 1,
+        "row": 0,
+        "column": "value"
+       },
+       {
+        "table": 1,
+        "row": 0,
+        "column": "term_name"
+       },
+       {
+        "table": 1,
+        "row": 2,
+        "column": "value"
+       },
+       {
+        "table": 1,
+        "row": 2,
+        "column": "term_name"
+       },
+       {
+        "table": 2,
+        "row": 0,
+        "column": "change"
+       },
+       {
+        "table": 2,
+        "row": 0,
+        "column": "change_pct"
+       }
+      ]
+     },
+     {
+      "text": "Look at the headcount again with the Registrar when the next term's records are in, and compare it with these figures.",
+      "claims": []
+     }
+    ],
+    "followups": {
+     "trend": "Headcount for international students in Nursing by term",
+     "breakdowns": [
+      {
+       "grouping": "college",
+       "label": "College",
+       "question": "Headcount for international students in Nursing by college"
+      },
+      {
+       "grouping": "class_level",
+       "label": "Class level",
+       "question": "Headcount for international students in Nursing by class level"
+      },
+      {
+       "grouping": "first_generation",
+       "label": "First-generation status",
+       "question": "Headcount for international students in Nursing by first-generation status"
+      }
+     ],
+     "topic": "registration"
+    }
+   }
+  }
+ },
+ "trend": {
+  "question": "Pell share by term",
+  "response": {
+   "refused": false,
+   "answer": [
+    {
+     "text": "The Pell share was 34.5% for Fall 2020 and 33.0% for Spring 2026, 33.5% overall.",
+     "claims": [
+      {
+       "table": 0,
+       "row": 0,
+       "column": "value"
+      },
+      {
+       "table": 0,
+       "row": 11,
+       "column": "value"
+      },
+      {
+       "table": 0,
+       "row": 12,
+       "column": "value"
+      }
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "analysis_id": "measure_by_group",
+     "title": "A measure by group",
+     "params_plain": [
+      "Measure: Pell share",
+      "Grouped by: term"
+     ],
+     "fields_read": [
+      "students.pell_recipient",
+      "student_term_records.term_code"
+     ],
+     "aggregate_only": true,
+     "table": {
+      "columns": [
+       {
+        "key": "term",
+        "label": "Term code",
+        "kind": "text"
+       },
+       {
+        "key": "term_name",
+        "label": "Term",
+        "kind": "text"
+       },
+       {
+        "key": "students",
+        "label": "Students",
+        "kind": "count"
+       },
+       {
+        "key": "numerator",
+        "label": "Pell recipients",
+        "kind": "count"
+       },
+       {
+        "key": "value",
+        "label": "Pell recipients (%)",
+        "kind": "pct"
+       }
+      ],
+      "rows": [
+       [
+        "202110",
+        "Fall 2020",
+        14589,
+        5037,
+        34.5
+       ],
+       [
+        "202120",
+        "Spring 2021",
+        12938,
+        4392,
+        33.9
+       ],
+       [
+        "202210",
+        "Fall 2021",
+        15586,
+        5276,
+        33.9
+       ],
+       [
+        "202220",
+        "Spring 2022",
+        13873,
+        4635,
+        33.4
+       ],
+       [
+        "202310",
+        "Fall 2022",
+        15806,
+        5290,
+        33.5
+       ],
+       [
+        "202320",
+        "Spring 2023",
+        14159,
+        4731,
+        33.4
+       ],
+       [
+        "202410",
+        "Fall 2023",
+        16124,
+        5396,
+        33.5
+       ],
+       [
+        "202420",
+        "Spring 2024",
+        14605,
+        4806,
+        32.9
+       ],
+       [
+        "202510",
+        "Fall 2024",
+        16101,
+        5373,
+        33.4
+       ],
+       [
+        "202520",
+        "Spring 2025",
+        14554,
+        4829,
+        33.2
+       ],
+       [
+        "202610",
+        "Fall 2025",
+        15982,
+        5312,
+        33.2
+       ],
+       [
+        "202620",
+        "Spring 2026",
+        13871,
+        4571,
+        33.0
+       ],
+       [
+        "All",
+        "All students",
+        38374,
+        59648,
+        33.5
+       ]
+      ]
+     },
+     "notes": [
+      "Share of enrolled students who receive a Pell grant, in the term (the latest fall or spring by default)."
+     ]
+    }
+   ],
+   "source": "Calculated directly from the records",
+   "planner": "rule",
+   "card": {
+    "key_points": [
+     {
+      "text": "Latest: Spring 2026, 33.0%.",
+      "claims": [
+       {
+        "table": 0,
+        "row": 11,
+        "column": "value"
+       }
+      ]
+     },
+     {
+      "text": "Since Spring 2025: down 0.2 points (0.6%), from 33.2%.",
+      "claims": [
+       {
+        "table": 1,
+        "row": 0,
+        "column": "change"
+       },
+       {
+        "table": 1,
+        "row": 0,
+        "column": "change_pct"
+       },
+       {
+        "table": 0,
+        "row": 9,
+        "column": "value"
+       }
+      ]
+     },
+     {
+      "text": "Highest: Fall 2020, 34.5%.",
+      "claims": [
+       {
+        "table": 0,
+        "row": 0,
+        "column": "value"
+       }
+      ]
+     }
+    ],
+    "chart": {
+     "template": "trend_line",
+     "form": "line",
+     "table": 0,
+     "value": "value",
+     "value_label": "Pell recipients (%)",
+     "kind": "pct",
+     "label": [
+      "term_name"
+     ],
+     "series": null,
+     "reference_row": 12,
+     "trend": {
+      "table": 0,
+      "now_row": 11,
+      "then_row": 9,
+      "change_table": 1,
+      "change_row": 0,
+      "direction": "down",
+      "then_label": "Spring 2025"
+     }
+    },
+    "extra_steps": [
+     {
+      "analysis_id": "key_figures",
+      "title": "Key figures worked out from the tables above",
+      "params_plain": [],
+      "fields_read": [],
+      "aggregate_only": true,
+      "table": {
+       "columns": [
+        {
+         "key": "what",
+         "label": "Figure",
+         "kind": "text"
+        },
+        {
+         "key": "compared",
+         "label": "Worked out from",
+         "kind": "text"
+        },
+        {
+         "key": "change",
+         "label": "Difference",
+         "kind": "points"
+        },
+        {
+         "key": "change_pct",
+         "label": "Change (%)",
+         "kind": "pct"
+        }
+       ],
+       "rows": [
+        [
+         "Change",
+         "Spring 2026 against Spring 2025",
+         0.2,
+         0.6
+        ]
+       ]
+      },
+      "notes": [
+       "Each figure here is worked out in code from two cells of the tables above (a difference, or a change as a share of the earlier figure). It reads no records of its own."
+      ]
+     }
+    ],
+    "plan": [
+     {
+      "text": "Ask Financial Aid whether the change in the Pell share needs a response this term. Since Spring 2025: down 0.2 points (0.6%), from 33.2%.",
+      "claims": [
+       {
+        "table": 1,
+        "row": 0,
+        "column": "change"
+       },
+       {
+        "table": 1,
+        "row": 0,
+        "column": "change_pct"
+       },
+       {
+        "table": 0,
+        "row": 9,
+        "column": "value"
+       }
+      ]
+     },
+     {
+      "text": "Look at the Pell share again with Financial Aid when the next term's records are in, and compare it with these figures.",
+      "claims": []
+     }
+    ],
+    "followups": {
+     "trend": null,
+     "breakdowns": [
+      {
+       "grouping": "class_level",
+       "label": "Class level",
+       "question": "Pell share by term and class level"
+      },
+      {
+       "grouping": "first_generation",
+       "label": "First-generation status",
+       "question": "Pell share by term and first-generation status"
+      },
+      {
+       "grouping": "residency",
+       "label": "Residency",
+       "question": "Pell share by term and residency"
+      }
+     ],
+     "topic": null
+    }
+   }
+  }
+ },
+ "grouped": {
+  "question": "Hold rate by college and class level",
+  "response": {
+   "refused": false,
+   "answer": [
+    {
+     "text": "College of Nursing and Health Sciences, Freshmen have the highest hold rate: 21.6% (2,229 of 10,316 student terms).",
+     "claims": [
+      {
+       "table": 0,
+       "row": 0,
+       "column": "value"
+      },
+      {
+       "table": 0,
+       "row": 0,
+       "column": "numerator"
+      },
+      {
+       "table": 0,
+       "row": 0,
+       "column": "denominator"
+      }
+     ]
+    },
+    {
+     "text": "Next is college of Business, Freshmen at 21.5%.",
+     "claims": [
+      {
+       "table": 0,
+       "row": 1,
+       "column": "value"
+      }
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "analysis_id": "measure_by_group",
+     "title": "A measure by group",
+     "params_plain": [
+      "Measure: hold rate",
+      "Grouped by: college",
+      "Then by: class level"
+     ],
+     "fields_read": [
+      "person_holds.term_code",
+      "academic_programs.college_code",
+      "student_term_records.class_level",
+      "student_term_records.term_code"
+     ],
+     "aggregate_only": true,
+     "table": {
+      "columns": [
+       {
+        "key": "college",
+        "label": "College code",
+        "kind": "text"
+       },
+       {
+        "key": "college_name",
+        "label": "College",
+        "kind": "text"
+       },
+       {
+        "key": "group",
+        "label": "Class level",
+        "kind": "text"
+       },
+       {
+        "key": "students",
+        "label": "Students",
+        "kind": "count"
+       },
+       {
+        "key": "denominator",
+        "label": "Student terms",
+        "kind": "count"
+       },
+       {
+        "key": "numerator",
+        "label": "With a hold",
+        "kind": "count"
+       },
+       {
+        "key": "value",
+        "label": "With a hold placed (%)",
+        "kind": "pct"
+       }
+      ],
+      "rows": [
+       [
+        "CNH",
+        "College of Nursing and Health Sciences",
+        "Freshmen",
+        5115,
+        10316,
+        2229,
+        21.6
+       ],
+       [
+        "COB",
+        "College of Business",
+        "Freshmen",
+        4036,
+        8032,
+        1728,
+        21.5
+       ],
+       [
+        "CEC",
+        "College of Engineering and Computing",
+        "Freshmen",
+        3716,
+        7321,
+        1544,
+        21.1
+       ],
+       [
+        "CSB",
+        "College of Social and Behavioral Sciences",
+        "Sophomores",
+        3069,
+        5713,
+        1191,
+        20.8
+       ],
+       [
+        "COE",
+        "College of Education",
+        "Freshmen",
+        2629,
+        5227,
+        1089,
+        20.8
+       ],
+       [
+        "COE",
+        "College of Education",
+        "Sophomores",
+        2580,
+        4791,
+        989,
+        20.6
+       ],
+       [
+        "CSB",
+        "College of Social and Behavioral Sciences",
+        "Freshmen",
+        3076,
+        6125,
+        1260,
+        20.6
+       ],
+       [
+        "CAS",
+        "College of Arts and Sciences",
+        "Freshmen",
+        4378,
+        8744,
+        1795,
+        20.5
+       ],
+       [
+        "CEC",
+        "College of Engineering and Computing",
+        "Juniors",
+        3059,
+        5932,
+        1215,
+        20.5
+       ],
+       [
+        "CTA",
+        "College of Theology, Ministry, and the Arts",
+        "Freshmen",
+        2875,
+        5750,
+        1177,
+        20.5
+       ],
+       [
+        "CTA",
+        "College of Theology, Ministry, and the Arts",
+        "Sophomores",
+        2912,
+        5412,
+        1091,
+        20.2
+       ],
+       [
+        "CNH",
+        "College of Nursing and Health Sciences",
+        "Sophomores",
+        4946,
+        8836,
+        1778,
+        20.1
+       ],
+       [
+        "COB",
+        "College of Business",
+        "Juniors",
+        3634,
+        6886,
+        1372,
+        19.9
+       ],
+       [
+        "CSB",
+        "College of Social and Behavioral Sciences",
+        "Juniors",
+        2695,
+        4973,
+        990,
+        19.9
+       ],
+       [
+        "COE",
+        "College of Education",
+        "Juniors",
+        2214,
+        4154,
+        822,
+        19.8
+       ],
+       [
+        "CEC",
+        "College of Engineering and Computing",
+        "Sophomores",
+        3580,
+        6532,
+        1284,
+        19.7
+       ],
+       [
+        "CAS",
+        "College of Arts and Sciences",
+        "Juniors",
+        3563,
+        6616,
+        1288,
+        19.5
+       ],
+       [
+        "COB",
+        "College of Business",
+        "Sophomores",
+        4095,
+        7718,
+        1498,
+        19.4
+       ],
+       [
+        "CNH",
+        "College of Nursing and Health Sciences",
+        "Juniors",
+        4322,
+        8153,
+        1575,
+        19.3
+       ],
+       [
+        "CTA",
+        "College of Theology, Ministry, and the Arts",
+        "Juniors",
+        2434,
+        4493,
+        866,
+        19.3
+       ],
+       [
+        "CAS",
+        "College of Arts and Sciences",
+        "Sophomores",
+        4364,
+        8113,
+        1536,
+        18.9
+       ],
+       [
+        "CEC",
+        "College of Engineering and Computing",
+        "Seniors",
+        2660,
+        5816,
+        723,
+        12.4
+       ],
+       [
+        "CNH",
+        "College of Nursing and Health Sciences",
+        "Seniors",
+        3834,
+        7740,
+        923,
+        11.9
+       ],
+       [
+        "CAS",
+        "College of Arts and Sciences",
+        "Seniors",
+        3264,
+        6089,
+        692,
+        11.4
+       ],
+       [
+        "COE",
+        "College of Education",
+        "Seniors",
+        1968,
+        3673,
+        413,
+        11.2
+       ],
+       [
+        "COB",
+        "College of Business",
+        "Seniors",
+        3317,
+        6365,
+        709,
+        11.1
+       ],
+       [
+        "CSB",
+        "College of Social and Behavioral Sciences",
+        "Seniors",
+        2391,
+        4515,
+        502,
+        11.1
+       ],
+       [
+        "CTA",
+        "College of Theology, Ministry, and the Arts",
+        "Seniors",
+        2203,
+        4153,
+        431,
+        10.4
+       ]
+      ]
+     },
+     "notes": [
+      "Share of fall and spring student terms in which a hold was placed on the student's account."
+     ]
+    }
+   ],
+   "source": "Calculated directly from the records",
+   "planner": "rule",
+   "card": {
+    "key_points": [
+     {
+      "text": "Highest: College of Nursing and Health Sciences, Freshmen, 21.6%.",
+      "claims": [
+       {
+        "table": 0,
+        "row": 0,
+        "column": "value"
+       }
+      ]
+     },
+     {
+      "text": "Lowest: College of Theology, Ministry, and the Arts, Seniors, 10.4%.",
+      "claims": [
+       {
+        "table": 0,
+        "row": 27,
+        "column": "value"
+       }
+      ]
+     },
+     {
+      "text": "All groups together, the hold rate was 16.6% in Spring 2026, down 1.7 points (9.3%) from 18.3% in Spring 2025.",
+      "claims": [
+       {
+        "table": 1,
+        "row": 11,
+        "column": "value"
+       },
+       {
+        "table": 1,
+        "row": 11,
+        "column": "term_name"
+       },
+       {
+        "table": 2,
+        "row": 0,
+        "column": "change"
+       },
+       {
+        "table": 2,
+        "row": 0,
+        "column": "change_pct"
+       },
+       {
+        "table": 1,
+        "row": 9,
+        "column": "value"
+       },
+       {
+        "table": 1,
+        "row": 9,
+        "column": "term_name"
+       }
+      ]
+     }
+    ],
+    "chart": {
+     "template": "grouped_bars",
+     "form": "grouped",
+     "table": 0,
+     "value": "value",
+     "value_label": "With a hold placed (%)",
+     "kind": "pct",
+     "label": [
+      "college_name"
+     ],
+     "series": "group",
+     "reference_row": null,
+     "trend": {
+      "table": 1,
+      "now_row": 11,
+      "then_row": 9,
+      "change_table": 2,
+      "change_row": 0,
+      "direction": "down",
+      "then_label": "Spring 2025"
+     }
+    },
+    "extra_steps": [
+     {
+      "analysis_id": "measure_by_group",
+      "title": "The same figure by term, for the trend",
+      "params_plain": [
+       "Measure: hold rate",
+       "Grouped by: term",
+       "Ranked: in natural order"
+      ],
+      "fields_read": [
+       "person_holds.term_code",
+       "student_term_records.term_code"
+      ],
+      "aggregate_only": true,
+      "table": {
+       "columns": [
+        {
+         "key": "term",
+         "label": "Term code",
+         "kind": "text"
+        },
+        {
+         "key": "term_name",
+         "label": "Term",
+         "kind": "text"
+        },
+        {
+         "key": "students",
+         "label": "Students",
+         "kind": "count"
+        },
+        {
+         "key": "denominator",
+         "label": "Student terms",
+         "kind": "count"
+        },
+        {
+         "key": "numerator",
+         "label": "With a hold",
+         "kind": "count"
+        },
+        {
+         "key": "value",
+         "label": "With a hold placed (%)",
+         "kind": "pct"
+        }
+       ],
+       "rows": [
+        [
+         "202110",
+         "Fall 2020",
+         14589,
+         14589,
+         2728,
+         18.7
+        ],
+        [
+         "202120",
+         "Spring 2021",
+         12938,
+         12938,
+         2433,
+         18.8
+        ],
+        [
+         "202210",
+         "Fall 2021",
+         15586,
+         15586,
+         2882,
+         18.5
+        ],
+        [
+         "202220",
+         "Spring 2022",
+         13873,
+         13873,
+         2612,
+         18.8
+        ],
+        [
+         "202310",
+         "Fall 2022",
+         15806,
+         15806,
+         2803,
+         17.7
+        ],
+        [
+         "202320",
+         "Spring 2023",
+         14159,
+         14159,
+         2585,
+         18.3
+        ],
+        [
+         "202410",
+         "Fall 2023",
+         16124,
+         16124,
+         3002,
+         18.6
+        ],
+        [
+         "202420",
+         "Spring 2024",
+         14605,
+         14605,
+         2692,
+         18.4
+        ],
+        [
+         "202510",
+         "Fall 2024",
+         16101,
+         16101,
+         2935,
+         18.2
+        ],
+        [
+         "202520",
+         "Spring 2025",
+         14554,
+         14554,
+         2659,
+         18.3
+        ],
+        [
+         "202610",
+         "Fall 2025",
+         15982,
+         15982,
+         3076,
+         19.2
+        ],
+        [
+         "202620",
+         "Spring 2026",
+         13871,
+         13871,
+         2303,
+         16.6
+        ],
+        [
+         "All",
+         "All students",
+         38374,
+         178188,
+         32710,
+         18.4
+        ]
+       ]
+      },
+      "notes": [
+       "Share of fall and spring student terms in which a hold was placed on the student's account."
+      ],
+      "purpose": "trend"
+     },
+     {
+      "analysis_id": "key_figures",
+      "title": "Key figures worked out from the tables above",
+      "params_plain": [],
+      "fields_read": [],
+      "aggregate_only": true,
+      "table": {
+       "columns": [
+        {
+         "key": "what",
+         "label": "Figure",
+         "kind": "text"
+        },
+        {
+         "key": "compared",
+         "label": "Worked out from",
+         "kind": "text"
+        },
+        {
+         "key": "change",
+         "label": "Difference",
+         "kind": "points"
+        },
+        {
+         "key": "change_pct",
+         "label": "Change (%)",
+         "kind": "pct"
+        }
+       ],
+       "rows": [
+        [
+         "Change in a year",
+         "Spring 2026 against Spring 2025",
+         1.7,
+         9.3
+        ]
+       ]
+      },
+      "notes": [
+       "Each figure here is worked out in code from two cells of the tables above (a difference, or a change as a share of the earlier figure). It reads no records of its own."
+      ]
+     }
+    ],
+    "plan": [
+     {
+      "text": "Ask Student Accounts (Bursar) to explain what is behind the highest hold rate and bring one change to try. Highest: College of Nursing and Health Sciences, Freshmen, 21.6%.",
+      "claims": [
+       {
+        "table": 0,
+        "row": 0,
+        "column": "value"
+       }
+      ]
+     },
+     {
+      "text": "Ask Student Accounts (Bursar) what the group with the lowest hold rate does differently. Lowest: College of Theology, Ministry, and the Arts, Seniors, 10.4%.",
+      "claims": [
+       {
+        "table": 0,
+        "row": 27,
+        "column": "value"
+       }
+      ]
+     },
+     {
+      "text": "Ask Student Accounts (Bursar) whether the change in the hold rate needs a response this term. All groups together, the hold rate was 16.6% in Spring 2026, down 1.7 points (9.3%) from 18.3% in Spring 2025.",
+      "claims": [
+       {
+        "table": 1,
+        "row": 11,
+        "column": "value"
+       },
+       {
+        "table": 1,
+        "row": 11,
+        "column": "term_name"
+       },
+       {
+        "table": 2,
+        "row": 0,
+        "column": "change"
+       },
+       {
+        "table": 2,
+        "row": 0,
+        "column": "change_pct"
+       },
+       {
+        "table": 1,
+        "row": 9,
+        "column": "value"
+       },
+       {
+        "table": 1,
+        "row": 9,
+        "column": "term_name"
+       }
+      ]
+     },
+     {
+      "text": "Look at the hold rate again with Student Accounts (Bursar) when the next term's records are in, and compare it with these figures.",
+      "claims": []
+     }
+    ],
+    "followups": {
+     "trend": null,
+     "breakdowns": [],
+     "topic": null
+    }
+   }
+  }
+ },
+ "registration": {
+  "question": "How much did continuing spring registration change in Spring 2026?",
+  "response": {
+   "refused": false,
+   "answer": [
+    {
+     "text": "13,541 continuing students registered for Spring 2026 against 14,224 for Spring 2025, a change of \u22124.8%.",
+     "claims": [
+      {
+       "table": 0,
+       "row": 0,
+       "column": "continuing"
+      },
+      {
+       "table": 0,
+       "row": 0,
+       "column": "term_name"
+      },
+      {
+       "table": 0,
+       "row": 0,
+       "column": "prior_continuing"
+      },
+      {
+       "table": 0,
+       "row": 0,
+       "column": "prior_term_name"
+      },
+      {
+       "table": 0,
+       "row": 0,
+       "column": "change_pct"
+      }
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "analysis_id": "continuing_registration_change",
+     "title": "Continuing registration change",
+     "params_plain": [
+      "Term: Spring 2026"
+     ],
+     "fields_read": [
+      "section_registrations.term_code",
+      "section_registrations.student_id (counted)",
+      "students.entry_term"
+     ],
+     "aggregate_only": true,
+     "table": {
+      "columns": [
+       {
+        "key": "term",
+        "label": "Term code",
+        "kind": "text"
+       },
+       {
+        "key": "term_name",
+        "label": "Term",
+        "kind": "text"
+       },
+       {
+        "key": "prior_term",
+        "label": "Prior term code",
+        "kind": "text"
+       },
+       {
+        "key": "prior_term_name",
+        "label": "Prior term",
+        "kind": "text"
+       },
+       {
+        "key": "continuing",
+        "label": "Continuing registered",
+        "kind": "count"
+       },
+       {
+        "key": "prior_continuing",
+        "label": "A year earlier",
+        "kind": "count"
+       },
+       {
+        "key": "change",
+        "label": "Change",
+        "kind": "count"
+       },
+       {
+        "key": "change_pct",
+        "label": "Change (%)",
+        "kind": "pct"
+       }
+      ],
+      "rows": [
+       [
+        "202620",
+        "Spring 2026",
+        "202520",
+        "Spring 2025",
+        13541,
+        14224,
+        -683,
+        -4.8
+       ]
+      ]
+     },
+     "notes": [
+      "A continuing student registered in the term and entered the university before it."
+     ]
+    }
+   ],
+   "source": "Calculated directly from the records",
+   "planner": "rule",
+   "card": {
+    "key_points": [
+     {
+      "text": "Continuing registered: 13,541.",
+      "claims": [
+       {
+        "table": 0,
+        "row": 0,
+        "column": "continuing"
+       }
+      ]
+     },
+     {
+      "text": "Against Spring 2025: 14,224 then, a change of \u22124.8%.",
+      "claims": [
+       {
+        "table": 0,
+        "row": 0,
+        "column": "prior_term_name"
+       },
+       {
+        "table": 0,
+        "row": 0,
+        "column": "prior_continuing"
+       },
+       {
+        "table": 0,
+        "row": 0,
+        "column": "change_pct"
+       }
+      ]
+     }
+    ],
+    "chart": {
+     "template": "before_after",
+     "form": "number",
+     "table": 0,
+     "value": "continuing",
+     "value_label": "Continuing registered",
+     "kind": "count",
+     "label": [
+      "term_name"
+     ],
+     "series": null,
+     "reference_row": null,
+     "before_after": {
+      "before_label": "prior_term_name",
+      "before": "prior_continuing",
+      "after_label": "term_name",
+      "after": "continuing",
+      "change": "change_pct"
+     }
+    },
+    "extra_steps": [],
+    "plan": [
+     {
+      "text": "Ask the Registrar whether the change in the continuing registered needs a response this term. Against Spring 2025: 14,224 then, a change of \u22124.8%.",
+      "claims": [
+       {
+        "table": 0,
+        "row": 0,
+        "column": "prior_term_name"
+       },
+       {
+        "table": 0,
+        "row": 0,
+        "column": "prior_continuing"
+       },
+       {
+        "table": 0,
+        "row": 0,
+        "column": "change_pct"
+       }
+      ]
+     },
+     {
+      "text": "Look at the continuing registered again with the Registrar when the next term's records are in, and compare it with these figures.",
+      "claims": []
+     }
+    ],
+    "followups": {
+     "trend": null,
+     "breakdowns": [],
+     "topic": "registration"
+    }
+   }
+  }
+ }
+}

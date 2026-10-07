@@ -7,6 +7,7 @@ import {
   fetchInbox,
   markMessage,
   reviewByLabel,
+  type DecisionSnapshot,
   type ExploreSnapshot,
   type FindingSnapshot,
   type Inbox,
@@ -49,6 +50,40 @@ export function AlertAttachment({
         <p className="alert-card-title">{figure.title}</p>
         <p className="alert-card-value">{figure.display}</p>
         {figure.definition && <p className="hint">{figure.definition}</p>}
+      </div>
+    )
+  }
+  if (message.source_kind === 'decision') {
+    const decision = snapshot as DecisionSnapshot
+    const due = reviewByLabel(decision.due)
+    return (
+      <div className="alert-card">
+        <p className="alert-card-kicker">
+          Approved leadership decision · for {decision.office}
+          {decision.dataset ? ` · ${decision.dataset}` : ''}
+        </p>
+        <p className="alert-card-title">{decision.title}</p>
+        <p className="alert-card-sentence">
+          <strong>Approved action:</strong> {decision.action}
+        </p>
+        {due !== null && (
+          <p className="alert-card-sentence">
+            <strong>Deadline:</strong> {due.replace(/^Review by /, '')} (proposed)
+          </p>
+        )}
+        {decision.figures.length > 0 && (
+          <ul className="alert-card-figures">
+            {decision.figures.map((figure) => (
+              <li key={figure.id}>
+                {figure.title}: <strong>{figure.display}</strong>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="hint">
+          The figures are read again from the current data each time you open this. No student
+          records travel with it.
+        </p>
       </div>
     )
   }
@@ -270,11 +305,18 @@ export function InboxPage({
                             aria-busy={busyId === message.id}
                             onClick={() => void review(message)}
                           >
-                            {busyId === message.id ? 'Saving…' : 'Mark reviewed'}
+                            {busyId === message.id
+                              ? 'Saving…'
+                              : message.source_kind === 'decision'
+                                ? 'Acknowledge'
+                                : 'Mark reviewed'}
                           </button>
                         ) : (
                           <p className="hint">
-                            You marked this reviewed {friendlyTime(message.reviewed_at) ?? ''}.
+                            {message.source_kind === 'decision'
+                              ? 'You acknowledged this'
+                              : 'You marked this reviewed'}{' '}
+                            {friendlyTime(message.reviewed_at) ?? ''}.
                           </p>
                         )}
                       </div>

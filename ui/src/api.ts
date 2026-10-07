@@ -373,6 +373,18 @@ export interface DispatchInfo {
   proposed_due?: string | null
   /** The Financial Aid review queue for this decision: counts only. */
   aid_queue?: AidQueueSummary
+  /** The account roles of the department that owns the follow-up. */
+  department_roles?: string[]
+  /** Where the approved decision landed in that department's inbox. */
+  department_inbox?: DepartmentDelivery[]
+}
+
+export interface DepartmentDelivery {
+  message_id: number
+  to: { id: number; email: string; role: string } | null
+  created_at: string
+  read_at: string | null
+  acknowledged_at: string | null
 }
 
 export async function fetchDispatch(

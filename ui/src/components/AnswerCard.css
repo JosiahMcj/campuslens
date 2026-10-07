@@ -1,0 +1,347 @@
+/* The answer card (ExploreAnswer, AnswerChart): key points, the chart,
+   the action buttons and the proposed plan. Colours are the index.css
+   tokens; chart colours are --series-1 to --series-7 only. */
+
+.answer-card {
+  display: grid;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  min-width: 0;
+}
+
+.ac-section-title {
+  margin: 0 0 var(--space-2);
+  color: var(--ink-soft);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ac-points {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.ac-points li {
+  line-height: 1.5;
+}
+
+.answer-chart {
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-surface, 12px);
+  background: var(--paper);
+  min-width: 0;
+}
+
+.ac-caption {
+  margin-bottom: var(--space-3);
+  font-weight: 600;
+}
+
+.ac-kicker {
+  display: block;
+  color: var(--ink-soft);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Horizontal bars: label, track, value. */
+.ac-bars {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ac-bar-row {
+  display: grid;
+  grid-template-columns: minmax(7rem, 14rem) minmax(4rem, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.ac-bar-label {
+  overflow-wrap: anywhere;
+}
+
+.ac-bar-track {
+  position: relative;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.ac-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 4px;
+  background: var(--series-1);
+}
+
+.ac-bar-fill.is-before {
+  background: var(--rule-strong);
+}
+
+/* A withheld group: an empty, dashed track, never a zero bar. */
+.ac-bar-row[data-withheld] .ac-bar-track {
+  background: transparent;
+  border: 1.5px dashed var(--rule-strong);
+}
+
+.ac-bar-row[data-withheld] .ac-value {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+.ac-ref {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 0;
+  border-left: 2px dashed var(--ink);
+}
+
+.ac-ref-swatch {
+  display: inline-block;
+  width: 0;
+  height: 0.9em;
+  margin-right: var(--space-1);
+  border-left: 2px dashed var(--ink);
+  vertical-align: middle;
+}
+
+.ac-value {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ac-legend,
+.ac-more {
+  margin: var(--space-3) 0 0;
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+}
+
+.ac-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.ac-keys .swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: var(--space-1);
+  border-radius: 2px;
+}
+
+.ac-delta {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.ac-delta[data-direction='up'] {
+  color: var(--series-6);
+}
+
+.ac-delta[data-direction='down'] {
+  color: var(--alert);
+}
+
+.ac-kpi-value {
+  margin: 0;
+  font-size: var(--text-3xl);
+  font-weight: 650;
+  line-height: 1.1;
+}
+
+.ac-kpi-value .ac-value {
+  font-size: inherit;
+}
+
+.ac-kpi-label {
+  margin: var(--space-1) 0 var(--space-2);
+  color: var(--ink-soft);
+}
+
+.ac-stack {
+  display: flex;
+  height: 22px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.ac-stack-part {
+  height: 100%;
+  border-right: 1px solid var(--paper);
+}
+
+.ac-funnel {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ac-funnel-stage {
+  position: relative;
+  display: grid;
+  justify-items: center;
+}
+
+.ac-funnel-bar {
+  height: 28px;
+  border-radius: 6px;
+  background: var(--series-1);
+  opacity: 0.85;
+}
+
+.ac-funnel-stage[data-withheld] .ac-funnel-bar {
+  background: transparent;
+  border: 1.5px dashed var(--rule-strong);
+}
+
+.ac-funnel-text {
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.ac-multiples {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ac-multiple {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+}
+
+.ac-multiple-label,
+.ac-multiple-range {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.ac-multiple-range {
+  color: var(--ink-soft);
+  font-size: var(--text-xs);
+}
+
+.ac-spark {
+  display: block;
+  width: 100%;
+  height: 40px;
+  margin: var(--space-1) 0;
+  overflow: visible;
+}
+
+.ac-spark-line {
+  fill: none;
+  stroke: var(--series-1);
+  stroke-width: 2;
+}
+
+/* The action buttons under every answer. */
+.ac-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ac-actions button {
+  min-height: 36px;
+}
+
+.ac-panel {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.ac-panel p {
+  margin: 0 0 var(--space-2);
+}
+
+.ac-panel ol,
+.ac-panel ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.ac-proposed {
+  color: var(--gold);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ac-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ac-gallery {
+  display: grid;
+  gap: var(--space-5);
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4);
+}
+
+@media (max-width: 640px) {
+  .ac-bar-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-1) var(--space-2);
+  }
+
+  .ac-bar-row .ac-bar-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .answer-chart {
+    padding: var(--space-3);
+  }
+
+  /* Tap targets: at least 44px on a phone. */
+  .ac-actions button,
+  .ac-choices button {
+    min-height: 44px;
+  }
+
+  .ac-actions li,
+  .ac-actions button {
+    flex: 1 1 auto;
+  }
+}

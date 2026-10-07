@@ -43,7 +43,19 @@ export interface ExploreSnapshot {
   quoted_by_sender?: boolean
 }
 
-export type SourceKind = 'note' | 'finding' | 'overview' | 'explore'
+export type SourceKind = 'note' | 'finding' | 'overview' | 'explore' | 'decision'
+
+/** An approved leadership decision sent to its department, re-read from the
+ * current findings whenever it is shown. */
+export interface DecisionSnapshot {
+  decision_id: string
+  title: string
+  office: string
+  action: string
+  due: string | null
+  figures: FindingSnapshot[]
+  dataset: string | null
+}
 
 export interface InboxMessage {
   id: number
@@ -53,7 +65,7 @@ export interface InboxMessage {
   review_by: string | null
   source_kind: SourceKind
   source_ref: string | null
-  snapshot: FindingSnapshot | OverviewSnapshot | ExploreSnapshot | null
+  snapshot: FindingSnapshot | OverviewSnapshot | ExploreSnapshot | DecisionSnapshot | null
   /** False when the attachment is no longer there for this reader (the
    * figure was withdrawn, or their role may no longer read it). */
   attachment_available?: boolean
@@ -187,7 +199,7 @@ export async function fetchSessions(): Promise<SessionRow[]> {
 
 /** A message's state for its sender: Sent, Read or Reviewed. */
 export function deliveryLabel(message: InboxMessage): string {
-  if (message.reviewed_at !== null) return 'Reviewed'
+  if (message.reviewed_at !== null) return message.source_kind === 'decision' ? 'Acknowledged' : 'Reviewed'
   if (message.read_at !== null) return 'Read'
   return 'Not opened yet'
 }

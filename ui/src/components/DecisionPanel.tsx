@@ -1,6 +1,12 @@
 import { useRef, useState, type ReactNode } from 'react'
 
-import type { AuditEvent, Decision, DispatchInfo, SimulatedTask } from '../api'
+import type {
+  AuditEvent,
+  Decision,
+  DepartmentDelivery as DepartmentDeliveryRow,
+  DispatchInfo,
+  SimulatedTask,
+} from '../api'
 import type { Role } from '../auth'
 import { plainSentence } from '../errors'
 import { formatIsoDate } from '../displayFormat'
@@ -182,6 +188,50 @@ function DecisionSteps({
         </li>
       ))}
     </ol>
+  )
+}
+
+/** Where the approved decision landed in the owning department's inbox:
+ * per account, delivered, opened, acknowledged. Inside the app only. */
+function DepartmentDelivery({
+  office,
+  roles,
+  deliveries,
+  userEmail,
+}: {
+  office: string
+  roles: readonly string[]
+  deliveries: readonly DepartmentDeliveryRow[]
+  userEmail: string
+}) {
+  if (roles.length === 0) return null
+  return (
+    <div className="decision-delivery" role="status">
+      <h4>In the {office} inbox</h4>
+      {deliveries.length === 0 ? (
+        <p className="hint">
+          No {office} account exists yet, so nobody was notified. IT or an administrator adds
+          one in Accounts.
+        </p>
+      ) : (
+        <ul className="decision-delivery-list">
+          {deliveries.map((row) => (
+            <li key={row.message_id} data-status={row.acknowledged_at !== null ? 'acknowledged' : row.read_at !== null ? 'read' : 'delivered'}>
+              <span>{row.to !== null ? personName(row.to.email, userEmail) : 'A removed account'}</span>
+              {': '}
+              <strong>
+                {row.acknowledged_at !== null
+                  ? `Acknowledged ${formatTimestamp(row.acknowledged_at)}`
+                  : row.read_at !== null
+                    ? `Opened ${formatTimestamp(row.read_at)}, not acknowledged yet`
+                    : `Delivered ${formatTimestamp(row.created_at)}, not opened yet`}
+              </strong>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="hint">Sent inside CampusLens only. Nothing was emailed.</p>
+    </div>
   )
 }
 
@@ -393,6 +443,15 @@ export function DecisionPanel({
               <p className="error-line" role="alert">
                 {approveFailure}
               </p>
+            )}
+
+            {approved && dispatchState?.info?.department_roles !== undefined && (
+              <DepartmentDelivery
+                office={office}
+                roles={dispatchState.info.department_roles}
+                deliveries={dispatchState.info.department_inbox ?? []}
+                userEmail={userEmail}
+              />
             )}
 
             {approved && (

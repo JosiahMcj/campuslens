@@ -414,6 +414,7 @@ class _Trend:
     now_term: str
     then_term: str
     figure: int | None = None  # the Key figures row of the change
+    key: str = "value"  # the column the figure is in
 
 
 def _trend_rows(trend: StepResult, catalog: Catalog) -> _Trend | None:
@@ -561,7 +562,9 @@ def build_card(
     if shape.form == "number":
         points.extend(_number_points(shape, table, steps))
     elif shape.form == "line" and len(shape.groups) < 2:
-        points.extend(_line_points(shape, table, steps, catalog))
+        found: list[_Trend] = []
+        points.extend(_line_points(shape, table, steps, catalog, found))
+        trend = found[0] if found else None
     else:
         points.extend(_ranked_points(shape, table, steps))
     if trend_step is not None:
@@ -654,7 +657,11 @@ def _ranked_points(
 
 
 def _line_points(
-    shape: _Shape, table: _Table, steps: list[StepResult], catalog: Catalog
+    shape: _Shape,
+    table: _Table,
+    steps: list[StepResult],
+    catalog: Catalog,
+    found: list[_Trend] | None = None,
 ) -> list[tuple[str, Sentence]]:
     step = shape.step
     ranked = _ranked(shape)
@@ -687,6 +694,18 @@ def _line_points(
         if then is not None and _num(step.cell(then, shape.value)) is not None:
             row = _change(table, "Change", step, last, then, shape.value, shape.kind)
             direction = _direction(step, last, then, shape.value)
+            if found is not None:
+                found.append(
+                    _Trend(
+                        step,
+                        last,
+                        then,
+                        _row_label(step, last),
+                        _row_label(step, then),
+                        row,
+                        shape.value,
+                    )
+                )
             key = table.result()
             b = _Builder(_with_steps(steps, key))
             b.t("Since ").t(_row_label(step, then)).t(": ")
@@ -922,9 +941,10 @@ def _chart(shape: _Shape, trend: _Trend | None, table: _Table | None) -> dict[st
             "then_row": trend.then,
             "change_table": table.index if table is not None else None,
             "change_row": trend.figure,
-            "direction": _direction(trend.step, trend.now, trend.then or 0, "value")
+            "direction": _direction(trend.step, trend.now, trend.then, trend.key)
             if trend.then is not None
             else None,
+            "then_label": trend.then_term,
         }
     return chart
 

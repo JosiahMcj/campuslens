@@ -20,7 +20,16 @@ import {
   type ExploreResponse,
   type ExploreStep,
 } from '../explore'
+import {
+  alertQuote,
+  answerActions,
+  cardSteps,
+  chartModel,
+  planQuestion,
+} from '../answerCard'
 import { FIELD_LABELS, fieldLabels, normalizeField } from '../fieldLabels'
+import { AnswerChart } from './AnswerChart'
+import './AnswerCard.css'
 import './Explore.css'
 import { SearchIcon } from './icons'
 import { LensMark } from './LensMark'
@@ -58,6 +67,16 @@ interface ExploreAnswerProps {
   elapsedMs?: number
   /** The answer has just arrived: the trace collapses and the answer rises in. */
   live?: boolean
+  /** The buttons under the answer, per role: null shows none. */
+  actions?: AnswerActionProps | null
+}
+
+export interface AnswerActionProps {
+  role: string
+  /** Opens Send alert with this answer attached; null hides the button. */
+  onSend: ((quote: string[]) => void) | null
+  /** True for the roles that ask the briefing's follow-up questions. */
+  asksBriefing: boolean
 }
 
 /** "Working it out…": the reply while an Explore question is answered,
@@ -330,8 +349,12 @@ export function ExploreAnswer({
   trace,
   elapsedMs = 0,
   live = false,
+  actions = null,
 }: ExploreAnswerProps) {
   const [open, setOpen] = useState(false)
+  const [panel, setPanel] = useState<'breakdown' | 'plan' | null>(null)
+  const evidenceId = useId()
+  const panelId = useId()
   const [expanded, setExpanded] = useState<Record<number, boolean>>({})
   const [highlight, setHighlight] = useState<ExploreClaim | null>(null)
   // Bumped on every number opened, so opening the same one again scrolls again.
@@ -445,45 +468,81 @@ export function ExploreAnswer({
   const source = sourceLabel(response.source)
   const planned = plannerLabel(response.planner)
   const fellBack = (response.fallbacks ?? []).length > 0
+  const card = response.card
+  const steps = cardSteps(response)
+  const model = chartModel(response)
+  const allowed =
+    actions !== null ? answerActions(actions.role, card, actions.onSend !== null) : null
+  const followUp = actions !== null ? planQuestion(card, actions.asksBriefing) : null
+
+  const linked = (sentence: (typeof response.answer)[number], key: number) => (
+    <span key={key}>
+      {linkSentence(sentence, steps).map((part, p) =>
+        'claim' in part ? (
+          <button
+            key={p}
+            type="button"
+            className="finding-link explore-link"
+            title="Show where this comes from"
+            onClick={() => openCell(part.claim)}
+          >
+            {part.text}
+          </button>
+        ) : (
+          <span key={p}>{part.text}</span>
+        ),
+      )}
+    </span>
+  )
+
+  const seeEvidence = () => {
+    setOpen(true)
+    window.requestAnimationFrame(() =>
+      document.getElementById(evidenceId)?.scrollIntoView?.({ block: 'start' }),
+    )
+  }
 
   return (
     <div className={answerClass}>
       {thought}
       <div className="explore-sentences">
         {response.answer.map((sentence, s) => (
-          <p key={s}>
-            {linkSentence(sentence, response.steps).map((part, p) =>
-              'claim' in part ? (
-                <button
-                  key={p}
-                  type="button"
-                  className="finding-link explore-link"
-                  title="Show where this comes from"
-                  onClick={() => openCell(part.claim)}
-                >
-                  {part.text}
-                </button>
-              ) : (
-                <span key={p}>{part.text}</span>
-              ),
-            )}
-          </p>
+          <p key={s}>{linked(sentence, s)}</p>
         ))}
       </div>
       {notes.length > 0 && <p className="explore-notes">{notes.join(' ')}</p>}
+
+      {card !== undefined && (card.key_points.length > 0 || model !== null) && (
+        <div className="answer-card">
+          {card.key_points.length > 0 && (
+            <section aria-label="Key points">
+              <h4 className="ac-section-title">Key points</h4>
+              <ul className="ac-points">
+                {card.key_points.map((point, index) => (
+                  <li key={index}>{linked(point, index)}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {model !== null && <AnswerChart model={model} onOpen={openCell} />}
+        </div>
+      )}
+
       {source !== null && <p className="explore-source">{source}</p>}
 
       <details
+        id={evidenceId}
         className="fold explore-how"
         open={open}
         onToggle={(event) => setOpen(event.currentTarget.open)}
       >
         <summary>How this was answered</summary>
         <ol className="explore-steps">
-          {response.steps.map((step, index) => (
+          {steps.map((step, index) => (
             <li key={index} className="explore-step">
               <h4 className="explore-step-title">
-                Step {index + 1}. {displayText(step.title)}
+                {index < response.steps.length ? `Step ${index + 1}. ` : ''}
+                {displayText(step.title)}
               </h4>
               {step.params_plain.length > 0 && (
                 <ul className="explore-params">
@@ -536,6 +595,114 @@ export function ExploreAnswer({
           </details>
         )}
       </details>
+
+      {allowed !== null && actions !== null && (
+        <>
+          <ul className="ac-actions" aria-label="What to do with this answer">
+            {allowed.send && actions.onSend !== null && (
+              <li>
+                <button
+                  type="button"
+                  className="btn-secondary secondary"
+                  onClick={() => actions.onSend?.(alertQuote(response))}
+                >
+                  Send to department
+                </button>
+              </li>
+            )}
+            {allowed.trend && card?.followups.trend != null && (
+              <li>
+                <button
+                  type="button"
+                  className="btn-secondary secondary"
+                  disabled={busy}
+                  onClick={() => onAsk(card.followups.trend ?? '')}
+                >
+                  Show trend
+                </button>
+              </li>
+            )}
+            {allowed.breakdown && (
+              <li>
+                <button
+                  type="button"
+                  className="btn-secondary secondary"
+                  aria-expanded={panel === 'breakdown'}
+                  aria-controls={panelId}
+                  onClick={() => setPanel((value) => (value === 'breakdown' ? null : 'breakdown'))}
+                >
+                  Break it down
+                </button>
+              </li>
+            )}
+            {allowed.plan && (
+              <li>
+                <button
+                  type="button"
+                  className="btn-secondary secondary"
+                  disabled={followUp !== null && busy}
+                  aria-expanded={followUp === null ? panel === 'plan' : undefined}
+                  aria-controls={followUp === null ? panelId : undefined}
+                  onClick={() =>
+                    followUp !== null
+                      ? onAsk(followUp)
+                      : setPanel((value) => (value === 'plan' ? null : 'plan'))
+                  }
+                >
+                  Make a plan
+                </button>
+              </li>
+            )}
+            <li>
+              <button
+                type="button"
+                className="btn-secondary secondary"
+                aria-controls={evidenceId}
+                onClick={seeEvidence}
+              >
+                See evidence
+              </button>
+            </li>
+          </ul>
+          {panel === 'breakdown' && card !== undefined && (
+            <div id={panelId} className="ac-panel" role="region" aria-label="Break it down">
+              <p>Split the same figure by:</p>
+              <ul className="ac-choices">
+                {card.followups.breakdowns.map((choice) => (
+                  <li key={choice.grouping}>
+                    <button
+                      type="button"
+                      className="btn-secondary secondary"
+                      disabled={busy}
+                      onClick={() => {
+                        setPanel(null)
+                        onAsk(choice.question)
+                      }}
+                    >
+                      {choice.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {panel === 'plan' && card !== undefined && (
+            <div id={panelId} className="ac-panel" role="region" aria-label="Proposed plan">
+              <p className="ac-proposed">Proposed, not approved</p>
+              <p>
+                Drafted from the key points. Nothing is saved or sent: a person decides, and
+                the Send button shares it.
+              </p>
+              <ol>
+                {card.plan.map((item, index) => (
+                  <li key={index}>{linked(item, index)}</li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }
+
