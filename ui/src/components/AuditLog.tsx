@@ -463,6 +463,7 @@ function describeEvent(
         finding: ' about a briefing figure',
         overview: ' about a department figure',
         explore: ' about an answer',
+        chart: ' about a chart',
       }
       return {
         sentence: `${Who} sent an alert to ${to}${what[str(payload.source_kind) ?? ''] ?? ''}.`,

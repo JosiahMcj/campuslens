@@ -1,7 +1,7 @@
 # Demonstration University database schema
 
 `data/school/generate.py` writes one SQLite file (default `var/school/school.db`) with the
-24 tables below. The shape follows Ellucian's Ethos data model, flattened into relational
+28 tables below. The shape follows Ellucian's Ethos data model, flattened into relational
 tables a question engine can join. Each table names the Ethos resource it stands in for.
 Where Ethos has no exact resource we say so instead of inventing one.
 
@@ -359,9 +359,112 @@ At full scale: first-year retention 81.4 % (first-time fall entrants Fall 2020 t
 where the data ends; 41 % within four years), 12 % of enrolled terms part-time. `check.py` keeps these inside
 plausible bands.
 
+## Graduate outcomes
+
+What graduates did next, and whether they gave back. A real university keeps these outside
+the student system, so each table names the source it stands in for. **Ethos: none** for
+all four: Ethos has no resource for first destinations, Clearinghouse matches, professional
+school applications, or gifts.
+
+These four tables are drawn after the simulation from their own seeded stream (one per
+graduate), so the 24 tables above are byte for byte unchanged (`VERIFY.md` proves it with
+`original_tables_sha256`). One set of draws per graduate feeds all four, so they agree.
+
+Nothing is observed after the **data end**, the last day of Spring 2026 (2026-05-08):
+
+- the survey covers bachelor's graduates whose six-month point (graduation date, the last
+  day of the graduation term, plus 183 days) is on or before the data end: the classes of
+  Fall 2020 through Summer 2025;
+- a graduate is followed for graduate school "within a year" only once a full year has
+  passed: the classes through Fall 2024;
+- enrollments and gifts are dated on or before the data end;
+- a medical school application appears once its decision is known (entering classes
+  through 2026).
+
+Associate graduates (General Studies, Christian Studies) are not surveyed and are not in
+the graduate school match or the medical school applications; they are alumni and can
+give. Students who left without a degree are not alumni here.
+
+### `first_destination`
+Stands in for a **NACE-style first-destination survey** (career services, six months after
+graduation). One row per bachelor's graduate who answered; graduates who did not answer
+have no row. About 64 % of eligible graduates answered (the knowledge rate).
+
+| Column | Meaning |
+|---|---|
+| `student_id` | The graduate |
+| `graduation_term` | Their graduation term (equals `students.exit_term`) |
+| `collected_date` | The six-month point: graduation date plus 183 days |
+| `outcome` | `employed_full_time`, `employed_part_time`, `graduate_school` (enrolled in graduate or professional school), `military_service` (military or volunteer service, including mission work), `seeking` (still seeking employment or school), `not_seeking` |
+| `employer_sector` | For the employed and in service: `business`, `healthcare`, `education`, `government`, `nonprofit`, `church_ministry`, `military`; null otherwise |
+| `starting_salary` | Annual starting salary in dollars, rounded to $500, for `employed_full_time` only, and only when the graduate reported one (about 86 %); null otherwise |
+
+Salaries follow the major (Computer Science, engineering, and Nursing highest; education,
+ministry, the arts lowest) and rise modestly with final GPA. A respondent whose
+Clearinghouse enrollment began by the six-month point answered `graduate_school`.
+
+### `graduate_enrollment`
+Stands in for a **National Student Clearinghouse StudentTracker** match of graduates. One
+row per bachelor's graduate found enrolled in graduate or professional school after
+graduating (their first such enrollment), on or before the data end.
+
+| Column | Meaning |
+|---|---|
+| `student_id` | The graduate |
+| `enrollment_begin_date` | First day of the enrollment (after the graduation date) |
+| `program_type` | `masters`, `doctoral`, `medical` (MD or DO), `law`, `other_professional` (physical therapy, physician assistant, pharmacy, and the like) |
+| `institution_control` | `public` or `private` |
+
+Every `medical` row is an accepted medical school applicant starting in August of their
+entering year (checked).
+
+### `medical_school_applications`
+Stands in for the pre-health advising office's record of **AAMC/AACOM application
+outcomes**. One row per bachelor's graduate who applied to medical school (first cycle
+only), for cycles decided by the data end.
+
+| Column | Meaning |
+|---|---|
+| `student_id` | The applicant |
+| `entering_year` | The entering class applied for (the year after graduating, or two years after with a gap year) |
+| `applied_to` | `MD`, `DO`, or `MD and DO` |
+| `accepted` | 1 when accepted to at least one school |
+
+Applicants come mostly from Biology, Biomedical Sciences, and Chemistry. About 48 % are
+accepted, more with a higher GPA (AAMC reports about 41 % nationally).
+
+### `alumni_gifts`
+Stands in for an **advancement (alumni giving) system such as Ellucian CRM Advance**. One
+row per gift made by a graduate after graduating.
+
+| Column | Meaning |
+|---|---|
+| `gift_id` | Row id |
+| `student_id` | The donor (always a graduate; checked) |
+| `gift_date` | After the graduation date, on or before the data end |
+| `fiscal_year` | Fiscal year ending June 30 (`2025` is July 2024 to June 2025; 2026 runs to the data end) |
+| `amount` | Whole dollars, at least $5 |
+| `designation` | `annual_fund`, `scholarships`, `athletics`, `college_department`, `missions_ministry` |
+
+About 10 % of alumni have given at least once. The chance of a first gift grows each year
+after graduating (young alumni give least); ministry and theology graduates, athletes, and
+honors graduates give more often.
+
+### What these make answerable
+
+What graduates of each major earn (median starting salary), whether grades matter for
+earnings (salary by final GPA band), employment and graduate school rates, medical school
+acceptance of applicants (by major and GPA band), alumni giving participation, average
+gift, and total giving, by every grouping a graduate has (major, college, first-generation,
+Pell, gender, race and ethnicity, athletes, honors, final GPA band). At full scale: 64.1 %
+knowledge rate, $46,000 median starting salary, 16.8 % in graduate school within a year,
+47.8 % medical school acceptance, 10.4 % giving participation.
+
 ## Deliberately absent
 
 - **Course evaluations.** They are personnel-sensitive, so we do not invent them.
+- **Employer and school names.** Outcomes carry a sector or a program type, never an
+  employer, a graduate school, or any free text.
 - **Personal data.** No names, birth dates, addresses, or contact details for students, and
   no `persons` table.
 - **Prerequisite history before Fall 2020.** Courses completed before the window (and

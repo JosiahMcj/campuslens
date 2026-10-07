@@ -7,6 +7,7 @@ import {
   fetchInbox,
   markMessage,
   reviewByLabel,
+  type ChartSnapshot,
   type ExploreSnapshot,
   type FindingSnapshot,
   type Inbox,
@@ -14,6 +15,7 @@ import {
   type OverviewSnapshot,
 } from '../inbox'
 import { friendlyTime } from '../states'
+import { ChartAttachment } from './ChartAttachment'
 
 import './Roles.css'
 
@@ -27,9 +29,19 @@ export function AlertAttachment({
   onAsk,
 }: {
   message: InboxMessage
-  onAsk: ((question: string) => void) | null
+  onAsk: ((question: string, about?: string) => void) | null
 }) {
   const snapshot = message.snapshot
+  if (message.source_kind === 'chart' && message.attachment_available === false) {
+    return (
+      <div className="alert-card">
+        <p className="hint">
+          The chart this alert points at is not available to you: your role can't see it, or it
+          can no longer be drawn.
+        </p>
+      </div>
+    )
+  }
   if (message.source_kind !== 'note' && message.attachment_available === false) {
     return (
       <div className="alert-card">
@@ -51,6 +63,9 @@ export function AlertAttachment({
         {figure.definition && <p className="hint">{figure.definition}</p>}
       </div>
     )
+  }
+  if (message.source_kind === 'chart') {
+    return <ChartAttachment chart={snapshot as ChartSnapshot} onAsk={onAsk} />
   }
   if (message.source_kind === 'overview') {
     const tile = snapshot as OverviewSnapshot
@@ -103,8 +118,9 @@ export function InboxPage({
 }: {
   /** The unread count may have changed (the sidebar badge reloads). */
   onChanged: () => void
-  /** Ask an attached Explore question again; null for roles that cannot. */
-  onAsk: ((question: string) => void) | null
+  /** Ask an attached Explore question again, or ask about an attached
+   * chart in a new chat (with its About chip); null for roles that cannot. */
+  onAsk: ((question: string, about?: string) => void) | null
 }) {
   const [inbox, setInbox] = useState<Inbox | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)

@@ -185,8 +185,8 @@ def test_migration_7_is_idempotent_and_upgrades_a_real_1_to_6_database(
     conn = _database_at_version_6(tmp_path / "cabinet.db")
     try:
         assert recorded_versions(conn) == [1, 2, 3, 4, 5, 6]
-        assert migrate(conn) == [7, 8, 9, 10]
-        assert recorded_versions(conn) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        assert migrate(conn) == [7, 8, 9, 10, 11]
+        assert recorded_versions(conn) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
         assert migrate(conn) == []
         columns = {
             str(row[1]) for row in conn.execute("PRAGMA table_info(institutions)")
@@ -212,7 +212,7 @@ def test_migration_7_tolerates_a_column_that_already_exists(tmp_path: Path) -> N
             " counseling_aggregate_authorized INTEGER NOT NULL DEFAULT 0"
         )
         conn.commit()
-        assert migrate(conn) == [7, 8, 9, 10]
+        assert migrate(conn) == [7, 8, 9, 10, 11]
         assert migrate(conn) == []
     finally:
         conn.close()

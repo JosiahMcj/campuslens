@@ -38,6 +38,11 @@ PATTERNS = [
     "pattern_spring_decline",
     "pattern_fastest_growth",
     "pattern_online_withdrawals",
+    "pattern_salary_by_major",
+    "pattern_salary_rises_with_gpa",
+    "pattern_med_acceptance_gpa",
+    "pattern_ministry_gives_most",
+    "pattern_athletes_give_more",
 ]
 REALISM = [
     "holds_block_registration",
@@ -67,7 +72,30 @@ REALISM = [
     "no_registration_after_exit",
     "mean_gpa_plausible",
     "dfw_mostly_5_to_25",
+    "survey_only_eligible_graduates",
+    "salary_only_for_full_time",
+    "graduate_school_consistent",
+    "medical_school_consistent",
+    "gifts_from_alumni",
+    "outcome_tables_plausible",
 ]
+OUTCOME_TABLES = (
+    "first_destination",
+    "graduate_enrollment",
+    "medical_school_applications",
+    "alumni_gifts",
+)
+# The canonical hash of the 24 tables that existed before graduate outcomes
+# were added, at scale 0.02, as the generator wrote them before (commit
+# 37b93fe). Graduate outcomes draw from their own stream, so these rows must
+# not change.
+ORIGINAL_TABLES_SHA256_SCALE_002 = (
+    "5616b6642f851026a8780f6e62fedf788f5590cddacafa2a382683e851d4cf5d"
+)
+# The same at full scale: the whole-database hash VERIFY.md recorded then.
+ORIGINAL_TABLES_SHA256_FULL = (
+    "4df6c6378721b0c1cb487ee51528a580f24626f363f9da2ab6df11d43d0cb234"
+)
 
 
 def generate(out: Path, scale: float = 0.02) -> None:
@@ -116,7 +144,9 @@ def test_schema_tables_and_counts(small: dict[str, Any]) -> None:
     report: dict[str, Any] = small["reports"][0]
     assert by_name(report)["schema"]["ok"], by_name(report)["schema"]["detail"]
     counts: dict[str, int] = report["counts"]
-    assert len(counts) == 24
+    assert len(counts) == 28
+    for table in OUTCOME_TABLES:
+        assert counts[table] > 0, table
     assert counts["academic_periods"] == 17
     assert counts["colleges"] == 7
     assert counts["academic_programs"] == 60
@@ -144,6 +174,47 @@ def test_same_seed_gives_identical_canonical_hash(small: dict[str, Any]) -> None
     assert report_a["planted"] == report_b["planted"]
 
 
+def test_existing_tables_are_unchanged_by_graduate_outcomes(
+    small: dict[str, Any],
+) -> None:
+    """The 24 original tables hash exactly as before outcomes were added."""
+    report_a, report_b = small["reports"]
+    assert report_a["original_tables_sha256"] == ORIGINAL_TABLES_SHA256_SCALE_002
+    assert report_b["original_tables_sha256"] == ORIGINAL_TABLES_SHA256_SCALE_002
+    assert report_a["canonical_sha256"] != report_a["original_tables_sha256"]
+
+
+def test_outcome_rows_agree_with_graduates(small: dict[str, Any]) -> None:
+    """Spot checks beside check.py's: salaries only for full-time employment,
+    survey respondents are bachelor's graduates, every medical enrollment is
+    an accepted applicant, and gifts come from graduates."""
+    con = sqlite3.connect(small["db"])
+    try:
+        assert con.execute(
+            "SELECT COUNT(*) FROM first_destination WHERE starting_salary IS NOT "
+            "NULL AND outcome != 'employed_full_time'"
+        ).fetchone() == (0,)
+        assert con.execute(
+            "SELECT COUNT(*) FROM first_destination fd JOIN students s "
+            "USING (student_id) WHERE s.enrollment_status != 'graduated'"
+        ).fetchone() == (0,)
+        assert con.execute(
+            "SELECT COUNT(*) FROM alumni_gifts g JOIN students s USING (student_id) "
+            "WHERE s.enrollment_status != 'graduated'"
+        ).fetchone() == (0,)
+        assert con.execute(
+            "SELECT COUNT(*) FROM graduate_enrollment ge WHERE program_type = "
+            "'medical' AND NOT EXISTS (SELECT 1 FROM medical_school_applications m "
+            "WHERE m.student_id = ge.student_id AND m.accepted = 1)"
+        ).fetchone() == (0,)
+        salaries = con.execute(
+            "SELECT MIN(starting_salary), MAX(starting_salary) FROM first_destination"
+        ).fetchone()
+    finally:
+        con.close()
+    assert 20_000 <= salaries[0] < salaries[1] <= 150_000
+
+
 def test_realism_checks_pass(small: dict[str, Any]) -> None:
     checks = by_name(small["reports"][0])
     for name in REALISM:
@@ -167,6 +238,28 @@ def test_checker_passes_overall(small: dict[str, Any]) -> None:
 
 
 TAMPERING = {
+    "salary_only_for_full_time": (
+        "UPDATE first_destination SET starting_salary = 50000 WHERE rowid = "
+        "(SELECT MIN(rowid) FROM first_destination WHERE outcome = 'seeking')"
+    ),
+    "survey_only_eligible_graduates": (
+        "INSERT INTO first_destination SELECT student_id, '202110', '2021-06-12', "
+        "'seeking', NULL, NULL FROM students WHERE enrollment_status = 'active' "
+        "LIMIT 1"
+    ),
+    "graduate_school_consistent": (
+        "UPDATE first_destination SET outcome = 'graduate_school', "
+        "employer_sector = NULL, starting_salary = NULL WHERE rowid = (SELECT "
+        "MIN(rowid) FROM first_destination WHERE outcome = 'seeking' AND "
+        "student_id NOT IN (SELECT student_id FROM graduate_enrollment))"
+    ),
+    "medical_school_consistent": (
+        "INSERT INTO medical_school_applications SELECT student_id, 2024, 'MD', 0 "
+        "FROM students WHERE enrollment_status = 'withdrawn' LIMIT 1"
+    ),
+    "gifts_from_alumni": (
+        "UPDATE alumni_gifts SET gift_date = '2019-01-02' WHERE gift_id = 1"
+    ),
     "term_gpa_recomputed": (
         "UPDATE final_grades SET grade = 'A', quality_points = 12.0 "
         "WHERE registration_id = (SELECT MIN(registration_id) FROM final_grades "
@@ -234,6 +327,7 @@ def test_full_scale_matches_verify_md_exactly(tmp_path: Path) -> None:
     assert rc == 0, failed
     exact = by_name(report)["planted_exact"]
     assert exact["ok"] and "match VERIFY.md" in exact["detail"]
+    assert report["original_tables_sha256"] == ORIGINAL_TABLES_SHA256_FULL
 
 
 def find_python39() -> str | None:
@@ -280,7 +374,14 @@ def test_verify_md_documents_every_planted_fact(small: dict[str, Any]) -> None:
     assert match, "VERIFY.md has no planted-values block"
     expected: dict[str, Any] = json.loads(match.group(1))
     assert re.fullmatch(r"[0-9a-f]{64}", expected.pop("canonical_sha256"))
+    # The original 24 tables still hash to the value recorded before
+    # graduate outcomes were added.
+    assert expected.pop("original_tables_sha256") == ORIGINAL_TABLES_SHA256_FULL
     assert set(expected) == set(small["reports"][0]["planted"])
     assert expected["spring_registration"]["change_pct"] == -4.8
     assert expected["lowest_gpa_major"]["major"] == "MEEN"
     assert expected["hardest_required_course"]["course"] == "MEEN 3310"
+    assert expected["starting_salary"]["highest_major"] == "CSCI"
+    assert expected["alumni_giving"]["highest_major"] == "MINS"
+    assert 40 <= expected["medical_school"]["rate_pct"] <= 50
+    assert 5 <= expected["alumni_giving"]["participation_pct"] <= 12

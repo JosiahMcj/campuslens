@@ -68,7 +68,7 @@ def ensure_private_db_file(path: str | os.PathLike[str]) -> None:
             os.chmod(side, DB_FILE_MODE)
 
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 
 class SchemaVersionError(RuntimeError):
@@ -583,6 +583,50 @@ def _migration_10(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _migration_11(conn: sqlite3.Connection) -> None:
+    """Inbox alerts may point at a Data page chart (``source_kind`` 'chart').
+
+    SQLite cannot change a CHECK constraint in place, so ``inbox_messages``
+    is rebuilt with the wider one and every row copied as it is (ids kept,
+    so the AUTOINCREMENT sequence carries on), then its indexes recreated.
+    A chart row stores only its reference; the series is computed again for
+    the reader whenever it is shown (``cabinet.inbox``).
+    """
+    for statement in (
+        """
+        CREATE TABLE inbox_messages_v11 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            institution_id INTEGER NOT NULL REFERENCES institutions(id),
+            sender_id INTEGER NOT NULL REFERENCES users(id),
+            recipient_id INTEGER NOT NULL REFERENCES users(id),
+            note TEXT NOT NULL,
+            review_by TEXT,
+            source_kind TEXT NOT NULL
+                CHECK (source_kind IN
+                    ('note', 'finding', 'overview', 'explore', 'chart')),
+            source_ref TEXT,
+            snapshot TEXT,
+            created_at TEXT NOT NULL,
+            read_at TEXT,
+            reviewed_at TEXT
+        )
+        """,
+        "INSERT INTO inbox_messages_v11 (id, institution_id, sender_id,"
+        " recipient_id, note, review_by, source_kind, source_ref, snapshot,"
+        " created_at, read_at, reviewed_at)"
+        " SELECT id, institution_id, sender_id, recipient_id, note, review_by,"
+        " source_kind, source_ref, snapshot, created_at, read_at, reviewed_at"
+        " FROM inbox_messages",
+        "DROP TABLE inbox_messages",
+        "ALTER TABLE inbox_messages_v11 RENAME TO inbox_messages",
+        "CREATE INDEX IF NOT EXISTS idx_inbox_recipient"
+        " ON inbox_messages (institution_id, recipient_id)",
+        "CREATE INDEX IF NOT EXISTS idx_inbox_sender"
+        " ON inbox_messages (institution_id, sender_id)",
+    ):
+        conn.execute(statement)
+
+
 MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (1, "h2 tenancy baseline", _migration_1),
     (2, "r3 dataset pinning and audit index", _migration_2),
@@ -593,7 +637,8 @@ MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (7, "counseling aggregate authorization", _migration_7),
     (8, "demonstration institution display name", _migration_8),
     (9, "staff action worklist", _migration_9),
-    (SCHEMA_VERSION, "per-account inbox", _migration_10),
+    (10, "per-account inbox", _migration_10),
+    (SCHEMA_VERSION, "inbox chart attachments", _migration_11),
 ]
 
 
