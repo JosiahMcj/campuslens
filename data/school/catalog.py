@@ -10,6 +10,7 @@ from __future__ import annotations
 
 COLLEGES: list[tuple[str, str]] = [
     ("CAS", "College of Arts and Sciences"),
+    ("CSB", "College of Social and Behavioral Sciences"),
     ("COB", "College of Business"),
     ("CEC", "College of Engineering and Computing"),
     ("COE", "College of Education"),
@@ -66,7 +67,7 @@ SUBJECTS: dict[str, tuple[str, str, list[str]]] = {
         "3310 Modern Physics", "3320 Classical Mechanics", "3330 Electricity and Magnetism",
         "3340 Optics", "4310 Quantum Mechanics", "4320 Thermal Physics",
     ]),
-    "PSYC": ("Psychology", "CAS", [
+    "PSYC": ("Psychology", "CSB", [
         "2301 General Psychology", "2314 Lifespan Development",
         "2317 Statistics for the Behavioral Sciences", "2320 Psychology of Adjustment",
         "3310 Research Methods in Psychology", "3320 Abnormal Psychology",
@@ -91,19 +92,19 @@ SUBJECTS: dict[str, tuple[str, str, list[str]]] = {
         "3350 Public Relations", "3360 Broadcast Journalism", "4310 Persuasion",
         "4320 Communication Research Methods", "4330 Crisis Communication",
     ]),
-    "POLS": ("Political Science", "CAS", [
+    "POLS": ("Political Science", "CSB", [
         "2305 American Government", "2306 State and Local Government", "3310 Political Theory",
         "3320 International Relations", "3330 Constitutional Law", "3340 Comparative Politics",
         "3350 American Political Thought", "3360 Public Administration", "4310 Public Policy",
         "4320 Faith and Public Life", "4330 Congress and the Presidency", "4340 Law and Society",
     ]),
-    "SOCI": ("Sociology", "CAS", [
+    "SOCI": ("Sociology", "CSB", [
         "1301 Introduction to Sociology", "2310 Social Problems", "2320 Marriage and Family",
         "3310 Social Theory", "3320 Race and Ethnicity", "3330 Sociology of the Family",
         "3340 Social Research Methods", "3350 Urban Sociology", "4310 Sociology of Religion",
         "4320 Social Stratification", "4330 Deviance and Social Control",
     ]),
-    "CRIJ": ("Criminal Justice", "CAS", [
+    "CRIJ": ("Criminal Justice", "CSB", [
         "1301 Introduction to Criminal Justice", "1307 Crime in America",
         "2313 Correctional Systems", "2314 Criminal Investigation",
         "2328 Police Systems and Practices", "3310 Criminology", "3320 Criminal Law",
@@ -427,7 +428,7 @@ PROGRAMS: list[tuple[str, str, str, str, str, str | None, float, str, str]] = [
     ("MATH", "Mathematics", "BS", "Bachelor", "CAS", "MATH", 0.9, "stem",
      "MATH 2414 MATH 2415 MATH 2318 MATH 2320 MATH 3310 MATH 3320 MATH 3330 MATH 4310 "
      "MATH 4320 MATH 4330 CSCI 1436 PHYS 2425"),
-    ("PSYC", "Psychology", "BS", "Bachelor", "CAS", "PSYC", 6.0, "algebra",
+    ("PSYC", "Psychology", "BS", "Bachelor", "CSB", "PSYC", 6.0, "algebra",
      "PSYC 2314 PSYC 2317 PSYC 3310 PSYC 3320 PSYC 3330 PSYC 3340 PSYC 3350 PSYC 4310 "
      "PSYC 4320 PSYC 4330"),
     ("ENGL", "English", "BA", "Bachelor", "CAS", "ENGL", 1.3, "algebra",
@@ -439,13 +440,13 @@ PROGRAMS: list[tuple[str, str, str, str, str, str | None, float, str, str]] = [
     ("COMM", "Communication", "BA", "Bachelor", "CAS", "COMM", 3.0, "algebra",
      "COMM 1307 COMM 2310 COMM 2320 COMM 3310 COMM 3320 COMM 3330 COMM 3340 COMM 3350 "
      "COMM 4310 COMM 4320 MKTG 3301"),
-    ("POLS", "Political Science", "BA", "Bachelor", "CAS", "POLS", 1.2, "algebra",
+    ("POLS", "Political Science", "BA", "Bachelor", "CSB", "POLS", 1.2, "algebra",
      "POLS 2305 POLS 2306 POLS 3310 POLS 3320 POLS 3330 POLS 3340 POLS 4310 POLS 4320 "
      "HIST 1302 ECON 2301"),
-    ("SOCI", "Sociology", "BA", "Bachelor", "CAS", "SOCI", 0.9, "algebra",
+    ("SOCI", "Sociology", "BA", "Bachelor", "CSB", "SOCI", 0.9, "algebra",
      "SOCI 1301 SOCI 2310 SOCI 3310 SOCI 3320 SOCI 3330 SOCI 3340 SOCI 4310 SOCI 4320 "
      "PSYC 2317 CRIJ 1301"),
-    ("CRIJ", "Criminal Justice", "BS", "Bachelor", "CAS", "CRIJ", 3.0, "algebra",
+    ("CRIJ", "Criminal Justice", "BS", "Bachelor", "CSB", "CRIJ", 3.0, "algebra",
      "CRIJ 1301 CRIJ 1307 CRIJ 2313 CRIJ 2314 CRIJ 2328 CRIJ 3310 CRIJ 3320 CRIJ 3330 "
      "CRIJ 4310 CRIJ 4320 SOCI 1301 PSYC 2317"),
     ("ENVS", "Environmental Science", "BS", "Bachelor", "CAS", "ENVS", 1.0, "algebra",
@@ -531,9 +532,71 @@ PROGRAMS: list[tuple[str, str, str, str, str, str | None, float, str, str]] = [
     ("THEA", "Theatre", "BA", "Bachelor", "CTA", "THEA", 0.9, "algebra",
      "THEA 1310 THEA 1351 THEA 2351 THEA 2336 THEA 2310 THEA 3310 THEA 3320 THEA 3321 "
      "THEA 3330 THEA 4310 ENGL 3320"),
+    # Programs added for the larger university (2026-10): built from the
+    # existing subjects and courses.
+    ("PHYS", "Physics", "BS", "Bachelor", "CAS", "PHYS", 0.7, "stem",
+     "PHYS 2425 PHYS 2426 PHYS 3310 PHYS 3320 PHYS 3330 PHYS 3340 PHYS 4310 PHYS 4320 "
+     "MATH 2414 MATH 2415 MATH 2318 MATH 2320 CHEM 1411"),
+    ("PHIL", "Philosophy", "BA", "Bachelor", "CAS", "PHIL", 0.6, "algebra",
+     "PHIL 2301 PHIL 2303 PHIL 2306 PHIL 3310 PHIL 3320 PHIL 3330 PHIL 3340 PHIL 4310 "
+     "PHIL 4320 THEO 3320 HIST 2311"),
+    ("SPAN", "Spanish", "BA", "Bachelor", "CAS", "SPAN", 0.6, "algebra",
+     "SPAN 1411 SPAN 1412 SPAN 2311 SPAN 2312 SPAN 3310 SPAN 3320 SPAN 3330 SPAN 4310 "
+     "HIST 4320 COMM 3330"),
+    ("JOUR", "Journalism and Media", "BA", "Bachelor", "CAS", "COMM", 0.9, "algebra",
+     "COMM 1307 COMM 2320 COMM 3340 COMM 3350 COMM 3360 COMM 4320 COMM 4330 ENGL 3350 "
+     "ARTS 2348 POLS 2305"),
+    ("FRSC", "Forensic Science", "BS", "Bachelor", "CAS", "CHEM", 0.7, "algebra",
+     "CHEM 1411 CHEM 1412 CHEM 2323 CHEM 2325 CHEM 3410 CHEM 3430 BIOL 1406 BIOL 1407 "
+     "BIOL 3320 CRIJ 1301 CRIJ 2314 MATH 1342"),
+    ("INDS", "Interdisciplinary Studies", "BS", "Bachelor", "CAS", None, 0.8, "algebra",
+     "ENGL 3311 HIST 3310 PSYC 2317 PSYC 3310 SOCI 1301 SOCI 3340 PHIL 2306 COMM 3320 "
+     "MATH 1342"),
+    ("LGLS", "Legal Studies", "BA", "Bachelor", "CSB", "POLS", 0.9, "algebra",
+     "POLS 2305 POLS 3310 POLS 3330 POLS 4340 CRIJ 1301 CRIJ 3320 CRIJ 3340 PHIL 2303 "
+     "ENGL 3311 COMM 4310"),
+    ("INTL", "International Studies", "BA", "Bachelor", "CSB", "POLS", 0.6, "algebra",
+     "POLS 2305 POLS 3320 POLS 3340 HIST 2321 HIST 2322 HIST 4320 ECON 2301 ECON 3330 "
+     "SPAN 1411 SPAN 1412 COMM 3330 THEO 3340"),
+    ("HDFS", "Human Development and Family Studies", "BS", "Bachelor", "CSB", "PSYC", 1.0,
+     "algebra",
+     "PSYC 2314 PSYC 2317 PSYC 3370 PSYC 4320 SOCI 1301 SOCI 2320 SOCI 3330 SOWK 1301 "
+     "SOWK 2310 PSYC 3330 HLSC 2310"),
+    ("ECON", "Economics", "BA", "Bachelor", "COB", "ECON", 0.8, "algebra",
+     "ECON 2301 ECON 2302 ECON 3310 ECON 3320 ECON 3330 ECON 4310 ECON 4320 BUSI 2305 "
+     "ACCT 2301 MATH 1325 MATH 1342"),
+    ("HRMG", "Human Resources", "BBA", "Bachelor", "COB", "MGMT", 0.9, "algebra",
+     _BUSINESS_COMMON + " MGMT 3320 MGMT 3330 MGMT 3340 MGMT 4320 MGMT 4330 BUSI 3320"),
+    ("DATA", "Data Science", "BS", "Bachelor", "CEC", "CSCI", 1.0, "stem",
+     "CSCI 1436 CSCI 1437 CSCI 2310 CSCI 2320 CSCI 3330 CSCI 4340 MATH 2414 MATH 2318 "
+     "MATH 3330 MATH 3340 MATH 4330"),
+    ("SWDV", "Software Development", "BS", "Bachelor", "CEC", "CSCI", 1.2, "algebra",
+     "CSCI 1436 CSCI 1437 CSCI 2320 CSCI 3330 CSCI 3340 CSCI 3360 CSCI 3370 CSCI 4380 "
+     "INFT 1310 INFT 2320 INFT 3320 MATH 1342"),
+    ("EDEC", "Early Childhood Studies", "BSE", "Bachelor", "COE", "EDEL", 1.3, "algebra",
+     _EDUCATION_COMMON + " EDEL 3310 EDEL 3340 EDEL 4320 EDSP 2310 PSYC 3370 MATH 1350"),
+    ("BIMS", "Biomedical Sciences", "BS", "Bachelor", "CNH", "BIOL", 2.0, "algebra",
+     "BIOL 1406 BIOL 1407 BIOL 2401 BIOL 2402 BIOL 3320 BIOL 3330 BIOL 3410 BIOL 4330 "
+     "CHEM 1411 CHEM 1412 CHEM 2323 CHEM 4320 MATH 1342 PHYS 1401"),
+    ("HCAD", "Healthcare Management", "BS", "Bachelor", "CNH", "HLSC", 1.5, "algebra",
+     "HLSC 1301 HLSC 2320 HLSC 3310 HLSC 3340 HLSC 4310 ACCT 2301 MGMT 3301 MGMT 3330 "
+     "ECON 2302 BUSI 2305 PUBH 1301 PUBH 3340"),
+    ("YFMN", "Youth Ministry", "BA", "Bachelor", "CTA", "MINS", 0.8, "algebra",
+     "MINS 1301 MINS 2310 MINS 3310 MINS 3330 MINS 3340 BIBL 2310 THEO 3310 PSYC 2314 "
+     "PSYC 3370 SOWK 1301"),
+    ("MUED", "Music Education", "BME", "Bachelor", "CTA", "MUSC", 0.7, "algebra",
+     "MUSC 1311 MUSC 1312 MUSC 2311 MUSC 2312 MUSC 1116 MUSC 1117 MUSC 1181 MUSC 1182 "
+     "MUSC 3310 EDUC 1301 EDUC 2310 EDUC 3310 EDUC 4690"),
+    ("GDES", "Graphic Design", "BFA", "Bachelor", "CTA", "ARTS", 1.2, "algebra",
+     "ARTS 1311 ARTS 1312 ARTS 1316 ARTS 2348 ARTS 3310 ARTS 3320 ARTS 3330 ARTS 3340 "
+     "ARTS 4310 COMM 3340 MKTG 3301"),
+    ("CHST", "Christian Studies", "AA", "Associate", "CTA", "BIBL", 0.9, "algebra",
+     "BIBL 2310 THEO 3340 MINS 2310 PHIL 2306"),
 ]
 
-CREDITS_REQUIRED: dict[str, int] = {"GNST": 60, "NURS": 124, "MEEN": 128, "ELEN": 128, "CVEN": 128}
+CREDITS_REQUIRED: dict[str, int] = {
+    "GNST": 60, "CHST": 60, "NURS": 124, "MEEN": 128, "ELEN": 128, "CVEN": 128,
+}
 DEFAULT_CREDITS_REQUIRED = 120
 
 # Fictional instructor names. Combinations are generated, so any match with

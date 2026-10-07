@@ -14,7 +14,11 @@ the raw rows.
 
 Usage:
     python3 data/school/generate.py                 # scale 1.0 -> var/school/school.db
-    python3 data/school/generate.py --scale 0.05 --out /tmp/school.db
+    python3 data/school/generate.py --scale 0.01 --out /tmp/school.db
+
+Scale 1.0 is the documented university: about 3,500 first-time students
+enter each fall and about 16,000 students enroll in a fall term. Smaller
+scales shrink every cohort (the tests use 0.01).
 
 Stdlib only (sqlite3, random, datetime, hashlib, json).
 """
@@ -37,7 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import catalog as C  # noqa: E402
 
 SEED = 20261005
-GENERATOR_VERSION = "2"
+GENERATOR_VERSION = "3"
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUT = ROOT / "var" / "school" / "school.db"
 
@@ -76,6 +80,10 @@ THERMO_SECOND_TERMS = {"202220", "202420", "202520"}
 # Organic Chemistry I: one instructor through Spring 2023, a new hire from Fall 2023.
 ORGO_CHANGE_TERM = "202410"
 
+# I-0001 to I-0004 (Thermodynamics I and Organic Chemistry I), fictional.
+PLANTED_NAMES = (("Alicia", "Shelby"), ("Anthony", "Jennings"), ("Naomi", "Faraday"),
+                 ("Chloe", "Merriweather"))
+
 # The planted courses are taught in fall and spring only.
 NO_SUMMER = {THERMO, ORGO}
 
@@ -91,10 +99,34 @@ SUBJECT_DIFFICULTY = {
 LEVEL_DIFFICULTY = {1000: 0.10, 2000: 0.05, 3000: 0.03, 4000: -0.07}
 PROGRAM_SHIFT = {"MEEN": -0.40, "ELEN": -0.10, "CVEN": -0.10, "NURS": 0.10, "GNST": -0.08}
 FIRST_GEN_ALGEBRA_PENALTY = -0.75
-GROWTH_TREND = {"CSCI": 1.13, "NURS": 1.05, "CYBR": 1.03}
+GROWTH_TREND = {"CSCI": 1.13, "NURS": 1.05, "CYBR": 1.03, "DATA": 1.04, "SWDV": 1.02}
 # Minimum entering first-time students per program each fall, so the planted
 # patterns still have students when the generator runs at a reduced scale.
 PROGRAM_FLOOR = {"MEEN": 10, "BIOL": 6, "CHEM": 3}
+
+# Sizes at scale 1.0. First-time students entering each fall, before the
+# yearly factor in ``add_entrants``; fall transfers; spring entrants; the
+# entering classes of 2016 to 2019 still enrolled in Fall 2020 (first-time,
+# and transfers per class); instructors on the books over the six years.
+FTIC_FALL = 3500
+TRANSFERS_FALL = 900
+SPRING_ENTRANTS = 330
+OPENING_CLASSES = ((2016, 450), (2017, 2450), (2018, 2700), (2019, 2950))
+OPENING_TRANSFERS = 550
+INSTRUCTORS = 900
+
+# Section capacity. Large lecture courses (survey courses most students
+# take) seat 120 to 200; Thermodynamics I is a 60-seat engineering lecture.
+LECTURE_CAPS = {
+    "PSYC 2301": 200, "HIST 1301": 200, "BIBL 1301": 200, "BIBL 1302": 200,
+    "THEO 2301": 200, "BIOL 1308": 180, "ARTS 1301": 180, "ECON 2301": 150,
+    "ECON 2302": 150, "SOCI 1301": 150, "POLS 2305": 150, "BUSI 1301": 150,
+    "MUSC 1306": 120, "CRIJ 1301": 120, "PSYC 2314": 120, "HIST 1302": 150,
+    "CHEM 2323": 150, "PHYS 1305": 120, "CHEM 1305": 120, "MKTG 3301": 90,
+    "MGMT 3301": 90, "ACCT 2301": 90, "ACCT 2302": 90, "BUSI 2305": 90,
+    "MATH 1342": 60, "MEEN 3310": 60,
+}
+SMALL_CAPS = {"ENGL 1301": 25, "ENGL 1302": 25, "COMM 1311": 25, "MATH 1314": 35}
 
 TERM_ROMAN = {"Fall": "10", "Spring": "20", "Summer": "30"}
 
@@ -129,6 +161,17 @@ def standing_for(prev: str | None, cum: float | None, term_gpa: float | None) ->
     if term_gpa is not None and term_gpa < 2.0:
         return "Academic Suspension"
     return "Continued Probation"
+
+
+def section_cap(c: "Course") -> int:
+    """Seats in one section of a course."""
+    if c.is_lab or c.credits == 1:
+        return 24
+    if c.cid in LECTURE_CAPS:
+        return LECTURE_CAPS[c.cid]
+    if c.cid in SMALL_CAPS:
+        return SMALL_CAPS[c.cid]
+    return {1000: 45, 2000: 40, 3000: 35}.get(c.level, 30)
 
 
 def monday_on_or_after(d: date) -> date:
@@ -333,9 +376,11 @@ def build_instructors(rng: random.Random, scale: float, courses: dict[str, Cours
         for p in programs.values():
             for cid in p.reqs:
                 weight[courses[cid].subject] += p.weight / total_w * courses[cid].credits * 6
-    n_total = max(48, round(220 * scale))
-    names: list[tuple[str, str]] = []
-    used: set[tuple[str, str]] = set()
+    n_total = max(48, round(INSTRUCTORS * scale))
+    # The planted instructors keep the names the demonstration has always
+    # used; every other name is drawn at random.
+    names: list[tuple[str, str]] = list(PLANTED_NAMES)
+    used: set[tuple[str, str]] = set(names)
     while len(names) < n_total:
         pair = (rng.choice(C.FIRST_NAMES), rng.choice(C.LAST_NAMES))
         if pair not in used:
@@ -361,7 +406,7 @@ def build_instructors(rng: random.Random, scale: float, courses: dict[str, Cours
     window_terms = [t.code for t in terms if t.season != "Summer"]
     ranks = ["Professor", "Associate Professor", "Assistant Professor", "Instructor",
              "Lecturer", "Adjunct Instructor"]
-    rank_w = [0.2, 0.22, 0.24, 0.12, 0.08, 0.14]
+    rank_w = [0.15, 0.17, 0.19, 0.10, 0.09, 0.30]
     out: list[Instructor] = []
     idx = 0
     for subject, rank, hire_year, leave in planted:
@@ -449,6 +494,11 @@ class Generator:
         self.instructors = build_instructors(self.rng_cat, scale, self.courses, self.programs,
                                              self.terms, demand)
         self.ins_by_id = {i.iid: i for i in self.instructors}
+        self.by_subject: dict[str, list[Instructor]] = {}
+        self.by_college: dict[str, list[Instructor]] = {}
+        for i in self.instructors:
+            self.by_subject.setdefault(i.subject, []).append(i)
+            self.by_college.setdefault(i.college, []).append(i)
         self.students: list[Student] = []
         self.sections: list[Section] = []
         self.section_by_id: dict[str, Section] = {}
@@ -558,11 +608,11 @@ class Generator:
 
     def assign_advisor(self, rng: random.Random, s: Student, term: str) -> None:
         p = self.programs[s.program]
-        pool = [i for i in self.instructors if employed(i, term) and i.rank != "Adjunct Instructor"
-                and p.subject is not None and i.subject == p.subject]
+        pool = [i for i in self.by_subject.get(p.subject or "", []) if employed(i, term)
+                and i.rank != "Adjunct Instructor"]
         if not pool:
-            pool = [i for i in self.instructors if employed(i, term)
-                    and i.rank != "Adjunct Instructor" and i.college == p.college]
+            pool = [i for i in self.by_college.get(p.college, []) if employed(i, term)
+                    and i.rank != "Adjunct Instructor"]
         if not pool:
             pool = [i for i in self.instructors if employed(i, term)]
         ins = rng.choice(pool)
@@ -603,14 +653,14 @@ class Generator:
         rng = random.Random(f"{SEED}:population")
         first = self.terms[0].code
         # Students already enrolled at Fall 2020 (entered Fall 2016 to Fall 2019).
-        for year, size in ((2016, 70), (2017, 410), (2018, 450), (2019, 520)):
+        for year, size in OPENING_CLASSES:
             n = max(1, round(size * self.scale))
             for _ in range(n):
                 prog = self.pick_program(rng, year)
                 s = self.new_student(rng, term_code_for("Fall", year), "first_time", prog,
                                      2020 - year)
                 self._start(rng, s, first)
-            nt = max(1, round(60 * self.scale))
+            nt = max(1, round(OPENING_TRANSFERS * self.scale))
             for _ in range(nt):
                 prog = self.pick_program(rng, year)
                 s = self.new_student(rng, term_code_for("Fall", year), "transfer", prog,
@@ -626,7 +676,7 @@ class Generator:
         if t.season == "Fall":
             k = t.year - 2020
             factor = [1.0, 1.03, 0.98, 1.01, 0.97, 0.95][k]
-            n_ftic = max(1, round(620 * self.scale * factor))
+            n_ftic = max(1, round(FTIC_FALL * self.scale * factor))
             entrants = [self.pick_program(rng, t.year) for _ in range(n_ftic)]
             for major, floor in sorted(PROGRAM_FLOOR.items()):
                 have = entrants.count(major)
@@ -634,11 +684,11 @@ class Generator:
             for prog in entrants:
                 s = self.new_student(rng, t.code, "first_time", prog, 0)
                 self._start(rng, s, t.code)
-            for _ in range(max(1, round(110 * self.scale * factor))):
+            for _ in range(max(1, round(TRANSFERS_FALL * self.scale * factor))):
                 s = self.new_student(rng, t.code, "transfer", self.pick_program(rng, t.year), 0)
                 self._start(rng, s, t.code)
         elif t.season == "Spring":
-            for _ in range(max(1, round(60 * self.scale))):
+            for _ in range(max(1, round(SPRING_ENTRANTS * self.scale))):
                 etype = "transfer" if rng.random() < 0.7 else "first_time"
                 s = self.new_student(rng, t.code, etype, self.pick_program(rng, t.year), 0)
                 self._start(rng, s, t.code)
@@ -655,7 +705,7 @@ class Generator:
                 continue
             if s.status == "active":
                 cum = s.cum_gpa()
-                base = 0.945 if t.season == "Spring" else (0.86 if s.level == "Freshman" else 0.92)
+                base = 0.975 if t.season == "Spring" else (0.88 if s.level == "Freshman" else 0.975)
                 p = base + 0.03 * s.ability - 0.02 * s.pell - 0.02 * s.first_gen
                 if cum is not None and cum < 2.0:
                     p -= 0.15
@@ -784,14 +834,7 @@ class Generator:
         sec.crn = str(10001 + self._crn_counter[t.code])
         self._crn_counter[t.code] += 1
         sec.sid = f"{t.code}-{sec.crn}"
-        if c.is_lab or c.credits == 1:
-            sec.cap = 24
-        elif c.level == 1000 and c.is_core:
-            sec.cap = 35
-        elif c.level >= 3000:
-            sec.cap = 28
-        else:
-            sec.cap = 32
+        sec.cap = section_cap(c)
         sec.enrolled = 0
         sec.meets = []
         sec.days = None
@@ -840,8 +883,8 @@ class Generator:
 
             regulars = [self.ins_by_id[i] for i in self.course_regulars.get(c.cid, [])
                         if self.ins_by_id[i].subject == c.subject]
-            dept = [i for i in self.instructors if i.subject == c.subject]
-            college = [i for i in self.instructors if i.college == C.SUBJECTS[c.subject][1]]
+            dept = self.by_subject.get(c.subject, [])
+            college = self.by_college.get(C.SUBJECTS[c.subject][1], [])
             for group, extra in ((regulars, 0), (dept, 0), (dept, 1), (college, 0),
                                  (self.instructors, 0), (college, 1), (self.instructors, 1),
                                  (self.instructors, 99)):
@@ -918,8 +961,7 @@ class Generator:
             if demand[cid] < min_elective and cid not in required:
                 continue
             c = self.courses[cid]
-            cap_guess = 24 if (c.is_lab or c.credits == 1) else 30
-            n = max(1, math.ceil(demand[cid] * 1.1 / cap_guess))
+            n = max(1, math.ceil(demand[cid] * 1.1 / section_cap(c)))
             secs = [self.make_section(rng, t, c, k + 1) for k in range(n)]
             for sec in secs:
                 self.assign_instructor(t, sec, load)
@@ -1141,7 +1183,10 @@ FEMALE_SHARE = {
     "KINE": 0.44, "MKTG": 0.52, "ACCT": 0.52, "BUAD": 0.46, "MGMT": 0.42, "FINC": 0.32,
     "SPMT": 0.30, "BIBL": 0.34, "THEO": 0.30, "MINS": 0.38, "CHEM": 0.50, "MATH": 0.42,
     "ENVS": 0.50, "MEEN": 0.16, "ELEN": 0.14, "CVEN": 0.22, "CSCI": 0.22, "INFT": 0.20,
-    "CYBR": 0.18,
+    "CYBR": 0.18, "PHYS": 0.30, "PHIL": 0.40, "SPAN": 0.65, "JOUR": 0.60, "FRSC": 0.65,
+    "INDS": 0.58, "LGLS": 0.58, "INTL": 0.58, "HDFS": 0.88, "ECON": 0.35, "HRMG": 0.65,
+    "DATA": 0.28, "SWDV": 0.20, "EDEC": 0.94, "BIMS": 0.62, "HCAD": 0.70, "YFMN": 0.45,
+    "MUED": 0.50, "GDES": 0.62, "CHST": 0.45,
 }
 DEFAULT_FEMALE_SHARE = 0.56
 
@@ -1543,8 +1588,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--scale", type=float, default=1.0)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = ap.parse_args(argv)
-    if not 0.05 <= args.scale <= 4.0:
-        ap.error("--scale must be between 0.05 and 4.0")
+    if not 0.01 <= args.scale <= 2.0:
+        ap.error("--scale must be between 0.01 and 2.0")
     t0 = time.perf_counter()
     g = build(args.scale)
     write_db(g, args.out)

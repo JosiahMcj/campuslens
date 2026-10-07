@@ -158,7 +158,7 @@ class, and who has taught it?" CampusLens answers in a few plain sentences, and 
 number in them links to the table cell it came from. A "How this was answered" fold
 shows every step, the fields it read, and its table.
 
-- **First run** `make school-data` once (about 3 s). It writes `var/school/school.db`
+- **First run** `make school-data` once (about 45 s). It writes `var/school/school.db`
   and checks every planted fact. Without it, Explore says the data is not installed.
 - **Roles.** The executive, admin, staff, and reviewer roles can ask. The Financial
   Aid role cannot. Instructor names and rows go to the executive and admin roles
@@ -204,10 +204,11 @@ covers recording and revoking it.
 
 For questions that need a whole school's history, we also ship Demonstration
 University in `data/school/`. It is a synthetic, Ellucian-shaped SQLite database
-covering Fall 2020 to Spring 2026, with 40 programs, 906 courses, 220 fictional
-instructors, about 6,200 pseudonymous students, and about 140,000 graded
-registrations. `make school-data` builds it into `var/school/school.db` in a few
-seconds, and `make school-check` recomputes every GPA and every planted fact in
+covering Fall 2020 to Spring 2026: a medium-to-large university with about 16,000
+students enrolled each fall, 60 programs in seven colleges, 906 courses, 900 fictional
+instructors, about 38,000 pseudonymous students over the six years, and about 920,000
+graded registrations. `make school-data` builds it into `var/school/school.db` (about
+245 MB) in under a minute, and `make school-check` recomputes every GPA and every planted fact in
 `data/school/VERIFY.md` from the raw rows. Nothing in the cabinet reads it yet, and
 a governed question engine will. `data/school/README.md` explains the rest.
 

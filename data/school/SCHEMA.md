@@ -29,7 +29,7 @@ Generator metadata. **Ethos: none** (not institutional data).
 
 | Column | Meaning |
 |---|---|
-| `college_code` | `CAS`, `COB`, `CEC`, `COE`, `CNH`, `CTA` |
+| `college_code` | `CAS`, `CSB`, `COB`, `CEC`, `COE`, `CNH`, `CTA` |
 | `name` | For example College of Engineering and Computing |
 
 ### `academic_periods`
@@ -78,11 +78,11 @@ Generator metadata. **Ethos: none** (not institutional data).
 | `program_code` | Degree plus major, `BS-MEEN` |
 | `major_code` | `MEEN` |
 | `name` | Mechanical Engineering |
-| `degree` | BS, BA, BBA, BSN, BSE, BSW, BM, BFA, AA |
+| `degree` | BS, BA, BBA, BSN, BSE, BSW, BM, BME, BFA, AA |
 | `award_level` | `Bachelor` or `Associate` |
 | `college_code` | Owning college |
-| `subject_code` | The program's own subject (null for General Studies) |
-| `credits_required` | 120, 124 (Nursing), 128 (engineering), 60 (AA) |
+| `subject_code` | The subject its electives come from (null for General Studies and Interdisciplinary Studies) |
+| `credits_required` | 120, 124 (Nursing), 128 (engineering), 60 (AA: General Studies, Christian Studies) |
 
 ### `courses`
 **Ethos: `courses`.** 906 catalog courses. The second digit of the number is the credit
@@ -118,7 +118,7 @@ course a program requires.
 ## People
 
 ### `instructors`
-**Ethos: `instructors`** (with the `persons` name fields). 220 instructors. **Every name is
+**Ethos: `instructors`** (with the `persons` name fields). 900 instructors, about a third of them adjuncts. **Every name is
 fictional**, generated from first and last name lists, and `fictional` is always 1.
 
 | Column | Meaning |
@@ -132,7 +132,8 @@ fictional**, generated from first and last name lists, and `fictional` is always
 | `leave_term` | First term no longer employed, null if still employed. An instructor teaches or advises in a term only when `hire_term <= term < leave_term`. |
 
 ### `students`
-**Ethos: `students`** (pseudonymous, no `persons` data). About 6,200 students. There are
+**Ethos: `students`** (pseudonymous, no `persons` data). About 38,000 students over the six years, about
+16,000 enrolled in a fall term. There are
 **no names, birth dates, addresses, emails, or phone numbers**, only the pseudonymous id.
 
 | Column | Meaning |
@@ -166,7 +167,8 @@ program (checked).
 ## Teaching
 
 ### `sections`
-**Ethos: `sections`.** About 9,000 sections, offered from demand each term (see README).
+**Ethos: `sections`.** About 31,000 sections (about 2,650 a fall), offered from demand each
+term and sized by course (see README).
 
 | Column | Meaning |
 |---|---|
@@ -352,9 +354,9 @@ time. Class level, credits attempted and earned, major changes
 (`student_academic_programs.status = 'changed'`), course passes and withdrawals, holds,
 advising contacts, and probation were already in the tables above.
 
-At full scale: first-year retention 74.7 % (first-time fall entrants Fall 2020 to Fall
-2024), six-year graduation 47.4 % for the Fall 2020 entrants (through Spring 2026,
-where the data ends), 12 % of enrolled terms part-time. `check.py` keeps these inside
+At full scale: first-year retention 81.4 % (first-time fall entrants Fall 2020 to Fall
+2024), six-year graduation 61.8 % for the Fall 2020 entrants (through Spring 2026,
+where the data ends; 41 % within four years), 12 % of enrolled terms part-time. `check.py` keeps these inside
 plausible bands.
 
 ## Deliberately absent

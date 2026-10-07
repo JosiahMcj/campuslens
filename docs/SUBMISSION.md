@@ -76,8 +76,9 @@ and no network. `RUNBOOK.md` covers production serving and a live model endpoint
 
 ## The data
 
-All data is fictional. Demonstration University has 6,225 students and 139,060 graded
-registrations from Fall 2020 to Spring 2026, generated from a fixed seed. The briefing's
+All data is fictional. Demonstration University is a medium-to-large university with about
+16,000 students enrolled each fall: 38,374 students and 923,229 graded registrations from
+Fall 2020 to Spring 2026, generated from a fixed seed. The briefing's
 four headline numbers are hand-countable from `data/fixture.json` (`data/VERIFY.md`), and
 `data/school/VERIFY.md` explains how to recount the university's figures.
 
