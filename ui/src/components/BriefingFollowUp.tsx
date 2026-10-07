@@ -170,10 +170,16 @@ function BlockView({
                       {cell}
                     </th>
                   ) : (
-                    <td key={column}>{cell}</td>
+                    <td key={column} data-column={block.columns[column]}>
+                      {cell}
+                    </td>
                   ),
                 )}
-                {withEvidence && <td>{evidence(block.row_findings?.[index])}</td>}
+                {withEvidence && (
+                  <td className="followup-evidence-cell">
+                    {evidence(block.row_findings?.[index])}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
