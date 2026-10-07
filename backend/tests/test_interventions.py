@@ -521,3 +521,33 @@ def test_an_outreach_list_waits_for_approval_and_is_audited(app: FastAPI) -> Non
     page = executive.get("/interventions").json()
     tutoring = next(p for p in page["programs"] if p["id"] == "ai_tutoring")
     assert tutoring["outreach"]["status"] == "approved"
+
+
+def test_an_older_school_database_says_to_rebuild(
+    school_db: Path, tmp_path: Path
+) -> None:
+    """A school database built before the program tables answers with a
+    plain sentence, never a traceback."""
+    old = tmp_path / "old.db"
+    src = sqlite3.connect(school_db)
+    dst = sqlite3.connect(old)
+    src.backup(dst)
+    src.close()
+    dst.execute("DROP TABLE support_program_terms")
+    dst.execute("DROP TABLE support_programs")
+    dst.commit()
+    dst.close()
+    con = connect_readonly(old)
+    try:
+        from cabinet.explore.catalog import ANALYSIS_BY_ID, AnalysisError
+
+        catalog = catalog_for(con, old)
+        run = ANALYSIS_BY_ID["measure_by_group"].run
+        with pytest.raises(AnalysisError, match="make school-data"):
+            run(con, {"measure": "fit_flag_rate", "group_by": "major"}, catalog.vocab)
+        with pytest.raises(AnalysisError, match="make school-data"):
+            ANALYSIS_BY_ID["program_impact"].run(
+                con, {"program": "ai_tutoring"}, catalog.vocab
+            )
+    finally:
+        con.close()

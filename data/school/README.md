@@ -54,7 +54,7 @@ hash, so a rebuilt database proves it is the documented one.
 
 `check.py` recomputes everything from raw rows and exits non-zero on any failure.
 
-- **Schema.** The 24 tables and their columns are exactly as documented, and every foreign
+- **Schema.** The 24 core tables and the 2 support-program tables and their columns are exactly as documented, and every foreign
   key resolves.
 - **Privacy.** Student ids are pseudonymous (`S-` plus digits), there are no personal
   columns, and every instructor is marked fictional.

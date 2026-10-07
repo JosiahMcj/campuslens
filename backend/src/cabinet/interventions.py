@@ -56,17 +56,21 @@ SOURCE_NOTE = (
 PLANTED: dict[str, str] = {
     "ai_tutoring": (
         "Built into the demonstration data: tutoring raises a participant's term "
-        "GPA by 0.15, and 15 % of participants who would have left come back. "
-        "Students with higher GPAs were more likely to say yes."
+        "GPA by about 0.15, and 15 % of participants who would have left come back "
+        "(about 1.4 points more participants returning). Students with higher GPAs "
+        "were more likely to say yes, which is why the naive comparison is larger."
     ),
     "theology_bridge": (
         "Built into the demonstration data: 35 % of participants who would have "
-        "left come back, and 40 % of returning participants who would have had a "
-        "financial hold do not."
+        "left come back (about 11 points more participants returning), and 40 % of "
+        "returning participants who would have had a financial hold do not. With "
+        "about 185 students so far, the comparisons cannot yet tell that apart from "
+        "chance."
     ),
     "fit_advising": (
         "Built into the demonstration data: 25 % of participants who would have "
-        "left come back, and 12 % more of those who return move to a new major."
+        "left come back (about 8 points more participants returning), and 12 % more "
+        "of those who return move to a new major."
     ),
 }
 

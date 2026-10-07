@@ -83,6 +83,15 @@ per-indicator counts, and how many records sit behind it, and the evidence says 
 list is shown to executives and administrators only. The server removes the ids before
 the response leaves it, so they never reach those roles' browsers.
 
+Support programs (the Support programs page) work the same way. Every role sees each
+program's rule, reach and impact as totals, with groups under 10 withheld. The list of
+students a program's rule names is prepared only by an executive, an administrator,
+or the program's own office (Financial Aid staff, for the theology and ministry
+funding bridge). It waits for an executive or administrator to approve it; preparing,
+approving, opening and updating it are each recorded in the audit log without any
+student id; and nothing is sent to a student. The eligibility rules are plain tests
+anyone can read, not risk scores, and no program row ever goes to a model.
+
 We can see the data ourselves for maintenance and backups. That is the full list.
 
 ## Explore and the demonstration university

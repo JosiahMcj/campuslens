@@ -1681,6 +1681,12 @@ def _measure_by_group(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> R
         rows, notes, columns = _general.run(con, p, v)
     except _general.GeneralError as exc:
         raise AnalysisError(str(exc)) from None
+    except sqlite3.OperationalError:
+        # A school database built before a table this measure reads (the
+        # support-program records) was added.
+        raise AnalysisError(
+            "this measure needs a newer school database; run make school-data"
+        ) from None
     entity = {"major": "major", "college": "college", "term": "term"}
     return Result(
         rows,
