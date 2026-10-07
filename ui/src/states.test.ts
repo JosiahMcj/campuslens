@@ -642,3 +642,17 @@ describe('friendlyTime', () => {
     expect(friendlyTime('not a time')).toBeNull()
   })
 })
+
+describe('page addresses', () => {
+  it('maps every page to /view/<slug> and back', async () => {
+    const { PAGE_SLUGS, pagePath, panelFromPath, isPagePath } = await import('./states')
+    for (const id of Object.keys(PAGE_SLUGS) as (keyof typeof PAGE_SLUGS)[]) {
+      expect(isPagePath(pagePath(id))).toBe(true)
+      expect(panelFromPath(pagePath(id))).toBe(id)
+      expect(panelFromPath(`${pagePath(id)}/`)).toBe(id)
+    }
+    expect(panelFromPath('/view/nope')).toBeNull()
+    expect(panelFromPath('/')).toBeNull()
+    expect(panelFromPath('/institution')).toBeNull()
+  })
+})

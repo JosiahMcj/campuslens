@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 
 import type { ApprovedQuestion } from '../api'
-import { SendIcon } from './icons'
+import { SendIcon, SearchIcon } from './icons'
 import './Explore.css'
 
 interface ChatComposerProps {
@@ -95,20 +95,21 @@ export function ChatComposer({
         </p>
       )}
       {starters && examples !== null && examples.length > 0 && (
-        <div className="explore-try">
-          <p className="explore-try-title" id="explore-try-title">
-            Try
+        <div className="explore-try try-card">
+          <p className="explore-try-title try-card-title" id="explore-try-title">
+            Try asking
           </p>
-          <ul className="explore-chip-row" aria-labelledby="explore-try-title">
+          <ul className="try-list" aria-labelledby="explore-try-title">
             {examples.map((text) => (
               <li key={text}>
                 <button
                   type="button"
-                  className="chip explore-chip"
+                  className="try-row"
                   disabled={sending}
                   onClick={() => send(text)}
                 >
-                  {text}
+                  <SearchIcon />
+                  <span>{text}</span>
                 </button>
               </li>
             ))}

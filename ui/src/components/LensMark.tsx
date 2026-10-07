@@ -7,12 +7,19 @@ import { useId } from 'react'
  * size comes from the caller's class. Decorative: the product name always
  * sits beside it in text.
  */
-export function LensMark({ className = '' }: { className?: string }) {
+export function LensMark({
+  className = '',
+  thinking = false,
+}: {
+  className?: string
+  /** Plays the thinking motion: the lens searches and its glint sweeps. */
+  thinking?: boolean
+}) {
   const gradient = `lens-mark-${useId().replace(/:/g, '')}`
   const paint = `url(#${gradient})`
   return (
     <svg
-      className={`lens-mark ${className}`}
+      className={`lens-mark${thinking ? ' is-thinking' : ''} ${className}`}
       viewBox="0 0 100 100"
       aria-hidden="true"
       focusable="false"
@@ -25,16 +32,22 @@ export function LensMark({ className = '' }: { className?: string }) {
         </linearGradient>
       </defs>
       <g fill={paint} stroke={paint} strokeLinejoin="round" strokeLinecap="round">
-        <path d="M11 26 L50 10 L89 26 L50 41 Z" strokeWidth="4" />
-        <path d="M27 33 L50 41 L67 33 L63.5 59 A16.5 16.5 0 0 0 30.5 59 Z" stroke="none" />
-        <circle cx="47" cy="59" r="21" fill="none" strokeWidth="9" />
-        <path d="M62.5 74.5 L80 90" fill="none" strokeWidth="10.5" />
-        <path d="M83 26.5 L83 48" fill="none" strokeWidth="2.6" />
-        <circle cx="83" cy="50.5" r="3.4" stroke="none" />
-        <path d="M80.2 54 L85.8 54 L87.8 67 L78.2 67 Z" strokeWidth="1.5" />
+        <g className="lens-mark-cap">
+          <path d="M11 26 L50 10 L89 26 L50 41 Z" strokeWidth="4" />
+          <path d="M83 26.5 L83 48" fill="none" strokeWidth="2.6" />
+          <circle cx="83" cy="50.5" r="3.4" stroke="none" />
+          <path d="M80.2 54 L85.8 54 L87.8 67 L78.2 67 Z" strokeWidth="1.5" />
+        </g>
+        <g className="lens-mark-lens">
+          <path d="M27 33 L50 41 L67 33 L63.5 59 A16.5 16.5 0 0 0 30.5 59 Z" stroke="none" />
+          <circle cx="47" cy="59" r="21" fill="none" strokeWidth="9" />
+          <path d="M62.5 74.5 L80 90" fill="none" strokeWidth="10.5" />
+        </g>
       </g>
-      <path className="lens-mark-glint" d="M36.5 51 A13.5 13.5 0 0 1 52.5 46.5" />
-      <path className="lens-mark-glint lens-mark-glint-soft" d="M36 64.5 A12 12 0 0 0 42.5 71" />
+      <g className="lens-mark-glints">
+        <path className="lens-mark-glint" d="M36.5 51 A13.5 13.5 0 0 1 52.5 46.5" />
+        <path className="lens-mark-glint lens-mark-glint-soft" d="M36 64.5 A12 12 0 0 0 42.5 71" />
+      </g>
     </svg>
   )
 }

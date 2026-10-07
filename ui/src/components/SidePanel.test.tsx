@@ -54,8 +54,8 @@ describe('SidePanel layers', () => {
   it('marks the evidence layer and makes only the layer below inert', () => {
     render(<Stack />)
     openEvidence()
-    const evidence = screen.getByRole('dialog', { name: 'Not yet registered' })
-    const panel = screen.getByRole('dialog', { name: 'Full briefing', hidden: true })
+    const evidence = screen.getByRole('region', { name: 'Not yet registered' })
+    const panel = screen.getByRole('region', { name: 'Full briefing', hidden: true })
     const evidenceOverlay = evidence.parentElement!
     const panelOverlay = panel.parentElement!
 
@@ -71,19 +71,19 @@ describe('SidePanel layers', () => {
     render(<Stack onPanelClose={onPanelClose} />)
     const opener = openEvidence()
 
-    fireEvent.keyDown(screen.getByRole('dialog', { name: 'Not yet registered' }), {
+    fireEvent.keyDown(screen.getByRole('region', { name: 'Not yet registered' }), {
       key: 'Escape',
     })
-    expect(screen.queryByRole('dialog', { name: 'Not yet registered' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Not yet registered' })).toBeNull()
     expect(onPanelClose).not.toHaveBeenCalled()
-    const panel = screen.getByRole('dialog', { name: 'Full briefing' })
+    const panel = screen.getByRole('region', { name: 'Full briefing' })
     expect(panel.parentElement!.hasAttribute('inert')).toBe(false)
     expect(document.activeElement).toBe(opener)
 
     // The second Escape closes the panel.
     fireEvent.keyDown(opener, { key: 'Escape' })
     expect(onPanelClose).toHaveBeenCalledTimes(1)
-    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('region')).toBeNull()
   })
 
   it('closes only the top layer on an Escape that reaches the page', () => {
@@ -94,28 +94,21 @@ describe('SidePanel layers', () => {
     expect(document.activeElement).toBe(document.body)
 
     fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('dialog', { name: 'Not yet registered' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Not yet registered' })).toBeNull()
     expect(onPanelClose).not.toHaveBeenCalled()
-    expect(screen.getByRole('dialog', { name: 'Full briefing' })).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Full briefing' })).toBeTruthy()
   })
 
-  it('keeps Tab inside the top layer', () => {
-    // jsdom lays nothing out; give every element a box so it counts as visible.
-    vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([
-      new DOMRect(0, 0, 10, 10),
-    ] as unknown as DOMRectList)
+  it('is a page with a Back button that returns to the page below', () => {
     render(<Stack />)
-    openEvidence()
-    const evidence = screen.getByRole('dialog', { name: 'Not yet registered' })
-    const close = screen.getByRole('button', { name: 'Close Not yet registered' })
-    const last = screen.getByRole('button', { name: 'How it is computed' })
-
-    last.focus()
-    fireEvent.keyDown(last, { key: 'Tab' })
-    expect(document.activeElement).toBe(close)
-    fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })
-    expect(document.activeElement).toBe(last)
-    expect(evidence.contains(document.activeElement)).toBe(true)
+    const opener = openEvidence()
+    const evidence = screen.getByRole('region', { name: 'Not yet registered' })
+    expect(evidence.getAttribute('aria-modal')).toBeNull()
+    expect(screen.getByRole('heading', { level: 1, name: 'Not yet registered' })).toBeTruthy()
+    const backs = screen.getAllByRole('button', { name: 'Back' })
+    fireEvent.click(backs[backs.length - 1])
+    expect(screen.queryByRole('region', { name: 'Not yet registered' })).toBeNull()
+    expect(document.activeElement).toBe(opener)
   })
 })
 
@@ -143,7 +136,7 @@ describe('SidePanel reopened during its exit animation', () => {
   it('takes the top of the stack and focus back, and Escape reaches it again', () => {
     const onClose = vi.fn()
     render(<Reopenable onClose={onClose} />)
-    const panel = screen.getByRole('dialog', { name: 'Audit log' })
+    const panel = screen.getByRole('region', { name: 'Audit log' })
     expect(document.activeElement).toBe(panel)
 
     fireEvent.click(screen.getByRole('button', { name: 'Start closing', hidden: true }))

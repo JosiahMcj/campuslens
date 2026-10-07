@@ -159,7 +159,7 @@ describe('M9 in the evidence drawer', () => {
     expect(html).toContain('The count is withheld below 10 so no one can be identified.')
     // The panel is titled with the display label, never the code.
     expect(html).toContain(
-      '<h2>Students not yet registered who have had counseling contact (aggregate)</h2>',
+      '<h1>Students not yet registered who have had counseling contact (aggregate)</h1>',
     )
     expect(html).toContain('<dt>Authorized by</dt><dd>Dr. Example, Director of Counseling</dd>')
     expect(html).toContain('<dt>Document</dt><dd>memo 2026-09-26</dd>')

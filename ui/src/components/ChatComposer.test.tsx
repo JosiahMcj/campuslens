@@ -80,16 +80,16 @@ describe('ChatComposer — the "Try" row of Explore examples', () => {
 
   it('shows three example questions under the approved cards', () => {
     const html = withExamples(true, EXAMPLES)
-    expect(html).toContain('>Try<')
+    expect(html).toContain('>Try asking<')
     for (const text of EXAMPLES) expect(html).toContain(text)
     // The approved cards come first.
-    expect(html.indexOf('Approved question')).toBeLessThan(html.indexOf('>Try<'))
+    expect(html.indexOf('Approved question')).toBeLessThan(html.indexOf('>Try asking<'))
     // Two cards, three examples, and the send button.
     expect(html.match(/<button/g)?.length).toBe(6)
   })
 
   it('hides the examples once an answer is on screen', () => {
-    expect(withExamples(false, EXAMPLES)).not.toContain('>Try<')
+    expect(withExamples(false, EXAMPLES)).not.toContain('>Try asking<')
   })
 
   it('shows one skeleton line while loading and a quiet Retry line on failure', () => {
