@@ -565,7 +565,7 @@ PROGRAMS: list[tuple[str, str, str, str, str, str | None, float, str, str]] = [
     ("ECON", "Economics", "BA", "Bachelor", "COB", "ECON", 0.8, "algebra",
      "ECON 2301 ECON 2302 ECON 3310 ECON 3320 ECON 3330 ECON 4310 ECON 4320 BUSI 2305 "
      "ACCT 2301 MATH 1325 MATH 1342"),
-    ("HRMG", "Human Resource Management", "BBA", "Bachelor", "COB", "MGMT", 0.9, "algebra",
+    ("HRMG", "Human Resources", "BBA", "Bachelor", "COB", "MGMT", 0.9, "algebra",
      _BUSINESS_COMMON + " MGMT 3320 MGMT 3330 MGMT 3340 MGMT 4320 MGMT 4330 BUSI 3320"),
     ("DATA", "Data Science", "BS", "Bachelor", "CEC", "CSCI", 1.0, "stem",
      "CSCI 1436 CSCI 1437 CSCI 2310 CSCI 2320 CSCI 3330 CSCI 4340 MATH 2414 MATH 2318 "
@@ -573,15 +573,15 @@ PROGRAMS: list[tuple[str, str, str, str, str, str | None, float, str, str]] = [
     ("SWDV", "Software Development", "BS", "Bachelor", "CEC", "CSCI", 1.2, "algebra",
      "CSCI 1436 CSCI 1437 CSCI 2320 CSCI 3330 CSCI 3340 CSCI 3360 CSCI 3370 CSCI 4380 "
      "INFT 1310 INFT 2320 INFT 3320 MATH 1342"),
-    ("EDEC", "Early Childhood Education", "BSE", "Bachelor", "COE", "EDEL", 1.3, "algebra",
+    ("EDEC", "Early Childhood Studies", "BSE", "Bachelor", "COE", "EDEL", 1.3, "algebra",
      _EDUCATION_COMMON + " EDEL 3310 EDEL 3340 EDEL 4320 EDSP 2310 PSYC 3370 MATH 1350"),
     ("BIMS", "Biomedical Sciences", "BS", "Bachelor", "CNH", "BIOL", 2.0, "algebra",
      "BIOL 1406 BIOL 1407 BIOL 2401 BIOL 2402 BIOL 3320 BIOL 3330 BIOL 3410 BIOL 4330 "
      "CHEM 1411 CHEM 1412 CHEM 2323 CHEM 4320 MATH 1342 PHYS 1401"),
-    ("HCAD", "Health Care Administration", "BS", "Bachelor", "CNH", "HLSC", 1.5, "algebra",
+    ("HCAD", "Healthcare Management", "BS", "Bachelor", "CNH", "HLSC", 1.5, "algebra",
      "HLSC 1301 HLSC 2320 HLSC 3310 HLSC 3340 HLSC 4310 ACCT 2301 MGMT 3301 MGMT 3330 "
      "ECON 2302 BUSI 2305 PUBH 1301 PUBH 3340"),
-    ("YFMN", "Youth and Family Ministry", "BA", "Bachelor", "CTA", "MINS", 0.8, "algebra",
+    ("YFMN", "Youth Ministry", "BA", "Bachelor", "CTA", "MINS", 0.8, "algebra",
      "MINS 1301 MINS 2310 MINS 3310 MINS 3330 MINS 3340 BIBL 2310 THEO 3310 PSYC 2314 "
      "PSYC 3370 SOWK 1301"),
     ("MUED", "Music Education", "BME", "Bachelor", "CTA", "MUSC", 0.7, "algebra",

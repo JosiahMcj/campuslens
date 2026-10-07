@@ -1,6 +1,6 @@
 """Tests for the Demonstration University generator and checker (data/school/).
 
-The generator runs at --scale 0.01 into tmp dirs (never the repo's var/).
+The generator runs at --scale 0.02 into tmp dirs (never the repo's var/).
 These tests assert the schema, determinism (same seed, same canonical hash),
 the realism checks, the direction of every planted pattern, and that the
 checker fails on tampered rows. One test also generates the full scale
@@ -70,7 +70,7 @@ REALISM = [
 ]
 
 
-def generate(out: Path, scale: float = 0.01) -> None:
+def generate(out: Path, scale: float = 0.02) -> None:
     proc = subprocess.run(
         [sys.executable, str(GENERATE), "--scale", str(scale), "--out", str(out)],
         capture_output=True,
@@ -98,7 +98,7 @@ def by_name(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 @pytest.fixture(scope="module")
 def small(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
-    """Two independent generations at scale 0.01 and their check reports."""
+    """Two independent generations at scale 0.02 and their check reports."""
     first = tmp_path_factory.mktemp("school-a") / "school.db"
     second = tmp_path_factory.mktemp("school-b") / "school.db"
     generate(first)
@@ -118,8 +118,8 @@ def test_schema_tables_and_counts(small: dict[str, Any]) -> None:
     counts: dict[str, int] = report["counts"]
     assert len(counts) == 24
     assert counts["academic_periods"] == 17
-    assert counts["colleges"] == 6
-    assert counts["academic_programs"] == 40
+    assert counts["colleges"] == 7
+    assert counts["academic_programs"] == 60
     assert counts["courses"] == 906
     assert counts["students"] > 200
     assert counts["section_registrations"] == counts["final_grades"]
@@ -133,7 +133,7 @@ def test_schema_tables_and_counts(small: dict[str, Any]) -> None:
     assert terms[0] == "202110"
     assert terms[-1] == "202620"
     assert meta["seed"] == "20261005"
-    assert meta["scale"] == "0.01"
+    assert meta["scale"] == "0.02"
     assert meta["fictional"] == "true"
 
 
@@ -264,7 +264,7 @@ def test_python39_generates_the_same_rows(
     python39 = PYTHON39
     assert python39 is not None
     proc = subprocess.run(
-        [python39, str(GENERATE), "--scale", "0.01", "--out", str(db)],
+        [python39, str(GENERATE), "--scale", "0.02", "--out", str(db)],
         capture_output=True,
         text=True,
         check=False,

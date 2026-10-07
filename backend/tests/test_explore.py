@@ -1021,43 +1021,43 @@ def test_full_scale_owner_example(full_env: None, app: FastAPI, question: str) -
     body = _ask(_client(app, "executive"), question)
     gpa, hardest, instructors = (s["table"] for s in body["steps"])
     assert gpa["rows"][0][:2] == ["MEEN", "Mechanical Engineering"]
-    assert gpa["rows"][0][3:] == [250, 2.623]
-    assert hardest["rows"][0] == ["MEEN 3310", "Thermodynamics I", 10, 10, 91, 38, 41.8]
-    assert hardest["rows"][1][0] == "MEEN 3350" and hardest["rows"][1][-1] == 34.1
+    assert gpa["rows"][0][3:] == [1242, 2.663]
+    assert hardest["rows"][0] == ["MEEN 3310", "Thermodynamics I", 15, 11, 495, 196, 39.6]
+    assert hardest["rows"][1][0] == "MEEN 3350" and hardest["rows"][1][-1] == 30.9
     assert instructors["rows"][0] == [
         "I-0001",
         "Alicia Shelby (fictional)",
         "Professor",
-        7,
-        7,
-        "Fall 2021",
+        10,
+        8,
+        "Spring 2021",
         "Spring 2026",
-        60,
-        34,
-        56.7,
+        325,
+        169,
+        52.0,
     ]
     assert instructors["rows"][1][:5] == [
         "I-0002",
         "Anthony Jennings (fictional)",
         "Associate Professor",
-        3,
+        5,
         3,
     ]
-    assert instructors["rows"][1][-3:] == [31, 4, 12.9]
+    assert instructors["rows"][1][-3:] == [170, 27, 15.9]
     assert [s["text"] for s in body["answer"]] == [
-        "Mechanical Engineering has the lowest average cumulative GPA, 2.62 "
-        "across 250 "
+        "Mechanical Engineering has the lowest average cumulative GPA, 2.66 "
+        "across 1,242 "
         "students.",
         "In Mechanical Engineering, the historically hardest required course is "
         "MEEN 3310 "
-        "Thermodynamics I, with a D, F or withdrawal rate of 41.8% (38 of 91 graded "
+        "Thermodynamics I, with a D, F or withdrawal rate of 39.6% (196 of 495 graded "
         "registrations over "
-        "10 sections).",
-        "I-0001 Alicia Shelby (fictional) has taught it most: 7 sections in 7 "
+        "15 sections).",
+        "I-0001 Alicia Shelby (fictional) has taught it most: 10 sections in 8 "
         "terms, with "
-        "a D, F or withdrawal rate of 56.7%.",
-        "I-0002 Anthony Jennings (fictional) taught 3 sections, "
-        "with a D, F or withdrawal rate of 12.9%.",
+        "a D, F or withdrawal rate of 52.0%.",
+        "I-0002 Anthony Jennings (fictional) taught 5 sections, "
+        "with a D, F or withdrawal rate of 15.9%.",
     ]
 
 
@@ -1067,30 +1067,30 @@ def test_full_scale_owner_example(full_env: None, app: FastAPI, question: str) -
     [
         (
             "Which major grew fastest from Fall 2020 to Fall 2025?",
-            ["Computer Science", "65", "137", "111% (more than doubled)"],
+            ["Computer Science", "355", "708", "99.4%"],
         ),
         (
             "How much did continuing spring registration change in Spring 2026?",
-            ["2,073", "2,178", "−4.8%"],
+            ["13,541", "14,224", "−4.8%"],
         ),
         (
             "What is the first-generation equity gap in College Algebra?",
-            ["42.8%", "15.6%", "27.2 points"],
+            ["40.9%", "15.8%", "25.1 points"],
         ),
         (
             "Which term had the largest gap between online and in-person "
             "withdrawal rates?",
-            ["Spring 2021", "16.7%", "4.3%", "12.4 points"],
+            ["Spring 2021", "15.8%", "4.2%", "11.6 points"],
         ),
         (
             "Who has taught Organic Chemistry I?",
             [
                 "I-0004 Chloe Merriweather (fictional)",
-                "8 sections",
-                "14.5%",
+                "9 sections",
+                "11.4%",
                 "I-0003 Naomi Faraday (fictional)",
-                "7 sections",
-                "47.3%",
+                "8 sections",
+                "40.4%",
             ],
         ),
     ],
@@ -1481,12 +1481,13 @@ def test_full_scale_online_withdrawal_by_course(full_env: None, app: FastAPI) ->
     assert [top["course"], top["online_w"], top["online_graded"]] == list(
         expected[:3]
     )
-    assert top["course"] == "MATH 2415" and top["online_rate"] == 26.7
+    assert top["course"] == "HIST 4310" and top["online_rate"] == 22.4
     text = _texts(body)
     # The sentence says a threshold applies: a course with fewer online
-    # students (WRSP 3320, 11 students) is not ranked, so it is not "the
-    # highest"; the threshold itself is in the step's parameters.
+    # students is not ranked, so it is not "the highest"; the threshold
+    # itself is in the step's parameters.
     assert text.startswith(
-        "Among courses with enough online students to rank, MATH 2415 Calculus III"
+        "Among courses with enough online students to rank, HIST 4310 American "
+        "Religious History"
     )
-    assert "26.7% (8 of 30 online graded registrations)" in text
+    assert "22.4% (11 of 49 online graded registrations)" in text
