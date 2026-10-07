@@ -203,6 +203,7 @@ from cabinet.departments import router as departments_router
 from cabinet.explore.api import router as explore_router
 from cabinet.explore.privacy import redact_question
 from cabinet.fixture import parse_fixture
+from cabinet.inbox import decision_deliveries, department_roles, notify_decision
 from cabinet.inbox import router as inbox_router
 from cabinet.metrics import findings as compute_findings
 from cabinet.migrations import (
@@ -1545,10 +1546,22 @@ def create_app(
             actor="chief_of_staff",
             payload={"decision_id": body.decision_id, "task": task},
         )
+        # The owning department's accounts get it in their inbox (never
+        # emailed): the decision, the approved action, the deadline and the
+        # figures, re-read whenever it is shown (cabinet.inbox).
+        notified = notify_decision(
+            store,
+            institution_id,
+            user,
+            decision,
+            int(runtime.dataset["id"]),
+            proposed_due(runtime),
+        )
         return {
             "task": task,
             "created": True,
             "event_ids": [approved_event["id"], created_event["id"]],
+            "department_inbox": notified,
         }
 
     # -- the governed execution step: dispatches ------------------------------
@@ -1693,6 +1706,12 @@ def create_app(
                 "proposed_due": proposed_due(runtime),
                 "aid_queue": aid_queue_summary(
                     institution_id, decision_id, dataset_id
+                ),
+                # The owning department's inbox: delivered, opened,
+                # acknowledged (cabinet.inbox.notify_decision).
+                "department_roles": list(department_roles(office)),
+                "department_inbox": decision_deliveries(
+                    store, institution_id, decision_id, dataset_id
                 ),
             }
         )

@@ -115,7 +115,10 @@ _BREAKDOWN_ORDER = (
 _OWNERS: tuple[tuple[str, str], ...] = (
     (r"\bhold", "Student Accounts (Bursar)"),
     (r"pell|aid\b", "Financial Aid"),
-    (r"registr|headcount|enrolled|part-time|full-time|credits attempted", "the Registrar"),
+    (
+        r"registr|headcount|enrolled|part-time|full-time|credits attempted",
+        "the Registrar",
+    ),
     (r"on campus|housing", "Student Life"),
     (
         r"retention|dropout|stop-out|stop out|probation|suspension|advis|"
@@ -198,7 +201,8 @@ def _row_label(step: StepResult, row: int) -> str:
 def _is_total(step: StepResult, row: int) -> bool:
     cells = step.rows[row]
     return bool(cells.get("_total")) or any(
-        cells.get(k) in _TOTAL_NAMES for k in ("major_name", "college_name", "term_name", "group")
+        cells.get(k) in _TOTAL_NAMES
+        for k in ("major_name", "college_name", "term_name", "group")
     )
 
 
@@ -245,7 +249,7 @@ def _shape(step: StepResult) -> _Shape | None:
     named = _NAMED.get(a)
     if named is None:
         return None
-    key, timed = named
+    key, through_time = named
     col = _column(step, key)
     if col is None:
         # A role that may not see instructors gets the course as a whole.
@@ -254,11 +258,8 @@ def _shape(step: StepResult) -> _Shape | None:
             return None
         key = "dfw_rate"
     if a == "graduations" and step.params.get("group_by") == "year":
-        timed = True
-    if len(step.rows) == 1:
-        form = "number"
-    else:
-        form = "line" if timed else "bar"
+        through_time = True
+    form = "number" if len(step.rows) == 1 else ("line" if through_time else "bar")
     return _Shape(step, key, col.kind, col.label, form, [])
 
 
@@ -375,7 +376,9 @@ def read_trend(
     def stop() -> int:
         return 1 if time.monotonic() > deadline else 0
 
-    def granted(_i: int, analysis_id: str, fields: tuple[str, ...], withheld: bool) -> None:
+    def granted(
+        _i: int, analysis_id: str, fields: tuple[str, ...], withheld: bool
+    ) -> None:
         if on_step is not None:
             on_step(index, analysis_id, fields, withheld)
 
@@ -398,9 +401,7 @@ def read_trend(
 
 
 def _term_row(step: StepResult, code: str) -> int | None:
-    return next(
-        (i for i, r in enumerate(step.rows) if r.get("term") == code), None
-    )
+    return next((i for i, r in enumerate(step.rows) if r.get("term") == code), None)
 
 
 @dataclass
@@ -483,7 +484,9 @@ class Card:
     plan: list[Sentence]
     followups: dict[str, Any]
 
-    def to_json(self, step_json: Callable[[StepResult], dict[str, Any]]) -> dict[str, Any]:
+    def to_json(
+        self, step_json: Callable[[StepResult], dict[str, Any]]
+    ) -> dict[str, Any]:
         """The card as the API returns it. ``extra_steps`` continue the
         answer's step numbering: a claim's ``table`` counts the answer's
         steps first, then these."""
@@ -633,7 +636,13 @@ def _ranked_points(
         direction = _direction(step, hi, total, shape.value)
         if direction != "unchanged":
             key = table.result()
-            verb = " is " if "major_name" in step.rows[hi] or "college_name" in step.rows[hi] or shape.step.analysis.id != general.ANALYSIS_ID else " are "
+            verb = (
+                " is "
+                if "major_name" in step.rows[hi]
+                or "college_name" in step.rows[hi]
+                or shape.step.analysis.id != general.ANALYSIS_ID
+                else " are "
+            )
             b = _Builder(_with_steps(steps, key))
             b.t(_row_label(step, hi)).t(verb).c(key, row, "change")
             b.t(" above" if direction == "up" else " below")
@@ -676,9 +685,7 @@ def _line_points(
         if then is None and len(ranked) >= 2:
             then = ranked[-2]
         if then is not None and _num(step.cell(then, shape.value)) is not None:
-            row = _change(
-                table, "Change", step, last, then, shape.value, shape.kind
-            )
+            row = _change(table, "Change", step, last, then, shape.value, shape.kind)
             direction = _direction(step, last, then, shape.value)
             key = table.result()
             b = _Builder(_with_steps(steps, key))
@@ -720,14 +727,17 @@ def _number_points(
     if _column(step, "students") is not None and shape.value != "students":
         b.t(", across ").c(step, 0, "students").t(" students")
     out.append(("value", b.t(".").done()))
-    if step.analysis.id == "continuing_registration_change":
-        # Its own row carries the change against a year earlier.
-        if _num(step.cell(0, "change_pct")) is not None:
-            b = _Builder(steps)
-            b.t("Against ").c(step, 0, "prior_term_name").t(": ")
-            b.c(step, 0, "prior_continuing").t(" then, a change of ")
-            b.c(step, 0, "change_pct").t(".")
-            out.append(("trend", b.done()))
+    # Registration change: its own row carries the change against a year
+    # earlier.
+    if (
+        step.analysis.id == "continuing_registration_change"
+        and _num(step.cell(0, "change_pct")) is not None
+    ):
+        b = _Builder(steps)
+        b.t("Against ").c(step, 0, "prior_term_name").t(": ")
+        b.c(step, 0, "prior_continuing").t(" then, a change of ")
+        b.c(step, 0, "change_pct").t(".")
+        out.append(("trend", b.done()))
     return out
 
 
@@ -745,7 +755,9 @@ def _trend_point(
             f"The {missing} figure is withheld (a group too small to show), so "
             "no change is shown."
         )
-    row = _change(table, "Change in a year", t, trend.now, trend.then, "value", shape.kind)
+    row = _change(
+        table, "Change in a year", t, trend.now, trend.then, "value", shape.kind
+    )
     trend.figure = row
     direction = _direction(t, trend.now, trend.then, "value")
     key = table.result()
@@ -794,7 +806,8 @@ CHART_TEMPLATES: dict[str, ChartTemplate] = {
         ChartTemplate(
             "trend_line",
             "Trend line",
-            "one figure by term (or entry cohort), with the change since a year earlier",
+            "one figure by term (or entry cohort), with the change since a year "
+            "earlier",
         ),
         ChartTemplate(
             "grouped_bars",
@@ -815,7 +828,8 @@ CHART_TEMPLATES: dict[str, ChartTemplate] = {
         ChartTemplate(
             "before_after",
             "Before and after",
-            "one figure at two times (a year earlier and now, before and after a decision)",
+            "one figure at two times (a year earlier and now, before and after a "
+            "decision)",
         ),
         ChartTemplate(
             "funnel",
@@ -919,9 +933,7 @@ def _chart(shape: _Shape, trend: _Trend | None, table: _Table | None) -> dict[st
 
 
 def _filters(p: dict[str, Any]) -> dict[str, str]:
-    return {
-        k: str(p[k]) for k in general.GROUPING_KEYS if k != "term" and p.get(k)
-    }
+    return {k: str(p[k]) for k in general.GROUPING_KEYS if k != "term" and p.get(k)}
 
 
 def _subject_words(filters: dict[str, str], catalog: Catalog) -> tuple[str, str]:
@@ -937,7 +949,22 @@ def _subject_words(filters: dict[str, str], catalog: Catalog) -> tuple[str, str]
             who.append(f"students who entered in {value}")
         else:
             label = general.GROUPINGS[key].values.get(value, value)
-            who.append(label[:1].lower() + label[1:] if not label.startswith(("Pell", "U.S.", "Hispanic", "Black", "Asian", "White", "American", "Native")) else label)
+            who.append(
+                label[:1].lower() + label[1:]
+                if not label.startswith(
+                    (
+                        "Pell",
+                        "U.S.",
+                        "Hispanic",
+                        "Black",
+                        "Asian",
+                        "White",
+                        "American",
+                        "Native",
+                    )
+                )
+                else label
+            )
     return (f" for {' '.join(who)}" if who else ""), where
 
 
@@ -1009,8 +1036,10 @@ def _followups(
             groups = [g for g in (p.get("group_by"), p.get("then_by")) if g]
             filters = _filters(p)
             allowed = general.allowed_groupings(measure)
-            timed = "term" if "term" in allowed else (
-                "entry_cohort" if "entry_cohort" in allowed else None
+            timed = (
+                "term"
+                if "term" in allowed
+                else ("entry_cohort" if "entry_cohort" in allowed else None)
             )
             if timed is not None and timed not in groups and timed not in filters:
                 out["trend"] = _measure_question(measure, [timed], filters, catalog)
@@ -1028,7 +1057,11 @@ def _followups(
                     text = _measure_question(measure, [*groups, g], filters, catalog)
                     if text is not None:
                         offered.append(
-                            {"grouping": g, "label": general.GROUPINGS[g].label, "question": text}
+                            {
+                                "grouping": g,
+                                "label": general.GROUPINGS[g].label,
+                                "question": text,
+                            }
                         )
                 out["breakdowns"] = offered
     elif step is not None and step.analysis.id == "dfw_by_course" and step.rows:
