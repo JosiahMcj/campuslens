@@ -19,6 +19,7 @@ import {
   AidQueueNavIcon,
   AuditNavIcon,
   BriefingNavIcon,
+  DataNavIcon,
   DecisionNavIcon,
   EvidenceNavIcon,
   FiguresNavIcon,
@@ -43,6 +44,7 @@ export type PanelId =
   | 'audit'
   | 'aid'
   | 'students'
+  | 'data'
   | 'profile'
   | 'settings'
 
@@ -98,6 +100,7 @@ const PANEL_ROWS: Record<NavPanel, { label: string; icon: ReactNode }> = {
   audit: { label: 'Audit log', icon: <AuditNavIcon /> },
   aid: { label: 'Financial Aid review', icon: <AidQueueNavIcon /> },
   students: { label: 'Find a student', icon: <SearchIcon /> },
+  data: { label: 'Data', icon: <DataNavIcon /> },
 }
 
 /** The capability groups, in sidebar order. Key figures, Evidence and the
@@ -105,7 +108,7 @@ const PANEL_ROWS: Record<NavPanel, { label: string; icon: ReactNode }> = {
  * answer, the evidence opens from each number (and the Full briefing lists
  * it), and the employees are in "Data access". */
 const NAV_GROUPS: { label: string; panels: NavPanel[] }[] = [
-  { label: 'Briefing', panels: ['briefing', 'actions', 'decision', 'students'] },
+  { label: 'Briefing', panels: ['briefing', 'data', 'actions', 'decision', 'students'] },
   { label: 'Governance', panels: ['access', 'audit', 'aid'] },
 ]
 

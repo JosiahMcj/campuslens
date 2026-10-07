@@ -187,6 +187,9 @@ class Chart:
     # The attribute a share is a share of (the Pell share and Pell status):
     # narrowing to or splitting by it would only show 100% and 0%.
     about: str | None = None
+    # Holds are placed through a term (many when it ends), so the term the
+    # records end in is not complete yet: say so.
+    partial_last: bool = False
     note: str = ""
 
 
@@ -278,6 +281,7 @@ CHARTS: tuple[Chart, ...] = (
         FIN_HOLD_STUDENTS,
         "term",
         "line",
+        partial_last=True,
     ),
     _c(
         "financial_hold_rate",
@@ -286,6 +290,7 @@ CHARTS: tuple[Chart, ...] = (
         FIN_HOLD_RATE,
         "term",
         "line",
+        partial_last=True,
     ),
     _c(
         "financial_balance_total",
@@ -294,6 +299,7 @@ CHARTS: tuple[Chart, ...] = (
         FIN_BALANCE,
         "term",
         "line",
+        partial_last=True,
     ),
     _c(
         "financial_balance_median",
@@ -715,6 +721,11 @@ def compute(
             )
     if m.unit == "cohort" and not chart.all_entrants and "admit_type" not in filters:
         notes.append("Entering students are first-time students.")
+    if chart.partial_last and xs:
+        notes.append(
+            f"{xs[-1]['label']} is the latest term in the records and is not "
+            "complete: holds placed later in that term are not in them yet."
+        )
     if chart.note:
         notes.append(chart.note)
     kind = m.kind

@@ -1,0 +1,423 @@
+/* The Data page (DataPage.tsx, DataChart.tsx). Colours, sizes and spacing
+   are the tokens in index.css; the chart series use --series-1 to
+   --series-7 (DESIGN.md, Colour), nothing else. */
+
+.data-page {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.data-lede {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+}
+
+.data-boards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-self: start;
+  max-width: 100%;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+}
+
+.data-filters {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.data-filter-row,
+.data-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9.5rem), 1fr));
+  gap: var(--space-3);
+}
+
+.data-filter-grid {
+  padding: var(--space-3) 0 var(--space-2);
+}
+
+.data-field {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.data-field .field {
+  width: 100%;
+  min-width: 0;
+}
+
+.data-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.data-chips ul {
+  display: contents;
+  list-style: none;
+}
+
+.data-chips-label {
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
+
+.data-chip {
+  min-height: var(--tap);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  background: var(--navy-wash);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.data-chip:hover {
+  border-color: var(--navy);
+}
+
+.data-chip:focus-visible,
+.data-legend-item:focus-visible,
+.chart:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+}
+
+.data-board-intro {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+/* Cards: as many whole ones per row as fit, one on a phone. */
+.data-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr));
+  align-items: start;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.data-card {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+}
+
+.data-card h3 {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.data-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.data-card-sub,
+.data-card-note,
+.data-card-empty {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--ink-soft);
+}
+
+.data-card-sub {
+  margin-top: var(--space-1);
+}
+
+.data-card-empty {
+  padding: var(--space-6) 0;
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.data-card-loading {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-6) 0;
+}
+
+.data-card-latest {
+  display: grid;
+  justify-items: end;
+  flex: none;
+  margin: 0;
+  text-align: right;
+}
+
+.data-card-figure {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.data-card-when {
+  font-size: var(--text-xs);
+  color: var(--ink-soft);
+}
+
+/* The chart itself. */
+.chart-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.chart {
+  display: block;
+  max-width: 100%;
+  overflow: visible;
+  border-radius: var(--radius-control);
+  touch-action: pan-y;
+}
+
+.chart-grid {
+  stroke: var(--rule);
+  stroke-width: 1;
+}
+
+.chart-axis {
+  stroke: var(--rule-strong);
+  stroke-width: 1;
+}
+
+.chart-tick {
+  fill: var(--ink-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-line.is-reference {
+  stroke-dasharray: 5 4;
+}
+
+.chart-dot {
+  stroke-width: 2;
+  paint-order: stroke;
+}
+
+.chart-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+}
+
+.chart-series.is-pickable,
+.chart-bar.is-pickable {
+  cursor: pointer;
+}
+
+.chart-bar {
+  stroke: var(--surface);
+  stroke-width: 1;
+}
+
+.chart-bar.is-active {
+  opacity: 0.85;
+}
+
+.chart-withheld {
+  stroke: var(--ink-soft);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 4;
+}
+
+.chart-cursor {
+  stroke: var(--rule-strong);
+  stroke-width: 1;
+}
+
+.chart-tip {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  width: max-content;
+  max-width: min(19rem, 90%);
+  margin-left: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+  box-shadow: var(--shadow-float);
+  font-size: var(--text-xs);
+  pointer-events: none;
+}
+
+.chart-tip.is-left {
+  transform: translateX(-100%);
+  margin-left: calc(-1 * var(--space-3));
+}
+
+.chart-tip-head {
+  margin: 0 0 var(--space-1);
+  font-weight: 600;
+}
+
+.chart-tip ul {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chart-tip li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-2);
+  align-items: baseline;
+}
+
+.chart-tip-name {
+  color: var(--ink-soft);
+}
+
+.chart-tip-value {
+  grid-column: 2;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tip-value.is-missing {
+  font-weight: 400;
+  font-style: italic;
+}
+
+.swatch {
+  display: inline-block;
+  flex: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 3px;
+}
+
+.swatch.is-reference {
+  height: 0;
+  border-top: 2px dashed var(--ink);
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Legend: each group is a button that narrows every chart to it. */
+.data-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.data-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.data-legend-item:hover {
+  background: var(--surface-hover);
+}
+
+.data-legend-item.is-static {
+  cursor: default;
+  color: var(--ink-soft);
+}
+
+.data-legend-item.is-static:hover {
+  background: transparent;
+}
+
+.data-gap-key {
+  display: inline-block;
+  width: 0;
+  height: 0.75rem;
+  margin-right: var(--space-2);
+  border-left: 2px dashed var(--ink-soft);
+  vertical-align: -0.1em;
+}
+
+.data-figures > summary {
+  margin-top: var(--space-1);
+}
+
+.data-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  margin-top: var(--space-2);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table th,
+.data-table td {
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--rule);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.data-table th:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  text-align: left;
+}
+
+.data-table thead th {
+  font-weight: 600;
+}
+
+.data-table td.is-missing {
+  color: var(--ink-soft);
+  font-style: italic;
+}

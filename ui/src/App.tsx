@@ -66,6 +66,8 @@ import { EvidenceDrawer } from './components/EvidenceDrawer'
 import { Institution, type ActiveDatasetMeta } from './components/Institution'
 import { LoginScreen } from './components/LoginScreen'
 import { SidePanel } from './components/SidePanel'
+import { DataPage } from './components/DataPage'
+import { canSeeDataPage } from './dataPage'
 import { StaffActionsPage } from './components/StaffActionsPage'
 import { LensMark } from './components/LensMark'
 import { Thinking } from './components/Thinking'
@@ -215,7 +217,7 @@ function focusLater(id: string, delay = 0, fallback: string | null = 'main-conte
 }
 
 /** Pages of cards or rows, which use the wider column. */
-const WIDE_PAGES: ReadonlySet<PanelId> = new Set<PanelId>(['actions', 'audit', 'aid', 'figures'])
+const WIDE_PAGES: ReadonlySet<PanelId> = new Set<PanelId>(['actions', 'audit', 'aid', 'figures', 'data'])
 
 /**
  * The one sentence under a page's title saying what the page is for. Pages
@@ -248,6 +250,8 @@ function pageIntro(page: PanelId, role: Role, fictional: boolean): string | unde
       return "Each AI employee sees only the fields its task needs, and never a student's name or identifiers. A request outside those fields is refused before any AI employee is asked, and the refusal is logged."
     case 'audit':
       return 'Every question, data request, refusal and decision is recorded here and can never be changed. Newest entries are first.'
+    case 'data':
+      return 'How the student body has changed over the years, as charts of totals. Narrow every chart to one group of students, or compare groups side by side.'
     case 'students':
       return 'Look up one student by name to see their program, progress, GPA, holds and advisor.'
     case 'aid':
@@ -1355,6 +1359,7 @@ function BriefingPage({
     'access',
     ...(aidQueue ? (['aid'] as PanelId[]) : []),
     ...(studentSearch ? (['students'] as PanelId[]) : []),
+    ...(canSeeDataPage(role) ? (['data'] as PanelId[]) : []),
     ...(audit ? (['audit'] as PanelId[]) : []),
   ]
   // An address for a page this role does not have goes back to the conversation.
@@ -1467,6 +1472,7 @@ function BriefingPage({
     audit: 'Audit log',
     aid: 'Financial Aid review',
     students: 'Find a student',
+    data: 'Data',
     profile: 'Profile',
     settings: 'Settings',
   }
@@ -2218,6 +2224,7 @@ function BriefingPage({
             <AidQueuePanel canEdit={canEditAidQueue(role)} onOpenDecision={() => openPanel('decision')} />
           )}
           {shownPanel === 'students' && studentSearch && <StudentLookup />}
+          {shownPanel === 'data' && canSeeDataPage(role) && <DataPage account={session.user.email} />}
           {shownPanel === 'profile' && (
             <ProfilePanel session={session} datasetName={datasetName} onSignOut={onSignOut} />
           )}

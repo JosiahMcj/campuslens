@@ -294,6 +294,15 @@ export function FiguresNavIcon() {
   )
 }
 
+export function DataNavIcon() {
+  return (
+    <NavGlyph>
+      <path d="M4 4v16h16" />
+      <path d="m7.5 15 3.5-4 3 2.5 5-6" />
+    </NavGlyph>
+  )
+}
+
 export function EvidenceNavIcon() {
   return (
     <NavGlyph>
