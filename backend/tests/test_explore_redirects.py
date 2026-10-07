@@ -386,6 +386,15 @@ def test_off_topic_rules_spare_real_questions(app: FastAPI) -> None:
         "Which majors have the highest dropout rate?",
         "Should we develop a new nursing program?",
         "Build a stronger advising program for freshmen",
+        # Student life and words that are off-topic only on their own.
+        "how many students live on campus",
+        "do athletes have higher GPAs",
+        "how many students are in clubs",
+        "how many students had a conduct hold",
+        "how many students study film",
+        "how many students take Python",
+        "what's the weather impact on enrollment",
+        "how many students applied through the website",
         "hi",
         "What can you do?",
     ):

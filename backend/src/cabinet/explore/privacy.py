@@ -188,15 +188,22 @@ _FORWARD_RE = re.compile(
     r"|\bgoing\s+forward\b|\bupcoming\s+(?:term|semester|year)\b",
     re.IGNORECASE,
 )
-# Requests that have nothing to do with the university's student data.
+# Requests that have nothing to do with the university's student data: a
+# request to make something ("code me a website", "write a poem").
 _OFF_TOPIC_RE = re.compile(
     r"\b(?:code|build|make|create|write|design|generate|draft|compose|develop|program)"
     r"\s+(?:me\s+|us\s+)?(?:an?\s+|the\s+|some\s+|my\s+)?(?:[\w-]+\s+){0,2}?"
     r"(?:websites?|web\s*sites?|web\s*pages?|landing\s+pages?|apps?|"
     r"scripts?|functions?|games?|poems?|songs?|stor(?:y|ies)|essays?|jokes?|"
     r"haikus?|limericks?|raps?|novels?|recipes?|cover\s+letters?|resumes?|"
-    r"logos?|slogans?|tweets?)\b"
-    r"|\b(?:website|web\s*page|html|css|javascript|python|java|sql\s+query)\b"
+    r"logos?|slogans?|tweets?)\b",
+    re.IGNORECASE,
+)
+# Words that are off-topic only in a request that names nothing in the
+# records: "what's the weather" is, "weather impact on enrollment" and "how
+# many students study film" are not.
+_OFF_TOPIC_WORDS_RE = re.compile(
+    r"\b(?:website|web\s*page|html|css|javascript|python|java|sql\s+query)\b"
     r"|\b(?:poem|haiku|limerick|joke|riddle|recipe|lyrics)\b"
     r"|\bweather\b|\btemperature\s+(?:today|tomorrow|outside)\b"
     r"|\btranslate\b|\bstock\s+(?:price|market)\b|\bbitcoin\b|\bcrypto\w*\b"
@@ -339,7 +346,12 @@ def is_off_topic(question: str, names: tuple[str, ...] = ()) -> bool:
     ("code me a website", "write a poem", "what's the weather"). ``names``
     are catalog names (course titles, majors) masked first, so "Web
     Development" or "Poetry Writing" stays a question about a course."""
-    return _OFF_TOPIC_RE.search(_mask(fold(question), names)) is not None
+    text = _mask(fold(question), names)
+    if _OFF_TOPIC_RE.search(text):
+        return True
+    return _OFF_TOPIC_WORDS_RE.search(text) is not None and not mentions_campus_data(
+        text
+    )
 
 
 def mentions_campus_data(question: str) -> bool:
