@@ -37,6 +37,25 @@ export async function fetchStaff(): Promise<StaffDirectory> {
   return (await response.json()) as StaffDirectory
 }
 
+/** Every AI employee's title by its audit actor (cabinet.staff.EMPLOYEES in
+ * the API; a backend test keeps the two lists equal). */
+export const EMPLOYEE_TITLES: Readonly<Record<string, string>> = {
+  chief_of_staff: 'Chief of Staff',
+  enrollment_analyst: 'Enrollment Analyst',
+  student_success_analyst: 'Student Success Analyst',
+  registrar_analyst: 'Registrar Analyst',
+  student_accounts_analyst: 'Student Accounts Analyst',
+  financial_aid_analyst: 'Financial Aid Analyst',
+  advising_analyst: 'Advising Analyst',
+  student_life_analyst: 'Student Life Analyst',
+  academic_affairs_analyst: 'Academic Affairs Analyst',
+  institutional_research_analyst: 'Institutional Research Analyst',
+  admissions_analyst: 'Admissions Analyst',
+  career_outcomes_analyst: 'Career & Alumni Outcomes Analyst',
+  advancement_analyst: 'Advancement Analyst',
+  it_data_steward: 'IT & Data Steward',
+}
+
 /** "A", "A and B", "A, B and C". */
 export function joinTitles(titles: readonly string[]): string {
   if (titles.length <= 1) return titles.join('')

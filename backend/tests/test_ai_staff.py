@@ -552,3 +552,18 @@ def test_the_home_screens_name_the_same_employees_as_the_api() -> None:
         titles = ", ".join(f"'{staff.title(r)}'" for r in roles)
         block = personas.split(f"  {login}: {{", 1)[1].split("\n  },", 1)[0]
         assert f"employees: [{titles}]" in block, (login, titles)
+
+
+def test_the_ui_names_every_employee_as_the_api_does() -> None:
+    """ui/src/staff.ts EMPLOYEE_TITLES (the audit log's names) matches
+    EMPLOYEES here, entry for entry."""
+    source = (REPO_ROOT / "ui" / "src" / "staff.ts").read_text(encoding="utf-8")
+    block = source.split("export const EMPLOYEE_TITLES", 1)[1].split("\n}", 1)[0]
+    entries = dict(
+        line.strip().rstrip(",").split(": ", 1)
+        for line in block.splitlines()[1:]
+        if ": " in line
+    )
+    assert {k: v.strip("'") for k, v in entries.items()} == {
+        role: e.title for role, e in staff.EMPLOYEES.items()
+    }
