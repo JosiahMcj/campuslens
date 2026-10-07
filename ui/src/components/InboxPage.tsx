@@ -30,6 +30,16 @@ export function AlertAttachment({
   onAsk: ((question: string) => void) | null
 }) {
   const snapshot = message.snapshot
+  if (message.source_kind !== 'note' && message.attachment_available === false) {
+    return (
+      <div className="alert-card">
+        <p className="hint">
+          What this alert pointed at is no longer available: the figure was withdrawn or
+          changed, or your role cannot see it.
+        </p>
+      </div>
+    )
+  }
   if (snapshot === null) return null
   if (message.source_kind === 'finding') {
     const figure = snapshot as FindingSnapshot
@@ -58,7 +68,9 @@ export function AlertAttachment({
   const answer = snapshot as ExploreSnapshot
   return (
     <div className="alert-card">
-      <p className="alert-card-kicker">Explore answer</p>
+      <p className="alert-card-kicker">
+        Explore answer{answer.quoted_by_sender ? ' · quoted by the sender' : ''}
+      </p>
       <p className="alert-card-title">{answer.question}</p>
       {answer.answer.map((sentence, index) => (
         <p key={index} className="alert-card-sentence">

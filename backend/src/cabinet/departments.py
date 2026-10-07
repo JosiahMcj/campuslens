@@ -12,7 +12,9 @@
 Every figure is a count, a share or a sum over a group. No student id, name
 or row ever leaves this module, and any group of fewer than
 ``MINIMUM_CELL_SIZE`` students is withheld ("Fewer than 10"), like the
-counseling aggregate. The overviews are pure functions of the school data,
+counseling aggregate. A withheld cell is never alone in a row or column of
+a table (``protect``: complementary suppression), so nothing can be
+recovered by subtraction. The overviews are pure functions of the school data,
 so one computed overview is cached per (database file, size, mtime,
 department) in this process.
 
@@ -63,6 +65,46 @@ _cache_lock = threading.Lock()
 def _count(n: int) -> str:
     """A student count as shown: withheld below the minimum group size."""
     return WITHHELD if n < MINIMUM_CELL_SIZE else f"{n:,}"
+
+
+def protect(matrix: list[list[int]]) -> list[list[bool]]:
+    """Which cells of a table of student counts to withhold.
+
+    A cell under ``MINIMUM_CELL_SIZE`` is withheld. Then complementary
+    suppression: a row or a column with exactly one withheld cell (and
+    another cell beside it) could be recovered by subtracting the shown
+    cells from a total shown elsewhere (a tile, the enrolled count), so the
+    smallest cell still shown in that row or column is withheld too. This
+    repeats until no row or column has a lone withheld cell. A list of
+    groups is a one-column table: pass ``[[n] for n in counts]``.
+    """
+    mask = [[n < MINIMUM_CELL_SIZE for n in row] for row in matrix]
+    lines: list[list[tuple[int, int]]] = [
+        [(r, c) for c in range(len(row))] for r, row in enumerate(matrix)
+    ]
+    width = max((len(row) for row in matrix), default=0)
+    lines += [
+        [(r, c) for r in range(len(matrix)) if c < len(matrix[r])]
+        for c in range(width)
+    ]
+    changed = True
+    while changed:
+        changed = False
+        for line in lines:
+            if len(line) < 2:
+                continue
+            hidden = [cell for cell in line if mask[cell[0]][cell[1]]]
+            if len(hidden) != 1:
+                continue
+            shown = [cell for cell in line if not mask[cell[0]][cell[1]]]
+            r, c = min(shown, key=lambda cell: matrix[cell[0]][cell[1]])
+            mask[r][c] = True
+            changed = True
+    return mask
+
+
+def _shown(n: int, withheld: bool) -> str:
+    return WITHHELD if withheld else f"{n:,}"
 
 
 def _money(amount: float, students: int) -> str:
@@ -127,22 +169,27 @@ def _finance(con: sqlite3.Connection, term: str) -> dict[str, Any]:
             "Placed during the current term, cleared or not.",
         ),
     ]
-    by_office = []
-    for office, n_holds, n_students, amount in con.execute(
+    offices = con.execute(
         "SELECT responsible_office, COUNT(*), COUNT(DISTINCT student_id),"
         " COALESCE(SUM(amount), 0) FROM person_holds WHERE end_date IS NULL"
         " GROUP BY responsible_office ORDER BY COUNT(DISTINCT student_id) DESC"
+    ).fetchall()
+    office_mask = protect([[int(row[2])] for row in offices])
+    by_office = []
+    for (office, n_holds, n_students, amount), (withheld,) in zip(
+        offices, office_mask, strict=True
     ):
-        withheld = n_students < MINIMUM_CELL_SIZE
         by_office.append(
             {
                 "office": office,
-                "students": _count(n_students),
+                "students": _shown(int(n_students), withheld),
                 "holds": WITHHELD if withheld else f"{n_holds:,}",
-                "balance": "—" if not amount else _money(amount, n_students),
+                "balance": "—"
+                if not amount
+                else (WITHHELD if withheld else f"${amount:,.0f}"),
             }
         )
-    bands = []
+    band_counts: list[tuple[str, int]] = []
     for label, low, high in (
         ("Under $500", 0, 500),
         ("$500 to $1,999", 500, 2000),
@@ -159,7 +206,12 @@ def _finance(con: sqlite3.Connection, term: str) -> dict[str, Any]:
             sql += " AND owed < ?"
             args.append(high)
         (n,) = con.execute(sql, args).fetchone()
-        bands.append({"band": label, "students": _count(int(n))})
+        band_counts.append((label, int(n)))
+    band_mask = protect([[n] for _, n in band_counts])
+    bands = [
+        {"band": label, "students": _shown(n, withheld)}
+        for (label, n), (withheld,) in zip(band_counts, band_mask, strict=True)
+    ]
     return {
         "tiles": tiles,
         "tables": [
@@ -223,8 +275,8 @@ def _registrar(con: sqlite3.Connection, term: str) -> dict[str, Any]:
             "On probation, continued probation or suspension at the end of the term.",
         ),
     ]
-    levels = [
-        {"level": level, "students": _count(int(n))}
+    level_rows = [
+        (str(level), int(n))
         for level, n in con.execute(
             "SELECT r.class_level, COUNT(*) FROM student_term_records r"
             " JOIN student_term_enrollment e ON e.student_id = r.student_id"
@@ -236,12 +288,24 @@ def _registrar(con: sqlite3.Connection, term: str) -> dict[str, Any]:
             (term,),
         )
     ]
-    standings = [
-        {"standing": standing, "students": _count(int(n))}
+    levels = [
+        {"level": level, "students": _shown(n, withheld)}
+        for (level, n), (withheld,) in zip(
+            level_rows, protect([[n] for _, n in level_rows]), strict=True
+        )
+    ]
+    standing_rows = [
+        (str(standing), int(n))
         for standing, n in con.execute(
             "SELECT standing, COUNT(*) FROM academic_standings WHERE term_code = ?"
             " GROUP BY standing ORDER BY COUNT(*) DESC",
             (term,),
+        )
+    ]
+    standings = [
+        {"standing": standing, "students": _shown(n, withheld)}
+        for (standing, n), (withheld,) in zip(
+            standing_rows, protect([[n] for _, n in standing_rows]), strict=True
         )
     ]
     return {
@@ -313,13 +377,8 @@ def _student_life(con: sqlite3.Connection, term: str) -> dict[str, Any]:
             "Missed appointments as a share of those not cancelled, this term.",
         ),
     ]
-    appointments = [
-        {
-            "type": str(kind).replace("_", " ").capitalize(),
-            "completed": _count(int(done or 0)),
-            "no_show": _count(int(missed or 0)),
-            "cancelled": _count(int(cancelled or 0)),
-        }
+    appointment_rows = [
+        (str(kind), [int(done or 0), int(missed or 0), int(cancelled or 0)])
         for kind, done, missed, cancelled in con.execute(
             "SELECT appointment_type, SUM(status = 'completed'),"
             " SUM(status = 'no_show'), SUM(status = 'cancelled')"
@@ -328,12 +387,20 @@ def _student_life(con: sqlite3.Connection, term: str) -> dict[str, Any]:
             (term,),
         )
     ]
-    housing = [
+    appointment_mask = protect([counts for _, counts in appointment_rows])
+    appointments = [
         {
-            "housing": "On campus" if place == "on_campus" else "Off campus",
-            "full_time": _count(int(ft or 0)),
-            "part_time": _count(int(pt or 0)),
+            "type": kind.replace("_", " ").capitalize(),
+            "completed": _shown(counts[0], hidden[0]),
+            "no_show": _shown(counts[1], hidden[1]),
+            "cancelled": _shown(counts[2], hidden[2]),
         }
+        for (kind, counts), hidden in zip(
+            appointment_rows, appointment_mask, strict=True
+        )
+    ]
+    housing_rows = [
+        (str(place), [int(ft or 0), int(pt or 0)])
         for place, ft, pt in con.execute(
             "SELECT housing, SUM(academic_load = 'full_time'),"
             " SUM(academic_load = 'part_time') FROM student_term_enrollment"
@@ -341,6 +408,15 @@ def _student_life(con: sqlite3.Connection, term: str) -> dict[str, Any]:
             " GROUP BY housing ORDER BY housing DESC",
             (term,),
         )
+    ]
+    housing_mask = protect([counts for _, counts in housing_rows])
+    housing = [
+        {
+            "housing": "On campus" if place == "on_campus" else "Off campus",
+            "full_time": _shown(counts[0], hidden[0]),
+            "part_time": _shown(counts[1], hidden[1]),
+        }
+        for (place, counts), hidden in zip(housing_rows, housing_mask, strict=True)
     ]
     return {
         "tiles": tiles,

@@ -21,7 +21,9 @@ export interface CreatedUser {
   id: number
   email: string
   role: Role
-  one_time_password: string
+  /** Null when an administrator issues the password: IT creates accounts
+   * but never sees their passwords. */
+  one_time_password: string | null
 }
 
 const ROLES: readonly string[] = ALL_ROLES
@@ -63,7 +65,7 @@ export function createdUserFrom(status: number, body: unknown): CreatedUser {
     typeof record.email === 'string' &&
     typeof record.role === 'string' &&
     ROLES.includes(record.role) &&
-    typeof record.one_time_password === 'string'
+    (typeof record.one_time_password === 'string' || record.one_time_password === null)
   ) {
     return {
       id: record.id,

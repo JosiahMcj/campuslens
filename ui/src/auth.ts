@@ -38,14 +38,7 @@ export function isDepartment(role: Role): role is Department {
 
 /** The accounts IT may create, enable, disable and re-role. Matches
  * IT_MANAGED_ROLES in the API. */
-export const IT_MANAGED_ROLES: readonly Role[] = [
-  'finance',
-  'aid',
-  'registrar',
-  'studentlife',
-  'staff',
-  'reviewer',
-]
+export const IT_MANAGED_ROLES: readonly Role[] = ['finance', 'registrar', 'studentlife', 'staff']
 
 export interface SessionUser {
   id: number

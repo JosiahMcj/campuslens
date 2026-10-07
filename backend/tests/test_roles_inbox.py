@@ -7,7 +7,9 @@ role-by-route matrix in test_security.py covers the rest of the table.
 
 from __future__ import annotations
 
+import json
 import os
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -19,12 +21,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from cabinet.api import create_app
-from cabinet.departments import overview
+from cabinet.departments import WITHHELD, overview, protect
 from cabinet.store import CabinetStore
-from cabinet.users import DEMO_PERSONAS
+from cabinet.users import DEMO_PERSONAS, reset_password
 from cabinet.users import main as users_main
 from conftest import make_authenticated_client
 
+FIXTURE_PATH = Path(__file__).resolve().parents[2] / "data" / "fixture.json"
 GENERATE = Path(__file__).resolve().parents[2] / "data" / "school" / "generate.py"
 
 
@@ -103,6 +106,9 @@ def test_it_manages_department_accounts_only(app: FastAPI) -> None:
         "/admin/users", json={"email": "bursar@test.example", "role": "finance"}
     )
     assert created.status_code == 201
+    # IT never sees the new account's password: an administrator issues it.
+    assert created.json()["one_time_password"] is None
+    assert created.json()["password_issued_by_admin"] is True
     staff_id = created.json()["id"]
     assert it.post(f"/admin/users/{staff_id}/disable").status_code == 200
     assert it.post(f"/admin/users/{staff_id}/enable").status_code == 200
@@ -404,13 +410,21 @@ def test_explore_answer_travels_only_to_roles_allowed_to_read_it(app: FastAPI) -
     )
 
 
-def test_inbox_send_shares_the_consequential_rate_limit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("CABINET_RATE_ASK_PER_MIN", "2")
+def test_inbox_send_has_its_own_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Alerts have their own bucket: a spent question allowance does not stop
+    an alert, and the alert limit still applies."""
+    monkeypatch.setenv("CABINET_RATE_INBOX_PER_MIN", "2")
+    monkeypatch.setenv("CABINET_RATE_ASK_PER_MIN", "1")
     app = create_app()
     president = _login(app, "executive")
     finance_id = _id(_login(app, "finance"))
+    president.post("/explore", json={"question": "Average GPA by major?"})
+    assert (
+        president.post(
+            "/explore", json={"question": "Average GPA by major?"}
+        ).status_code
+        == 429
+    )
     codes = [
         president.post(
             "/inbox", json={"recipient_id": finance_id, "note": "n"}
@@ -460,3 +474,268 @@ def test_demo_accounts_seed_once_and_write_a_private_file(
         )
         assert response.status_code == 200, email
         assert response.json()["user"]["role"] == roles[email]
+
+
+# --- review fixes (security review of roles-inbox) ------------------------------
+
+
+def test_it_cannot_create_or_manage_aid_or_reviewer_accounts(app: FastAPI) -> None:
+    it = _login(app, "it")
+    for role in ("aid", "reviewer"):
+        refused = it.post(
+            "/admin/users", json={"email": f"x-{role}@test.example", "role": role}
+        )
+        assert refused.status_code == 403, role
+    aid_id = _id(_login(app, "aid"))
+    assert it.post(f"/admin/users/{aid_id}/disable").status_code == 403
+    staff = it.post("/admin/users", json={"email": "s@test.example", "role": "staff"})
+    assert staff.status_code == 201
+    assert (
+        it.patch(
+            f"/admin/users/{staff.json()['id']}", json={"role": "reviewer"}
+        ).status_code
+        == 403
+    )
+    # The admin still gets the one-time password, as before.
+    admin = _login(app, "admin", "root@test.example")
+    made = admin.post("/admin/users", json={"email": "r@test.example", "role": "aid"})
+    assert made.status_code == 201 and made.json()["one_time_password"]
+
+
+def test_reset_password_issues_a_new_password_and_ends_sessions(app: FastAPI) -> None:
+    it = _login(app, "it")
+    created = it.post(
+        "/admin/users", json={"email": "bursar@test.example", "role": "finance"}
+    ).json()
+    store: CabinetStore = app.state.auth
+    password = reset_password(store, "bursar@test.example")
+    assert password is not None
+    login = TestClient(app).post(
+        "/auth/login", json={"email": "bursar@test.example", "password": password}
+    )
+    assert login.status_code == 200 and login.json()["user"]["id"] == created["id"]
+    assert reset_password(store, "nobody@test.example") is None
+
+
+@pytest.mark.parametrize(
+    ("sender_role", "recipient_role", "source"),
+    [
+        ("staff", "it", {"kind": "finding", "ref": "M1"}),
+        ("executive", "it", {"kind": "finding", "ref": "M5"}),
+        ("finance", "it", {"kind": "overview", "ref": "finance:open_balance"}),
+        ("executive", "registrar", {"kind": "overview", "ref": "finance:open_balance"}),
+        ("executive", "aid", {"kind": "explore", "question": "GPA by major?"}),
+        ("executive", "it", {"kind": "explore", "question": "GPA by major?"}),
+    ],
+)
+def test_recipient_must_be_allowed_to_read_the_attachment(
+    app: FastAPI, sender_role: str, recipient_role: str, source: dict[str, str]
+) -> None:
+    sender = _login(app, sender_role, f"sender-{sender_role}@test.example")
+    recipient_id = _id(_login(app, recipient_role, f"to-{recipient_role}@test.example"))
+    response = sender.post(
+        "/inbox", json={"recipient_id": recipient_id, "note": "look", "source": source}
+    )
+    assert response.status_code == 403
+    assert "recipient" in response.json()["detail"]
+    # The picker never offers that person for that attachment.
+    offered = sender.get(
+        "/inbox/recipients",
+        params={"kind": source["kind"], "ref": source.get("ref", "")},
+    ).json()
+    assert recipient_id not in [person["id"] for person in offered]
+    # A plain note still reaches them.
+    assert (
+        sender.post(
+            "/inbox", json={"recipient_id": recipient_id, "note": "hello"}
+        ).status_code
+        == 201
+    )
+
+
+def test_counseling_figure_is_never_sent(app: FastAPI) -> None:
+    president = _login(app, "executive")
+    finance_id = _id(_login(app, "finance"))
+    response = president.post(
+        "/inbox",
+        json={
+            "recipient_id": finance_id,
+            "note": "x",
+            "source": {"kind": "finding", "ref": "M9"},
+        },
+    )
+    assert response.status_code == 422
+    assert "counseling" in response.json()["detail"]
+
+
+def test_figures_are_re_read_and_disappear_when_withdrawn(app: FastAPI) -> None:
+    president = _login(app, "executive")
+    finance = _login(app, "finance")
+    finance_id = _id(finance)
+    sent = president.post(
+        "/inbox",
+        json={
+            "recipient_id": finance_id,
+            "note": "x",
+            "source": {"kind": "finding", "ref": "M5"},
+        },
+    ).json()
+    # Nothing about the figure is frozen in the database: only its ref.
+    conn = sqlite3.connect(os.environ["CABINET_DB"])
+    try:
+        (stored,) = conn.execute(
+            "SELECT snapshot FROM inbox_messages WHERE id = ?", (sent["id"],)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert stored is None
+    shown = finance.get("/inbox").json()["received"][0]
+    assert shown["attachment_available"] is True and shown["snapshot"]["id"] == "M5"
+    # The figure goes away (a new dataset, a purge, a revoked authorization):
+    # the alert keeps its note and says the attachment is no longer there.
+    store: CabinetStore = app.state.auth
+    app.state.runtime_for(store.ensure_bootstrap_institution()).findings.pop("M5")
+    gone = finance.get("/inbox").json()["received"][0]
+    assert gone["attachment_available"] is False and gone["snapshot"] is None
+    assert gone["note"] == "x"
+
+
+def test_attachment_is_hidden_from_a_reader_who_lost_the_right(app: FastAPI) -> None:
+    president = _login(app, "executive")
+    finance = _login(app, "finance")
+    finance_id = _id(finance)
+    president.post(
+        "/inbox",
+        json={
+            "recipient_id": finance_id,
+            "note": "x",
+            "source": {"kind": "overview", "ref": "finance:open_balance"},
+        },
+    )
+    store: CabinetStore = app.state.auth
+    store.set_user_role(store.ensure_bootstrap_institution(), finance_id, "staff")
+    shown = finance.get("/inbox").json()["received"][0]
+    assert shown["snapshot"] is None and shown["attachment_available"] is False
+
+
+def test_explore_quotes_are_redacted_labelled_and_instructor_checked(
+    app: FastAPI, school_db: Path
+) -> None:
+    conn = sqlite3.connect(school_db)
+    try:
+        first, last = conn.execute(
+            "SELECT first_name, last_name FROM instructors LIMIT 1"
+        ).fetchone()
+    finally:
+        conn.close()
+    president = _login(app, "executive")
+    finance_id = _id(_login(app, "finance"))
+
+    def quote(*sentences: str) -> dict[str, Any]:
+        response = president.post(
+            "/inbox",
+            json={
+                "recipient_id": finance_id,
+                "note": "x",
+                "source": {
+                    "kind": "explore",
+                    "question": "Who taught it?",
+                    "answer": list(sentences),
+                },
+            },
+        )
+        assert response.status_code == 201, response.text
+        snapshot: dict[str, Any] = response.json()["snapshot"]
+        return snapshot
+
+    plain = quote("Student S-12345 owes the most; 46 holds in all.")
+    assert plain["quoted_by_sender"] is True
+    assert "S-12345" not in plain["answer"][0]
+    for naming in (
+        f"Dr. {last} taught it most often.",
+        f"{first} {last} taught it.",
+        "Instructor I-0001 taught it.",
+        "Someone (fictional) taught it.",
+    ):
+        withheld = quote(naming)
+        assert withheld["answer"] == [] and withheld["answer_withheld"] is True, naming
+
+
+def test_activating_real_data_disables_the_demo_accounts(app: FastAPI) -> None:
+    store: CabinetStore = app.state.auth
+    institution_id = store.ensure_bootstrap_institution()
+    admin = _login(app, "admin", "admin@demo.test")
+    _login(app, "finance", "finance@demo.test")
+    _login(app, "staff", "colleague@test.example")
+    document = json.loads(FIXTURE_PATH.read_text())
+    document["meta"]["fictional"] = False
+    dataset_id = store.add_dataset(
+        institution_id,
+        name="Spring term (real)",
+        raw=json.dumps(document).encode(),
+        uploaded_by="admin@demo.test",
+        activate=False,
+    )["id"]
+    assert admin.post(f"/admin/datasets/{dataset_id}/activate").status_code == 200
+    users = {row["email"]: row for row in store.users_for(institution_id)}
+    assert users["finance@demo.test"]["disabled"]
+    assert not users["admin@demo.test"]["disabled"]  # never lock the admin out
+    assert not users["colleague@test.example"]["disabled"]
+
+
+def test_demo_accounts_need_out_and_refuse_a_symlink(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit):
+        users_main(["demo-accounts"])
+    target = tmp_path / "elsewhere.txt"
+    target.write_text("")
+    link = tmp_path / "accounts.txt"
+    link.symlink_to(target)
+    assert users_main(["demo-accounts", "--out", str(link)]) == 1
+    assert target.read_text() == ""
+    # Nothing was created, so no password was generated with nowhere to go.
+    assert users_main(["demo-accounts", "--out", str(tmp_path / "ok.txt")]) == 0
+    assert len((tmp_path / "ok.txt").read_text().splitlines()) == len(DEMO_PERSONAS)
+
+
+# --- complementary suppression in the overviews ----------------------------------
+
+
+def test_protect_withholds_a_second_cell_beside_a_lone_withheld_one() -> None:
+    # Bands under a shown total: 164 - (60 + 60 + 39) would give the lone 5.
+    assert protect([[60], [60], [39], [5]]) == [[False], [False], [True], [True]]
+    # Two withheld already: nothing more to hide.
+    assert protect([[60], [3], [4]]) == [[False], [True], [True]]
+    # A 2 x 2 table (housing): one small cell takes its row and its column,
+    # and then the rest, since each line would otherwise give one back.
+    assert protect([[91, 4], [70, 26]]) == [[True, True], [True, True]]
+    # Nothing small: nothing withheld.
+    assert protect([[40, 50], [60, 70]]) == [[False, False], [False, False]]
+
+
+def _numeric_cells(table: dict[str, Any]) -> list[list[str]]:
+    keys = [column["key"] for column in table["columns"]][1:]
+    return [[row[key] for key in keys] for row in table["rows"]]
+
+
+@pytest.mark.parametrize("department", ["finance", "registrar", "studentlife"])
+def test_no_overview_table_leaves_a_lone_withheld_cell(
+    department: str, school_db: Path
+) -> None:
+    """No row or column of any overview table has exactly one withheld cell
+    beside shown ones, so no cell can be had by subtraction from a total."""
+    data = overview(department, school_db)
+    saw_withheld = False
+    for table in data["tables"]:
+        cells = [
+            [value for value in row if value != "—"] for row in _numeric_cells(table)
+        ]
+        columns = [list(column) for column in zip(*cells, strict=False)]
+        for line in cells + columns:
+            hidden = sum(value == WITHHELD for value in line)
+            saw_withheld = saw_withheld or hidden > 0
+            if len(line) > 1:
+                assert hidden != 1, (department, table["key"], line)
+    # The small school has small groups in every department.
+    assert saw_withheld

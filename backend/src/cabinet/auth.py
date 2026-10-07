@@ -86,15 +86,12 @@ USER_ROLES: tuple[str, ...] = (
     ROLE_IT,
 )
 DEPARTMENT_ROLES: tuple[str, ...] = (ROLE_FINANCE, ROLE_REGISTRAR, ROLE_STUDENT_LIFE)
-# The accounts an IT person may create, enable, disable and re-role: staff,
-# reviewers, the aid office and the department accounts. Admin, executive
-# and IT accounts stay with an administrator.
-IT_MANAGED_ROLES: tuple[str, ...] = (
-    ROLE_STAFF,
-    ROLE_REVIEWER,
-    ROLE_AID,
-    *DEPARTMENT_ROLES,
-)
+# The accounts an IT person may create, enable, disable and re-role: staff
+# and the department accounts. Admin, executive and IT accounts, the
+# reviewer (who reads the aid queue's per-student rows) and the aid office
+# (which works them) stay with an administrator. IT never sees a new
+# account's password (cabinet.api: an administrator issues it).
+IT_MANAGED_ROLES: tuple[str, ...] = (ROLE_STAFF, *DEPARTMENT_ROLES)
 
 ENV_SESSION_TTL_HOURS = "CABINET_SESSION_TTL_HOURS"
 DEFAULT_SESSION_TTL_HOURS = 12

@@ -13,6 +13,7 @@ import { resetBriefingOnce } from './api'
 import { clearSession } from './auth'
 import { AuditLog } from './components/AuditLog'
 import { InboxPage } from './components/InboxPage'
+import { AccountsPage } from './components/ItPages'
 import { SendAlertDialog } from './components/SendAlertDialog'
 
 type Handler = (url: string, init?: RequestInit) => Promise<Response> | Response
@@ -231,6 +232,40 @@ describe('the inbox', () => {
     expect(screen.getByText('Read')).toBeTruthy()
   })
 
+  it('says when the attached figure is no longer available, and labels quotes', async () => {
+    mockApi('finance', {
+      '/inbox': () =>
+        json({
+          received: [
+            { ...MESSAGE, snapshot: null, attachment_available: false },
+            {
+              ...MESSAGE,
+              id: 8,
+              source_kind: 'explore',
+              source_ref: null,
+              attachment_available: true,
+              snapshot: {
+                question: 'Which offices hold the most active holds?',
+                answer: ['Student Accounts holds the most.'],
+                answer_withheld: false,
+                quoted_by_sender: true,
+              },
+            },
+          ],
+          sent: [],
+          unread: 2,
+        }),
+      '/inbox/7/read': () => json({ message: { ...MESSAGE, snapshot: null, attachment_available: false }, changed: true }),
+      '/inbox/8/read': () => json({ message: MESSAGE, changed: true }),
+    })
+    render(<InboxPage onChanged={() => undefined} onAsk={null} />)
+    const opens = await screen.findAllByRole('button', { name: /From President/ })
+    fireEvent.click(opens[0])
+    expect(await screen.findByText(/no longer available/)).toBeTruthy()
+    fireEvent.click(opens[1])
+    expect(await screen.findByText(/quoted by the sender/)).toBeTruthy()
+  })
+
   it('says so when there is nothing yet', async () => {
     mockApi('aid')
     render(<InboxPage onChanged={() => undefined} onAsk={null} />)
@@ -241,12 +276,17 @@ describe('the inbox', () => {
 describe('Send alert', () => {
   it('sends the note, the date and what it points at, and confirms who got it', async () => {
     let body: Record<string, unknown> | null = null
+    let asked = ''
     mockApi('executive', {
-      '/inbox/recipients': () =>
+      '/inbox/recipients': (url) => {
+        asked = url
+        return (
         json([
           { id: 9, email: 'finance@demo.test', role: 'finance' },
           { id: 10, email: 'registrar@demo.test', role: 'registrar' },
-        ]),
+        ])
+        )
+      },
       '/inbox': (_url, init) => {
         body = JSON.parse(String(init?.body)) as Record<string, unknown>
         return json({ ...MESSAGE, id: 8 }, 201)
@@ -271,6 +311,8 @@ describe('Send alert', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Send alert' }))
     expect(await screen.findByText(/Sent to Finance — Student Accounts/)).toBeTruthy()
+    // The picker asked only for the people allowed to read this figure.
+    expect(asked).toBe('/api/inbox/recipients?kind=finding&ref=M5')
     expect(body).toEqual({
       recipient_id: 9,
       note: 'Before Thursday, please.',
@@ -309,5 +351,37 @@ describe('the audit log', () => {
     expect(screen.getByText(/opened an alert\./)).toBeTruthy()
     expect(screen.getByText(/marked an alert reviewed\./)).toBeTruthy()
     expect(screen.queryByText(/recorded an entry/)).toBeNull()
+  })
+})
+
+describe('IT accounts', () => {
+  it('offers only the department and staff roles, and never shows a password', async () => {
+    mockApi('it', {
+      '/admin/users': (_url, init) =>
+        init?.method === 'POST'
+          ? json(
+              {
+                id: 30,
+                email: 'bursar@demo.test',
+                role: 'finance',
+                one_time_password: null,
+                password_issued_by_admin: true,
+              },
+              201,
+            )
+          : json([{ id: 9, email: 'it@demo.test', role: 'it', disabled: false, created_at: '' }]),
+    })
+    render(<AccountsPage role="it" currentUserEmail="it@demo.test" />)
+    const role = (await screen.findByLabelText('Role')) as HTMLSelectElement
+    expect([...role.options].map((option) => option.value)).toEqual([
+      'finance',
+      'registrar',
+      'studentlife',
+      'staff',
+    ])
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'bursar@demo.test' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add the account' }))
+    expect(await screen.findByText(/An administrator issues their first password/)).toBeTruthy()
+    expect(document.querySelector('.password-value')).toBeNull()
   })
 })

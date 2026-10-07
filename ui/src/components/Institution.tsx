@@ -758,13 +758,13 @@ export function Institution({
               one-time password is
             </p>
             <p className="password-value">
-              <code>{created.one_time_password}</code>
+              <code>{created.one_time_password ?? ''}</code>
             </p>
             <div className="confirm-actions">
               <button
                 type="button"
                 className="btn-secondary"
-                onClick={() => void copyPassword(created.one_time_password)}
+                onClick={() => void copyPassword(created.one_time_password ?? '')}
               >
                 {copied ? 'Copied' : 'Copy the password'}
               </button>

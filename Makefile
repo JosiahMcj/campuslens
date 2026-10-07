@@ -12,7 +12,7 @@ PYBIN := $(VENV)/bin
 	lint lint-python lint-ui \
 	typecheck typecheck-python typecheck-ui \
 	test test-python test-ui \
-	check audit check-config bootstrap-admin institution user demo-mailboxes demo-accounts import-ethos api ui stop record-golden \
+	check audit check-config bootstrap-admin institution user demo-mailboxes demo-accounts reset-password import-ethos api ui stop record-golden \
 	migrate backup restore purge-deleted build serve school-data school-check explore-check
 
 setup: setup-python setup-ui
@@ -103,13 +103,22 @@ demo-mailboxes:
 # Demonstration only: one sign-in per demonstration persona (docs/ROLES.md):
 # president@, it@, finance@, aid@, registrar@, studentlife@, staff@ and
 # reviewer@demo.test. Existing accounts are left alone (never reset). The
-# generated passwords are appended to OUT (created mode 600; keep it OUTSIDE
-# the repository) or, without OUT, printed once. Refuses unless the
+# generated passwords are appended to OUT (required; created mode 600, never
+# through a symbolic link; keep it OUTSIDE the repository). Refuses unless the
 # institution's active dataset is the fictional demonstration data. Uses
 # CABINET_DB like every other command.
 # Example: make demo-accounts OUT=$$HOME/campuslens-demo-accounts.txt
 demo-accounts:
-	$(PYBIN)/python -m cabinet.users demo-accounts $(if $(INSTITUTION),--institution "$(INSTITUTION)",) $(if $(OUT),--out "$(OUT)",)
+	@if [ -z "$(OUT)" ]; then echo "usage: make demo-accounts OUT=<file outside the repo> [INSTITUTION=slug]" >&2; exit 2; fi
+	$(PYBIN)/python -m cabinet.users demo-accounts $(if $(INSTITUTION),--institution "$(INSTITUTION)",) --out "$(OUT)"
+
+# Issue one account a new one-time password (printed once) and end its
+# sessions. This is how an administrator gives a person IT created their
+# first password: IT never sees one.
+# Example: make reset-password EMAIL=bursar@example.edu
+reset-password:
+	@if [ -z "$(EMAIL)" ]; then echo "usage: make reset-password EMAIL=..." >&2; exit 2; fi
+	$(PYBIN)/python -m cabinet.users reset-password --email "$(EMAIL)"
 
 # Import one term from the institution's Ellucian Ethos Integration API
 # (docs/ELLUCIAN.md): fetch the mapped resources at the institution's edge,

@@ -157,11 +157,20 @@ export function AccountsPage({ role, currentUserEmail }: { role: Role; currentUs
       </form>
       {created !== null && (
         <div className="password-callout" role="status">
-          <p>
-            {created.email} was added as {roleDisplayName(created.role)}. Their one-time password
-            is shown only now:
-          </p>
-          <p className="password-value">{created.one_time_password}</p>
+          {created.one_time_password === null ? (
+            <p>
+              {created.email} was added as {roleDisplayName(created.role)}. An administrator
+              issues their first password.
+            </p>
+          ) : (
+            <>
+              <p>
+                {created.email} was added as {roleDisplayName(created.role)}. Their one-time
+                password is shown only now:
+              </p>
+              <p className="password-value">{created.one_time_password}</p>
+            </>
+          )}
         </div>
       )}
       {error !== null && (

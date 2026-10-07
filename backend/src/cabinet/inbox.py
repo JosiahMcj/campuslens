@@ -2,28 +2,36 @@
 
 - ``GET  /inbox`` — the caller's received and sent messages (newest first,
   up to 200 each) and the unread count.
-- ``GET  /inbox/recipients`` — the enabled accounts of the caller's
-  institution the caller may send to (everyone but themselves).
+- ``GET  /inbox/recipients[?kind=&ref=]`` — the enabled accounts of the
+  caller's institution the caller may send to (everyone but themselves),
+  narrowed to the people allowed to read that attachment.
 - ``POST /inbox`` — send one alert: ``recipient_id``, a short ``note``
   (required, at most 1,000 characters, stored as typed, never sent to a
   model), an optional ``review_by`` date (YYYY-MM-DD) and an optional
   ``source`` it points at:
 
-  - ``{"kind": "finding", "ref": "M5"}`` — a briefing figure. The sender must
-    be a role that reads the briefing. The server stores the figure's title,
-    display value and definition from the active dataset, never its student
-    ids (the president's own findings carry them; the snapshot does not).
+  - ``{"kind": "finding", "ref": "M5"}`` — a briefing figure. Only the ref
+    is stored: whenever the message is shown, the figure's title, value and
+    definition are re-read from the institution's current findings, never
+    its student ids, and a figure that no longer exists is "no longer
+    available". The counseling aggregate (M9) is never sent.
   - ``{"kind": "overview", "ref": "finance:open_balance"}`` — one figure of a
-    department overview (``cabinet.departments``), recomputed by the server
-    for a sender who may read that department.
+    department overview (``cabinet.departments``), likewise re-read on show.
   - ``{"kind": "explore", "question": ..., "answer": [...]}`` — an Explore
-    answer the sender saw: the question (student-id-shaped tokens redacted)
-    and up to six answer sentences, which are aggregate by construction.
-    When the answer names an instructor and the recipient may not see
-    instructor-level results, only the question travels: the recipient asks
-    it under their own role. A role that may not use Explore cannot attach one.
+    answer as the sender quoted it (Explore keeps no copy of its answers):
+    the question and up to six sentences, each redacted like a question and
+    labelled "quoted by the sender". When the quote names an instructor
+    (an id, a titled surname, a full name, Explore's "(fictional)" label)
+    and the recipient may not see instructor-level results, only the
+    question travels.
 
-  One ``inbox.sent`` event. Rate limited like the other consequential POSTs.
+  BOTH people must be allowed to read the attachment (a briefing figure:
+  a role that reads the briefing; an overview figure: a role that reads
+  that department; an Explore answer: a role that uses Explore), or the
+  send is a logged 403. The same rule applies again on every read.
+
+  One ``inbox.sent`` event. Rate limited by its own per-session and per-IP
+  bucket (``CABINET_RATE_INBOX_PER_MIN``, default 10).
 - ``POST /inbox/{id}/read`` and ``POST /inbox/{id}/reviewed`` — the
   recipient opens the alert or marks it reviewed (reviewed implies read).
   Idempotent (``changed: false`` and no event the second time). Anyone but
@@ -42,6 +50,7 @@ scoped by institution: a recipient id from another institution is a 404.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import UTC, datetime
 from typing import Any
@@ -50,6 +59,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from cabinet.counseling import M9_ID
 from cabinet.departments import may_read, tile_snapshot
 from cabinet.explore.catalog import (
     INSTRUCTOR_ROLES,
@@ -126,10 +136,61 @@ def _person(row: dict[str, Any] | None) -> dict[str, Any] | None:
     return {"id": int(row["id"]), "email": row["email"], "role": row["role"]}
 
 
-def _message_body(
-    row: dict[str, Any], people: dict[int, dict[str, Any]]
-) -> dict[str, Any]:
+def _finding_view(
+    request: Request, institution_id: int, ref: str
+) -> dict[str, Any] | None:
+    """A briefing figure as words, from the institution's CURRENT findings:
+    None when it no longer exists (a new dataset, a purge) or is the
+    counseling aggregate (M9), which never travels in an alert."""
+    if ref == M9_ID:
+        return None
+    runtime = request.app.state.runtime_for(institution_id)
+    finding = runtime.findings.get(ref) if ref else None
+    if not isinstance(finding, dict) or "title" not in finding:
+        return None
+    figure: dict[str, Any] = {key: finding.get(key) for key in _FINDING_FIELDS}
+    figure["dataset"] = runtime.dataset.get("name")
+    return figure
+
+
+def _resolve(
+    request: Request, row: dict[str, Any], viewer_role: str
+) -> tuple[dict[str, Any] | None, bool]:
+    """(snapshot, available) for one message as ``viewer_role`` may see it.
+
+    Figures are never frozen: a finding or an overview figure is re-read
+    from the live data every time the message is shown, so a figure that
+    was withdrawn, purged or is no longer authorized simply disappears
+    ("no longer available"). An Explore attachment is the sender's quote,
+    stored at send time; it is shown only to a role that may use Explore.
+    """
+    kind = str(row["source_kind"])
+    ref = str(row["source_ref"] or "")
+    if kind == "note":
+        return None, True
+    if not attachment_allowed(kind, ref, viewer_role):
+        return None, False
+    if kind == "finding":
+        figure = _finding_view(request, int(row["institution_id"]), ref)
+        return figure, figure is not None
+    if kind == "overview":
+        department, _, tile = ref.partition(":")
+        try:
+            tile_view = tile_snapshot(department, tile)
+        except SchoolDataMissing:
+            tile_view = None
+        return tile_view, tile_view is not None
     snapshot = json.loads(row["snapshot"]) if row["snapshot"] else None
+    return snapshot, snapshot is not None
+
+
+def _message_body(
+    request: Request,
+    row: dict[str, Any],
+    people: dict[int, dict[str, Any]],
+    viewer_role: str,
+) -> dict[str, Any]:
+    snapshot, available = _resolve(request, row, viewer_role)
     return {
         "id": int(row["id"]),
         "from": _person(people.get(int(row["sender_id"]))),
@@ -139,6 +200,7 @@ def _message_body(
         "source_kind": row["source_kind"],
         "source_ref": row["source_ref"],
         "snapshot": snapshot,
+        "attachment_available": available,
         "created_at": row["created_at"],
         "read_at": row["read_at"],
         "reviewed_at": row["reviewed_at"],
@@ -176,35 +238,69 @@ def get_inbox(request: Request) -> dict[str, Any]:
     )[0]["n"]
     people = {int(row["id"]): row for row in store.users_for(institution_id)}
     return {
-        "received": [_message_body(row, people) for row in received],
-        "sent": [_message_body(row, people) for row in sent],
+        "received": [
+            _message_body(request, row, people, str(user["role"])) for row in received
+        ],
+        "sent": [
+            _message_body(request, row, people, str(user["role"])) for row in sent
+        ],
         "unread": int(unread),
     }
 
 
+def attachment_allowed(kind: str, ref: str, role: str) -> bool:
+    """Whether ``role`` may read an attachment of this kind: a briefing
+    figure needs a role that reads the briefing, an overview figure a role
+    that reads that department's overview, an Explore answer a role that
+    uses Explore. A plain note goes to anyone."""
+    if kind == "note":
+        return True
+    if kind == "finding":
+        return role in READ_ROLES
+    if kind == "overview":
+        return may_read(role, ref.partition(":")[0])
+    if kind == "explore":
+        return role in EXPLORE_ROLES
+    return False
+
+
 @router.get("/inbox/recipients")
-def get_recipients(request: Request) -> list[dict[str, Any]]:
+def get_recipients(
+    request: Request, kind: str = "note", ref: str = ""
+) -> list[dict[str, Any]]:
+    """Everyone the caller may send to, narrowed (with ``kind`` and ``ref``)
+    to the people allowed to read that attachment."""
     user = _user(request)
     return [
         {"id": int(row["id"]), "email": row["email"], "role": row["role"]}
         for row in _store(request).users_for(int(user["institution_id"]))
-        if not row["disabled"] and int(row["id"]) != int(user["id"])
+        if not row["disabled"]
+        and int(row["id"]) != int(user["id"])
+        and attachment_allowed(kind, ref, str(row["role"]))
     ]
 
 
-_instructor_names: dict[tuple[str, int], frozenset[str]] = {}
+_instructor_names: dict[tuple[str, int], tuple[frozenset[str], frozenset[str]]] = {}
+
+# Instructor ids (I-0001), a title before a surname ("Dr. Shelby"), and
+# Explore's "(fictional)" label on every instructor name.
+_INSTRUCTOR_ID_RE = re.compile(r"\bI-\d{2,}\b")
+_TITLED_RE = re.compile(
+    r"\b(?:Dr|Prof|Professor|Instructor|Mr|Mrs|Ms)\.?\s+([A-Z][A-Za-z'\u2019-]+)"
+)
 
 
 def _names_an_instructor(sentences: list[str]) -> bool:
-    """True when an answer sentence names an instructor: Explore labels every
-    instructor name "(fictional)", and any full name from the school data's
-    instructor list counts too. Without the school data, any answer from an
-    instructor-level role is treated as naming one (withheld, never leaked)."""
+    """True when an answer sentence names an instructor: an instructor id,
+    Explore's "(fictional)" label, a full name or a titled surname from the
+    school data's instructor list, or any title-plus-surname at all when the
+    school data cannot be read (withheld, never leaked)."""
     if not sentences:
         return False
     text = " ".join(sentences)
-    if "(fictional)" in text:
+    if "(fictional)" in text or _INSTRUCTOR_ID_RE.search(text):
         return True
+    titled = {match.group(1) for match in _TITLED_RE.finditer(text)}
     try:
         path = school_db_path().expanduser()
         key = (str(path), path.stat().st_mtime_ns)
@@ -213,15 +309,19 @@ def _names_an_instructor(sentences: list[str]) -> bool:
             con = connect_readonly(path)
             try:
                 rows = con.execute(
-                    "SELECT first_name || ' ' || last_name FROM instructors"
+                    "SELECT first_name, last_name FROM instructors"
                 ).fetchall()
             finally:
                 con.close()
-            names = frozenset(str(row[0]) for row in rows)
+            names = (
+                frozenset(f"{row[0]} {row[1]}" for row in rows),
+                frozenset(str(row[1]) for row in rows),
+            )
             _instructor_names[key] = names
     except (OSError, SchoolDataMissing, sqlite3.Error):
         return True
-    return any(name in text for name in names)
+    full, last = names
+    return bool(titled & last) or any(name in text for name in full)
 
 
 def _snapshot(
@@ -230,66 +330,72 @@ def _snapshot(
     sender: dict[str, Any],
     recipient: dict[str, Any],
 ) -> tuple[str | None, dict[str, Any] | None] | JSONResponse:
-    """(source_ref, snapshot) built by the server, or the refusal/error."""
+    """(source_ref, stored snapshot) checked against BOTH people, or the
+    refusal. Figures store only their ref (they are re-read whenever the
+    message is shown); an Explore answer stores the sender's quote."""
     role = str(sender["role"])
-    if source.kind == "note":
+    kind = source.kind
+    if kind not in ("note", "finding", "overview", "explore"):
+        return _error(422, f"unknown source kind {kind!r}")
+    if kind == "note":
         return None, None
-    if source.kind == "finding":
-        if role not in READ_ROLES:
-            return _refused(request, "this role does not read the briefing's figures")
+    if kind == "finding":
         ref = (source.ref or "").strip()
-        runtime = request.app.state.runtime_for(int(sender["institution_id"]))
-        finding = runtime.findings.get(ref) if ref else None
-        if not isinstance(finding, dict) or "title" not in finding:
-            return _error(422, f"unknown figure {ref!r}")
-        figure: dict[str, Any] = {key: finding.get(key) for key in _FINDING_FIELDS}
-        figure["dataset"] = runtime.dataset.get("name")
-        return ref, figure
-    if source.kind == "overview":
+    elif kind == "overview":
         department, _, tile = (source.ref or "").partition(":")
-        if not may_read(role, department):
-            return _refused(
-                request, "this role does not read that department's overview"
-            )
+        ref = f"{department}:{tile}"
+    else:
+        ref = ""
+    if not attachment_allowed(kind, ref, role):
+        return _refused(request, f"this role may not attach a {kind} source")
+    if not attachment_allowed(kind, ref, str(recipient["role"])):
+        return _refused(request, f"the recipient's role may not read a {kind} source")
+    if kind == "finding":
+        if ref == M9_ID:
+            return _error(422, "the counseling figure is never sent in an alert")
+        if _finding_view(request, int(sender["institution_id"]), ref) is None:
+            return _error(422, f"unknown figure {ref!r}")
+        return ref, None
+    if kind == "overview":
         try:
-            snapshot = tile_snapshot(department, tile)
+            found = tile_snapshot(*ref.split(":", 1))
         except SchoolDataMissing as exc:
             return _error(503, exc.args[0])
-        if snapshot is None:
+        if found is None:
             return _error(422, f"unknown overview figure {source.ref!r}")
-        return f"{department}:{tile}", snapshot
-    if source.kind == "explore":
-        if role not in EXPLORE_ROLES:
-            return _refused(request, "this role does not use Explore")
-        question = " ".join((source.question or "").split())
-        if not question or len(question) > QUESTION_MAX_CHARS:
-            return _error(
-                422,
-                "an Explore alert needs the question "
-                f"(at most {QUESTION_MAX_CHARS} characters)",
-            )
-        answer = [" ".join(s.split()) for s in (source.answer or []) if s.strip()]
-        if len(answer) > ANSWER_MAX_SENTENCES or any(
-            len(s) > SENTENCE_MAX_CHARS for s in answer
-        ):
-            return _error(
-                422,
-                f"an Explore alert carries at most {ANSWER_MAX_SENTENCES} answer "
-                f"sentences of {SENTENCE_MAX_CHARS} characters",
-            )
-        # Instructor-level wording stays with the roles allowed to see it:
-        # an answer that names an instructor travels only between those roles.
-        withheld = (
-            role in INSTRUCTOR_ROLES
-            and recipient["role"] not in INSTRUCTOR_ROLES
-            and _names_an_instructor(answer)
+        return ref, None
+    question = " ".join((source.question or "").split())
+    if not question or len(question) > QUESTION_MAX_CHARS:
+        return _error(
+            422,
+            "an Explore alert needs the question "
+            f"(at most {QUESTION_MAX_CHARS} characters)",
         )
-        return None, {
-            "question": redact_question(question),
-            "answer": [] if withheld else answer,
-            "answer_withheld": withheld and bool(answer),
-        }
-    return _error(422, f"unknown source kind {source.kind!r}")
+    answer = [
+        redact_question(" ".join(sentence.split()))
+        for sentence in (source.answer or [])
+        if sentence.strip()
+    ]
+    if len(answer) > ANSWER_MAX_SENTENCES or any(
+        len(sentence) > SENTENCE_MAX_CHARS for sentence in answer
+    ):
+        return _error(
+            422,
+            f"an Explore alert carries at most {ANSWER_MAX_SENTENCES} answer "
+            f"sentences of {SENTENCE_MAX_CHARS} characters",
+        )
+    # Explore keeps no copy of its answers, so the text is the sender's
+    # quote: redacted like a question, labelled as quoted, and dropped when
+    # it names an instructor for a recipient who may not see instructors.
+    withheld = recipient["role"] not in INSTRUCTOR_ROLES and _names_an_instructor(
+        answer
+    )
+    return None, {
+        "question": redact_question(question),
+        "answer": [] if withheld else answer,
+        "answer_withheld": withheld and bool(answer),
+        "quoted_by_sender": True,
+    }
 
 
 @router.post("/inbox")
@@ -355,7 +461,9 @@ def post_inbox(body: InboxSend, request: Request) -> JSONResponse:
     )
     people = {int(user["id"]): user, int(recipient["id"]): recipient}
     row = _rows(store, "SELECT * FROM inbox_messages WHERE id = ?", (message_id,))[0]
-    return JSONResponse(status_code=201, content=_message_body(row, people))
+    return JSONResponse(
+        status_code=201, content=_message_body(request, row, people, str(user["role"]))
+    )
 
 
 def _mark(request: Request, message_id: int, reviewed: bool) -> JSONResponse:
@@ -402,7 +510,10 @@ def _mark(request: Request, message_id: int, reviewed: bool) -> JSONResponse:
         ]
     people = {int(p["id"]): p for p in store.users_for(institution_id)}
     return JSONResponse(
-        content={"message": _message_body(row, people), "changed": changed}
+        content={
+            "message": _message_body(request, row, people, str(user["role"])),
+            "changed": changed,
+        }
     )
 
 

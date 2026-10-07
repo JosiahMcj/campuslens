@@ -57,9 +57,12 @@ export function SendAlertDialog({
   const whoId = useId()
   const dateId = useId()
 
+  // The attachment is fixed for the dialog's life: the people it may go to
+  // are loaded once, for it.
+  const [fixedSource] = useState(source)
   useEffect(() => {
     let live = true
-    fetchRecipients()
+    fetchRecipients(fixedSource)
       .then((list) => {
         if (!live) return
         setPeople(list)
@@ -72,7 +75,7 @@ export function SendAlertDialog({
     return () => {
       live = false
     }
-  }, [])
+  }, [fixedSource])
 
   // Focus goes back to whatever opened the dialog when it closes.
   useEffect(() => {
@@ -188,7 +191,13 @@ export function SendAlertDialog({
                   disabled={busy || people === null}
                   onChange={(event) => setRecipient(event.target.value)}
                 >
-                  <option value="">{people === null ? 'Loading…' : 'Choose a person'}</option>
+                  <option value="">
+                    {people === null
+                      ? 'Loading…'
+                      : people.length === 0
+                        ? 'Nobody else may read this'
+                        : 'Choose a person'}
+                  </option>
                   {(people ?? []).map((person) => (
                     <option key={person.id} value={String(person.id)}>
                       {recipientLabel(person)}

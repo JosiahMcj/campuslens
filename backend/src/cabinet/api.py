@@ -2379,9 +2379,30 @@ def create_app(
                 "sha256": dataset["sha256"],
             },
         )
+        disable_demo_accounts(institution_id, user)
         dataset = store.dataset_row(institution_id, dataset_id)
         assert dataset is not None
         return JSONResponse(content={"dataset": dataset_body(dataset)})
+
+    def disable_demo_accounts(institution_id: int, by: dict[str, Any]) -> None:
+        """Real data switches the demonstration sign-ins off: once the active
+        dataset is not the fictional one, every enabled ``@demo.test``
+        account of the institution is disabled (one admin.changed event
+        each), except administrators and the person activating, so nobody
+        is locked out. Re-enabling one is a deliberate admin action."""
+        if runtime_for(institution_id).fictional:
+            return
+        for row in store.users_for(institution_id):
+            if (
+                row["disabled"]
+                or row["role"] == ROLE_ADMIN
+                or int(row["id"]) == int(by["id"])
+                or not str(row["email"]).endswith("@demo.test")
+            ):
+                continue
+            updated = store.set_user_disabled(institution_id, int(row["id"]), True)
+            if updated is not None:
+                admin_changed(institution_id, "disabled", updated, by)
 
     @app.delete("/admin/datasets/{dataset_id}")
     def delete_admin_dataset(dataset_id: int, request: Request) -> JSONResponse:
@@ -2514,13 +2535,18 @@ def create_app(
         target = store.user_in_institution(institution_id, user_id)
         assert target is not None  # just created
         admin_changed(institution_id, "created", target, admin)
+        # IT creates the account but never learns its password: whoever
+        # holds it could sign in as a role that reads the briefing. An
+        # administrator issues the first password (make reset-password).
+        issued_by_admin = admin["role"] == ROLE_IT
         return JSONResponse(
             status_code=201,
             content={
                 "id": user_id,
                 "email": email,
                 "role": body.role,
-                "one_time_password": password,
+                "one_time_password": None if issued_by_admin else password,
+                "password_issued_by_admin": issued_by_admin,
             },
         )
 

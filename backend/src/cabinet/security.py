@@ -277,11 +277,13 @@ def is_api_route(method: str, path: str) -> bool:
 ENV_RATE_GENERAL = "CABINET_RATE_GENERAL_PER_MIN"
 ENV_RATE_SESSION = "CABINET_RATE_SESSION_PER_MIN"
 ENV_RATE_ASK = "CABINET_RATE_ASK_PER_MIN"
+ENV_RATE_INBOX = "CABINET_RATE_INBOX_PER_MIN"
 # Per client address. Everyone behind one campus address shares it, so it
 # is generous; the per-session bucket below is what paces one person.
 DEFAULT_RATE_GENERAL_PER_MIN = 600
 DEFAULT_RATE_SESSION_PER_MIN = 120
 DEFAULT_RATE_ASK_PER_MIN = 5
+DEFAULT_RATE_INBOX_PER_MIN = 10
 
 # The body of every rate-limit 429: plain words a person can act on. The
 # Retry-After header carries the seconds.
@@ -492,6 +494,7 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
         rate_general_per_min: int | None = None,
         rate_session_per_min: int | None = None,
         rate_ask_per_min: int | None = None,
+        rate_inbox_per_min: int | None = None,
     ) -> None:
         super().__init__(app)
         self.auth = auth
@@ -511,6 +514,11 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
             rate_ask_per_min
             if rate_ask_per_min is not None
             else _env_int(ENV_RATE_ASK, DEFAULT_RATE_ASK_PER_MIN)
+        )
+        self.inbox_bucket = TokenBucket(
+            rate_inbox_per_min
+            if rate_inbox_per_min is not None
+            else _env_int(ENV_RATE_INBOX, DEFAULT_RATE_INBOX_PER_MIN)
         )
 
     # -- helpers ------------------------------------------------------------
@@ -742,14 +750,25 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
             ("POST", "/ask"),
             ("POST", "/explore"),
             ("POST", "/explore/stream"),
-            # An inbox alert puts a message in front of another person.
-            ("POST", "/inbox"),
         ) or (
             # Both Sends (a decision's dispatch, a staff action) end in /send.
             method == "POST" and path.endswith("/send")
         ):
             for key in (f"ask:session:{session['id']}", f"ask:ip:{client_ip}"):
                 allowed, retry_after = self.ask_bucket.allow(key)
+                if not allowed:
+                    return JSONResponse(
+                        status_code=429,
+                        content={"detail": RATE_LIMIT_MESSAGE},
+                        headers={"Retry-After": str(retry_after)},
+                    )
+
+        # An inbox alert puts a message in front of another person: its own
+        # bucket per session and per IP, so alerts and questions never spend
+        # each other's allowance.
+        if (method, path) == ("POST", "/inbox"):
+            for key in (f"inbox:session:{session['id']}", f"inbox:ip:{client_ip}"):
+                allowed, retry_after = self.inbox_bucket.allow(key)
                 if not allowed:
                     return JSONResponse(
                         status_code=429,

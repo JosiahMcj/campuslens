@@ -44,11 +44,15 @@ All demonstration sign-ins are `@demo.test`. More detail:
 - **IT** has its own workspace. The UI never requests a finding, the
   briefing, a decision or Explore for IT, and the API refuses IT all of them
   (`READ_ROLES` excludes `it`). IT may add, enable, disable and re-role the
-  department and staff accounts (`IT_MANAGED_ROLES`: finance, aid,
-  registrar, studentlife, staff, reviewer). Any action on an admin,
-  executive or IT account, or any grant of those roles, is a logged 403.
-  IT also reads the audit log, the outside connections and sign-in
-  activity.
+  department and staff accounts (`IT_MANAGED_ROLES`: finance, registrar,
+  studentlife, staff). Any action on an admin, executive, IT, aid or
+  reviewer account, or any grant of those roles, is a logged 403: the aid
+  office and the reviewer read the aid queue's per-student rows. **IT never
+  sees a password.** An account IT creates answers without its one-time
+  password, and an administrator issues the first one with
+  `make reset-password EMAIL=…` (printed once; it also ends the account's
+  sessions). Otherwise IT could create an account and sign in as it. IT
+  also reads the audit log, the outside connections and sign-in activity.
 - **The president** sees every page and every panel. Two things still need
   another person, as before: Institution settings (the admin manages the
   datasets and the office mailboxes) and the Send step of an office message
@@ -73,7 +77,10 @@ four headline figures and two tables for the current term:
 
 Every figure is a count, a share or a sum. Any group of fewer than 10
 students reads "Fewer than 10" (the same minimum group size as the
-counseling aggregate). A department account reads its own overview. Naming
+counseling aggregate). A withheld cell is never left alone in a
+row or column of a table: if only one would be withheld, the next-smallest
+is withheld too, so no cell can be had by subtracting the shown ones from a
+total shown elsewhere (the departments' `protect` helper). A department account reads its own overview. Naming
 another department is a logged 403. The president and the admin read every
 overview. Without the school data the answer is 503 with the same sentence
 Explore uses.
@@ -88,18 +95,29 @@ migration 10).
   picks a person (any enabled account of the institution except themselves),
   writes a short note (required, at most 1,000 characters) and can add a
   review-by date.
-- **What travels with it is built by the server, never by the browser.**
-  - A briefing figure carries its title, value and definition from the
-    active dataset. It never carries the student ids, even though the
-    president's own view of the figure has them.
-  - An overview figure is recomputed on the server.
-  - An Explore answer carries the question (with student-id-shaped tokens
-    redacted) and at most six answer sentences. These are aggregate by
-    construction. If the answer names an instructor and the recipient may
-    not see instructor-level results, only the question travels, and the
-    recipient can ask it under their own role.
-  - A role that cannot read a source cannot attach it. For example, IT can
-    send a plain note but cannot attach a figure.
+- **Both people must be allowed to read the attachment.** A briefing
+  figure needs a role that reads the briefing (not IT); an overview figure
+  needs a role that reads that department's overview; an Explore answer
+  needs a role that uses Explore (not IT, not Financial Aid). Otherwise the
+  send is a logged 403, and the person picker only offers the people who
+  may read it (`GET /inbox/recipients?kind=…&ref=…`). A plain note goes to
+  anyone. The same rule is applied again every time the message is shown,
+  so a reader whose role changes loses the attachment.
+- **Figures are never frozen.** For a briefing figure or an overview figure
+  only its reference is stored. Each time the message is shown, the figure
+  is re-read from the live data (title, value and definition, never student
+  ids). A figure that no longer exists, for example after a new dataset is
+  activated or one is purged, shows "no longer available"; the note stays.
+  The counseling aggregate (M9) can never be attached.
+- **An Explore answer is the sender's quote.** Explore keeps no copy of its
+  answers, so the server cannot rebuild one. The alert stores the question
+  and at most six sentences, each redacted like a question
+  (student-id-shaped tokens removed), and labels them "quoted by the
+  sender". If the quote names an instructor (an instructor id, a title and
+  surname such as "Dr. Shelby", a full instructor name, or Explore's
+  "(fictional)" label) and the recipient may not see instructor-level
+  results, only the question travels, and the recipient can ask it under
+  their own role.
 - **The recipient** sees the alert with an unread badge in the sidebar.
   Opening it marks it read. **Mark reviewed** records that they looked. The
   **sender** sees each alert under Sent as "Not opened yet", "Read" or
@@ -108,9 +126,9 @@ migration 10).
   `inbox.read`, `inbox.reviewed`). The events carry ids, roles and the source
   kind and ref, never the note text and never a student id. In the audit log
   they are under "Inbox alerts".
-- **Limits.** CSRF is checked like on every POST. `POST /inbox` shares the
-  tighter per-session and per-IP bucket with Ask and Send (default 5 a
-  minute). Read and review answer 404 to anyone but the recipient, so
+- **Limits.** CSRF is checked like on every POST. `POST /inbox` has its
+  own per-session and per-IP bucket (`CABINET_RATE_INBOX_PER_MIN`, default
+  10 a minute), so alerts and questions never spend each other's allowance. Read and review answer 404 to anyone but the recipient, so
   message ids do not leak. A recipient from another institution is a 404.
 
 `GET /admin/sessions` (IT, the admin and the president) lists, for each
@@ -142,15 +160,30 @@ make demo-accounts OUT=$HOME/campuslens-demo-accounts.txt
 This creates `president@`, `it@`, `finance@`, `aid@`, `registrar@`,
 `studentlife@`, `staff@` and `reviewer@demo.test` in the bootstrap
 institution (`INSTITUTION=<slug>` for another). Each gets a generated
-password, appended to `OUT` (created with mode 600). Keep that file
-**outside the repository**. Without `OUT`, the passwords print once.
+password, appended to `OUT` (required; created with mode 600, and never
+written through a symbolic link). Keep that file **outside the
+repository**. The file is checked before any account is created.
 
 - An account that already exists is left alone. Its password is never reset.
 - The command refuses unless the institution's active dataset is the
   fictional demonstration data.
 - It uses `CABINET_DB` like every other command. With the API stopped or
   running, the new accounts can sign in at once.
+- **Real data switches them off.** When an admin activates a dataset that is
+  not the fictional one, every enabled `@demo.test` account of that
+  institution is disabled (one `admin.changed` event each), except
+  administrators and the person activating, so nobody is locked out.
 
 Add a single account in any role with
 `make user EMAIL=… ROLE=finance|registrar|studentlife|it|…`, or from
 **Accounts** (IT) or **Institution settings** (admin).
+
+## Known and accepted
+
+- **The recipient list is an address book.** `GET /inbox/recipients` shows
+  every account's email and role to every signed-in person of the same
+  institution (narrowed per attachment). That is what an inbox needs; it
+  never crosses institutions.
+- **IT's audit log includes question text.** The audit log records each
+  question as asked (student-id-shaped tokens redacted), and IT reads the
+  audit log. The questions are about the school, never answers or rows.

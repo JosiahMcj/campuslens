@@ -23,8 +23,11 @@ demonstration persona (``DEMO_PERSONAS``: the president, IT, Finance /
 Student Accounts, Financial Aid, the Registrar, Student Life, staff and a
 reviewer) as ``<persona>@demo.test``, with the same fictional-data guard; an
 account that already exists is left alone (its password is never reset).
-The generated passwords are appended to ``--out`` (created mode 600; keep it
-outside the repository) or, without ``--out``, printed once. The
+The generated passwords are appended to ``--out`` (required; created mode
+600 and never through a symbolic link; keep it outside the repository).
+``reset-password --email`` issues one account a new password, printed once,
+and ends its sessions: how an administrator gives a person IT created their
+first password (IT never sees one). The
 database is ``CABINET_DB`` (default ``var/cabinet.db``);
 ``cabinet.local.env`` is honored like the API does.
 """
@@ -38,7 +41,13 @@ import sys
 from pathlib import Path
 
 from cabinet.api import InstitutionRuntime, fixture_path_from_env
-from cabinet.auth import USER_ROLES, AuthStore, db_path_from_env, generate_password
+from cabinet.auth import (
+    USER_ROLES,
+    AuthStore,
+    db_path_from_env,
+    generate_password,
+    hash_password,
+)
 from cabinet.provider import load_local_env
 from cabinet.staffactions import action_specs
 from cabinet.store import CabinetStore, StoreError
@@ -135,8 +144,10 @@ def seed_demo_accounts(
 
 
 def write_private(path: Path, text: str) -> None:
-    """Append ``text`` to ``path``, creating it readable by its owner only."""
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    """Append ``text`` to ``path``, creating it readable by its owner only.
+    A symbolic link at ``path`` is refused (O_NOFOLLOW), so the passwords
+    can never be written through a link to somewhere else."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
     try:
         os.fchmod(fd, 0o600)
         os.write(fd, text.encode("utf-8"))
@@ -186,10 +197,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     accounts.add_argument(
         "--out",
-        default=None,
-        help="append the generated passwords to this file (mode 600) "
-        "instead of printing them",
+        required=True,
+        help="append the generated passwords to this file (mode 600; keep "
+        "it outside the repository)",
     )
+
+    reset = sub.add_parser(
+        "reset-password",
+        help="issue a new one-time password for one account (printed once)",
+    )
+    reset.add_argument("--email", required=True)
 
     add = sub.add_parser("add", help="create another user")
     add.add_argument("--email", required=True)
@@ -206,6 +223,8 @@ def main(argv: list[str] | None = None) -> int:
         return _demo_mailboxes(store, args.institution)
     if args.command == "demo-accounts":
         return _demo_accounts(store, args.institution, args.out)
+    if args.command == "reset-password":
+        return _reset_password(store, args.email)
     password = generate_password()
     if args.command == "bootstrap-admin":
         if store.has_admin():
@@ -274,7 +293,49 @@ def _demo_mailboxes(store: AuthStore, slug: str | None) -> int:
     return 0
 
 
-def _demo_accounts(store: AuthStore, slug: str | None, out: str | None) -> int:
+def reset_password(store: CabinetStore, email: str) -> str | None:
+    """Give one account a new generated password and end its sessions;
+    returns the password, or None for an unknown email."""
+    user = store.user_by_email(email)
+    if user is None:
+        return None
+    password = generate_password()
+    with store._lock:
+        store._conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (hash_password(password), int(user["id"])),
+        )
+        store._conn.execute(
+            "DELETE FROM sessions WHERE user_id = ?", (int(user["id"]),)
+        )
+        store._conn.commit()
+    store.audit_append(
+        int(user["institution_id"]),
+        "admin.changed",
+        actor="reset-password",
+        payload={
+            "action": "password_reset",
+            "target_user_id": int(user["id"]),
+            "role": user["role"],
+            "by": "reset-password",
+        },
+    )
+    return password
+
+
+def _reset_password(store: AuthStore, email: str) -> int:
+    password = reset_password(store, email)
+    if password is None:
+        print(f"reset-password: no account {email.strip().lower()!r}", file=sys.stderr)
+        return 1
+    print(
+        f"new password for {email.strip().lower()} "
+        f"(shown once, never stored or logged): {password}"
+    )
+    return 0
+
+
+def _demo_accounts(store: AuthStore, slug: str | None, out: str) -> int:
     if slug is not None:
         institution = store.institution_by_slug(slug)
         if institution is None:
@@ -283,6 +344,14 @@ def _demo_accounts(store: AuthStore, slug: str | None, out: str | None) -> int:
         institution_id = int(institution["id"])
     else:
         institution_id = store.ensure_bootstrap_institution()
+    path = Path(out).expanduser()
+    try:
+        # Prove the file can be written (and is not a link) BEFORE any
+        # account exists, so a password is never generated with nowhere to go.
+        write_private(path, "")
+    except OSError as exc:
+        print(f"demo-accounts: cannot write {path} ({exc.strerror})", file=sys.stderr)
+        return 1
     try:
         created = seed_demo_accounts(store, institution_id)
     except (NotDemonstrationData, StoreError, ValueError) as exc:
@@ -292,16 +361,19 @@ def _demo_accounts(store: AuthStore, slug: str | None, out: str | None) -> int:
         print("demo-accounts: every persona already has a sign-in; nothing changed")
         return 0
     lines = [f"{email}\t{name}\t{password}\n" for email, _, name, password in created]
-    if out is not None:
-        path = Path(out).expanduser()
+    try:
         write_private(path, "".join(lines))
-        for email, role, name, _ in created:
-            print(f"created {email} ({name}, role {role})")
-        print(f"demo-accounts: passwords appended to {path} (mode 600)")
-    else:
-        for line in lines:
-            print(line, end="")
-        print("demo-accounts: passwords shown once; they are not stored anywhere")
+    except OSError as exc:
+        print(
+            f"demo-accounts: could not write {path} ({exc.strerror}); the "
+            "accounts were created but their passwords are lost — issue new "
+            "ones with `make reset-password EMAIL=...`",
+            file=sys.stderr,
+        )
+        return 1
+    for email, role, name, _ in created:
+        print(f"created {email} ({name}, role {role})")
+    print(f"demo-accounts: passwords appended to {path} (mode 600)")
     return 0
 
 

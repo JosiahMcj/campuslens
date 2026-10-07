@@ -39,6 +39,8 @@ export interface ExploreSnapshot {
   question: string
   answer: string[]
   answer_withheld: boolean
+  /** Explore keeps no copy of its answers: the text is the sender's quote. */
+  quoted_by_sender?: boolean
 }
 
 export type SourceKind = 'note' | 'finding' | 'overview' | 'explore'
@@ -52,6 +54,9 @@ export interface InboxMessage {
   source_kind: SourceKind
   source_ref: string | null
   snapshot: FindingSnapshot | OverviewSnapshot | ExploreSnapshot | null
+  /** False when the attachment is no longer there for this reader (the
+   * figure was withdrawn, or their role may no longer read it). */
+  attachment_available?: boolean
   created_at: string
   read_at: string | null
   reviewed_at: string | null
@@ -88,8 +93,12 @@ export async function fetchInbox(): Promise<Inbox> {
   return json<Inbox>(await apiFetch('/inbox'))
 }
 
-export async function fetchRecipients(): Promise<InboxPerson[]> {
-  return json<InboxPerson[]>(await apiFetch('/inbox/recipients'))
+/** The people who may receive an alert with this attachment (the API
+ * offers only those allowed to read it). */
+export async function fetchRecipients(source: AlertSource = { kind: 'note' }): Promise<InboxPerson[]> {
+  const ref = source.kind === 'finding' || source.kind === 'overview' ? source.ref : ''
+  const query = new URLSearchParams({ kind: source.kind, ref })
+  return json<InboxPerson[]>(await apiFetch(`/inbox/recipients?${query.toString()}`))
 }
 
 export async function sendAlert(input: {
