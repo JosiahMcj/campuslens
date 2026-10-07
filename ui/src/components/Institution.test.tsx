@@ -198,7 +198,10 @@ function stubApi(options: StubOptions = {}) {
   return { calls, puts: () => calls.filter((c) => c.url === '/api/admin/offices' && c.method === 'PUT') }
 }
 
-function renderInstitution() {
+/** Renders Institution settings open at one section (as its address
+ * /institution#<section> would), Users by default. */
+function renderInstitution(section?: string) {
+  window.history.replaceState(null, '', section !== undefined ? `#${section}` : window.location.pathname)
   return render(
     <Institution
       institutionName="Golden Eagle College"
@@ -232,6 +235,14 @@ describe('Institution Users — the list', () => {
     ).toBe('staff')
     // Only the other user's row offers Disable; the admin's own row does not.
     expect(screen.getAllByRole('button', { name: 'Disable' }).length).toBe(1)
+    // Disable is secondary until its inline confirmation (where it turns red).
+    expect(screen.getByRole('button', { name: 'Disable' }).className).toBe('btn-secondary')
+    // The admin cannot change their own role, and is told why.
+    const own = screen.getByLabelText('Role for admin@example.edu') as HTMLSelectElement
+    expect(own.disabled).toBe(true)
+    expect(document.getElementById(own.getAttribute('aria-describedby')!)!.textContent).toBe(
+      'You can’t change your own role',
+    )
     // Statuses render.
     expect(screen.getAllByText('Active').length).toBe(2)
   })
@@ -303,7 +314,7 @@ describe('Institution Users — disable flow', () => {
 describe('Institution Offices — loading, empty, error', () => {
   it('shows the loading line, then the empty state with the intro', async () => {
     stubApi()
-    renderInstitution()
+    renderInstitution('inst-offices')
 
     expect(screen.getByText('Loading the office contacts…')).toBeTruthy()
     await waitFor(() =>
@@ -319,7 +330,7 @@ describe('Institution Offices — loading, empty, error', () => {
 
   it('shows the error panel and loads again on Retry', async () => {
     stubApi({ officesStatus: 500 })
-    renderInstitution()
+    renderInstitution('inst-offices')
 
     await waitFor(() => screen.getByText('We couldn’t load the office contacts'))
     expect(
@@ -344,7 +355,7 @@ describe('Institution Offices — the book', () => {
       offices: [{ office: 'Bursar', email: 'bursar@example.edu' }],
       decisionOffices: ['Financial Aid'],
     })
-    renderInstitution()
+    renderInstitution('inst-offices')
 
     await waitFor(() => screen.getByLabelText('Mailbox for Financial Aid'))
     expect(
@@ -358,7 +369,7 @@ describe('Institution Offices — the book', () => {
 
   it('adds an office and saves the whole book, then says so', async () => {
     const { puts } = stubApi({ offices: [{ office: 'Bursar', email: 'bursar@example.edu' }] })
-    renderInstitution()
+    renderInstitution('inst-offices')
     await waitFor(() => screen.getByLabelText('Mailbox for Bursar'))
 
     fireEvent.click(screen.getByRole('button', { name: 'Add an office' }))
@@ -389,7 +400,7 @@ describe('Institution Offices — the book', () => {
         { office: 'Registrar', email: 'registrar@example.edu' },
       ],
     })
-    renderInstitution()
+    renderInstitution('inst-offices')
     await waitFor(() => screen.getByLabelText('Mailbox for Registrar'))
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove the mailbox for Registrar' }))
@@ -406,7 +417,7 @@ describe('Institution Offices — the book', () => {
 describe('Institution Offices — validation', () => {
   it('shows an invalid mailbox error under the field and sends nothing', async () => {
     const { puts } = stubApi({ decisionOffices: ['Financial Aid'] })
-    renderInstitution()
+    renderInstitution('inst-offices')
     await waitFor(() => screen.getByLabelText('Mailbox for Financial Aid'))
 
     const input = screen.getByLabelText('Mailbox for Financial Aid')
@@ -435,7 +446,7 @@ describe('Institution Offices — validation', () => {
       offices: [{ office: 'Student Accounts', email: 'accounts@example.edu' }],
       decisionOffices: ['Financial Aid'],
     })
-    renderInstitution()
+    renderInstitution('inst-offices')
     await waitFor(() => screen.getByLabelText('Mailbox for Financial Aid'))
 
     fireEvent.change(screen.getByLabelText('Mailbox for Student Accounts'), {
@@ -460,7 +471,7 @@ describe('Institution Offices — validation', () => {
 
   it('flags a duplicate office under the office name and sends nothing', async () => {
     const { puts } = stubApi({ offices: [{ office: 'Bursar', email: 'bursar@example.edu' }] })
-    renderInstitution()
+    renderInstitution('inst-offices')
     await waitFor(() => screen.getByLabelText('Mailbox for Bursar'))
 
     fireEvent.click(screen.getByRole('button', { name: 'Add an office' }))
@@ -483,7 +494,7 @@ describe('Institution Offices — validation', () => {
 
   it('asks for a mailbox on a new office that has only a name', async () => {
     const { puts } = stubApi()
-    renderInstitution()
+    renderInstitution('inst-offices')
     await waitFor(() => screen.getByRole('button', { name: 'Add an office' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Add an office' }))
@@ -504,7 +515,7 @@ describe('Institution Offices — saving and failure', () => {
       release = resolve
     })
     stubApi({ decisionOffices: ['Financial Aid'], putGate })
-    renderInstitution()
+    renderInstitution('inst-offices')
     await waitFor(() => screen.getByLabelText('Mailbox for Financial Aid'))
 
     fireEvent.change(screen.getByLabelText('Mailbox for Financial Aid'), {
@@ -530,7 +541,7 @@ describe('Institution Offices — saving and failure', () => {
 
   it('says what failed and what to do when the API refuses the save', async () => {
     stubApi({ decisionOffices: ['Financial Aid'], putStatus: 422 })
-    renderInstitution()
+    renderInstitution('inst-offices')
     await waitFor(() => screen.getByLabelText('Mailbox for Financial Aid'))
 
     fireEvent.change(screen.getByLabelText('Mailbox for Financial Aid'), {
@@ -582,9 +593,38 @@ describe('Institution — layout', () => {
       expect(target).not.toBeNull()
       expect(target!.classList.contains('inst-card')).toBe(true)
     }
-    // Following a link moves focus to that section's heading.
+    // One section at a time: Users opens first, marked as the open link.
+    expect(document.getElementById('inst-users')!.hidden).toBe(false)
+    expect(document.getElementById('inst-data')!.hidden).toBe(true)
+    expect(within(nav).getByRole('link', { name: 'Users' }).getAttribute('aria-current')).toBe(
+      'true',
+    )
+    // Following a link opens that section alone, keeps it in the address,
+    // and moves focus to its heading.
     fireEvent.click(within(nav).getByRole('link', { name: 'Data' }))
+    expect(document.getElementById('inst-data')!.hidden).toBe(false)
+    expect(document.getElementById('inst-users')!.hidden).toBe(true)
+    expect(window.location.hash).toBe('#inst-data')
+    expect(within(nav).getByRole('link', { name: 'Data' }).getAttribute('aria-current')).toBe(
+      'true',
+    )
     expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Data' }))
+  })
+
+  it('opens the section the address names, e.g. Offices from the decision page', async () => {
+    stubApi()
+    renderInstitution('inst-offices')
+    await waitFor(() => screen.getByRole('button', { name: 'Add an office' }))
+    expect(document.getElementById('inst-offices')!.hidden).toBe(false)
+    expect(document.getElementById('inst-users')!.hidden).toBe(true)
+  })
+
+  it('shows the loading state as the shared skeleton', () => {
+    stubApi()
+    renderInstitution()
+    const users = document.getElementById('inst-users')!
+    expect(users.querySelectorAll('.skeleton-line').length).toBeGreaterThan(0)
+    expect(within(users).getByRole('status').textContent).toContain('Loading the users…')
   })
 
   it('stacks every table on phones: each cell carries its column label', async () => {
@@ -604,7 +644,8 @@ describe('Institution — layout', () => {
         expect(cell.hasAttribute('data-label')).toBe(true)
       }
     }
-    expect(screen.getByRole('columnheader', { name: 'Records' })).toBeTruthy()
+    // Every section stays mounted (its state kept); the closed ones are hidden.
+    expect(screen.getByRole('columnheader', { name: 'Records', hidden: true })).toBeTruthy()
   })
 })
 
@@ -742,7 +783,7 @@ describe('Institution Offices — focus after Remove', () => {
         { office: 'Registrar', email: 'registrar@example.edu' },
       ],
     })
-    renderInstitution()
+    renderInstitution('inst-offices')
     await waitFor(() => screen.getByLabelText('Mailbox for Registrar'))
 
     // Focus moves in an effect after the row leaves: wait for it (the
@@ -761,7 +802,7 @@ describe('Institution Offices — focus after Remove', () => {
 
   it('a failed save clears Saving… and says so in plain words', async () => {
     stubApi({ decisionOffices: ['Financial Aid'], putStatus: 429 })
-    renderInstitution()
+    renderInstitution('inst-offices')
     await waitFor(() => screen.getByLabelText('Mailbox for Financial Aid'))
 
     fireEvent.change(screen.getByLabelText('Mailbox for Financial Aid'), {
@@ -778,14 +819,14 @@ describe('Institution Offices — focus after Remove', () => {
 
 describe('Institution Data — upload, activate, failures', () => {
   function pick(name: string, text: string) {
-    const input = screen.getByLabelText('Data file (.json)') as HTMLInputElement
+    const input = screen.getByLabelText('Student records file') as HTMLInputElement
     const picked = new File([text], name, { type: 'application/json' })
     fireEvent.change(input, { target: { files: [picked] } })
   }
 
   it('uses plain words and a styled file button', async () => {
     stubApi()
-    renderInstitution()
+    renderInstitution('inst-data')
     await waitFor(() => screen.getByText(/Nothing has been uploaded yet/))
 
     expect(
@@ -793,7 +834,7 @@ describe('Institution Data — upload, activate, failures', () => {
         "Upload your student-records export (up to 20 MB). We check it before saving and list anything we can’t accept.",
       ),
     ).toBeTruthy()
-    const input = screen.getByLabelText('Data file (.json)') as HTMLInputElement
+    const input = screen.getByLabelText('Student records file') as HTMLInputElement
     expect(input.type).toBe('file')
     expect(input.classList.contains('visually-hidden')).toBe(true)
     expect(input.closest('label')!.textContent).toContain('Choose a file')
@@ -802,7 +843,7 @@ describe('Institution Data — upload, activate, failures', () => {
 
   it('asks for a file first instead of a greyed button, and Upload turns main once one is chosen', async () => {
     stubApi()
-    renderInstitution()
+    renderInstitution('inst-data')
     await waitFor(() => screen.getByText(/Nothing has been uploaded yet/))
 
     const upload = screen.getByRole('button', { name: 'Upload' }) as HTMLButtonElement
@@ -818,11 +859,13 @@ describe('Institution Data — upload, activate, failures', () => {
 
   it('refuses a file that is not the export, under the field', async () => {
     stubApi()
-    renderInstitution()
+    renderInstitution('inst-data')
     await waitFor(() => screen.getByText(/Nothing has been uploaded yet/))
     pick('export.csv', 'a,b')
     expect(
-      screen.getByText('That file can’t be used. Choose the student-records export, a .json file.'),
+      screen.getByText(
+        'That file can’t be used. Choose the student-records export your records office gave you.',
+      ),
     ).toBeTruthy()
   })
 
@@ -830,7 +873,7 @@ describe('Institution Data — upload, activate, failures', () => {
     const { calls } = stubApi({
       uploadErrors: ["$.students[3].profile.student_id: 'Jane Doe' is not a pseudonymous id"],
     })
-    renderInstitution()
+    renderInstitution('inst-data')
     await waitFor(() => screen.getByText(/Nothing has been uploaded yet/))
     pick('export.json', '{}')
     await waitFor(() => screen.getByText(/export\.json/))
@@ -846,7 +889,7 @@ describe('Institution Data — upload, activate, failures', () => {
 
   it('a network failure during upload clears Uploading… and says so', async () => {
     stubApi({ reject: ['POST /api/admin/datasets'] })
-    renderInstitution()
+    renderInstitution('inst-data')
     await waitFor(() => screen.getByText(/Nothing has been uploaded yet/))
     pick('export.json', '{}')
     await waitFor(() => screen.getByText(/export\.json/))
@@ -860,7 +903,7 @@ describe('Institution Data — upload, activate, failures', () => {
 
   it('a failed activation unlocks the row and shows a friendly line', async () => {
     stubApi({ datasets: [INACTIVE_DATASET], reject: ['POST /api/admin/datasets/7/activate'] })
-    renderInstitution()
+    renderInstitution('inst-data')
     await waitFor(() => screen.getByText('Fall export'))
 
     const activate = screen.getByRole('button', { name: 'Activate' })
@@ -889,7 +932,7 @@ describe('Institution Data — upload, activate, failures', () => {
         ],
       },
     })
-    renderInstitution()
+    renderInstitution('inst-data')
     await waitFor(() => screen.getByText('Fall export'))
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
     fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }))
@@ -900,7 +943,7 @@ describe('Institution Data — upload, activate, failures', () => {
 
   it('a failed list load shows the friendly line and Retry, never the empty text', async () => {
     stubApi({ reject: ['GET /api/admin/datasets'] })
-    renderInstitution()
+    renderInstitution('inst-data')
     await waitFor(() => screen.getByText('We couldn’t load the uploads'))
     expect(
       screen.getByText("We couldn't reach CampusLens. Check your connection and try again."),
@@ -915,17 +958,24 @@ describe('Institution Data — upload, activate, failures', () => {
 describe('Institution — connections', () => {
   it('says what is configured, setting by setting, and never a value', async () => {
     stubApi()
-    renderInstitution()
-    await waitFor(() => screen.getByText('Not configured'))
-    expect(screen.getByText('Ellucian Ethos address: set')).toBeTruthy()
-    expect(screen.getByText('Ethos access key: not set')).toBeTruthy()
-    expect(screen.getByText(/No import has arrived from Ellucian yet/)).toBeTruthy()
+    renderInstitution('inst-connections')
+    await waitFor(() => screen.getByText('Not set up'))
+    // Each setting, set or not, folded under one summary.
+    const fold = screen.getByText('Settings on the server').closest('details')!
+    expect(within(fold).getByText('Ellucian Ethos address: set')).toBeTruthy()
+    expect(within(fold).getByText('Ethos access key: not set')).toBeTruthy()
+    expect(fold.open).toBe(false)
+    expect(
+      screen.getByText(
+        'No import has arrived from Ellucian yet. The briefing uses the data uploaded under Data.',
+      ),
+    ).toBeTruthy()
     expect(screen.getByText('Kept on this server')).toBeTruthy()
   })
 
   it('lists the staff action offices so each can get a mailbox', async () => {
     stubApi({ actionOffices: ['Library', 'Registrar'] })
-    renderInstitution()
+    renderInstitution('inst-offices')
     await waitFor(() => screen.getByLabelText('Mailbox for Library'))
     expect(screen.getByLabelText('Mailbox for Registrar')).toBeTruthy()
   })

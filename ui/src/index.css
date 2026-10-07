@@ -19,6 +19,7 @@
   --ink-soft: #595959;
   --rule: #e3e3e3;
   --rule-strong: #cdcdcd;
+  --field-border: #8f8f8f; /* every input, select and text area: 3.3:1 on paper */
   --navy: #1667c7;
   --navy-hover: #1257a8;
   --navy-pressed: #0f4a8f;
@@ -90,6 +91,7 @@
   --ink-soft: #b4b4b4;
   --rule: #393939;
   --rule-strong: #595959;
+  --field-border: #7a7a7a; /* 3.8:1 on paper, 3.1:1 on surface */
   --navy: #5ea2ee;
   --navy-hover: #78b2f1;
   --navy-pressed: #93c2f4;
@@ -192,6 +194,7 @@ button.secondary,
 .danger-button,
 .panel-danger,
 .approve-button {
+  box-sizing: border-box; /* a <label> or <a> styled as a button sizes like one */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -281,6 +284,11 @@ button.secondary:active:not(:disabled),
   background: color-mix(in srgb, var(--alert) 18%, var(--paper));
 }
 
+/* Profile's Sign out: a secondary button, set apart from the facts above. */
+.profile-sign-out {
+  margin-top: var(--space-5);
+}
+
 .btn-approve,
 .approve-button {
   background: var(--gold);
@@ -351,7 +359,7 @@ button.secondary:active:not(:disabled),
   font-size: var(--text-md);
   color: var(--ink);
   background: var(--paper);
-  border: 1px solid var(--rule-strong);
+  border: 1px solid var(--field-border);
   border-radius: var(--radius-control);
 }
 
@@ -890,12 +898,18 @@ svg.mark {
   min-height: var(--tap);
   padding: 0 var(--space-1);
   gap: var(--space-2);
+  /* One size for every fold's summary, wherever it sits. */
+  font-size: var(--text-sm);
   font-weight: 500;
   border-radius: var(--radius-control);
 }
 
 .fold > summary:hover {
   background: var(--surface-hover);
+}
+
+.fold > summary:active {
+  background: var(--surface-pressed);
 }
 
 .fold > summary::before {
@@ -1032,8 +1046,9 @@ details[open]::details-content {
   max-width: 100%;
   font-size: var(--text-sm);
   color: var(--ink-soft);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
+
 
 @media (min-width: 1200px) {
   .rail .stat-row {
@@ -1351,6 +1366,14 @@ details[open]::details-content {
   align-items: center;
   gap: var(--space-2);
   color: var(--ink-soft);
+}
+
+/* On the projector the four steps sit on one row, never three and one. */
+@media (min-width: 1200px) {
+  .decision-steps {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .decision-steps .step-mark {
@@ -1808,7 +1831,7 @@ details[open]::details-content {
   font-weight: 400;
   color: var(--ink);
   background: var(--paper);
-  border: 1px solid var(--rule-strong);
+  border: 1px solid var(--field-border);
   border-radius: var(--radius-control);
 }
 
@@ -1817,17 +1840,22 @@ details[open]::details-content {
   border-color: var(--navy);
 }
 
-.audit-refresh {
-  margin-inline-start: auto;
+.audit-tools .audit-count {
+  margin-inline-end: auto;
 }
 
-/* The filters: kind, who, and a date range, on one row that wraps. */
+/* The filters: kind, who, and a date range, equal widths (12rem at least,
+   as the staff action filters), on one row that wraps. */
 .audit-filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+  align-items: end;
   gap: var(--space-3);
   margin-top: var(--space-4);
+}
+
+.audit-filters .audit-clear {
+  justify-self: start;
 }
 
 .audit-filter-field {
@@ -1839,8 +1867,8 @@ details[open]::details-content {
 }
 
 .audit-filter-field .field {
-  min-width: 10rem;
-  max-width: 100%;
+  width: 100%;
+  min-width: 0;
   font-weight: 400;
 }
 
