@@ -435,13 +435,25 @@ def post_staff_action_send(action_id: int, request: Request) -> JSONResponse:
             )
         institution = store.institution_by_id(institution_id)
         assert institution is not None
-        if existing is None:
-            composed = compose_message(
-                action,
-                sender=str(user["email"]),
-                institution_name=str(institution["name"]),
-                sign_in_url=public_url(),
+        # Composed at the click, from the action as it stands: a retry after
+        # a failure carries the current status, owner and due date.
+        composed = compose_message(
+            action,
+            sender=str(user["email"]),
+            institution_name=str(institution["name"]),
+            sign_in_url=public_url(),
+        )
+        if existing is not None:
+            existing = store.recompose_dispatch(
+                institution_id,
+                int(existing["id"]),
+                subject=composed["subject"],
+                body=composed["body"],
+            ) or store.dispatch_for_task(
+                institution_id, task_id, dataset_id=dataset_id
             )
+            assert existing is not None
+        else:
             existing = store.create_dispatch(
                 institution_id,
                 task_id=task_id,

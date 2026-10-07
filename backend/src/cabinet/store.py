@@ -1353,6 +1353,23 @@ class CabinetStore:
                 return None
         return self.dispatch_by_id(institution_id, dispatch_id)
 
+    def recompose_dispatch(
+        self, institution_id: int, dispatch_id: int, *, subject: str, body: str
+    ) -> dict[str, Any] | None:
+        """Replace an unsent message's subject and body (a retry after a
+        failure carries the action as it stands now). A sent row is never
+        changed: None then, as for no row at all."""
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "UPDATE dispatches SET subject = ?, body = ?"
+                " WHERE id = ? AND institution_id = ?"
+                " AND status IN ('draft', 'failed')",
+                (subject, body, dispatch_id, institution_id),
+            )
+            if cursor.rowcount != 1:
+                return None
+        return self.dispatch_by_id(institution_id, dispatch_id)
+
     def mark_dispatch_failed(
         self, institution_id: int, dispatch_id: int, *, error: str
     ) -> dict[str, Any] | None:

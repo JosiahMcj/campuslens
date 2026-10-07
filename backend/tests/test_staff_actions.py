@@ -441,6 +441,11 @@ def test_a_failed_send_is_recorded_and_retried(monkeypatch: pytest.MonkeyPatch) 
     assert "did not answer" in failed.json()["item"]["message"]["error"]
     assert len(_events(admin, "action.send_failed")) == 1
 
+    # Changed between the failure and the retry: the retry says so.
+    admin.patch(
+        f"/staff-actions/{item['id']}",
+        json={"status": "in_progress", "expected_updated_at": None},
+    )
     fake = FakeOutboundProvider()
     monkeypatch.setattr(
         "cabinet.staffactions_api.outbound_from_env", lambda **_kwargs: fake
@@ -450,6 +455,7 @@ def test_a_failed_send_is_recorded_and_retried(monkeypatch: pytest.MonkeyPatch) 
     assert retried.json()["item"]["message"]["status"] == "sent"
     assert retried.json()["item"]["message"]["error"] is None
     assert len(fake.sent) == 1
+    assert "Status: In progress" in fake.sent[0]["body"]
 
 
 def test_the_outbox_default_writes_an_eml_file(tmp_path: Path) -> None:
