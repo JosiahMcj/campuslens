@@ -230,6 +230,11 @@ Two changes did it, in `backend/src/cabinet/explore/general.py`:
    per-student partial sums once per term window (every measure is a sum or a count) and
    builds each partition from them in memory, with each student counted once as before.
 
+Over the 156 eval-set runs alone (rule plans and acceptable plans) the compute median is
+0.10 s, the 90th percentile 0.47 s, the slowest 1.9 s. The rule planner still scores 52 of
+56 on the main set and 20 of 22 on the held-out set against the larger school (scored
+in-process from the same "How this was answered" lines), the same as on the smaller one.
+
 No index was added; the database is the generator's own. The planner times above (a
 model call of about 1 s) are unchanged by the larger catalog in kind; we did not re-run
 the model-first evaluation against the larger school.
