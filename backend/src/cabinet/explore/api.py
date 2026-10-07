@@ -59,6 +59,7 @@ from cabinet.explore.planner import (
     is_small_talk,
     nearest_examples,
     plan_question,
+    planner_vocabulary,
     rule_plan_detail,
     scoped_to_a_group,
     understood,
@@ -353,9 +354,11 @@ def _explore(
             "question.asked",
             actor=str(user["email"]),
             payload={
-                # Ids and person names are replaced: the log never stores a
-                # student a person typed ("Did [name withheld] pass ...").
-                "question": strip_names(question, catalog.known_names),
+                # Allow-listed words only: any other word (a possible name)
+                # is "[name withheld]" ("Did [name withheld] pass ...").
+                "question": strip_names(
+                    question, catalog.known_names, planner_vocabulary(catalog)
+                ),
                 "route": "/explore",
                 "role": role,
             },
