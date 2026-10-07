@@ -328,14 +328,12 @@ export function quotedColumns(response: ExploreResponse, table: number): string[
 }
 
 /** Decimals a number of each column kind is shown with: a GPA with two, a
- * rate, a share or an average with one, a count with none. */
+ * rate or a share with one, a count with none. Other kinds (averages, hours,
+ * years, money) keep the API's own decimals, which the sentences quote. */
 const KIND_DIGITS: Record<string, number> = {
   gpa: 2,
   pct: 1,
   points: 1,
-  average: 1,
-  hours: 1,
-  years: 1,
   count: 0,
 }
 
@@ -353,10 +351,10 @@ export function formatCell(value: ExploreCell, kind?: string): string {
       const rounded = roundHalfUp(magnitude, digits)
       const [whole, fraction] = rounded.split('.')
       text = Number(whole).toLocaleString('en-US') + (fraction !== undefined ? `.${fraction}` : '')
-    } else if (kind === 'money') {
-      text = magnitude.toLocaleString('en-US', { maximumFractionDigits: 2 })
     } else {
-      text = magnitude.toLocaleString('en-US', { maximumFractionDigits: 3 })
+      text = magnitude.toLocaleString('en-US', {
+        maximumFractionDigits: kind === undefined ? 3 : 2,
+      })
     }
     return value < 0 && /[1-9]/.test(text) ? `−${text}` : text
   }

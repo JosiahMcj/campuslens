@@ -1192,6 +1192,9 @@ describe('words and tables on screen', () => {
     expect(formatCell(-0.01, 'pct')).toBe('0.0')
     expect(formatCell(1533, 'count')).toBe('1,533')
     expect(formatCell(12345.5, 'hours')).toBe('12,345.5')
+    // An average keeps the decimals the sentence quotes ("4.12 years").
+    expect(formatCell(4.12, 'average')).toBe('4.12')
+    expect(formatCell(4.2, 'average')).toBe('4.2')
     expect(formatCell(1234.567)).toBe('1,234.567')
     expect(formatCell(1200.5, 'money')).toBe('1,200.5')
     expect(formatCell('Fall 2021', 'text')).toBe('Fall 2021')
