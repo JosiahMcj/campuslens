@@ -153,6 +153,10 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     # every role but aid.
     ("POST", "/explore"): (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF, ROLE_REVIEWER),
     ("GET", "/explore/catalog"): AUDIT_ROLES + (ROLE_STAFF,),
+    # The staff action worklist (cabinet.staffactions_api): every role reads
+    # it (the aid role sees Financial Aid's actions only, filtered by the
+    # route).
+    ("GET", "/staff-actions"): READ_ROLES,
 }
 
 # Prefix rules, checked when the exact table misses (routes with path
@@ -175,6 +179,12 @@ ROUTE_ROLE_PREFIXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     # One Financial Aid review row by id: the office records its own status
     # and note. The aid role and the admin only; everyone else is a 403.
     ("PATCH", "/aid-queue/", AID_QUEUE_EDIT_ROLES),
+    # One staff action by id: staff and the admin set its status, owner and
+    # due date; notes are open to the executive too, and the send route
+    # narrows itself to staff and admin (an executive's Send is a logged
+    # 403, like the decision dispatch).
+    ("PATCH", "/staff-actions/", (ROLE_ADMIN, ROLE_STAFF)),
+    ("POST", "/staff-actions/", (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF)),
 )
 
 # No session needed: liveness, readiness, and login itself.
@@ -662,10 +672,11 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
                 headers={"Retry-After": str(retry_after)},
             )
         # The tighter ask bucket covers POST /ask (it spends model calls)
-        # and the dispatch Send (it can make a message leave the machine);
+        # and both Sends (each can make a message leave the machine);
         # both are consequential enough to pace per session and per IP.
         if (method, path) in (("POST", "/ask"), ("POST", "/explore")) or (
-            method == "POST" and path.endswith("/dispatch/send")
+            # Both Sends (a decision's dispatch, a staff action) end in /send.
+            method == "POST" and path.endswith("/send")
         ):
             for key in (f"ask:session:{session['id']}", f"ask:ip:{client_ip}"):
                 allowed, retry_after = self.ask_bucket.allow(key)

@@ -42,7 +42,7 @@ BOOTSTRAP_SLUG = "bootstrap"
 BOOTSTRAP_NAME = "Demonstration University"
 LEGACY_BOOTSTRAP_NAME = "Bootstrap Institution"
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 class SchemaVersionError(RuntimeError):
@@ -449,6 +449,77 @@ def _migration_8(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migration_9(conn: sqlite3.Connection) -> None:
+    """The staff action worklist: ``staff_actions``, ``staff_action_notes``
+    and ``staff_action_history``.
+
+    One row per operational action (briefing section 5) per dataset: the
+    actions are built in code from the findings (``cabinet.staffactions``),
+    so the set and the counts are fixed for a dataset, and the UNIQUE
+    constraint is the idempotency anchor (a second load never adds a row).
+    A person sets ``status`` (to do, in progress, done), an ``owner`` (a
+    user's email, or NULL for the office itself) and a ``due_date``; every
+    save carries the ``updated_at`` it was based on, like the aid queue.
+
+    Notes are a thread per action (staff, admin and the executive's
+    comments), and the history keeps who changed what and when. Both carry
+    ``dataset_id`` so purging a dataset purges its worklist with it. No
+    table here has a student column: an action is a count and an office.
+    """
+    for statement in (
+        """
+        CREATE TABLE IF NOT EXISTS staff_actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            institution_id INTEGER NOT NULL REFERENCES institutions(id),
+            dataset_id INTEGER NOT NULL,
+            action_key TEXT NOT NULL,
+            office TEXT NOT NULL,
+            finding_id TEXT NOT NULL,
+            count INTEGER,
+            status TEXT NOT NULL DEFAULT 'todo'
+                CHECK (status IN ('todo', 'in_progress', 'done')),
+            owner TEXT,
+            due_date TEXT,
+            updated_by TEXT,
+            updated_at TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE (institution_id, dataset_id, action_key)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_staff_actions_institution_dataset"
+        " ON staff_actions (institution_id, dataset_id)",
+        """
+        CREATE TABLE IF NOT EXISTS staff_action_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            institution_id INTEGER NOT NULL REFERENCES institutions(id),
+            dataset_id INTEGER NOT NULL,
+            action_id INTEGER NOT NULL REFERENCES staff_actions(id),
+            author TEXT NOT NULL,
+            text TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_staff_action_notes_action"
+        " ON staff_action_notes (action_id)",
+        """
+        CREATE TABLE IF NOT EXISTS staff_action_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            institution_id INTEGER NOT NULL REFERENCES institutions(id),
+            dataset_id INTEGER NOT NULL,
+            action_id INTEGER NOT NULL REFERENCES staff_actions(id),
+            actor TEXT NOT NULL,
+            at TEXT NOT NULL,
+            change TEXT NOT NULL,
+            from_value TEXT,
+            to_value TEXT
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_staff_action_history_action"
+        " ON staff_action_history (action_id)",
+    ):
+        conn.execute(statement)
+
+
 MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (1, "h2 tenancy baseline", _migration_1),
     (2, "r3 dataset pinning and audit index", _migration_2),
@@ -457,7 +528,8 @@ MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (5, "dispatches and office contacts", _migration_5),
     (6, "financial aid review queue", _migration_6),
     (7, "counseling aggregate authorization", _migration_7),
-    (SCHEMA_VERSION, "demonstration institution display name", _migration_8),
+    (8, "demonstration institution display name", _migration_8),
+    (SCHEMA_VERSION, "staff action worklist", _migration_9),
 ]
 
 

@@ -228,6 +228,7 @@ from cabinet.security import (
     CabinetSecurityMiddleware,
     LoginLockout,
 )
+from cabinet.staffactions_api import router as staff_actions_router
 from cabinet.store import AidReviewConflict, CabinetStore, StoreError
 from cabinet.webui import ApiPrefixMiddleware, SpaStaticFiles, ui_dist_from_env
 
@@ -766,6 +767,7 @@ def create_app(
     # app.state for tests.
     app.state.runtime_for = runtime_for
     app.state.ask_lock_for = ask_lock_for
+    app.state.production = production
 
     def analyst_task_id(role: str, runtime: InstitutionRuntime) -> str:
         """The task this briefing run's events belong to.
@@ -2538,6 +2540,8 @@ def create_app(
         return JSONResponse(content={"user": admin_user_body(updated), "changed": True})
 
     app.include_router(explore_router)  # POST /explore, GET /explore/catalog
+    # GET /staff-actions, PATCH /staff-actions/{id}, POST .../notes, .../send
+    app.include_router(staff_actions_router)
 
     # The built UI, served by the same process. Mounted after every API
     # route so an API path always wins over the static mount; a missing
