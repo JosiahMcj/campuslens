@@ -40,6 +40,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from cabinet.followup import is_briefing_question
 from cabinet.metrics import M3_AMOUNT_LIMIT
 from cabinet.permissions import ROLE_FINDINGS, findings_for_role
 
@@ -495,8 +496,6 @@ def match_question(text: str) -> Question | None:
         if _normalize(question.text) == normalized:
             return question
     # The spring registration question in other words ("... today?").
-    from cabinet.followup import is_briefing_question
-
     if is_briefing_question(text):
         return DEFAULT_QUESTION
     return None

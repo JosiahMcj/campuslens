@@ -167,7 +167,9 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/events"): AUDIT_ROLES,
     ("GET", "/briefing"): READ_ROLES,
     # Follow-up questions about the briefing, answered in code (no model).
-    ("POST", "/briefing/follow-up"): ACT_ROLES + (ROLE_STAFF, ROLE_REVIEWER),
+    # Same readers as GET /briefing: the answers are its aggregates; the
+    # Approve card and the audit trail go only to the roles that may use them.
+    ("POST", "/briefing/follow-up"): READ_ROLES,
     ("GET", "/briefing/enrollment"): READ_ROLES,
     ("GET", "/briefing/student-success"): READ_ROLES,
     ("GET", "/decisions"): READ_ROLES,

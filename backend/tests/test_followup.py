@@ -313,7 +313,9 @@ def test_step_2_drivers_carry_numbers_sources_and_fact_vs_interpretation(
     assert factors["label"] == "fact"
     cells = [row[1] for row in factors["rows"]]
     assert cells[0].startswith("119 continuing students registered against 125")
-    assert "18 of 42" in cells and "12 of 42" in cells and "8 of 42" in cells
+    assert "18 of 42" in cells and "12 of 42" in cells
+    # derived here, not a briefing figure, so a count under 10 is withheld
+    assert "fewer than 10 of 42" in cells
     labels = {b["label"] for b in body["blocks"]}
     assert {"fact", "interpretation", "note"} <= labels
     authors = {
@@ -482,7 +484,7 @@ def test_backups_have_the_expected_facts(briefed: TestClient) -> None:
     multi = _ask_follow_up(
         briefed, "How many students face more than one registration barrier?"
     )
-    assert "8 of the 42" in _shown_text(multi)
+    assert "fewer than 10 of the 42" in _shown_text(multi)
     programs = _ask_follow_up(briefed, "Which programs account for most of the change?")
     for block in programs["blocks"]:
         if block["type"] == "table":
@@ -516,8 +518,11 @@ def test_roles(app: FastAPI) -> None:
     assert (
         staff.post("/briefing/follow-up", json={"question": STEP_2}).status_code == 200
     )
+    # the same readers as GET /briefing: the aid office yes, IT no
     aid = make_authenticated_client(app, role="aid")
-    assert aid.post("/briefing/follow-up", json={"question": STEP_2}).status_code == 403
+    assert aid.post("/briefing/follow-up", json={"question": STEP_2}).status_code == 200
+    it = make_authenticated_client(app, role="it")
+    assert it.post("/briefing/follow-up", json={"question": STEP_2}).status_code == 403
 
 
 def test_suppression_withholds_the_cell_that_would_reveal_a_small_one() -> None:
@@ -550,3 +555,116 @@ def test_follow_ups_do_not_spend_the_question_limit(
 def test_answers_that_read_no_figures_record_no_grant(briefed: TestClient) -> None:
     body = _ask_follow_up(briefed, "What data was each AI employee permitted to access?")
     assert len(body["event_ids"]) == 1
+
+
+# --- review fixes (2026-10-07) ----------------------------------------------------
+
+
+def _context_and_derived() -> tuple[Any, Any]:
+    from cabinet.followup import Context, derive
+
+    document = json.loads(FIXTURE.read_text())
+    findings = compute_findings(parse_fixture(document), fixture_path=FIXTURE)
+    ctx = Context(
+        findings=findings,
+        document=document,
+        dataset={"name": "Demonstration (fictional)"},
+        briefing=None,
+        briefing_events=[],
+        approvals={},
+        decisions=DEFAULT_QUESTION.build_decisions(findings),
+        actions=DEFAULT_QUESTION.build_actions(findings),
+        fictional=True,
+        role="executive",
+    )
+    return ctx, derive(ctx)
+
+
+def _texts(body: dict[str, Any]) -> str:
+    return _shown_text(body)
+
+
+def test_program_sentence_is_computed_not_asserted() -> None:
+    from cabinet.followup import _support
+
+    ctx, d = _context_and_derived()
+    # One program of 36 and one of 6: complementary suppression hides both,
+    # so the answer must not claim no program has 10 or more.
+    d.unregistered_by_program = [("Nursing", 36), ("Art", 6)]
+    d.unregistered_programs = 2
+    shown = _texts(_support(ctx, d))
+    assert "no program has 10 or more" not in shown
+    assert "would reveal a group under 10" in shown
+    d.unregistered_by_program = [("Nursing", 6), ("Art", 4)]
+    assert "no program has 10 or more" in _texts(_support(ctx, d))
+
+
+def test_withheld_programs_note_names_both_reasons() -> None:
+    from cabinet.followup import _programs
+
+    ctx, d = _context_and_derived()
+    shown = _texts(_programs(ctx, d))
+    assert "or so a withheld count can't be worked out" in shown
+
+
+def test_class_table_shown_when_nothing_is_hidden() -> None:
+    from cabinet.followup import _support
+
+    ctx, d = _context_and_derived()
+    d.unregistered_by_class = [("senior", 42)]
+    body = _support(ctx, d)
+    table_ = _block(body, "table", "class level")
+    assert table_["rows"] == [["Senior", "42"]]
+    d.unregistered_by_class = [("freshman", 20), ("sophomore", 15), ("senior", 12)]
+    rows = _block(_support(ctx, d), "table", "class level")["rows"]
+    assert rows == [["Freshman", "20"], ["Sophomore", "15"], ["Senior", "12"]]
+    d.unregistered_by_class = [
+        ("freshman", 20),
+        ("sophomore", 15),
+        ("junior", 7),
+        ("senior", 12),
+    ]
+    rows = _block(_support(ctx, d), "table", "class level")["rows"]
+    assert rows == [
+        ["Freshman", "20"],
+        ["Sophomore", "15"],
+        ["Junior", "fewer than 10"],
+        ["Senior", "withheld"],
+    ]
+    # Only one cell would still show: no table.
+    d.unregistered_by_class = [("freshman", 20), ("junior", 7)]
+    assert not any(
+        b["type"] == "table" and "class level" in b["title"] for b in _support(ctx, d)["blocks"]
+    )
+
+
+def test_derived_counts_under_ten_are_withheld() -> None:
+    from cabinet.followup import _derived_count
+
+    assert _derived_count(8) == "fewer than 10"
+    assert _derived_count(20) == "20"
+    assert _derived_count(None) == "not available"
+
+
+@pytest.mark.parametrize("role", ["staff", "reviewer", "aid"])
+def test_non_approvers_get_no_approve_card_and_no_audit_trail(
+    app: FastAPI, role: str
+) -> None:
+    executive = make_authenticated_client(app, role="executive")
+    executive.post("/ask", json={"question": APPROVED_QUESTION})
+    reader = make_authenticated_client(app, role=role)
+    for question in (STEP_5, STEP_7):
+        body = _ask_follow_up(reader, question)
+        assert body["kind"] == "answer"
+        assert not any(b["type"] == "approval" for b in body["blocks"])
+        assert "Only the executive or an admin can approve" in _shown_text(body)
+    evidence = _ask_follow_up(reader, "Show me the evidence and audit trail behind this recommendation.")
+    titles = [b.get("title", "") for b in evidence["blocks"]]
+    can_read_log = role == "reviewer"
+    assert ("Audit trail of the latest briefing" in titles) is can_read_log
+    calculation = dict(_block(_ask_follow_up(reader, STEP_6), "table")["rows"])
+    assert ("Briefing produced" in calculation) is can_read_log
+
+
+def test_executive_still_gets_the_approve_card(briefed: TestClient) -> None:
+    assert _block(_ask_follow_up(briefed, STEP_7), "approval")["approved"] is False

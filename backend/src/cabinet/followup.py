@@ -488,6 +488,16 @@ def suppress(cells: list[tuple[str, int]]) -> dict[str, str]:
     return shown
 
 
+def _derived_count(value: int | None) -> str:
+    """A student count this module derives that the briefing does not show
+    itself (students with more than one indicator; unregistered students with
+    no indicator): under ``MINIMUM_CELL_SIZE`` it reads "fewer than 10".
+    Counts read straight from the findings (M2, M3, M4, M5's per-office holds,
+    M8 and its per-rule counts) are the briefing's own figures, shown as the
+    briefing shows them."""
+    return _cell(value) if isinstance(value, int) else "not available"
+
+
 def _cell(count: int) -> str:
     return (
         f"{count:,}"
@@ -623,11 +633,11 @@ def _drivers(ctx: Context, d: Derived) -> dict[str, Any]:
         ["No advising appointment this term", f"{_count(m4)} of {_count(m2)}"],
         [
             "Both a small-balance hold and no advising",
-            f"{_count(d.multi_barrier)} of {_count(m2)}"
+            f"{_derived_count(d.multi_barrier)} of {_count(m2)}"
         ],
         [
             "No recorded barrier at all",
-            f"{_count(d.no_indicator)} of {_count(m2)}"
+            f"{_derived_count(d.no_indicator)} of {_count(m2)}"
         ],
         [
             "Registered credit hours against last year",
@@ -678,7 +688,7 @@ def _drivers(ctx: Context, d: Derived) -> dict[str, Any]:
 def _missing_items(ctx: Context, d: Derived) -> list[str]:
     m2 = _value(ctx.findings, "M2")
     items = [
-        f"Why {_count(d.no_indicator)} of the {_count(m2)} unregistered continuing students have no recorded barrier. The records hold no reason, so staff have to ask them.",
+        f"Why {_derived_count(d.no_indicator)} of the {_count(m2)} unregistered continuing students have no recorded barrier. The records hold no reason, so staff have to ask them.",
         "Whether students know about their hold, or have already arranged a payment plan. The hold records do not say.",
         "Students' plans to transfer, stop out or graduate early. The records do not hold intent, and CampusLens does not predict it.",
         "The comparison is one point in time against the same date last year, not a trend across several years.",
@@ -702,7 +712,7 @@ def _support(ctx: Context, d: Derived) -> dict[str, Any]:
     rows = [
         [
             "Small-balance hold and no advising contact",
-            _count(d.multi_barrier),
+            _derived_count(d.multi_barrier),
             "Two barriers at once; first in line for a call",
             "Student Success with Financial Aid",
         ],
@@ -720,7 +730,7 @@ def _support(ctx: Context, d: Derived) -> dict[str, Any]:
         ],
         [
             "No recorded barrier",
-            _count(d.no_indicator),
+            _derived_count(d.no_indicator),
             "Not registered, and the records do not say why",
             "Enrollment",
         ],
@@ -742,7 +752,9 @@ def _support(ctx: Context, d: Derived) -> dict[str, Any]:
     ]
     if d.unregistered_by_class:
         shown = suppress(d.unregistered_by_class)
-        if sum(1 for value in shown.values() if not value[0].isdigit()) < len(shown) - 1:
+        hidden = sum(1 for value in shown.values() if not value[0].isdigit())
+        # Shown when nothing is hidden, or when at least two cells still show.
+        if hidden == 0 or hidden < len(shown) - 1:
             blocks.append(
                 table(
                     LABEL_FACT,
@@ -776,7 +788,11 @@ def _support(ctx: Context, d: Derived) -> dict[str, Any]:
             blocks.append(
                 text(
                     LABEL_FACT,
-                    f"By program, they are spread across {d.unregistered_programs} programs and no program has {MINIMUM_CELL_SIZE} or more of them, so program counts are withheld.",
+                    (
+                        f"By program, they are spread across {d.unregistered_programs} programs and no program has {MINIMUM_CELL_SIZE} or more of them, so program counts are withheld."
+                        if all(n < MINIMUM_CELL_SIZE for _, n in d.unregistered_by_program)
+                        else f"By program, they are spread across {d.unregistered_programs} programs. Program counts are withheld, because showing the larger ones would reveal a group under {MINIMUM_CELL_SIZE}."
+                    ),
                     ["M2"],
                 )
             )
@@ -854,9 +870,9 @@ def _plan_rows(ctx: Context, d: Derived) -> tuple[list[list[str]], list[list[str
     rows.append(
         [
             "Enrollment with Student Success",
-            f"Reach the {_count(d.no_indicator)} students with no recorded barrier and learn why they have not registered",
+            f"Reach the {_derived_count(d.no_indicator)} students with no recorded barrier and learn why they have not registered",
             f"{seven[1]} ({seven[0]})",
-            f"Students reached, of {_count(d.no_indicator)}",
+            f"Students reached, of {_derived_count(d.no_indicator)}",
         ]
     )
     ids.append(["M2", "M8"])
@@ -899,11 +915,23 @@ def _plan(ctx: Context, d: Derived) -> dict[str, Any]:
     }
 
 
+APPROVER_ROLES = ("admin", "executive")
+
+
 def _decision_block(ctx: Context) -> dict[str, Any] | None:
+    """The decision with its Approve button for the roles that may approve;
+    every other role reads where the decision stands, in words."""
     if not ctx.decisions:
         return None
     decision = ctx.decisions[0]
     approval = ctx.approvals.get(decision["id"]) or {}
+    if ctx.role not in APPROVER_ROLES:
+        status = (
+            f"Approved by {approval.get('approved_by') or 'leadership'}."
+            if approval
+            else "Waiting for leadership approval. Only the executive or an admin can approve it."
+        )
+        return text(LABEL_NOTE, f"{decision['title']}: {status}")
     return {
         "type": "approval",
         "label": LABEL_RECOMMENDATION,
@@ -1022,7 +1050,7 @@ def _calculation(ctx: Context, d: Derived) -> dict[str, Any]:
         ["Records as of", as_of],
         ["Dataset loaded", uploaded or "not available"],
     ]
-    if produced:
+    if produced and ctx.extra.get("audit_reader"):
         rows.append(["Briefing produced", produced])
     return {
         "title": "How the registration gap is calculated",
@@ -1050,7 +1078,9 @@ def _approval(ctx: Context, d: Derived) -> dict[str, Any]:
     limit = f"${M3_AMOUNT_LIMIT:,.0f}"
     card = _decision_block(ctx)
     blocks: list[dict[str, Any]] = []
-    if card is None:
+    decision = ctx.decisions[0] if ctx.decisions else None
+    approved = bool(decision and decision["id"] in ctx.approvals)
+    if card is None or decision is None:
         blocks.append(
             text(
                 LABEL_NOTE,
@@ -1067,13 +1097,13 @@ def _approval(ctx: Context, d: Derived) -> dict[str, Any]:
             LABEL_RECOMMENDATION,
             (
                 "Recommended follow-up (approved)"
-                if card["approved"]
+                if approved
                 else "Recommended follow-up (prepared, awaiting your approval)"
             ),
             ["Item", "Detail"],
             [
-                ["Proposed action", str(card["follow_up"])],
-                ["Responsible department", str(card["office"])],
+                ["Proposed action", str(decision["follow_up"]["description"])],
+                ["Responsible department", str(decision["follow_up"]["office"])],
                 [
                     "Reason",
                     f"An unresolved financial hold under {limit} is the most common recorded barrier among the {_count(m2)} unregistered continuing students",
@@ -1202,7 +1232,7 @@ def _programs(ctx: Context, d: Derived) -> dict[str, Any]:
         blocks.append(
             text(
                 LABEL_NOTE,
-                f"{withheld} program{'s are' if withheld != 1 else ' is'} withheld because a count is under {MINIMUM_CELL_SIZE} students.",
+                f"{withheld} program{'s are' if withheld != 1 else ' is'} withheld because a count is under {MINIMUM_CELL_SIZE} students, or so a withheld count can't be worked out.",
             )
         )
     if d.by_class_now_vs_prior:
@@ -1239,7 +1269,7 @@ def _multi_barrier(ctx: Context, d: Derived) -> dict[str, Any]:
         "blocks": [
             text(
                 LABEL_FACT,
-                f"{_count(d.multi_barrier)} of the {_count(m2)} unregistered continuing students have more than one support indicator. {_count(_value(f, 'M8'))} have at least one.",
+                f"{_derived_count(d.multi_barrier)} of the {_count(m2)} unregistered continuing students have more than one support indicator. {_count(_value(f, 'M8'))} have at least one.",
                 ["M2", "M8"],
             ),
             table(
@@ -1274,7 +1304,7 @@ def _fact_vs_interpretation(ctx: Context, d: Derived) -> dict[str, Any]:
         ],
         [
             "Reach the students with no recorded barrier",
-            f"FACT: {_count(d.no_indicator)} of {_count(m2)} have no indicator",
+            f"FACT: {_derived_count(d.no_indicator)} of {_count(m2)} have no indicator",
             "INTERPRETATION: they need a conversation, not a fix",
         ],
         [
@@ -1531,14 +1561,17 @@ def _changes(ctx: Context, d: Derived) -> dict[str, Any]:
         )
         blocks = [text(LABEL_FACT, body)]
     else:
-        previous = str(events[-2].get("ts", ""))[:16].replace("T", " ")
-        latest = str(events[-1].get("ts", ""))[:16].replace("T", " ")
+        if ctx.extra.get("audit_reader"):
+            previous = str(events[-2].get("ts", ""))[:16].replace("T", " ") + " UTC"
+            latest = str(events[-1].get("ts", ""))[:16].replace("T", " ") + " UTC"
+        else:
+            previous, latest = "earlier", "now"
         changed_dataset = ctx.extra.get("dataset_changed_between", False)
         if changed_dataset:
-            body = f"The dataset changed between the previous briefing ({previous} UTC) and the latest one ({latest} UTC), so the figures were recomputed."
+            body = f"The dataset changed between the previous briefing ({previous}) and the latest one ({latest}), so the figures were recomputed."
         else:
             body = (
-                f"Nothing in the figures changed. The previous briefing ({previous} UTC) and the latest one ({latest} UTC) "
+                f"Nothing in the figures changed. The previous briefing ({previous}) and the latest one ({latest}) "
                 f"were both computed from {name}, so every figure is the same."
             )
         blocks = [text(LABEL_FACT, body)]
@@ -1546,7 +1579,7 @@ def _changes(ctx: Context, d: Derived) -> dict[str, Any]:
     blocks.append(
         text(
             LABEL_FACT,
-            "Since then you approved the emergency-aid review."
+            "The emergency-aid review has been approved."
             if decided
             else "No leadership decision has been approved yet.",
         )
@@ -1603,7 +1636,14 @@ def _evidence_audit(ctx: Context, d: Derived) -> dict[str, Any]:
             )
         )
     else:
-        blocks.append(text(LABEL_NOTE, "No briefing run is in the audit log yet."))
+        blocks.append(
+            text(
+                LABEL_NOTE,
+                "The audit trail is shown to the roles that may read the audit log."
+                if not ctx.extra.get("audit_reader")
+                else "No briefing run is in the audit log yet.",
+            )
+        )
     blocks.append(
         text(
             LABEL_NOTE,

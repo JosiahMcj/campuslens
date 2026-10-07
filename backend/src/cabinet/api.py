@@ -245,6 +245,7 @@ from cabinet.questions import DEMO_DECISION_ID as DEMO_DECISION_ID
 from cabinet.questions import OUT_OF_SCOPE_REFUSAL as OUT_OF_SCOPE_REFUSAL
 from cabinet.roster import router as roster_router
 from cabinet.security import (
+    AUDIT_ROLES,
     GENERIC_LOGIN_ERROR,
     ROW_ROLES,
     CabinetSecurityMiddleware,
@@ -1469,14 +1470,17 @@ def create_app(
         briefing = store.latest_briefing(institution_id, dataset_id=dataset_id)
         all_events = store.audit_events(institution_id)
         produced = [e for e in all_events if e["type"] == "briefing.produced"]
-        extra: dict[str, Any] = {}
+        # The audit trail and the briefing times come from the audit log, so
+        # only the roles that may read the log (GET /events) see them.
+        audit_reader = str(user["role"]) in AUDIT_ROLES
+        extra: dict[str, Any] = {"audit_reader": audit_reader}
         if len(produced) >= 2:
             low, high = produced[-2]["id"], produced[-1]["id"]
             extra["dataset_changed_between"] = any(
                 e["type"] == "dataset.activated" and low < e["id"] < high
                 for e in all_events
             )
-        if produced:
+        if produced and audit_reader:
             start = produced[-1]["payload"].get("question_event_id")
             run = [
                 e
