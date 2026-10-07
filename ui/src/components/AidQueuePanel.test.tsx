@@ -447,7 +447,6 @@ describe('AidQueuePanel', () => {
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
     expect(within(row).getByText('Paid at the window.')).toBeTruthy()
-    expect(screen.getByText(/This view is read only/)).toBeTruthy()
     expect(calls.every((call) => call.method === 'GET')).toBe(true)
   })
 

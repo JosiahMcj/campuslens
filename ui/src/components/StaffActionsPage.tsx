@@ -96,18 +96,9 @@ export function StaffActionsPage({
     () => (list === null ? [] : [...new Set(list.items.map((item) => item.office))]),
     [list],
   )
-  const intro = list === null
-    ? 'Work staff can start now, each with a responsible office.'
-    : list.can_edit
-      ? 'Work staff can start now, each with a responsible office. Track who has it, when it is due and how far it has got. No leadership approval is needed, and nothing goes to an office until you send it.'
-      : list.can_note
-        ? 'Work staff can start now, each with a responsible office. You can follow progress and add a note for the staff working on it. No leadership approval is needed.'
-        : 'Work staff can start now, each with a responsible office. This view is read only.'
 
   return (
     <div className="worklist">
-      <p className="panel-intro">{intro}</p>
-
       {state.kind === 'loading' && (
         <div role="status" aria-busy="true" className="worklist-loading">
           <span className="visually-hidden">Loading the staff actions…</span>

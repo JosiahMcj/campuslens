@@ -519,11 +519,6 @@ export function AuditLog({
 
   return (
     <section aria-label="Audit log" id="audit-log" className="audit-log">
-      <p className="panel-intro">
-        Every question, data request, refusal and decision is recorded here and can
-        never be changed. Newest entries are first.
-      </p>
-
       <div className="audit-filters" role="group" aria-label="Filter the log">
         <label className="audit-filter-field">
           <span>Show</span>

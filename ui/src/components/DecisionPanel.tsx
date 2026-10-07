@@ -238,11 +238,14 @@ export function DecisionPanel({
       className="decision-panel"
     >
       <h2 id={headingId ?? undefined}>{title}</h2>
-      <p className="panel-intro">
-        {role === 'executive'
-          ? 'CampusLens advises. You decide. Nothing is sent on its own.'
-          : 'Leadership decides. Nothing is sent on its own.'}
-      </p>
+      {/* On the Decision page (progress) the page header carries this line. */}
+      {!progress && (
+        <p className="panel-intro">
+          {role === 'executive'
+            ? 'CampusLens advises. You decide. Nothing is sent on its own.'
+            : 'Leadership decides. Nothing is sent on its own.'}
+        </p>
+      )}
       {decisions === null &&
         (loadError !== null ? (
           <div className="state-error state-panel error-panel" role="alert">

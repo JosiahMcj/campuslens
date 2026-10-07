@@ -231,7 +231,6 @@ describe('AuditLog — order, viewer and details', () => {
     const { container } = mount()
     const ids = [...container.querySelectorAll('.event')].map((item) => item.id)
     expect(ids).toEqual(['event-6', 'event-5', 'event-4', 'event-3', 'event-2', 'event-1'])
-    expect(container.textContent).toContain('Newest entries are first.')
   })
 
   it('reads the viewer as "You" and anyone else by address', () => {
