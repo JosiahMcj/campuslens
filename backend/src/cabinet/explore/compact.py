@@ -168,6 +168,8 @@ RULES = (
     "failing, most students); lowest_first the lowest (easiest).\n"
     "- A share or percent of students who are X uses the matching *_share "
     "measure.\n"
+    "- 'Students with holds' is the filter hold: hold on the asked measure "
+    "(headcount for 'how many'), not hold_rate.\n"
     "- Course difficulty: hardest/easiest classes is dfw_by_course; one named "
     "course's rate is course_dfw_trend; who taught a course is "
     "course_instructors.\n"
