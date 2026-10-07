@@ -7,6 +7,7 @@ import './chat.css'
 import './sidebar-nav.css'
 import './landing.css'
 import App from './App.tsx'
+import { ChartGallery } from './components/ChartGallery'
 import { applyPrefs } from './theme'
 
 // Before the first render, so the page never flashes the wrong theme.
@@ -14,7 +15,8 @@ applyPrefs()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {/* /dev/charts (development builds only): the chart templates with sample data. */}
+    {import.meta.env.DEV && window.location.pathname === '/dev/charts' ? <ChartGallery /> : <App />}
   </StrictMode>,
 )
 
