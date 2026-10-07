@@ -682,10 +682,12 @@ def _general_primary(step: StepResult, steps: list[StepResult]) -> Sentence:
         if m.id == "graduates":
             b.c(step, 0, "value").t(f" {_lower_first(subject)}{where} graduated from ")
             return b.t("the start of the records to the latest term.").done()
-        if m.id in ("past_due_students", "past_due_90_students"):
-            late = "more than 90 days " if m.id == "past_due_90_students" else ""
+        if m.id == "past_due_students":
             b.c(step, 0, "value").t(f" {_lower_first(subject)}{where} have a balance ")
-            return b.t(f"{late}past due.").done()
+            return b.t("past due.").done()
+        if m.id == "past_due_90_students":
+            b.c(step, 0, "value").t(f" {_lower_first(subject)}{where} have a balance ")
+            return b.t(str(step.cell(0, "window")).lower()).t(".").done()
         if m.id == "payment_plan_share":
             b.c(step, 0, "numerator").t(" of ").c(step, 0, "denominator")
             b.t(f" {_lower_first(subject)}{where} billed")
@@ -752,9 +754,11 @@ _FINANCE = ("budget_vs_actual", "revenue_by_source", "tuition_discount")
 
 
 def _over_under(b: _Builder, step: StepResult, row: int) -> _Builder:
-    """ " (8.9% over budget)" or " (1.2% under budget)"."""
+    """ " (8.9% over budget)" or " (1.2% below budget)"."""
     pct = _number(step.cell(row, "variance_pct"))
-    word = "over" if pct > 0 else "under"
+    # "below", not "under": the checker reads it as the decline word that a
+    # negative variance written without its sign needs.
+    word = "over" if pct > 0 else "below"
     if pct == 0:
         return b.t(" (on budget)")
     b.t(" (").magnitude(step, row, "variance_pct").t(f" {word} budget)")

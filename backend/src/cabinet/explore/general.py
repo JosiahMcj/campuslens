@@ -1550,6 +1550,7 @@ def run(
     window = {
         "grad_rate_4yr": "Within 4 academic years",
         "grad_rate_6yr": "Within 6 academic years",
+        "past_due_90_students": "More than 90 days past due",
     }.get(m.id)
     if window is not None:
         columns.append(("window", "Window", "text"))
