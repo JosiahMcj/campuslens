@@ -1,6 +1,7 @@
 import type { Findings } from '../api'
 import { getFinding } from '../api'
 import { findingLabel } from '../findingLabels'
+import { tidyNumbers } from '../displayFormat'
 import { findingDisplay } from '../states'
 import { FindingLink } from './FindingLink'
 
@@ -10,8 +11,8 @@ const STAT_IDS = ['M1', 'M2', 'M3', 'M4', 'M8'] as const
 /**
  * The five headline measures, room-scale for the projector. Each figure IS
  * a FindingLink (it opens the evidence) and shows the finding's `display`
- * string verbatim (no arithmetic in the UI) with tabular figures, the
- * figure's display label beneath.
+ * string (no arithmetic in the UI; only the house number style, see
+ * displayFormat.ts) with tabular figures, the figure's display label beneath.
  */
 export function StatRow({
   findings,
@@ -34,7 +35,7 @@ export function StatRow({
             className="stat-figure"
           >
             <span className={display.missing ? 'stat-display missing' : 'stat-display'}>
-              {display.text}
+              {tidyNumbers(display.text)}
             </span>
             <span className="stat-title">{findingLabel(id, finding.title)}</span>
           </FindingLink>

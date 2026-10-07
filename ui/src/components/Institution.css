@@ -2,8 +2,7 @@
  * the token block in index.css (DESIGN.md). Button looks come from the
  * shared .btn-* classes, never from here. */
 
-/* The page: the top bar names it "Institution settings" (the page's h1 is
-   visually hidden), so the intro starts close under the bar. */
+/* The page: its title and intro sit where every other page's do. */
 .institution-doc {
   margin-top: var(--space-5);
 }
@@ -15,7 +14,8 @@
   text-wrap: pretty;
 }
 
-/* The section links read as plain links, not buttons. */
+/* The section links: one section shows at a time, and the open one is
+   marked (ink, bold, a solid accent underline, aria-current). */
 .inst-toc {
   margin: var(--space-3) 0 var(--space-5);
 }
@@ -40,6 +40,18 @@
 
 .inst-toc a:hover {
   text-decoration-thickness: 2px;
+}
+
+.inst-toc a:active {
+  color: var(--navy-pressed);
+}
+
+.inst-toc a[aria-current='true'] {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration-color: var(--navy);
+  text-decoration-thickness: 3px;
+  text-underline-offset: 0.35em;
 }
 
 @media (max-width: 899px) {
@@ -127,7 +139,7 @@
   font-size: var(--text-md);
   color: var(--ink);
   background: var(--paper);
-  border: 1px solid var(--rule-strong);
+  border: 1px solid var(--field-border);
   border-radius: var(--radius-control);
 }
 
@@ -162,6 +174,7 @@
 }
 
 .inst-file-pick {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   min-height: var(--tap);
@@ -185,6 +198,13 @@
   min-width: 0;
 }
 
+/* A section's loading state: the shared skeleton lines. */
+.inst-loading {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+}
+
 .inst-busy {
   display: inline-flex;
   align-items: center;
@@ -197,11 +217,13 @@
   }
 }
 
-/* Connections: two read-only cards side by side where they fit. */
+/* Connections: two read-only cards side by side where they fit, one
+   under the other on a narrow or enlarged screen (never wider than it). */
 .connection-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
   gap: var(--space-4);
+  margin-top: var(--space-5);
 }
 
 .connection {
@@ -216,20 +238,31 @@
   font-size: var(--text-md);
 }
 
+/* The state pill: the shared granted (accent) or refused (red) mark beside
+   the words, on a quiet ground. */
 .connection-state {
-  margin: var(--space-1) 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
   font-weight: 600;
-  color: var(--ink-soft);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
 }
 
-.connection-state.on {
-  color: var(--ink);
+.connection-state .mark-granted,
+.connection-state .mark-refused {
+  flex: none;
 }
 
 .connection-settings {
   display: grid;
   gap: var(--space-1);
-  margin: var(--space-3) 0;
+  margin: var(--space-2) 0;
   padding: 0;
   list-style: none;
   font-size: var(--text-sm);
@@ -239,6 +272,12 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.connection h3,
+.connection .hint {
+  overflow-wrap: break-word;
 }
 
 .connection .hint {

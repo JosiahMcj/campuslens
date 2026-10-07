@@ -1,5 +1,8 @@
+// @vitest-environment jsdom
+
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import type { Session } from '../auth'
 import { DataAccessPanel, ProfilePanel, SettingsPanel } from './AccountPanels'
@@ -11,6 +14,29 @@ describe('SettingsPanel', () => {
     expect(html).toContain('>Dark</button>')
     expect(html).not.toContain('System')
   })
+
+  it('moves the choice with the arrow keys, one Tab stop per group', () => {
+    render(<SettingsPanel isAdmin={false} onOpenInstitution={() => {}} />)
+    const group = screen.getByRole('radiogroup', { name: 'Motion' })
+    const full = screen.getByRole('radio', { name: 'Full' })
+    const reduced = screen.getByRole('radio', { name: 'Reduced' })
+    const chosen = full.getAttribute('aria-checked') === 'true' ? full : reduced
+    const other = chosen === full ? reduced : full
+    expect(chosen.tabIndex).toBe(0)
+    expect(other.tabIndex).toBe(-1)
+    chosen.focus()
+    fireEvent.keyDown(group, { key: 'ArrowRight' })
+    expect(other.getAttribute('aria-checked')).toBe('true')
+    expect(other.tabIndex).toBe(0)
+    expect(document.activeElement).toBe(other)
+    fireEvent.keyDown(group, { key: 'ArrowLeft' })
+    expect(chosen.getAttribute('aria-checked')).toBe('true')
+    expect(document.activeElement).toBe(chosen)
+  })
+})
+
+afterEach(() => {
+  cleanup()
 })
 
 describe('DataAccessPanel', () => {
@@ -29,7 +55,9 @@ describe('DataAccessPanel', () => {
     expect(html).toContain('<li>Hold amount</li>')
     expect(html).not.toContain('Findings: M3')
     expect(html).toMatch(/Technical detail(?:(?!<\/details>).)*holds\.amount/s)
-    expect(html).toMatch(/^<div class="account-panel"><p class="panel-intro">/)
+    // The page intro comes from the page header (SidePanel), not the panel.
+    expect(html).toMatch(/^<div class="account-panel"><h3 class="panel-subhead">AI employees/)
+    expect(html).not.toMatch(/model/i)
   })
 
   it('gives each AI employee a one-line job, before and after a run', () => {
@@ -85,5 +113,7 @@ describe('ProfilePanel', () => {
     expect(html).toContain('Need access? Ask your administrator.')
     expect(html).toContain('You are signed out after 12 hours.')
     expect(html).not.toContain('by default')
+    // Signing out loses nothing: a secondary button, never the red one.
+    expect(html).toMatch(/<button type="button" class="btn-secondary[^"]*">Sign out<\/button>/)
   })
 })

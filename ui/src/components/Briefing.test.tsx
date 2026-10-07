@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { Decision, Finding, Findings } from '../api'
 import type { ModelSection } from '../states'
-import { BriefingSections, DecisionSection, Limitations } from './Briefing'
+import { BriefingSections, DecisionSection, EvidenceSources, Limitations } from './Briefing'
 
 function finding(id: string, display: string, extra: Partial<Finding> = {}): Finding {
   return {
@@ -65,6 +65,35 @@ function full(onOpenStaffActions?: () => void): string {
   )
 }
 
+describe('the written explanations, unavailable', () => {
+  it('says "Written explanation unavailable", never "Model"', () => {
+    const html = renderToStaticMarkup(
+      <BriefingSections
+        findings={FINDINGS}
+        fictional
+        enrollment={null}
+        studentSuccess={{ kind: 'unavailable', reason: 'timed out' }}
+        chiefSummary={{ kind: 'unavailable', reason: 'timed out' }}
+        onCheckAgain={() => {}}
+        onOpenEvidence={() => {}}
+      />,
+    )
+    expect(html.split('<h3>Written explanation unavailable</h3>')).toHaveLength(3)
+    // The words on screen (tags and class names aside) never say "model".
+    expect(html.replace(/<[^>]*>/g, ' ')).not.toMatch(/model/i)
+  })
+})
+
+describe('the Evidence page', () => {
+  it('keeps section 4\'s opening sentence in the briefing, and leaves the page intro to the header', () => {
+    const page = renderToStaticMarkup(
+      <EvidenceSources findings={FINDINGS} fictional onOpenEvidence={() => {}} headingId={null} />,
+    )
+    expect(page).not.toContain('Every number in this briefing')
+    expect(full()).toContain('Every number in this briefing')
+  })
+})
+
 describe('the full briefing', () => {
   it('never shows a bracketed finding code; the number itself is the link', () => {
     const html = full()
@@ -84,8 +113,9 @@ describe('the full briefing', () => {
   it('has one "About this answer" for the whole panel, however many sections a model wrote', () => {
     const html = full()
     expect(html.split('About this answer')).toHaveLength(2)
-    // It closes the briefing, after section 5.
-    expect(html.indexOf('About this answer')).toBeGreaterThan(html.indexOf('id="s-actions"'))
+    // It closes section 1 (who wrote the briefing), never between sections.
+    expect(html.indexOf('About this answer')).toBeGreaterThan(html.indexOf('id="s-summary"'))
+    expect(html.indexOf('About this answer')).toBeLessThan(html.indexOf('id="s-measure"'))
   })
 
   it('section 3 links each figure once: no stray Evidence link, no linked caption', () => {
@@ -120,8 +150,11 @@ describe('the full briefing', () => {
   it('section 2 adds the comparison table and folds the analyst text', () => {
     const html = full()
     const s2 = html.slice(html.indexOf('id="s-measure"'), html.indexOf('id="s-groups"'))
-    expect(s2).toContain('125 students (2025-11-20)')
-    expect(s2).toContain('1,872 credit hours (2025-11-20)')
+    expect(s2).toContain('125 students (Nov 20, 2025)')
+    expect(s2).toContain('1,872 credit hours (Nov 20, 2025)')
+    // The server's "−4.8 %" is drawn in the house style, without the space.
+    expect(s2).toContain('<span class="num">−4.8%</span>')
+    expect(s2).not.toContain('4.8 %')
     expect(s2).toMatch(/<details[^>]*>.*Show the Enrollment Analyst&#x27;s explanation/s)
   })
 
