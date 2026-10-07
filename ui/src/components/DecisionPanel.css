@@ -1,0 +1,36 @@
+/* The decision panel (DecisionPanel.tsx). Tokens only (DESIGN.md). The card
+   keeps its gold wash; the "Approved by …" line is plain ink with an accent
+   check, so a recorded approval never reads as a warning on the amber. */
+
+.decision-card .approved-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink);
+}
+
+.decision-card .approved-line svg {
+  flex: none;
+  color: var(--navy);
+}
+
+/* A step that cannot move until someone else acts (the office has no
+   mailbox): quiet ink, a dashed mark, never the accent "next" look. */
+.decision-steps .step-waiting {
+  color: var(--ink);
+}
+
+.decision-steps .step-waiting .step-mark {
+  border-style: dashed;
+}
+
+.decision-loading {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* Four short steps keep to one line on a desktop decision card. */
+.decision-card .decision-steps {
+  column-gap: var(--space-3);
+}

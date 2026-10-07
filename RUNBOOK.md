@@ -558,6 +558,25 @@ with the default `outbox` it is written to `var/outbox/<slug>/<id>.eml` and
 nothing leaves the machine. An action is sent at most once per dataset; a
 failed send is recorded and the same button retries it.
 
+For a demonstration on the fictional data, `make demo-mailboxes` gives every
+office the actions name (Student Success, Financial Aid and each office with
+holds) the address `<office-slug>@demo.test`, so Send can be shown working:
+
+```bash
+make demo-mailboxes                                   # CABINET_DB, default var/cabinet.db
+CABINET_DB=/path/to/cabinet.db make demo-mailboxes INSTITUTION=bootstrap
+```
+
+It only adds a mailbox to an office that has none (an address an admin set is
+kept), records one entry in the audit log, and prints what it added; running it
+again changes nothing. It refuses unless the institution's active dataset is the
+fictional demonstration data. `demo.test` is a reserved domain, so even with
+`CABINET_OUTBOUND=smtp` nothing can reach a real mailbox; with the default
+outbox the messages land in the `outbox/` folder next to the database
+(`var/outbox/<slug>/` by default). To undo it, remove the rows in Institution
+settings, Offices. Until an office has a mailbox, the Staff actions page shows
+one notice saying so and each card says "Can't send yet".
+
 The sign-in link is `CABINET_PUBLIC_URL` (for example
 `https://campuslens.example.edu`) plus `/view/staff-actions`. Set it in
 production; without it the message names the page instead of linking it.

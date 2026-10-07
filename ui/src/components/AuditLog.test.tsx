@@ -64,13 +64,15 @@ describe('AuditLog', () => {
   it('writes each entry as a plain sentence, with no codes, ids or raw records', () => {
     mount()
     const text = document.body.textContent ?? ''
-    expect(text).toContain('The executive asked “What should I know about spring registration?”.')
+    expect(text).toContain('The executive asked “What should I know about spring registration?”')
+    // No doubled punctuation after a quoted question.
+    expect(text).not.toContain('?”.')
     expect(text).toContain('The Chief of Staff gave the Enrollment Analyst its part of the question (2 fields).')
     expect(text).toContain('The Enrollment Analyst was given access to 2 fields.')
     expect(text).toContain('The executive approved the leadership decision.')
     expect(text).toContain('staff@example.edu sent the message to Financial Aid.')
     expect(text).toContain(
-      'The Enrollment Analyst asked to see the “Hold amount” field and was refused before any model was called.',
+      'The Enrollment Analyst asked to see the “Hold amount” field and was refused before any AI employee was asked.',
     )
     for (const raw of [
       'decision.approved',
@@ -165,7 +167,7 @@ describe('AuditLog', () => {
     })
     const text = document.body.textContent ?? ''
     expect(text).toContain(
-      'staff@example.edu moved the Bursar action from to do to in progress and changed who has the Bursar action.',
+      'staff@example.edu moved the Bursar action from To do to In progress and changed who has the Bursar action.',
     )
     expect(text).toContain('president@example.edu added a note to the Bursar action.')
     expect(text).toContain("staff@example.edu sent the Bursar action to that office's mailbox.")
@@ -176,17 +178,17 @@ describe('AuditLog', () => {
     }
   })
 
-  it('offers one "Test a refusal" button that runs the refusal test', () => {
+  it('offers one "Show how a refusal works" button that runs the refusal test', () => {
     const onShow = vi.fn()
     mount({ onShowDeniedRequest: onShow })
-    fireEvent.click(screen.getByRole('button', { name: 'Test a refusal' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show how a refusal works' }))
     expect(onShow).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('button', { name: /Show a denied/ })).toBeNull()
   })
 
   it('keeps the refusal test from the reviewer', () => {
     mount({ readOnly: true })
-    expect(screen.queryByRole('button', { name: 'Test a refusal' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Show how a refusal works' })).toBeNull()
   })
 
   it('shows the refusal in words and highlights its entry', () => {
@@ -194,7 +196,7 @@ describe('AuditLog', () => {
     Element.prototype.scrollIntoView = scroll
     mount({ deniedRequest: { kind: 'shown', reason: 'raw', eventId: 6 } })
     expect(screen.getByRole('status').textContent).toContain(
-      'The Enrollment Analyst asked to see the “Hold amount” field and was refused before any model was called.',
+      'The Enrollment Analyst asked to see the “Hold amount” field and was refused before any AI employee was asked.',
     )
     expect(document.getElementById('event-6')?.className).toContain('highlighted')
     expect(scroll).toHaveBeenCalled()
@@ -229,7 +231,6 @@ describe('AuditLog — order, viewer and details', () => {
     const { container } = mount()
     const ids = [...container.querySelectorAll('.event')].map((item) => item.id)
     expect(ids).toEqual(['event-6', 'event-5', 'event-4', 'event-3', 'event-2', 'event-1'])
-    expect(container.textContent).toContain('Newest entries are first.')
   })
 
   it('reads the viewer as "You" and anyone else by address', () => {
@@ -250,5 +251,134 @@ describe('AuditLog — order, viewer and details', () => {
     const details = granted.querySelector('details')!
     expect(details.textContent).toContain('Recorded')
     expect(details.textContent).toMatch(/2026-10-05 \d{2}:00:00 \S+/)
+  })
+})
+
+describe('AuditLog — grants, refusals, people and paging', () => {
+  it('names the counseling total only for the counseling grant', () => {
+    mount({
+      events: [
+        event(1, 'data.granted', 'chief_of_staff', {
+          task_id: 'q-1',
+          finding_id: 'M9',
+          aggregate_only: true,
+          fields_read: ['counseling.counseling_notes'],
+        }),
+        event(2, 'data.granted', 'chief_of_staff', {
+          task_id: 'explore-1',
+          step: 0,
+          analysis_id: 'gpa_by_major',
+          aggregate_only: true,
+          fields_read: ['academic_programs.name', 'academic_programs.college_code'],
+        }),
+      ],
+    })
+    expect(document.querySelector('#event-1')?.textContent).toContain(
+      'The Chief of Staff was given the authorized counseling total, with no student records.',
+    )
+    const other = document.querySelector('#event-2')?.textContent ?? ''
+    expect(other).toContain('The Chief of Staff was given totals for 2 fields (Major name, College), never student records.')
+    expect(other).not.toContain('counseling')
+  })
+
+  it('says what kind of refusal each one was, with the reason and the question in Details', () => {
+    mount({
+      events: [
+        event(14, 'question.asked', 'president@example.edu', {
+          question: 'Which students are in counseling?',
+          route: '/explore',
+          role: 'executive',
+        }),
+        event(15, 'data.refused', 'chief_of_staff', {
+          task_id: 'explore-14',
+          question_event_id: 14,
+          category: 'counseling',
+          reason: 'Individual counseling and spiritual-care records are never disclosed.',
+          before: 'planning and any model call',
+        }),
+        event(16, 'data.refused', '2', {
+          reason: 'CSRF token missing or does not match the session',
+          method: 'POST',
+          path: '/explore',
+        }),
+        event(17, 'data.refused', '3', {
+          reason: "role 'reviewer' is not allowed on POST /staff-actions/1/send",
+          method: 'POST',
+          path: '/staff-actions/1/send',
+        }),
+      ],
+    })
+    const counseling = document.querySelector('#event-15')!
+    expect(counseling.textContent).toContain('A counseling question was refused before any AI employee was asked.')
+    const details = counseling.querySelector('details')!.textContent ?? ''
+    expect(details).toContain('Individual counseling and spiritual-care records are never disclosed.')
+    expect(details).toContain('Which students are in counseling?')
+    expect(document.querySelector('#event-16')?.textContent).toContain(
+      'A request without a valid security check was refused.',
+    )
+    expect(document.querySelector('#event-17')?.textContent).toContain(
+      'A request the reviewer may not make was refused, and nothing was changed.',
+    )
+    const text = document.body.textContent ?? ''
+    for (const raw of ['/explore', 'POST', 'CSRF', 'model', '/staff-actions']) {
+      expect(text).not.toContain(raw)
+    }
+  })
+
+  it('lists one person once in "Who", however the log recorded them', () => {
+    mount({
+      viewerEmail: 'staff@example.edu',
+      events: [
+        event(1, 'question.asked', 'executive', { question: 'What should I know?' }),
+        event(2, 'question.asked', 'president@example.edu', {
+          question: 'Which majors grew?',
+          route: '/explore',
+          role: 'executive',
+        }),
+        event(3, 'admin.changed', '7', { action: 'office_contacts', by: 'Admin@Example.edu' }),
+        event(4, 'data.refused', '7', {
+          reason: 'CSRF token missing or does not match the session',
+          method: 'POST',
+          path: '/explore',
+        }),
+      ],
+    })
+    const who = screen.getByLabelText('Who') as HTMLSelectElement
+    const names = [...who.options].map((o) => o.textContent)
+    expect(names).toEqual(['Anyone', 'admin@example.edu', 'president@example.edu'])
+    // Choosing the executive's address also finds the approved question.
+    fireEvent.change(who, { target: { value: 'president@example.edu' } })
+    expect([...document.querySelectorAll('.event')].map((item) => item.id)).toEqual(['event-2', 'event-1'])
+    expect(document.body.textContent).toContain('president@example.edu asked “What should I know?”')
+    // An address keeps its own case at the start of a sentence.
+    fireEvent.change(who, { target: { value: 'admin@example.edu' } })
+    expect(document.body.textContent).toContain('Admin@Example.edu updated the office mailboxes.')
+  })
+
+  it('lists the newest 25 entries, then more on request, always including a highlighted one', () => {
+    const many = Array.from({ length: 30 }, (_, index) =>
+      event(index + 1, 'briefing.produced', 'chief_of_staff', {}),
+    )
+    mount({ events: many })
+    expect(document.querySelectorAll('.event')).toHaveLength(25)
+    expect(screen.getByText('Showing the newest 25 of 30.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Show 5 more' }))
+    expect(document.querySelectorAll('.event')).toHaveLength(30)
+    expect(screen.queryByRole('button', { name: /more/ })).toBeNull()
+    cleanup()
+
+    Element.prototype.scrollIntoView = vi.fn()
+    mount({ events: many, highlightEventId: 2 })
+    expect(document.querySelectorAll('.event')).toHaveLength(29)
+    expect(document.getElementById('event-2')?.className).toContain('highlighted')
+  })
+
+  it('shows a skeleton while loading, and offers the refusal demonstration only once loaded', () => {
+    mount({ events: null })
+    const loading = screen.getByRole('status')
+    expect(loading.getAttribute('aria-busy')).toBe('true')
+    expect(loading.querySelectorAll('.skeleton-line').length).toBeGreaterThan(0)
+    const button = screen.getByRole('button', { name: 'Show how a refusal works' }) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
   })
 })

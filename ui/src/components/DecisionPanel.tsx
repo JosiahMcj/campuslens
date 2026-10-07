@@ -6,6 +6,7 @@ import { plainSentence } from '../errors'
 import { formatTimestamp, personName } from '../states'
 import { AidQueueNotice, type AidQueueUiState } from './AidQueueNotice'
 import { ApprovedIcon, SentIcon } from './icons'
+import './DecisionPanel.css'
 
 /** What the panel knows about one decision's dispatch: the API's dispatch
  * state, plus whether a Prepare or Send is in flight and its error. */
@@ -80,6 +81,26 @@ function approvalTime(events: AuditEvent[], decisionId: string): string | null {
   return null
 }
 
+/** Sign-in roles as a person's title. */
+const ROLE_TITLES: Record<string, string> = {
+  executive: 'Executive',
+  admin: 'Administrator',
+  staff: 'Staff',
+}
+
+/** The approver's role, when the log has recorded it for that address
+ * (each question carries the asker's role). */
+function recordedRole(events: AuditEvent[], email: string): string | null {
+  const wanted = email.trim().toLowerCase()
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event.actor.toLowerCase() === wanted && typeof event.payload.role === 'string') {
+      return ROLE_TITLES[event.payload.role] ?? null
+    }
+  }
+  return null
+}
+
 function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value : null
 }
@@ -101,19 +122,25 @@ function DecisionSteps({
   office,
   prepared,
   sent,
+  mailbox,
   queue,
 }: {
   approved: boolean
   office: string
   prepared: boolean
   sent: boolean
+  /** False when the office has no mailbox yet, so the send step waits. */
+  mailbox: boolean
   /** null when this decision opens no review queue. */
   queue: boolean | null
 }) {
-  const steps: { label: string; done: boolean }[] = [
-    { label: 'Leadership approves', done: approved },
-    { label: `Message to ${office} prepared`, done: prepared },
-    { label: `Sent to the ${office} mailbox`, done: sent },
+  // Short labels, so the four steps keep to one line on a desktop.
+  const steps: { label: string; done: boolean; waiting?: boolean }[] = [
+    { label: 'Approved', done: approved },
+    { label: 'Message ready', done: prepared },
+    !sent && !mailbox
+      ? { label: `Waiting: ${office} needs a mailbox`, done: false, waiting: true }
+      : { label: `Sent to ${office}`, done: sent },
     ...(queue !== null ? [{ label: 'Review queue ready', done: queue }] : []),
   ]
   const next = steps.findIndex((step) => !step.done)
@@ -121,8 +148,16 @@ function DecisionSteps({
     <ol className="decision-steps" aria-label="Where this decision stands">
       {steps.map((step, index) => (
         <li
-          key={step.label}
-          className={step.done ? 'step-done' : index === next ? 'step-next' : 'step-later'}
+          key={index}
+          className={
+            step.done
+              ? 'step-done'
+              : step.waiting === true
+                ? 'step-waiting'
+                : index === next
+                  ? 'step-next'
+                  : 'step-later'
+          }
         >
           <span className="step-mark" aria-hidden="true">
             {step.done ? '✓' : index + 1}
@@ -130,7 +165,13 @@ function DecisionSteps({
           <span>
             {step.label}
             <span className="visually-hidden">
-              {step.done ? ': done' : index === next ? ': next' : ': not yet'}
+              {step.done
+                ? ': done'
+                : step.waiting === true
+                  ? ''
+                  : index === next
+                    ? ': next'
+                    : ': not yet'}
             </span>
           </span>
         </li>
@@ -197,11 +238,14 @@ export function DecisionPanel({
       className="decision-panel"
     >
       <h2 id={headingId ?? undefined}>{title}</h2>
-      <p className="panel-intro">
-        {role === 'executive'
-          ? 'CampusLens advises. You decide. Nothing is sent on its own.'
-          : 'Leadership decides. Nothing is sent on its own.'}
-      </p>
+      {/* On the Decision page (progress) the page header carries this line. */}
+      {!progress && (
+        <p className="panel-intro">
+          {role === 'executive'
+            ? 'CampusLens advises. You decide. Nothing is sent on its own.'
+            : 'Leadership decides. Nothing is sent on its own.'}
+        </p>
+      )}
       {decisions === null &&
         (loadError !== null ? (
           <div className="state-error state-panel error-panel" role="alert">
@@ -213,7 +257,12 @@ export function DecisionPanel({
             )}
           </div>
         ) : (
-          <p className="status-line">Loading the decision…</p>
+          <div role="status" aria-busy="true" className="decision-loading">
+            <span className="visually-hidden">Loading the decision…</span>
+            <div className="skeleton skeleton-line" />
+            <div className="skeleton skeleton-line" />
+            <div className="skeleton skeleton-line short" />
+          </div>
         ))}
       {decisions !== null && decisions.length === 0 && (
         <p className="state-empty hint">
@@ -231,9 +280,15 @@ export function DecisionPanel({
         // before the list reloads.
         const approverEmail =
           text(decision.approved_by) ?? text(dispatchState?.info?.approved_by)
+        // "you", or the address with the role the log recorded for it.
+        const approverRole =
+          approverEmail !== null && personName(approverEmail, userEmail) !== 'you'
+            ? recordedRole(events, approverEmail)
+            : null
         const approverName =
           approverEmail !== null
-            ? personName(approverEmail, userEmail)
+            ? personName(approverEmail, userEmail) +
+              (approverRole !== null ? ` (${approverRole})` : '')
             : approvedHere && canApprove
               ? 'you'
               : null
@@ -263,6 +318,7 @@ export function DecisionPanel({
                 office={office}
                 prepared={dispatch !== null}
                 sent={dispatch?.status === 'sent'}
+                mailbox={dispatchState?.info == null || officeContact !== null}
                 queue={
                   dispatchState?.info?.aid_queue?.supported === true
                     ? dispatchState.info.aid_queue.count !== null
@@ -297,9 +353,11 @@ export function DecisionPanel({
                 tabIndex={-1}
                 ref={focusWhen(`${decision.id}:approved`)}
               >
-                <ApprovedIcon />{' '}
-                {`Approved by ${approverName ?? 'leadership'}`}
-                {approvedAt !== null && ` at ${formatTimestamp(approvedAt)}`}.
+                <ApprovedIcon />
+                <span>
+                  {`Approved by ${approverName ?? 'leadership'}`}
+                  {approvedAt !== null && ` at ${formatTimestamp(approvedAt)}`}.
+                </span>
               </p>
             )}
             {!approved && approveFailure !== null && (
@@ -323,7 +381,9 @@ export function DecisionPanel({
                         ref={focusWhen(`${decision.id}:prepared`, dispatch !== null)}
                       >
                         {dispatch === null
-                          ? 'Not prepared yet'
+                          ? canCompose
+                            ? 'Not prepared yet'
+                            : 'Not prepared yet. Staff or leadership prepares it.'
                           : dispatch.status === 'sent'
                             ? 'Sent'
                             : dispatch.status === 'failed'

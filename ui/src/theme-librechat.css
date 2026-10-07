@@ -274,14 +274,14 @@
 .question-row input {
   flex-basis: 100%;
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--rule-strong);
+  border: 1px solid var(--field-border);
   border-radius: var(--radius-surface);
   background: var(--paper);
   box-shadow: var(--shadow);
 }
 
 .question-row input:focus {
-  border-color: var(--rule-strong);
+  border-color: var(--field-border);
   outline: 2px solid color-mix(in srgb, var(--navy) 45%, transparent);
   outline-offset: 0;
 }
@@ -323,6 +323,20 @@
   gap: var(--space-3);
   border-block: none;
   margin-top: 0;
+}
+
+/* A narrow or enlarged screen (360 px at 150 %): as many figures per row
+   as fit whole (9rem each at least), so no label breaks inside a word. */
+@media (max-width: 30rem) {
+  .stat-row,
+  .msg-body .stat-row {
+    grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+  }
+
+  .stat-row .stat-figure {
+    min-width: 0;
+    overflow-wrap: break-word;
+  }
 }
 
 @media (min-width: 1200px) {

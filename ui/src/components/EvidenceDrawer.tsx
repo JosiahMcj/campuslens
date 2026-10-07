@@ -6,6 +6,7 @@ import { fieldLabels } from '../fieldLabels'
 import { findingDefinition, findingLabel } from '../findingLabels'
 import { findingDisplay, formatTimestamp } from '../states'
 import { SidePanel } from './SidePanel'
+import { formatIsoDate, tidyNumbers } from '../displayFormat'
 
 interface EvidenceDrawerProps {
   finding: Finding
@@ -56,7 +57,7 @@ function comparisonValue(key: string, value: unknown): string {
       ? value.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
       : value.toLocaleString('en-US')
   }
-  return String(value)
+  return typeof value === 'string' ? formatIsoDate(value) : String(value)
 }
 
 /**
@@ -111,7 +112,9 @@ export function EvidenceDrawer({
 
         <p className="evidence-value">
           <span className={display.missing ? 'drawer-value missing' : 'drawer-value'}>
-            {withheld !== null ? `${capitalize(display.text)} students` : display.text}
+            {withheld !== null
+              ? `${capitalize(tidyNumbers(display.text))} students`
+              : tidyNumbers(display.text)}
           </span>
         </p>
         {withheld !== null && <p className="hint">{withheld}</p>}

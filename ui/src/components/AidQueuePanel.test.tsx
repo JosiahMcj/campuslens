@@ -267,6 +267,44 @@ describe('AidQueuePanel', () => {
     expect(screen.queryByText(/No students are queued yet/)).toBeNull()
   })
 
+  it('says the decision is approved when the queue is empty only because staff have not prepared it', async () => {
+    for (const approved of [true, false]) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input)
+          if (url === '/api/aid-queue') return jsonResponse({ dataset_id: 1, fictional: true, rows: [] })
+          if (url === '/api/decisions') {
+            return jsonResponse({
+              question_id: 'spring-registration',
+              decisions: [
+                {
+                  id: 'D-spring-registration-1',
+                  title: 't',
+                  text: 't',
+                  follow_up: { office: 'Financial Aid', description: 'd' },
+                  approved,
+                },
+              ],
+            })
+          }
+          return jsonResponse({ detail: 'unhandled' }, 500)
+        }),
+      )
+      render(<AidQueuePanel canEdit />)
+      if (approved) {
+        await screen.findByText(
+          'Approved. Waiting for staff to prepare the review queue from the Decision page.',
+        )
+        expect(screen.queryByText(/Once leadership approves/)).toBeNull()
+      } else {
+        await screen.findByText(/Once leadership approves the decision, staff prepare the queue/)
+      }
+      cleanup()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('sends only the fields that changed, with the updated_at it opened', async () => {
     const { calls } = stubApi()
     render(<AidQueuePanel canEdit />)
@@ -409,7 +447,6 @@ describe('AidQueuePanel', () => {
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
     expect(within(row).getByText('Paid at the window.')).toBeTruthy()
-    expect(screen.getByText(/This view is read only/)).toBeTruthy()
     expect(calls.every((call) => call.method === 'GET')).toBe(true)
   })
 

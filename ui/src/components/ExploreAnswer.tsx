@@ -1,6 +1,7 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 
 import {
+  answerColumns,
   answerNotes,
   cellDomId,
   dedupeLabels,
@@ -8,19 +9,20 @@ import {
   formatCell,
   linkSentence,
   plannerLabel,
+  quotedColumns,
   sourceLabel,
   SUPPRESSED,
   motionAllowed,
   traceLines,
   traceSummary,
   type ExploreTraceEvent,
-  visibleColumns,
   type ExploreClaim,
   type ExploreResponse,
   type ExploreStep,
 } from '../explore'
 import { FIELD_LABELS, fieldLabels, normalizeField } from '../fieldLabels'
 import './Explore.css'
+import { SearchIcon } from './icons'
 import { LensMark } from './LensMark'
 import { Thinking, TraceList } from './Thinking'
 
@@ -117,6 +119,8 @@ export function Thought({
   )
 }
 
+/** Questions to ask instead: the same card and rows as the home screen's
+ * "Try asking", so a suggestion looks the same wherever it appears. */
 function Suggestions({
   title,
   questions,
@@ -128,20 +132,24 @@ function Suggestions({
   onAsk: (question: string) => void
   busy: boolean
 }) {
+  const titleId = useId()
   if (questions.length === 0) return null
   return (
-    <div className="explore-suggestions">
-      <p className="explore-suggestions-title">{title}</p>
-      <ul className="explore-chip-row">
+    <div className="try-card explore-suggestions">
+      <p className="explore-try-title try-card-title" id={titleId}>
+        {title}
+      </p>
+      <ul className="try-list" aria-labelledby={titleId}>
         {questions.slice(0, 3).map((question) => (
           <li key={question}>
             <button
               type="button"
-              className="chip explore-chip"
+              className="try-row"
               disabled={busy}
               onClick={() => onAsk(question)}
             >
-              {question}
+              <SearchIcon />
+              <span>{question}</span>
             </button>
           </li>
         ))}
@@ -150,10 +158,41 @@ function Suggestions({
   )
 }
 
+/** A column of figures (its header sits over the figures, on the right). */
+function numericColumn(step: ExploreStep, index: number): boolean {
+  const kind = step.table.columns[index].kind
+  if (kind !== undefined) return kind !== 'text'
+  return step.table.rows.some((row) => typeof row[index] === 'number')
+}
+
+/** True while a table box has columns scrolled out of view on its right,
+ * for the fade that says there is more. */
+function useMoreOnRight() {
+  const ref = useRef<HTMLDivElement>(null)
+  const [more, setMore] = useState(false)
+  useEffect(() => {
+    const box = ref.current
+    if (box === null) return
+    const check = () => setMore(box.scrollLeft + box.clientWidth < box.scrollWidth - 1)
+    check()
+    box.addEventListener('scroll', check, { passive: true })
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(check)
+    observer?.observe(box)
+    const table = box.firstElementChild
+    if (table !== null) observer?.observe(table)
+    return () => {
+      box.removeEventListener('scroll', check)
+      observer?.disconnect()
+    }
+  }, [])
+  return { ref, more }
+}
+
 function StepTable({
   answerKey,
   index,
   step,
+  quoted,
   expanded,
   onExpand,
   highlight,
@@ -161,66 +200,108 @@ function StepTable({
   answerKey: string
   index: number
   step: ExploreStep
+  /** The column keys the answer quotes from this table, in order. */
+  quoted: readonly string[]
   expanded: boolean
   onExpand: () => void
   highlight: ExploreClaim | null
 }) {
-  const columns = visibleColumns(step)
+  const [allColumns, setAllColumns] = useState(false)
+  const { ref, more } = useMoreOnRight()
+  const { columns, hidden } = answerColumns(step, quoted, allColumns)
   const rows = step.table.rows
   if (rows.length === 0 || columns.length === 0) {
     return <p className="explore-empty">This step found no rows to show.</p>
   }
-  const shown = expanded ? rows : rows.slice(0, TABLE_PREVIEW_ROWS)
+  // Never fold away a single row (the whole-population row under a top 10).
+  const folds = rows.length > TABLE_PREVIEW_ROWS + 1
+  const shown = expanded || !folds ? rows : rows.slice(0, TABLE_PREVIEW_ROWS)
   return (
     <>
-      <div className="explore-table-wrap" role="region" aria-label={`Step ${index + 1} table`} tabIndex={0}>
-        <table className="explore-table">
-          <thead>
-            <tr>
-              {columns.map((c) => (
-                <th key={step.table.columns[c].key} scope="col">
-                  {step.table.columns[c].label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((row, r) => (
-              <tr key={r}>
-                {columns.map((c) => {
-                  const key = step.table.columns[c].key
-                  const value = row[c] ?? null
-                  const lit =
-                    highlight !== null &&
-                    highlight.table === index &&
-                    highlight.row === r &&
-                    highlight.column === key
-                  return (
-                    <td
-                      key={key}
-                      id={cellDomId(answerKey, index, r, key)}
-                      tabIndex={-1}
-                      className={[
-                        typeof value === 'number' ? 'explore-num-cell' : '',
-                        value === SUPPRESSED ? 'explore-withheld' : '',
-                        lit ? 'explore-cell-lit' : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ') || undefined}
-                    >
-                      {formatCell(value)}
-                    </td>
-                  )
-                })}
+      <div className="explore-table-frame" data-more={more}>
+        <div
+          ref={ref}
+          className="explore-table-wrap"
+          role="region"
+          aria-label={`Step ${index + 1} table`}
+          tabIndex={0}
+        >
+          <table className="explore-table">
+            <thead>
+              <tr>
+                {columns.map((c) => (
+                  <th
+                    key={step.table.columns[c].key}
+                    scope="col"
+                    className={numericColumn(step, c) ? 'explore-num-cell' : undefined}
+                  >
+                    {step.table.columns[c].label}
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {shown.map((row, r) => (
+                <tr key={r}>
+                  {columns.map((c) => {
+                    const { key, kind } = step.table.columns[c]
+                    const value = row[c] ?? null
+                    const lit =
+                      highlight !== null &&
+                      highlight.table === index &&
+                      highlight.row === r &&
+                      highlight.column === key
+                    return (
+                      <td
+                        key={key}
+                        id={cellDomId(answerKey, index, r, key)}
+                        tabIndex={-1}
+                        className={[
+                          typeof value === 'number' ? 'explore-num-cell' : '',
+                          value === SUPPRESSED ? 'explore-withheld' : '',
+                          lit ? 'explore-cell-lit' : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ') || undefined}
+                      >
+                        {formatCell(value, kind)}
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
-      {rows.length > TABLE_PREVIEW_ROWS && !expanded && (
-        <button type="button" className="link-button explore-show-all" onClick={onExpand}>
-          Show all {rows.length}
-        </button>
+      {((folds && !expanded) || hidden > 0) && (
+        <p className="explore-table-more">
+          {folds && !expanded && (
+            <>
+              <span>
+                Showing {TABLE_PREVIEW_ROWS} of {rows.length.toLocaleString('en-US')} rows
+              </span>{' '}
+              <button
+                type="button"
+                className="link-button explore-show-all"
+                aria-label={`Show all ${rows.length.toLocaleString('en-US')} rows`}
+                onClick={onExpand}
+              >
+                Show all
+              </button>
+            </>
+          )}
+          {folds && !expanded && hidden > 0 && <span aria-hidden="true"> · </span>}
+          {hidden > 0 && (
+            <button
+              type="button"
+              className="link-button explore-show-all"
+              onClick={() => setAllColumns(true)}
+            >
+              Show all columns ({hidden} more)
+            </button>
+          )}
+        </p>
       )}
     </>
   )
@@ -412,6 +493,7 @@ export function ExploreAnswer({
                 answerKey={answerKey}
                 index={index}
                 step={step}
+                quoted={quotedColumns(response, index)}
                 expanded={expanded[index] === true}
                 onExpand={() => setExpanded((previous) => ({ ...previous, [index]: true }))}
                 highlight={highlight}
@@ -428,7 +510,7 @@ export function ExploreAnswer({
               ))}
               {step.fields_read.length > 0 && (
                 <p className="explore-read">
-                  <span className="explore-read-label">Data it read:</span>{' '}
+                  <span className="explore-read-label">Data it used:</span>{' '}
                   {readLabels(step.fields_read).join('; ')}. Totals only, never a single student.
                 </p>
               )}

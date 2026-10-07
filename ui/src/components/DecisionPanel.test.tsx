@@ -434,6 +434,87 @@ describe('DecisionPanel — Send confirmation and focus', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
     expect(onApprove).toHaveBeenCalledTimes(1)
     const line = await screen.findByText(/Approved by leadership/)
-    expect(document.activeElement).toBe(line)
+    expect(document.activeElement).toBe(line.closest('.approved-line'))
+  })
+})
+
+describe('DecisionPanel — steps, approver and loading', () => {
+  function page(
+    options: { dispatches?: Record<string, DispatchUiState>; role?: Role; events?: AuditEvent[]; decision?: Decision } = {},
+  ): string {
+    return renderToStaticMarkup(
+      <DecisionPanel
+        decisions={[options.decision ?? { ...APPROVED, approved_by: 'exec@example.edu' }]}
+        events={options.events ?? []}
+        canApprove={options.role === undefined || options.role === 'executive'}
+        role={options.role ?? 'executive'}
+        userEmail="exec@example.edu"
+        approving={false}
+        approveError={null}
+        approvedTasks={{}}
+        dispatches={options.dispatches ?? {}}
+        onApprove={() => {}}
+        onPrepareDispatch={() => {}}
+        onSendDispatch={() => {}}
+        progress
+      />,
+    )
+  }
+
+  it('shows short steps, and a send step that waits while the office has no mailbox', () => {
+    const waiting = page({ dispatches: ready({ ...DRAFT, office_contact: null }) })
+    expect(waiting).toContain('Approved')
+    expect(waiting).toContain('Message ready')
+    expect(waiting).toContain('Waiting: Financial Aid needs a mailbox')
+    expect(waiting).toContain('step-waiting')
+    expect(waiting).not.toContain('Sent to the Financial Aid mailbox')
+    const sendable = page({ dispatches: ready(DRAFT) })
+    expect(sendable).toContain('Sent to Financial Aid')
+    expect(sendable).not.toContain('needs a mailbox')
+  })
+
+  it('shows the approver with the role the log recorded, in plain ink', () => {
+    const html = page({
+      role: 'staff',
+      decision: { ...APPROVED, approved_by: 'president@example.edu' },
+      events: [
+        {
+          id: 1,
+          ts: '2026-09-26T12:00:00+00:00',
+          type: 'question.asked',
+          actor: 'president@example.edu',
+          payload: { question: 'Which majors grew?', route: '/explore', role: 'executive' },
+        },
+      ],
+    })
+    expect(html).toContain('Approved by president@example.edu (Executive)')
+    expect(html).toContain('class="approved-line"')
+  })
+
+  it('says who prepares the message to a role that cannot', () => {
+    const html = page({ role: 'reviewer', decision: { ...APPROVED, approved_by: 'president@example.edu' } })
+    expect(html).toContain('Not prepared yet. Staff or leadership prepares it.')
+    expect(page()).toContain('Not prepared yet<')
+  })
+
+  it('shows a skeleton while the decision loads', () => {
+    const html = renderToStaticMarkup(
+      <DecisionPanel
+        decisions={null}
+        events={[]}
+        canApprove
+        role="executive"
+        userEmail="exec@example.edu"
+        approving={false}
+        approveError={null}
+        approvedTasks={{}}
+        dispatches={{}}
+        onApprove={() => {}}
+        onPrepareDispatch={() => {}}
+        onSendDispatch={() => {}}
+      />,
+    )
+    expect(html).toContain('skeleton-line')
+    expect(html).toContain('aria-busy="true"')
   })
 })

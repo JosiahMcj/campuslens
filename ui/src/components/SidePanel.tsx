@@ -8,7 +8,7 @@ import {
 } from 'react'
 
 import { PANEL_MOTION_MS, prefersReducedMotion } from '../states'
-import { BackIcon } from './icons'
+import { BackIcon, MenuIcon } from './icons'
 
 interface SidePanelProps {
   title: string
@@ -24,6 +24,13 @@ interface SidePanelProps {
   wide?: boolean
   /** The one sentence under the title saying what the page is for. */
   intro?: string
+  /** Phones (below 900 px): opens the navigation drawer from the page
+   * header, so another page is one tap away without going Back first. */
+  onOpenMenu?: () => void
+  /** The navigation drawer is open (the menu button's expanded state). */
+  menuOpen?: boolean
+  /** The phone drawer sits over this page: the page is inert under it. */
+  blocked?: boolean
   children: ReactNode
 }
 
@@ -53,6 +60,9 @@ export function SidePanel({
   evidence = false,
   wide = false,
   intro,
+  onOpenMenu,
+  menuOpen = false,
+  blocked = false,
   children,
 }: SidePanelProps) {
   const panelRef = useRef<HTMLDivElement>(null)
@@ -148,7 +158,7 @@ export function SidePanel({
     <div
       className={`panel-overlay${evidence ? ' evidence-overlay' : ''}${closing ? ' is-closing' : ''}`}
       data-evidence-drawer={evidence ? '' : undefined}
-      inert={covered}
+      inert={covered || blocked}
     >
       <div
         ref={panelRef}
@@ -160,10 +170,24 @@ export function SidePanel({
         onKeyDown={onKeyDown}
       >
         <div className="side-panel-header">
-          <button type="button" className="page-back" onClick={onClose}>
-            <BackIcon />
-            <span>Back</span>
-          </button>
+          <div className="page-header-controls">
+            {onOpenMenu !== undefined && (
+              <button
+                type="button"
+                className="icon-button page-menu-button"
+                aria-label="Open menu"
+                aria-expanded={menuOpen}
+                aria-controls="cabinet-sidebar"
+                onClick={onOpenMenu}
+              >
+                <MenuIcon />
+              </button>
+            )}
+            <button type="button" className="page-back" onClick={onClose}>
+              <BackIcon />
+              <span>Back</span>
+            </button>
+          </div>
           <h1>{title}</h1>
         </div>
         <div ref={bodyRef} className="side-panel-body">

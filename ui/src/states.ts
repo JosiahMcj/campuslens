@@ -361,7 +361,12 @@ export function friendlyTime(ts: string, timeZone?: string): string | null {
 /** The panel's slide in and out, in milliseconds (none under reduced motion). */
 export const PANEL_MOTION_MS = 200
 
+/** True under the system's reduced-motion setting OR the app's own
+ * (Settings, Motion, Reduced: html.reduce-motion). */
 export function prefersReducedMotion(): boolean {
+  if (typeof document !== 'undefined' && document.documentElement.classList.contains('reduce-motion')) {
+    return true
+  }
   return (
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches

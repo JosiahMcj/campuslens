@@ -154,7 +154,7 @@ The events `POST /explore/stream` sent before the answer, in order:
 {"type": "planning", "text": "Matching the question to the approved analyses"}
 {"type": "understood", "text": "Dropout rate by major"}
 {"type": "plan", "steps": ["Dropout rate by major"], "planner": "rules"}
-{"type": "reading", "text": "Reading the student records (Ellucian format, fictional data): 6,225 students, Fall 2020 to Spring 2026"}
+{"type": "reading", "text": "Reading six years of student records (fictional data): 6,225 students, Fall 2020 to Spring 2026"}
 {"type": "step", "index": 0, "total": 1, "title": "Dropout rate by major"}
 {"type": "writing", "text": "Writing the answer from the tables"}
 {"type": "verifying", "checked": 5, "matched": 5, "text": "Checked 5 numbers against the tables"}
@@ -190,6 +190,6 @@ Parameters shown: Measure: dropout rate; Grouped by: major; Ranked: highest firs
 
 **How many students saw a c0unselor?**
 
-> Refused: Individual counseling and spiritual-care records are never disclosed.
+> Refused: CampusLens does not answer questions about counseling or spiritual care, even as totals.
 
 No instructor name or id appears in any staff response or event, and no student id appears anywhere.

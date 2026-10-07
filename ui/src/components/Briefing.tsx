@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 import type { Decision, Finding, Findings, OfficeHolds } from '../api'
 import { getFinding } from '../api'
 import {
@@ -10,6 +12,7 @@ import {
   type ModelSection,
 } from '../states'
 import { authorizedSourceLabel, suppressionNote } from '../counseling'
+import { formatIsoDate, tidyNumbers } from '../displayFormat'
 import { fieldLabels } from '../fieldLabels'
 import { findingLabel, linkClaimNumbers } from '../findingLabels'
 import { FindingLink } from './FindingLink'
@@ -97,6 +100,7 @@ export function BriefingSections({
         chiefSummary={chiefSummary}
         onOpenEvidence={onOpenEvidence}
         about={false}
+        aboutBriefing={<AboutBriefing sections={[chiefSummary, enrollment, studentSuccess]} />}
       />
 
       <section aria-labelledby="s-measure">
@@ -182,7 +186,6 @@ export function BriefingSections({
         </p>
       </section>
 
-      <AboutBriefing sections={[chiefSummary, enrollment, studentSuccess]} />
     </article>
   )
 }
@@ -215,13 +218,18 @@ export function EvidenceSources({
       aria-label={headingId === null ? title : undefined}
     >
       <h2 id={headingId ?? undefined}>{title}</h2>
-      <p>
-        Every number in this briefing is computed from{' '}
-        {fictional ? 'fictional source data' : "your institution's source data"} and
-        traces to one of the figures below, each listed with the fields it
-        reads. Open any figure to see how it is computed and the records
-        behind it.
-      </p>
+      {/* Inside the briefing this is section 4's opening sentence. The
+          Evidence page alone takes its introduction from the page header
+          (SidePanel's intro), so it is not repeated here. */}
+      {headingId !== null && (
+        <p>
+          Every number in this briefing is computed from{' '}
+          {fictional ? 'fictional source data' : "your institution's source data"} and
+          traces to one of the figures below, each listed with the fields it
+          reads. Open any figure to see how it is computed and the records
+          behind it.
+        </p>
+      )}
       <ul className="finding-list">
         {(['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8'] as const).map((id) => {
           const finding = getFinding(findings, id)
@@ -235,7 +243,7 @@ export function EvidenceSources({
                 onClick={() => onOpenEvidence(id)}
               >
                 <span className="finding-row-title">{findingLabel(id, finding.title)}</span>
-                <span className="finding-row-display">{display.text}</span>
+                <span className="finding-row-display">{tidyNumbers(display.text)}</span>
                 <span className="finding-row-fields">
                   Reads: {fieldLabels(finding.source_fields).join(', ')}
                 </span>
@@ -252,7 +260,7 @@ export function EvidenceSources({
             >
               <span className="finding-row-title">{findingLabel('M9')}</span>
               <span className="finding-row-display">
-                {findingDisplay(counselingFigure).text}
+                {tidyNumbers(findingDisplay(counselingFigure).text)}
               </span>
               <span className="finding-row-fields">
                 {capitalize(authorizedSourceLabel(counselingFigure))}. No list of
@@ -280,6 +288,7 @@ export function ExecutiveSummary({
   headingId = 's-summary',
   title = '1. Executive summary',
   about = true,
+  aboutBriefing = null,
 }: {
   findings: Findings
   chiefSummary: ModelSection | null
@@ -289,6 +298,10 @@ export function ExecutiveSummary({
   /** Its own "About this answer" fold (the chat answer). The full briefing
    * passes false and shows one fold for the whole panel. */
   about?: boolean
+  /** The full briefing's one "About this answer" fold, closing section 1
+   * (who wrote the briefing belongs with its first section, not between
+   * sections 5 and 6). */
+  aboutBriefing?: ReactNode
 }) {
   const m1 = getFinding(findings, 'M1')
   const m2 = getFinding(findings, 'M2')
@@ -326,7 +339,7 @@ export function ExecutiveSummary({
       )}
       {chiefSummary !== null && chiefSummary.kind === 'unavailable' && (
         <div className="model-unavailable" role="status">
-          <h3>Model unavailable</h3>
+          <h3>Written explanation unavailable</h3>
           <p>
             The Chief of Staff's written summary is unavailable right now.
             The headline above is computed from the data and remains fully
@@ -340,6 +353,7 @@ export function ExecutiveSummary({
           </details>
         </div>
       )}
+      {aboutBriefing}
     </section>
   )
 }
@@ -402,12 +416,12 @@ export function Limitations({
             : "Records come from the institution's uploaded export and are pseudonymous."}
         </li>
         <li>
-          The as-of date ({findings.meta.as_of ?? 'unknown'}) is taken from the data,
+          The as-of date ({findings.meta.as_of != null ? formatIsoDate(findings.meta.as_of) : 'unknown'}) is taken from the data,
           not from today's date.
         </li>
         <li>
           The analysts' written explanations in sections 2 and 3 are
-          model-generated and checked against the findings. Any number that is
+          written by AI employees and checked against the findings. Any number that is
           not in the findings fails validation and is never shown.
         </li>
         <li>
@@ -537,10 +551,10 @@ function ClaimText({
     <p>
       {parts.map((part, index) =>
         part.kind === 'text' ? (
-          part.text
+          tidyNumbers(part.text)
         ) : (
           <FindingLink key={index} findingId={part.findingId} onOpen={onOpen}>
-            <span className="num">{part.text}</span>
+            <span className="num">{tidyNumbers(part.text)}</span>
           </FindingLink>
         ),
       )}
@@ -583,7 +597,8 @@ function M3Threshold({
   )
 }
 
-/** A finding's display string, rendered verbatim, linked to its evidence. */
+/** A finding's display string in the house number style, linked to its
+ * evidence. */
 function Num({
   finding,
   id,
@@ -599,7 +614,7 @@ function Num({
   return (
     <FindingLink findingId={id} onOpen={onOpen}>
       <span className={display.missing ? 'num missing' : 'num'}>
-        {display.text}
+        {tidyNumbers(display.text)}
         {suffix}
       </span>
     </FindingLink>
@@ -674,7 +689,7 @@ function ModelUnavailable({
 }) {
   return (
     <div className="model-unavailable" role="status">
-      <h3>Model unavailable</h3>
+      <h3>Written explanation unavailable</h3>
       <p>
         The analyst's written explanation is unavailable right now. Every number
         on this page is computed from the data and remains fully evidenced.
@@ -752,7 +767,7 @@ function ComparisonTable({
                 {typeof base === 'number'
                   ? `${base.toLocaleString('en-US')} ${row.unit}`
                   : 'Not recorded'}
-                {typeof date === 'string' && <> ({date})</>}
+                {typeof date === 'string' && <> ({formatIsoDate(date)})</>}
               </td>
             </tr>
           )

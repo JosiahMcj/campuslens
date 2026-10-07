@@ -35,6 +35,7 @@ import {
   canSeeAuditLog,
   canSeeInstitution,
   fetchMe,
+  type Role,
   ApiError,
   logout,
   onSessionEnded,
@@ -58,7 +59,7 @@ import {
 } from './components/AccountPanels'
 import { ChatComposer } from './components/ChatComposer'
 import { ChatSidebar, type HistoryItem, type PanelId } from './components/ChatSidebar'
-import { ExploreAnswer, ExploreWorking } from './components/ExploreAnswer'
+import { ExploreAnswer, ExploreWorking, Thought } from './components/ExploreAnswer'
 import { DecisionPanel, type DispatchUiState } from './components/DecisionPanel'
 import { EvidenceDrawer } from './components/EvidenceDrawer'
 import { Institution, type ActiveDatasetMeta } from './components/Institution'
@@ -67,7 +68,7 @@ import { SidePanel } from './components/SidePanel'
 import { StaffActionsPage } from './components/StaffActionsPage'
 import { LensMark } from './components/LensMark'
 import { Thinking } from './components/Thinking'
-import { MenuIcon } from './components/icons'
+import { BackIcon, MenuIcon } from './components/icons'
 import { StatRow } from './components/StatRow'
 import { friendlyError, friendlyLoadError, isRateLimited, retryAfterSeconds } from './errors'
 import {
@@ -168,6 +169,48 @@ type AuthState =
 
 const SESSION_ENDED_NOTICE = 'Your session ended. Sign in again.'
 
+/**
+ * Every history entry the app pushes carries this marker, so the in-app
+ * Back knows whether the entry before it is part of CampusLens (go back) or
+ * not (a page opened straight from its address: replace instead).
+ */
+const APP_ENTRY = { campuslens: true } as const
+
+function pushAppEntry(url: string) {
+  window.history.pushState(APP_ENTRY, '', url)
+}
+
+/** True when the current history entry was pushed by the app. */
+function previousEntryInApp(): boolean {
+  const state: unknown = window.history.state
+  return typeof state === 'object' && state !== null && 'campuslens' in state
+}
+
+/** Focus a field once it exists and is usable (the screen may still be
+ * drawing, or a page still closing): a few tries, then the fallback (the
+ * main column by default). */
+function focusLater(id: string, delay = 0, fallback: string | null = 'main-content') {
+  const usable = (element: HTMLElement | null): element is HTMLElement =>
+    element !== null &&
+    element.closest('[inert]') === null &&
+    !(element as HTMLInputElement).disabled &&
+    element.getClientRects().length > 0
+  const tries = [0, 60, 200, 500]
+  const attempt = (index: number) => {
+    const field = document.getElementById(id)
+    if (usable(field)) {
+      field.focus()
+      if (document.activeElement === field) return
+    }
+    if (index + 1 < tries.length) {
+      window.setTimeout(() => attempt(index + 1), tries[index + 1] - tries[index])
+    } else if (fallback !== null) {
+      document.getElementById(fallback)?.focus()
+    }
+  }
+  window.setTimeout(() => attempt(0), delay)
+}
+
 /** Pages of cards or rows, which use the wider column. */
 const WIDE_PAGES: ReadonlySet<PanelId> = new Set<PanelId>(['actions', 'audit', 'aid', 'figures'])
 
@@ -176,7 +219,7 @@ const WIDE_PAGES: ReadonlySet<PanelId> = new Set<PanelId>(['actions', 'audit', '
  * whose content opens with its own intro (it depends on the role or the
  * state) return undefined here.
  */
-function pageIntro(page: PanelId): string | undefined {
+function pageIntro(page: PanelId, role: Role, fictional: boolean): string | undefined {
   switch (page) {
     case 'briefing':
       return 'The whole briefing in one document: what is happening, the evidence behind every number, what staff can do now, and the decision for leadership.'
@@ -186,8 +229,26 @@ function pageIntro(page: PanelId): string | undefined {
       return 'Who you are signed in as, and what your role lets you do.'
     case 'settings':
       return 'How CampusLens looks and moves in this browser.'
-    default:
-      return undefined
+    case 'evidence':
+      return `Every number in this briefing is computed from ${fictional ? 'fictional source data' : "your institution's source data"} and traces to one of the figures below, each listed with the fields it reads. Open any figure to see how it is computed and the records behind it.`
+    case 'actions':
+      return role === 'staff' || role === 'admin'
+        ? 'Work staff can start now, each with a responsible office. Track who has it, when it is due and how far it has got. No leadership approval is needed.'
+        : role === 'executive'
+          ? 'Work staff can start now, each with a responsible office. You can follow progress and add a note for the staff working on it.'
+          : 'Work staff can start now, each with a responsible office. This view is read only.'
+    case 'decision':
+      return role === 'executive'
+        ? 'CampusLens advises. You decide. Nothing is sent on its own.'
+        : 'Leadership decides. Nothing is sent on its own.'
+    case 'access':
+      return "Each AI employee sees only the fields its task needs, and never a student's name or identifiers. A request outside those fields is refused before any AI employee is asked, and the refusal is logged."
+    case 'audit':
+      return 'Every question, data request, refusal and decision is recorded here and can never be changed. Newest entries are first.'
+    case 'aid':
+      return canEditAidQueue(role)
+        ? 'Facts for the Financial Aid office to start its own review. CampusLens decides nothing about any student; a person in the office sets each status and note.'
+        : 'Facts for the Financial Aid office to start its own review. CampusLens decides nothing about any student. This view is read only.'
   }
 }
 
@@ -215,6 +276,9 @@ function App() {
   const retryTimer = useRef<number | null>(null)
   // Bumped to run the session check again (Retry, or after a 429's wait).
   const [checkRun, setCheckRun] = useState(0)
+  // Just signed in on this screen: the question box (or the main column, for
+  // a role that does not ask) takes focus once the workspace is ready.
+  const [focusOnReady, setFocusOnReady] = useState(false)
 
   const checkSession = useCallback(async () => {
     try {
@@ -265,7 +329,7 @@ function App() {
   const navigate = useCallback((path: string) => {
     const next = normalizeRoute(path)
     if (next !== normalizeRoute(window.location.pathname)) {
-      window.history.pushState(null, '', next)
+      pushAppEntry(next)
     }
     setRoute(next)
   }, [])
@@ -275,6 +339,8 @@ function App() {
     setAuth({ kind: 'signed-in', session })
     window.history.replaceState(null, '', '/')
     setRoute('/')
+    // The workspace focuses the question box once it has drawn it.
+    setFocusOnReady(true)
   }, [])
 
   const signOut = useCallback(() => {
@@ -284,26 +350,44 @@ function App() {
       // Replace, so Back never shows the workspace's address over sign-in.
       window.history.replaceState(null, '', '/login')
       setRoute('/login')
+      focusLater('login-email', 0, null)
     })
   }, [])
 
   // The address always matches the screen: an unknown path goes to the
   // conversation, a signed-in user on /login goes to the conversation, and
   // a signed-out user anywhere sees /login.
+  // A non-administrator who types /institution lands on the conversation,
+  // with the address rewritten and one sentence saying why.
+  const [routeNotice, setRouteNotice] = useState<string | null>(null)
+  const role = auth.kind === 'signed-in' ? auth.session.user.role : null
   useEffect(() => {
     if (auth.kind === 'checking') return
+    const deniedInstitution =
+      route === '/institution' && role !== null && !canSeeInstitution(role)
     const want =
-      auth.kind === 'signed-out' ? '/login' : route === '/login' ? '/' : route
+      auth.kind === 'signed-out'
+        ? '/login'
+        : route === '/login' || deniedInstitution
+          ? '/'
+          : route
+    if (deniedInstitution) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the redirect's one-line reason
+      setRouteNotice('Only an administrator can open Institution settings.')
+    }
     // A page's own address (/view/...) is kept: the workspace reads it.
     const onPage = want === '/' && auth.kind === 'signed-in' && isPagePath(window.location.pathname)
     if (window.location.pathname !== want && !onPage) {
-      window.history.replaceState(null, '', want + window.location.search + window.location.hash)
+      window.history.replaceState(
+        window.history.state,
+        '',
+        want + window.location.search + window.location.hash,
+      )
     }
     if (want !== route) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- keeps the route in step with the address
       setRoute(want)
     }
-  }, [auth.kind, route])
+  }, [auth.kind, route, role])
 
   useEffect(() => {
     if (auth.kind === 'checking') document.title = documentTitle(null)
@@ -351,6 +435,9 @@ function App() {
       route={route}
       navigate={navigate}
       onSignOut={signOut}
+      focusOnReady={focusOnReady}
+      routeNotice={routeNotice}
+      onDismissRouteNotice={() => setRouteNotice(null)}
     />
   )
 }
@@ -361,6 +448,9 @@ interface ShellProps {
   route: string
   navigate: (path: string) => void
   onSignOut: () => void
+  focusOnReady: boolean
+  routeNotice: string | null
+  onDismissRouteNotice: () => void
 }
 
 /**
@@ -369,7 +459,16 @@ interface ShellProps {
  * route: the sidebar, and a main column that shows the conversation or,
  * at /institution, the Institution area.
  */
-function Shell({ session, flags, route, navigate, onSignOut }: ShellProps) {
+function Shell({
+  session,
+  flags,
+  route,
+  navigate,
+  onSignOut,
+  focusOnReady,
+  routeNotice,
+  onDismissRouteNotice,
+}: ShellProps) {
   const [findingsState, setFindingsState] = useState<LoadState<Findings>>({
     kind: 'loading',
   })
@@ -419,6 +518,9 @@ function Shell({ session, flags, route, navigate, onSignOut }: ShellProps) {
       navigate={navigate}
       onSignOut={onSignOut}
       onRetryFindings={retryFindings}
+      focusOnReady={focusOnReady}
+      routeNotice={routeNotice}
+      onDismissRouteNotice={onDismissRouteNotice}
       institution={
         <InstitutionPage
           session={session}
@@ -443,12 +545,7 @@ function InstitutionPage({
   const institutionName = session.user.institution?.name ?? 'your institution'
   return (
     <div className="chat-center doc institution-doc">
-      {/* The page's title, in the same place and size as every other
-          page's; the focus target after navigation. */}
-      <h1 id="main-heading" className="page-title" tabIndex={-1}>
-        Institution settings
-      </h1>
-      <p className="lede">
+      <p className="lede panel-intro page-intro">
         The people who can sign in, the office mailboxes, the counseling permission,
         the data the briefing is computed from and the outside connections, for{' '}
         {institutionName}.
@@ -478,6 +575,9 @@ type ExchangeState =
   | AskState
   | { kind: 'restored' }
   | { kind: 'explore-sending'; trace?: ExploreTraceEvent[] }
+  // The answer broke off part way (network, server): the question stays in
+  // the thread with a plain sentence and Ask again, and any trace so far.
+  | { kind: 'explore-error'; message: string; trace?: ExploreTraceEvent[]; elapsedMs: number }
   | {
       kind: 'explore'
       response: ExploreResponse
@@ -504,6 +604,11 @@ interface BriefingPageProps {
   navigate: (path: string) => void
   onSignOut: () => void
   onRetryFindings: () => void
+  /** Just signed in: focus the question box (or main) once it is drawn. */
+  focusOnReady: boolean
+  /** Why the address was rewritten (a page this role cannot open). */
+  routeNotice: string | null
+  onDismissRouteNotice: () => void
   /** The Institution area, shown in the main column at /institution. */
   institution: ReactNode
 }
@@ -522,6 +627,9 @@ function BriefingPage({
   navigate,
   onSignOut,
   onRetryFindings,
+  focusOnReady,
+  routeNotice,
+  onDismissRouteNotice,
   institution,
 }: BriefingPageProps) {
   const role = session.user.role
@@ -545,8 +653,8 @@ function BriefingPage({
   const [decisions, setDecisions] = useState<Decision[] | null>(null)
   const [decisionsStatus, setDecisionsStatus] = useState<ResourceStatus>({ kind: 'loading' })
   // A decision's message state (draft, sent, the office mailbox) that could
-  // not be loaded: the decision card is replaced by a Retry line, so it never
-  // offers to prepare a message that may already exist.
+  // not be loaded: the decision still shows, the error sits on its message
+  // step, and a Retry line under the decision checks again.
   const [dispatchLoadError, setDispatchLoadError] = useState<string | null>(null)
   const [questions, setQuestions] = useState<ApprovedQuestion[] | null>(null)
   const [questionsFailed, setQuestionsFailed] = useState(false)
@@ -642,7 +750,16 @@ function BriefingPage({
         }))
         return true
       } catch (error) {
-        setDispatchLoadError(friendlyLoadError(error))
+        const message = friendlyLoadError(error)
+        setDispatchLoadError(message)
+        setDispatches((previous) => ({
+          ...previous,
+          [decisionId]: {
+            info: previous[decisionId]?.info ?? null,
+            busy: null,
+            error: `We couldn't check the message to the office. ${message}`,
+          },
+        }))
         return false
       }
     },
@@ -749,14 +866,30 @@ function BriefingPage({
     void loadExamples()
   }, [loadEvents, loadDecisions, loadQuestions, loadBriefing, loadExamples])
 
+  // The evidence has its own history entry: browser Back closes it.
   const openEvidence = useCallback((findingId: string) => {
+    const url = evidenceUrl(window.location.search, findingId)
+    // Already open (one figure to another): swap it, one entry for the layer.
+    if (new URLSearchParams(window.location.search).has('evidence')) {
+      window.history.replaceState(window.history.state, '', url)
+    } else {
+      pushAppEntry(url)
+    }
     setEvidenceId(findingId)
-    window.history.replaceState(null, '', evidenceUrl(window.location.search, findingId))
   }, [])
 
   const closeEvidence = useCallback(() => {
+    if (previousEntryInApp() && new URLSearchParams(window.location.search).has('evidence')) {
+      // The popstate handler clears the evidence.
+      window.history.back()
+      return
+    }
     setEvidenceId(null)
-    window.history.replaceState(null, '', evidenceUrl(window.location.search, null))
+    window.history.replaceState(
+      window.history.state,
+      '',
+      evidenceUrl(window.location.search, null),
+    )
   }, [])
 
   // Whether the restored answer is hidden behind the empty home screen.
@@ -842,7 +975,7 @@ function BriefingPage({
   // An Explore question: answered from tables code computed (POST /explore).
   // It never starts a briefing run, so the dispatch poll and the decisions
   // stay as they are; the audit log is refreshed for the roles that read it.
-  // A failed request leaves no row behind, exactly like a failed ask.
+  // A failed request stays in the thread as an interrupted answer.
   const explore = useCallback(
     async (question: string) => {
       setAskState({ kind: 'sending' })
@@ -886,12 +1019,18 @@ function BriefingPage({
         setAskState({ kind: 'idle' })
         if (audit) void loadEvents()
       } catch (error) {
-        setThread((previous) => previous.filter((item) => item.id !== exchangeId))
-        setAskState({
-          kind: 'error',
+        // The question stays where it was asked, with what went wrong and
+        // Ask again under it (and the trace so far, folded).
+        const failed: ExchangeState = {
+          kind: 'explore-error',
           message: friendlyError(error, 'Your question'),
-          question,
-        })
+          trace,
+          elapsedMs: Date.now() - startedAt,
+        }
+        setThread((previous) =>
+          previous.map((item) => (item.id === exchangeId ? { ...item, state: failed } : item)),
+        )
+        setAskState({ kind: 'idle' })
       }
     },
     [audit, flags, loadEvents, route, navigate, restoredHidden, restoredId],
@@ -1234,13 +1373,13 @@ function BriefingPage({
   // Explore questions from earlier in this tab (before a reload) that this
   // page view has not asked yet: listed first, with negative ids; opening
   // one asks it again.
+  const isExplore = (state: ExchangeState) =>
+    state.kind === 'explore' || state.kind === 'explore-sending' || state.kind === 'explore-error'
   const askedHere = new Set(
-    thread
-      .filter((item) => item.state.kind === 'explore' || item.state.kind === 'explore-sending')
-      .map((item) => redactQuestion(item.question)),
+    thread.filter((item) => isExplore(item.state)).map((item) => redactQuestion(item.question)),
   )
   const storedQuestions = exploreHistory.filter((question) => !askedHere.has(question))
-  const history: HistoryItem[] = [
+  const allHistory: HistoryItem[] = [
     ...storedQuestions.map((question, index) => ({
       id: -1 - index,
       question,
@@ -1250,20 +1389,39 @@ function BriefingPage({
     })),
     ...thread.map((item) => ({
       id: item.id,
-      question:
-        item.state.kind === 'explore' || item.state.kind === 'explore-sending'
-          ? redactQuestion(item.question)
-          : item.question,
+      question: isExplore(item.state) ? redactQuestion(item.question) : item.question,
       refused:
         item.state.kind === 'refused' ||
         (item.state.kind === 'explore' && item.state.response.refused),
       restored: item.state.kind === 'restored',
-      explore: item.state.kind === 'explore' || item.state.kind === 'explore-sending',
+      explore: isExplore(item.state),
     })),
   ]
+  // One row per question: asking the same question again (or the restored
+  // briefing's question) keeps only the newest exchange.
+  const history: HistoryItem[] = allHistory.filter(
+    (item, index) =>
+      !allHistory.slice(index + 1).some((later) => later.question === item.question),
+  )
   const sending = askState.kind === 'sending'
   const ready = findingsState.kind === 'ready'
   const onInstitution = route === '/institution'
+
+  // Just signed in: the question box takes focus once it is drawn (the
+  // main column for a role that does not ask). Once per sign-in.
+  const signInFocused = useRef(false)
+  // Ready means settled: the last briefing and (for the briefing roles) the
+  // decisions have loaded, so the screen is not about to swap its composer.
+  const homeReady =
+    ready &&
+    briefingStatus.kind !== 'loading' &&
+    (!act || decisionsStatus.kind !== 'loading') &&
+    !restoredPending
+  useEffect(() => {
+    if (!focusOnReady || signInFocused.current || !homeReady) return
+    signInFocused.current = true
+    focusLater(asker && panel === null && !onInstitution ? 'question-input' : 'main-content')
+  }, [focusOnReady, homeReady, asker, panel, onInstitution])
 
   // A new exchange brings the START of that exchange into view (the
   // question, then the answer from its top), never the end of the answer.
@@ -1291,18 +1449,21 @@ function BriefingPage({
     settings: 'Settings',
   }
   const screenTitle =
-    panel !== null ? panelTitle[panel] : onInstitution ? 'Institution settings' : 'Briefing'
+    panel !== null ? panelTitle[panel] : onInstitution ? 'Institution settings' : 'Ask'
   useEffect(() => {
     document.title = documentTitle(screenTitle)
   }, [screenTitle])
 
   // Each page has its own address, so Back and Forward and a reload work.
-  const fromHistory = useRef(false)
+  // Browser Back and Forward restore the page AND the evidence over it.
   const firstSync = useRef(true)
+  // The next address change replaces the entry instead of adding one (the
+  // in-app Back on a page that was opened straight from its address).
+  const replaceNext = useRef(false)
   useEffect(() => {
     const onPop = () => {
-      fromHistory.current = true
       setPanel(panelFromPath(window.location.pathname))
+      setEvidenceId(new URLSearchParams(window.location.search).get('evidence'))
     }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
@@ -1310,18 +1471,28 @@ function BriefingPage({
   useEffect(() => {
     const here = window.location.pathname
     const want = panel !== null ? pagePath(panel) : isPagePath(here) ? (onInstitution ? '/institution' : '/') : here
-    if (fromHistory.current) {
-      fromHistory.current = false
-    } else if (want !== here) {
-      if (firstSync.current) window.history.replaceState(null, '', want)
-      else window.history.pushState(null, '', want)
+    // After a popstate the address already matches, so nothing is pushed.
+    if (want !== here) {
+      if (firstSync.current || replaceNext.current) {
+        window.history.replaceState(window.history.state, '', want)
+      } else {
+        pushAppEntry(want)
+      }
     }
+    replaceNext.current = false
     firstSync.current = false
   }, [panel, onInstitution])
 
+  // The page's Back: the previous entry when it is part of CampusLens (as
+  // the browser's Back would), else the conversation in place of this entry.
   const closePanel = useCallback(() => {
-    setPanel(null)
     setAuditFocusId(null)
+    if (previousEntryInApp() && isPagePath(window.location.pathname)) {
+      window.history.back()
+      return
+    }
+    replaceNext.current = true
+    setPanel(null)
   }, [])
   const { shown: shownPanel, closing: panelClosing } = usePanelPresence(panel)
   const { shown: shownEvidence, closing: evidenceClosing } = usePanelPresence(
@@ -1335,10 +1506,15 @@ function BriefingPage({
 
   // Leaving the phone drawer: focus goes back to the button that opened it
   // (never left on a row inside the now hidden, inert drawer).
+  // (On a page the menu button that opened it is the page header's.)
   const closeSidebar = useCallback(() => {
     setSidebarOpen(false)
     window.setTimeout(() => {
-      if (menuButtonRef.current?.getClientRects().length) menuButtonRef.current.focus()
+      const pageMenu = document.querySelector<HTMLButtonElement>(
+        '.panel-overlay:not(.is-closing) .page-menu-button',
+      )
+      const opener = pageMenu ?? menuButtonRef.current
+      if (opener?.getClientRects().length) opener.focus()
     }, 0)
   }, [])
 
@@ -1346,21 +1522,47 @@ function BriefingPage({
     setPanel(next)
     // A refusal highlighted in the log belongs to the visit that showed it.
     setAuditFocusId(null)
+    // The evidence belongs to the page it was opened from.
+    setEvidenceId(null)
+    onDismissRouteNotice()
     // The panel takes focus; on close it falls back to the main column.
     setSidebarOpen(false)
   }
 
-  const focusQuestion = () =>
-    window.setTimeout(() => document.getElementById('question-input')?.focus(), 0)
+  // Institution's Back: the previous entry when it is part of CampusLens,
+  // else the conversation in place of this entry.
+  const leaveInstitution = () => {
+    if (previousEntryInApp()) {
+      window.history.back()
+      return
+    }
+    window.history.replaceState(window.history.state, '', '/')
+    navigate('/')
+  }
 
   const newQuestion = () => {
     if (onInstitution) navigate('/')
     setViewFrom(nextExchangeId.current)
     setRestoredSettled(true)
     setAskState((current) => (current.kind === 'error' ? { kind: 'idle' } : current))
+    // A page closing hands focus back as it starts its exit; the question
+    // box takes it once the page has gone.
+    const pageOpen = panel !== null
     setPanel(null)
+    setEvidenceId(null)
+    if (new URLSearchParams(window.location.search).has('evidence')) {
+      window.history.replaceState(
+        window.history.state,
+        '',
+        evidenceUrl(window.location.search, null),
+      )
+    }
     setSidebarOpen(false)
-    focusQuestion()
+    onDismissRouteNotice()
+    focusLater(
+      'question-input',
+      pageOpen ? (prefersReducedMotion() ? 50 : PANEL_MOTION_MS + 50) : 0,
+    )
   }
 
   const selectHistory = (id: number) => {
@@ -1425,7 +1627,7 @@ function BriefingPage({
     status.kind === 'error' ? (
       <div className="state-panel error-panel state-error" role="alert">
         <p>
-          Couldn't load {what}. {status.message}
+          We couldn't load {what}. {status.message}
         </p>
         <button type="button" className="secondary btn-secondary" onClick={onRetry}>
           Retry
@@ -1445,13 +1647,15 @@ function BriefingPage({
       : findingsState.kind === 'loading'
         ? { kind: 'loading' }
         : { kind: 'ready' }
-  const decisionStatus: ResourceStatus =
-    dispatchLoadError !== null ? { kind: 'error', message: dispatchLoadError } : decisionsStatus
+  // A message state that could not be checked does not hide the decision:
+  // its error sits on the message step (dispatches[id].error).
+  const decisionStatus: ResourceStatus = decisionsStatus
 
   const decisionPanel = (title: string | undefined, progress = false) =>
     decisionStatus.kind === 'loading' ? (
       notReady(decisionStatus, retryDecisions, 'the decision')
     ) : (
+      <>
       <DecisionPanel
         {...(title !== undefined ? { title } : { headingId: null })}
         decisions={decisionStatus.kind === 'error' ? null : decisions}
@@ -1473,11 +1677,45 @@ function BriefingPage({
         onOpenAidQueue={aidQueue ? () => openPanel('aid') : null}
         progress={progress}
       />
+      {dispatchLoadError !== null && decisionStatus.kind === 'ready' && (
+        <div className="reply-actions">
+          <button type="button" className="secondary btn-secondary" onClick={retryDecisions}>
+            Check the message again
+          </button>
+        </div>
+      )}
+      </>
     )
 
   const reply = (item: Exchange) => {
     const state = item.state
     if (state.kind === 'explore-sending') return <ExploreWorking trace={state.trace} />
+    if (state.kind === 'explore-error') {
+      return (
+        <>
+          {state.trace !== undefined && state.trace.length > 0 && (
+            <Thought trace={state.trace} elapsedMs={state.elapsedMs} />
+          )}
+          <div className="state-panel error-panel state-error interrupted" role="alert">
+            <p>
+              This answer was interrupted. {state.message}
+            </p>
+            <button
+              type="button"
+              className="secondary btn-secondary"
+              disabled={sending}
+              onClick={() => {
+                // The new attempt takes the interrupted one's place.
+                setThread((previous) => previous.filter((other) => other.id !== item.id))
+                submit(item.question)
+              }}
+            >
+              Ask again
+            </button>
+          </div>
+        </>
+      )
+    }
     if (state.kind === 'explore') {
       return (
         <ExploreAnswer
@@ -1556,7 +1794,7 @@ function BriefingPage({
           <button type="button" className="work-line" onClick={() => openPanel('access')}>
             <span className="work-dot" aria-hidden="true" />
             {workLine(state)}
-            <span className="work-link">View</span>
+            <span className="work-link">See who worked on this</span>
           </button>
         )}
         <ExecutiveSummary
@@ -1597,6 +1835,7 @@ function BriefingPage({
         examples={explorer ? examples : []}
         examplesFailed={explorer && examplesFailed}
         onRetryExamples={retryExamples}
+        quietNote={!starters}
       />
     ) : null
 
@@ -1609,7 +1848,7 @@ function BriefingPage({
   const springQuestion = (questions ?? []).find((item) => item.id === SPRING_QUESTION_ID)
   const briefingGate = (content: () => ReactNode) =>
     cabinetBriefing === null && briefingStatus.kind !== 'ready' ? (
-      notReady(briefingStatus, retryBriefing, 'the briefing')
+      notReady(briefingStatus, retryBriefing, 'the last briefing')
     ) : cabinetBriefing === null ? (
       <div className="state-panel state-empty">
         <p>
@@ -1641,8 +1880,9 @@ function BriefingPage({
       content()
     )
 
-  const findingsPanel = (content: () => ReactNode) =>
-    ready ? content() : notReady(findingsStatus, onRetryFindings, 'the briefing')
+  // `what` names the page's own content in its loading and error lines.
+  const findingsPanel = (what: string, content: () => ReactNode) =>
+    ready ? content() : notReady(findingsStatus, onRetryFindings, what)
 
   const blocked = pageCovered || (sidebarOpen && small)
 
@@ -1696,6 +1936,7 @@ function BriefingPage({
           inert={blocked}
         >
           <header className="chat-topbar">
+            <div className="topbar-row">
             <button
               ref={menuButtonRef}
               type="button"
@@ -1708,12 +1949,40 @@ function BriefingPage({
               <MenuIcon />
             </button>
             <span className="topbar-title">
-              {onInstitution ? 'Administration' : 'Student success briefing'}
+              Student success briefing
             </span>
             {fictional && <span className="topbar-badge">Fictional data</span>}
+            </div>
+            {routeNotice !== null && (
+              // In the sticky bar, so the answer scrolling into view never hides it.
+              <div className="route-notice" role="status">
+                <p>{routeNotice}</p>
+                <button type="button" className="link-button" onClick={onDismissRouteNotice}>
+                  Dismiss
+                </button>
+              </div>
+            )}
           </header>
 
-          {onInstitution && institution}
+          {onInstitution && (
+            <div className="institution-page">
+              {/* The shared page header: Back and the title at the same
+                  place as every other page's. The title is the focus
+                  target after navigation. */}
+              <div className="side-panel-header">
+                <div className="page-header-controls">
+                  <button type="button" className="page-back" onClick={leaveInstitution}>
+                    <BackIcon />
+                    <span>Back</span>
+                  </button>
+                </div>
+                <h1 id="main-heading" tabIndex={-1}>
+                  Institution settings
+                </h1>
+              </div>
+              {institution}
+            </div>
+          )}
 
           {!onInstitution && findingsState.kind === 'loading' && (
             <div className="chat-center" role="status" aria-busy="true" aria-live="polite">
@@ -1749,19 +2018,32 @@ function BriefingPage({
             <div className="chat-empty">
               <LensMark className="empty-mark" />
               <h1>{asker ? 'What would you like to know?' : 'CampusLens briefings'}</h1>
-              <p className="empty-lede">
-                {act
-                  ? "Ask an approved briefing question, or ask anything about Demonstration University's students, courses and majors. Every number is computed from the records."
-                  : explorer
-                    ? "Ask anything about Demonstration University's students, courses and majors. Every number is computed from the records."
-                    : briefingStatus.kind === 'error'
-                      ? "We couldn't load the last briefing."
+              {(asker || briefingStatus.kind !== 'error') && (
+                <p className="empty-lede">
+                  {act
+                    ? "Ask an approved briefing question, or ask anything about Demonstration University's students, courses and majors. Every number is computed from the records."
+                    : explorer
+                      ? "Ask anything about Demonstration University's students, courses and majors. Every number is computed from the records."
                       : 'Briefings appear here once an executive asks CampusLens a question.'}
-              </p>
-              {!act && briefingStatus.kind === 'error' && (
-                <button type="button" className="secondary btn-secondary" onClick={retryBriefing}>
-                  Retry
-                </button>
+                </p>
+              )}
+              {briefingStatus.kind === 'error' && (
+                // A failed load is never "nothing yet": say so, with Retry.
+                <div className="state-panel error-panel state-error home-load-error" role="alert">
+                  <p>
+                    We couldn't load the last briefing. {briefingStatus.message}
+                  </p>
+                  <button type="button" className="secondary btn-secondary" onClick={retryBriefing}>
+                    Retry
+                  </button>
+                </div>
+              )}
+              {storedQuestions.length > 0 &&
+                thread.every((item) => item.state.kind === 'restored') && (
+                <p className="reload-note">
+                  Answers from before you reloaded were not kept; your questions are in the
+                  sidebar.
+                </p>
               )}
               {composer(true)}
             </div>
@@ -1799,10 +2081,13 @@ function BriefingPage({
           closing={panelClosing}
           covered={evidenceOpen}
           wide={WIDE_PAGES.has(shownPanel)}
-          intro={pageIntro(shownPanel)}
+          intro={pageIntro(shownPanel, role, fictional)}
+          onOpenMenu={() => setSidebarOpen(true)}
+          menuOpen={sidebarOpen}
+          blocked={sidebarOpen && small}
         >
           {shownPanel === 'briefing' &&
-            briefingGate(() => findingsPanel(() =>
+            briefingGate(() => findingsPanel('the briefing', () =>
               ready ? (
                 <div className="doc">
                   <BriefingSections
@@ -1832,7 +2117,7 @@ function BriefingPage({
               ) : null,
             ))}
           {shownPanel === 'figures' &&
-            findingsPanel(() =>
+            findingsPanel('the key figures', () =>
               ready ? (
                 <div className="panel-figures">
                   <StatRow findings={findingsState.data} onOpenEvidence={openEvidence} />
@@ -1840,7 +2125,7 @@ function BriefingPage({
               ) : null,
             )}
           {shownPanel === 'evidence' &&
-            findingsPanel(() =>
+            findingsPanel('the evidence', () =>
               ready ? (
                 <div className="doc panel-solo">
                   <EvidenceSources
@@ -1854,7 +2139,7 @@ function BriefingPage({
               ) : null,
             )}
           {shownPanel === 'actions' &&
-            findingsPanel(() => (
+            findingsPanel('the staff actions', () => (
               <StaffActionsPage
                 onOpenEvidence={openEvidence}
                 onOpenInstitution={
