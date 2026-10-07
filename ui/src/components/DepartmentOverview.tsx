@@ -2,14 +2,21 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { roleDisplayName, type Department } from '../auth'
 import { friendlyLoadError } from '../errors'
-import { fetchOverview, type AlertSource, type DepartmentOverview as Overview } from '../inbox'
+import {
+  fetchOverview,
+  type AlertSource,
+  type DepartmentOverview as Overview,
+  type OverviewTable,
+  type OverviewTile,
+} from '../inbox'
 
 import './Roles.css'
 
 /**
  * One department's overview: four headline figures and two tables, all
- * aggregate (groups under the minimum size read "Fewer than 10"). A
- * department account sees its own; the president and the admin switch
+ * aggregate (groups under the minimum size read "Fewer than 10"), and for
+ * Finance two more sections (the university budget, and student accounts).
+ * A department account sees its own; the president and the admin switch
  * between every department. Each figure can be sent to someone's inbox.
  */
 export function DepartmentOverview({
@@ -78,65 +85,101 @@ export function DepartmentOverview({
             {state.data.fictional ? ' · fictional data' : ''} · groups under{' '}
             {state.data.minimum_cell_size} students are withheld
           </p>
-          <div className="overview-tiles">
-            {state.data.tiles.map((tile) => (
-              <div key={tile.key} className="overview-tile">
-                <p className="overview-tile-label">{tile.label}</p>
-                <p className="overview-tile-value">{tile.display}</p>
-                {tile.note && <p className="overview-tile-note">{tile.note}</p>}
-                {onSendAlert !== null && (
-                  <button
-                    type="button"
-                    className="link-button overview-alert"
-                    onClick={() =>
-                      onSendAlert({
-                        kind: 'overview',
-                        ref: `${state.data.department}:${tile.key}`,
-                        label: `${tile.label}: ${tile.display}`,
-                      })
-                    }
-                  >
-                    Send alert
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
+          <Tiles tiles={state.data.tiles} department={state.data.department} onSendAlert={onSendAlert} />
           {state.data.tables.map((table) => (
-            <section key={table.key} className="overview-table">
-              <h3>{table.title}</h3>
-              <div className="overview-table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      {table.columns.map((column) => (
-                        <th key={column.key} scope="col">
-                          {column.label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {table.rows.map((row, index) => (
-                      <tr key={index}>
-                        {table.columns.map((column, at) =>
-                          at === 0 ? (
-                            <th key={column.key} scope="row">
-                              {row[column.key]}
-                            </th>
-                          ) : (
-                            <td key={column.key}>{row[column.key]}</td>
-                          ),
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            <OverviewTableView key={table.key} table={table} />
+          ))}
+          {(state.data.sections ?? []).map((section) => (
+            <section key={section.key} className="overview-section" aria-labelledby={`overview-${section.key}`}>
+              <h2 id={`overview-${section.key}`}>{section.title}</h2>
+              <p className="hint">{section.intro}</p>
+              <Tiles tiles={section.tiles} department={state.data.department} onSendAlert={onSendAlert} />
+              {section.tables.map((table) => (
+                <OverviewTableView key={table.key} table={table} />
+              ))}
             </section>
           ))}
         </>
       )}
     </div>
+  )
+}
+
+function Tiles({
+  tiles,
+  department,
+  onSendAlert,
+}: {
+  tiles: OverviewTile[]
+  department: string
+  onSendAlert: ((source: AlertSource) => void) | null
+}) {
+  return (
+    <div className="overview-tiles">
+      {tiles.map((tile) => (
+        <div key={tile.key} className="overview-tile">
+          <p className="overview-tile-label">{tile.label}</p>
+          <p className="overview-tile-value">{tile.display}</p>
+          {tile.note && <p className="overview-tile-note">{tile.note}</p>}
+          {onSendAlert !== null && (
+            <button
+              type="button"
+              className="link-button overview-alert"
+              onClick={() =>
+                onSendAlert({
+                  kind: 'overview',
+                  ref: `${department}:${tile.key}`,
+                  label: `${tile.label}: ${tile.display}`,
+                })
+              }
+            >
+              Send alert
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function OverviewTableView({ table }: { table: OverviewTable }) {
+  const last = table.rows.length - 1
+  return (
+    <section className="overview-table">
+      <h3>{table.title}</h3>
+      <div className="overview-table-scroll">
+        <table>
+          <thead>
+            <tr>
+              {table.columns.map((column) => (
+                <th key={column.key} scope="col">
+                  {column.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((row, index) => (
+              <tr key={index} className={table.total_last === true && index === last ? 'overview-total' : undefined}>
+                {table.columns.map((column, at) =>
+                  at === 0 ? (
+                    <th key={column.key} scope="row">
+                      {row[column.key]}
+                    </th>
+                  ) : (
+                    <td key={column.key}>{row[column.key]}</td>
+                  ),
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {(table.notes ?? []).map((note) => (
+        <p key={note} className="hint overview-table-note">
+          {note}
+        </p>
+      ))}
+    </section>
   )
 }

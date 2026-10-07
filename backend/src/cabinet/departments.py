@@ -318,7 +318,6 @@ def _university_budget(con: sqlite3.Connection) -> dict[str, Any] | None:
             "variance": ("+" if r["variance"] > 0 else "−" if r["variance"] < 0 else "")
             + f"${abs(r['variance']):,}",
             "variance_pct": _signed_pct(r["variance_pct"]),
-            **({"total": True} if r.get("_total") else {}),
         }
         for r in spend
     ]
@@ -331,7 +330,6 @@ def _university_budget(con: sqlite3.Connection) -> dict[str, Any] | None:
             "share": f"{100 * r['actual'] / gross_revenue:.1f}%"
             if r["actual"] > 0 and not r.get("_total")
             else "—",
-            **({"total": True} if r.get("_total") else {}),
         }
         for r in revenue
     ]
@@ -363,6 +361,7 @@ def _university_budget(con: sqlite3.Connection) -> dict[str, Any] | None:
         "tables": [
             {
                 "key": "budget_by_division",
+                "total_last": True,
                 "title": f"Spending against budget by division, {year}",
                 "columns": [
                     {"key": "division", "label": "Division"},
@@ -374,6 +373,7 @@ def _university_budget(con: sqlite3.Connection) -> dict[str, Any] | None:
             },
             {
                 "key": "revenue_mix",
+                "total_last": True,
                 "title": f"Revenue by source, {year}",
                 "columns": [
                     {"key": "source", "label": "Source"},

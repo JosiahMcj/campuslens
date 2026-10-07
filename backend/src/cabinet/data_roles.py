@@ -30,10 +30,14 @@ from cabinet.auth import (
 STUDENTS = "students"
 FINANCES = "finances"
 CAMPUS = "campus"
+# The university's own budget (no student data): the president and the
+# finance office only (cabinet.explore.finance.BUDGET_ROLES also lets the
+# administrator read it in Explore and on the Finance overview).
+BUDGET = "budget"
 
 ROLE_DASHBOARDS: dict[str, tuple[str, ...]] = {
     # The president sees every dashboard.
-    ROLE_EXECUTIVE: (STUDENTS, FINANCES, CAMPUS),
+    ROLE_EXECUTIVE: (STUDENTS, FINANCES, BUDGET, CAMPUS),
     # The Financial Aid office sees student finances.
     ROLE_AID: (FINANCES,),
     # Staff and the reviewer see enrollment.
@@ -44,7 +48,7 @@ ROLE_DASHBOARDS: dict[str, tuple[str, ...]] = {
     # The department roles (added on the role-logins branch; inert until
     # those roles exist): finance sees student finances, the registrar and
     # student life see students, IT sees none.
-    "finance": (FINANCES,),
+    "finance": (FINANCES, BUDGET),
     "registrar": (STUDENTS,),
     "studentlife": (STUDENTS,),
     "it": (),

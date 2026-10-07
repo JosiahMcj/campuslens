@@ -441,6 +441,32 @@
   font-weight: 500;
 }
 
+.overview-table tbody tr.overview-total th,
+.overview-table tbody tr.overview-total td {
+  border-top: 2px solid var(--rule);
+  font-weight: 650;
+}
+
+.overview-table-note {
+  margin: var(--space-2) 0 0;
+}
+
+.overview-section {
+  margin-top: var(--space-7);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--rule);
+}
+
+.overview-section h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xl);
+}
+
+.overview-section > .hint {
+  margin: 0 0 var(--space-4);
+  max-width: 70ch;
+}
+
 /* --- IT pages ------------------------------------------------------------- */
 
 .it-page {
