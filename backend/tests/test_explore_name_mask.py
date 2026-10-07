@@ -26,7 +26,7 @@ from fastapi.testclient import TestClient
 from cabinet.api import create_app
 from cabinet.auth import AuthStore
 from cabinet.explore.catalog import Catalog, catalog_for, connect_readonly
-from cabinet.explore.evalset import EVAL_SET, FORWARD_SET, HELD_OUT
+from cabinet.explore.evalset import EVAL_SET, FINANCE_SET, FORWARD_SET, HELD_OUT
 from cabinet.explore.planner import (
     EXAMPLE_QUESTIONS,
     RULE_PHRASINGS,
@@ -238,6 +238,7 @@ def test_no_ordinary_question_is_masked(catalog: Catalog) -> None:
         *(q for q, _ in EVAL_SET),
         *(q for q, _ in HELD_OUT),
         *(q for q, _ in FORWARD_SET),
+        *(q for q, _ in FINANCE_SET),
         *(q for q, _ in RULE_PHRASINGS),
         *EXAMPLE_QUESTIONS,
         *(q for q, _ in GENERAL_PHRASINGS),

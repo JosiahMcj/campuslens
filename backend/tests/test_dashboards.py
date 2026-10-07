@@ -92,7 +92,7 @@ def test_the_role_table_gives_the_president_everything_and_admin_nothing() -> No
 @pytest.mark.parametrize(
     ("role", "boards"),
     [
-        ("executive", ["students", "finances", "campus"]),
+        ("executive", ["students", "finances", "budget", "campus"]),
         ("aid", ["finances"]),
         ("staff", ["students"]),
         ("reviewer", ["students"]),
@@ -597,7 +597,7 @@ def test_a_chart_that_cannot_take_the_choice_is_logged_as_refused() -> None:
 
 
 def test_the_department_roles_are_mapped() -> None:
-    assert dashboards_for("finance") == ("finances",)
+    assert dashboards_for("finance") == ("finances", "budget")
     assert dashboards_for("registrar") == ("students",)
     assert dashboards_for("studentlife") == ("students",)
     assert dashboards_for("it") == ()
