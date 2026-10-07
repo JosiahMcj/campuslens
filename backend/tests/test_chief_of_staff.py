@@ -592,6 +592,7 @@ def test_ask_replay_roundtrip_with_urlopen_blocked(
 
     # The provider's only network path is urllib (ChatProvider); block it.
     monkeypatch.setattr("urllib.request.urlopen", no_network)
+    monkeypatch.setattr("cabinet.provider._urlopen", no_network)
     monkeypatch.setenv("CABINET_PROVIDER", "replay")
     monkeypatch.delenv("CABINET_RECORD", raising=False)
     # A fresh app: empty caches, so every section is served from the

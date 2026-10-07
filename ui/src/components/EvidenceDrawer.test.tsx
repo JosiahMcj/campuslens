@@ -52,3 +52,65 @@ describe('the evidence for M1', () => {
     expect(other).not.toContain('Registered now')
   })
 })
+
+describe('the evidence for a role that does not receive student ids', () => {
+  const withheldM1 = {
+    ...M1,
+    row_ids: { numerator: [], denominator: [] },
+    rows_withheld: true,
+    row_counts: { numerator: 119, denominator: 125 },
+  } as Finding
+  const html = renderToStaticMarkup(
+    <EvidenceDrawer finding={withheldM1} fictional onClose={() => {}} />,
+  )
+
+  it('keeps the counts, including the count registered now', () => {
+    expect(html).toMatch(/<dt>Registered now<\/dt><dd>119<\/dd>/)
+    expect(html).toContain('244 student records sit behind this figure')
+  })
+
+  it('says who sees the list and shows no records fold', () => {
+    expect(html).toContain('shown to executives and administrators only')
+    expect(html).not.toContain('<summary>All 244 continuing students</summary>')
+    expect(html).not.toContain('term-level figure')
+    expect(html).not.toMatch(/STU-/)
+  })
+
+  it('names a single record in the singular', () => {
+    const m2 = {
+      ...M1,
+      id: 'M2',
+      value: 1,
+      display: '1',
+      comparison: {},
+      row_ids: [],
+      rows_withheld: true,
+      row_counts: 1,
+    } as Finding
+    const one = renderToStaticMarkup(<EvidenceDrawer finding={m2} fictional onClose={() => {}} />)
+    expect(one).toContain('1 student record sits behind this figure')
+    expect(one).not.toContain('Show the records')
+  })
+
+  it('keeps the per-office counts of M5 without any student list', () => {
+    const m5 = {
+      ...M1,
+      id: 'M5',
+      value: [
+        { office: 'Library', count: 1, hold_row_ids: [] },
+        { office: 'Registrar', count: 12, hold_row_ids: [] },
+      ],
+      display: '13 unresolved holds',
+      comparison: null,
+      row_ids: [],
+      rows_withheld: true,
+      row_counts: 13,
+    } as Finding
+    const offices = renderToStaticMarkup(
+      <EvidenceDrawer finding={m5} fictional onClose={() => {}} />,
+    )
+    expect(offices).toMatch(/<td>Library<\/td><td>1<\/td>/)
+    expect(offices).toContain('13 student records sit behind this figure')
+    expect(offices).not.toContain('row-list')
+  })
+})

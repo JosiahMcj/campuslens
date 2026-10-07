@@ -25,6 +25,7 @@ bootstrap institution.
 from __future__ import annotations
 
 import argparse
+import os
 import sqlite3
 import sys
 from collections.abc import Callable
@@ -41,6 +42,31 @@ BOOTSTRAP_SLUG = "bootstrap"
 # changed, in migration 8.
 BOOTSTRAP_NAME = "Demonstration University"
 LEGACY_BOOTSTRAP_NAME = "Bootstrap Institution"
+
+# The database (users, sessions, the audit chain, briefings) and its SQLite
+# side files are readable by the service's own user only.
+DB_FILE_MODE = 0o600
+SQLITE_SIDE_FILES = ("-journal", "-wal", "-shm")
+
+
+def ensure_private_db_file(path: str | os.PathLike[str]) -> None:
+    """Create the database file with mode 0600 before SQLite opens it, and
+    tighten an existing one (and any journal, -wal, or -shm beside it) to
+    0600. SQLite gives its side files the database file's mode, so a 0600
+    database keeps them private too. ``:memory:`` is left alone."""
+    name = os.fspath(path)
+    if name == ":memory:" or name.startswith("file:"):
+        return
+    fd = os.open(name, os.O_WRONLY | os.O_CREAT, DB_FILE_MODE)
+    os.close(fd)
+    # os.open's mode is masked by umask and ignored for an existing file;
+    # chmod enforces 0600 exactly.
+    os.chmod(name, DB_FILE_MODE)
+    for suffix in SQLITE_SIDE_FILES:
+        side = name + suffix
+        if os.path.exists(side):
+            os.chmod(side, DB_FILE_MODE)
+
 
 SCHEMA_VERSION = 9
 
@@ -605,6 +631,7 @@ def main(argv: list[str] | None = None) -> int:
         except RuntimeError as exc:
             print(f"migrate: {exc}", file=sys.stderr)
             return 1
+    ensure_private_db_file(db_path)
     conn = sqlite3.connect(db_path)
     try:
         before = recorded_versions(conn)

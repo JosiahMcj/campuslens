@@ -15,7 +15,11 @@ checks (``cabinet.fixture.parse_fixture``) plus the upload-only rules:
   ``STU-``/``PRI-``-style id or another opaque token (no spaces, no ``@``);
 - **counseling fields** — allowed (the fixture carries them on purpose) but
   flagged in the report as "present, will always be refused"; no metric,
-  finding, or analyst ever reads them (ROADMAP §5, §9);
+  finding, or analyst ever reads them (ROADMAP §5, §9). Counseling free text
+  is never stored: ``strip_counseling_text`` replaces every non-empty
+  ``counseling_notes`` with a fixed marker (and an empty or non-text one with
+  null) before the document is written, keeping only the fact of contact
+  that M9's authorized count reads;
 - **row counts** — reported for both student lists.
 
 All problems are collected and reported together; nothing is stored until
@@ -99,6 +103,10 @@ OPAQUE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{2,63}$")
 
 COUNSELING_FLAG = "present, will always be refused"
 
+# What a stored dataset holds in place of a counseling note's text: the fact
+# that a note existed (M9's authorized count reads only that), never the words.
+COUNSELING_NOTE_MARKER = "note on file; text removed at upload"
+
 
 class UploadError(ValueError):
     """The uploaded document failed validation; ``errors`` lists every
@@ -119,6 +127,9 @@ class UploadReport:
     row_counts: dict[str, int]
     counseling_present: bool
     fictional: bool
+    # The bytes to store: the upload itself, or, when it carried counseling
+    # note text, the document re-serialized with that text removed.
+    stored_raw: bytes
 
     @property
     def counseling_note(self) -> str:
@@ -198,6 +209,35 @@ def _check_student_record(
     return counseling_present
 
 
+def strip_counseling_text(document: dict[str, Any]) -> bool:
+    """Remove counseling free text from a dataset document, in place.
+
+    Every ``counseling.counseling_notes`` that carries text becomes
+    :data:`COUNSELING_NOTE_MARKER`; an empty, blank, or non-text value becomes
+    null. ``chaplain_contact`` (a boolean) is kept. M9 counts a student when
+    the note carries text or the chaplain flag is set, so the authorized
+    count is the same before and after. Returns True when anything changed.
+    """
+    changed = False
+    for list_key in ("students", "prior_year_students"):
+        records = document.get(list_key)
+        if not isinstance(records, list):
+            continue
+        for record in records:
+            counseling = record.get("counseling") if isinstance(record, dict) else None
+            if not isinstance(counseling, dict) or "counseling_notes" not in counseling:
+                continue
+            notes = counseling["counseling_notes"]
+            if isinstance(notes, str) and notes.strip() != "":
+                replacement: str | None = COUNSELING_NOTE_MARKER
+            else:
+                replacement = None
+            if notes != replacement:
+                counseling["counseling_notes"] = replacement
+                changed = True
+    return changed
+
+
 def validate_upload(raw: bytes) -> UploadReport:
     """Validate an uploaded dataset document; raise :class:`UploadError`
     listing every problem when it is not clean."""
@@ -246,6 +286,11 @@ def validate_upload(raw: bytes) -> UploadReport:
     fictional = False
     if isinstance(meta, dict):
         fictional = meta.get("fictional") is True
+    stored_raw = raw
+    if strip_counseling_text(document):
+        stored_raw = (
+            json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+        ).encode("utf-8")
     return UploadReport(
         fixture=fixture,
         document=document,
@@ -255,6 +300,7 @@ def validate_upload(raw: bytes) -> UploadReport:
         },
         counseling_present=counseling_present,
         fictional=fictional,
+        stored_raw=stored_raw,
     )
 
 

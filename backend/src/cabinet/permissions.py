@@ -21,11 +21,12 @@ marker, with its own ``data.granted`` event marked ``aggregate_only``.
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable
 from typing import Any
 
 from cabinet.audit import AuditSink
-from cabinet.counseling import m9_model_view
+from cabinet.counseling import MINIMUM_CELL_SIZE, m9_model_view
 
 READ = "read"
 STATUS_ONLY = "status_only"
@@ -379,4 +380,132 @@ def findings_for_role(
             out[finding_id] = m9_model_view(findings_obj[finding_id])
         else:
             out[finding_id] = _strip_row_ids(findings_obj[finding_id])
+    return out
+
+
+# --- what a signed-in person's GET /findings carries --------------------------
+
+
+def _row_count(row_ids: Any) -> Any:
+    """The size of a row-id list, in the same shape: an int for a list, and
+    ``{"numerator": n, "denominator": m}`` for a ratio finding's pair."""
+    if isinstance(row_ids, dict):
+        return {
+            key: len(value) if isinstance(value, list) else 0
+            for key, value in row_ids.items()
+        }
+    return len(row_ids) if isinstance(row_ids, list) else 0
+
+
+def _empty_like(row_ids: Any) -> Any:
+    """An empty row-id value in the same shape (so the UI's shape checks hold)."""
+    if isinstance(row_ids, dict):
+        return {key: [] for key in row_ids}
+    return []
+
+
+def findings_without_rows(findings_obj: dict[str, Any]) -> dict[str, Any]:
+    """The findings with every student id removed, for a role whose job does
+    not need the records (staff, reviewer, aid).
+
+    A new object (the cached findings are shared by every request and stay
+    whole for the executive and admin). Each finding keeps its figures,
+    definition, fields, and per-office and per-indicator counts; its
+    ``row_ids`` (and M5's ``hold_row_ids``, M8's per-rule ``row_ids``) become
+    empty lists of the same shape, M8's per-student ``row_rules`` map becomes
+    empty, and two keys say what was withheld: ``rows_withheld: true`` and
+    ``row_counts``, the number of records behind the figure in the shape
+    ``row_ids`` had.
+    """
+    out: dict[str, Any] = {}
+    for finding_id, finding in findings_obj.items():
+        if not isinstance(finding, dict) or "row_ids" not in finding:
+            out[finding_id] = copy.deepcopy(finding)
+            continue
+        view = copy.deepcopy(finding)
+        view["row_counts"] = _row_count(finding["row_ids"])
+        view["row_ids"] = _empty_like(finding["row_ids"])
+        view["rows_withheld"] = True
+        value = view.get("value")
+        if isinstance(value, list):
+            for entry in value:
+                if isinstance(entry, dict) and "hold_row_ids" in entry:
+                    entry["hold_row_ids"] = []
+        rules = view.get("rules")
+        if isinstance(rules, list):
+            for rule in rules:
+                if isinstance(rule, dict) and "row_ids" in rule:
+                    rule["row_ids"] = []
+        if "row_rules" in view:
+            view["row_rules"] = {}
+        out[finding_id] = view
+    return out
+
+
+# --- small operational counts in the live model prompt -------------------------
+
+# What the live model reads in place of an office's or an indicator's count
+# under MINIMUM_CELL_SIZE (zero included).
+SMALL_COUNT_MODEL_TEXT = f"fewer than {MINIMUM_CELL_SIZE}"
+
+# The findings whose per-office (M5) or per-indicator (M8) counts are
+# operational work counts: shown exactly to the people who work them, sent to
+# the live model only at MINIMUM_CELL_SIZE or above.
+SMALL_COUNT_FINDINGS = ("M5", "M8")
+
+
+def _small_count_entries(finding: dict[str, Any]) -> list[dict[str, Any]]:
+    """M5's office rows or M8's indicator rows: the entries carrying a count."""
+    entries: list[dict[str, Any]] = []
+    for key in ("value", "rules"):
+        rows = finding.get(key)
+        if isinstance(rows, list):
+            entries.extend(
+                row for row in rows if isinstance(row, dict) and "count" in row
+            )
+    return entries
+
+
+def has_small_count(finding: Any) -> bool:
+    """True when an M5 office or an M8 indicator in ``finding`` counts fewer
+    than MINIMUM_CELL_SIZE (the validator then accepts "fewer than 10")."""
+    if not isinstance(finding, dict):
+        return False
+    return any(
+        isinstance(entry["count"], int)
+        and not isinstance(entry["count"], bool)
+        and entry["count"] < MINIMUM_CELL_SIZE
+        for entry in _small_count_entries(finding)
+    )
+
+
+def _coarsen(findings: dict[str, Any]) -> dict[str, Any]:
+    out = dict(findings)
+    for finding_id in SMALL_COUNT_FINDINGS:
+        finding = out.get(finding_id)
+        if not isinstance(finding, dict) or not has_small_count(finding):
+            continue
+        view = copy.deepcopy(finding)
+        for entry in _small_count_entries(view):
+            count = entry["count"]
+            if isinstance(count, int) and count < MINIMUM_CELL_SIZE:
+                entry["count"] = SMALL_COUNT_MODEL_TEXT
+        out[finding_id] = view
+    return out
+
+
+def coarsen_small_counts(payload: dict[str, Any]) -> dict[str, Any]:
+    """The payload a LIVE model call sends: every M5 office count and M8
+    indicator count under MINIMUM_CELL_SIZE replaced by "fewer than 10".
+
+    Applied only in ``ChatProvider`` just before the prompt is built, so the
+    received findings (which key the replay recordings and which the
+    validator checks against) are unchanged. Handles the analyst shape
+    (``{"M5": ...}``) and the Chief of Staff's (``{"findings": {"M5": ...}}``).
+    A new object; the input is never mutated.
+    """
+    out = _coarsen(payload)
+    nested = payload.get("findings")
+    if isinstance(nested, dict):
+        out["findings"] = _coarsen(nested)
     return out

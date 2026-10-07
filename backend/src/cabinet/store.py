@@ -83,6 +83,7 @@ from cabinet.migrations import (
     BOOTSTRAP_NAME,
     BOOTSTRAP_SLUG,
     PLATFORM_INSTITUTION_ID,
+    ensure_private_db_file,
     migrate,
 )
 
@@ -177,6 +178,7 @@ class CabinetStore:
         )
         self._seed_fixture = Path(seed_fixture) if seed_fixture is not None else None
         self._lock = threading.RLock()
+        ensure_private_db_file(self._path)
         self._conn = sqlite3.connect(str(self._path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         with self._lock:
