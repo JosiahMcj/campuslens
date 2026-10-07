@@ -432,7 +432,7 @@ function focusParts(data: ChartData, group: ChartGroup | null, focus: ChartFocus
 /**
  * The question "Ask about this" starts a new chat with, built from the
  * chart's measure, the group and the term. A point that fell or rose from
- * the term before asks why ("Why did first-year retention for College of
+ * the same term a year before (or the class before) asks why ("Why did first-year retention for College of
  * Engineering and Computing drop in Fall 2024?"); otherwise it asks for more
  * ("Tell me more about students enrolled in Spring 2026 by college."). It
  * never carries a figure, so a withheld point's question reveals nothing.
@@ -444,9 +444,13 @@ export function chartQuestion(data: ChartData, group: ChartGroup | null, focus: 
   const inTerm = term !== null ? ` in ${term}` : ''
   const bySplit =
     series === null && data.split !== null && data.series.length > 1 ? ` by ${data.split.label.toLowerCase()}` : ''
-  if (focus.index !== null && series !== null && index !== null && index > 0) {
+  // Compared with the same term a year before on a term chart (a fall with
+  // the fall before: spring enrollment is always lower), else the class before.
+  const season = (i: number) => data.x[i]?.label.split(' ')[0]
+  const back = data.x_label === 'Term' && index !== null && index >= 2 && season(index - 2) === season(index) ? 2 : 1
+  if (focus.index !== null && series !== null && index !== null && index >= back) {
     const point = series.points[index]
-    const before = series.points[index - 1]
+    const before = series.points[index - back]
     if (
       point?.status === 'ok' &&
       before?.status === 'ok' &&

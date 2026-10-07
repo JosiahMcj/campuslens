@@ -424,7 +424,7 @@ function ChartCard({
 
 /** The legend: one chip per group, wrapping, at most two rows until
  * "+N more" shows the rest. Each chip narrows every chart to its group. */
-function Legend({ series, onPick }: { series: Series[]; onPick: ((series: Series) => void) | null }) {
+export function Legend({ series, onPick }: { series: Series[]; onPick: ((series: Series) => void) | null }) {
   const [expanded, setExpanded] = useState(false)
   const [fit, setFit] = useState(series.length)
   const [measureRef, width] = useWidth()

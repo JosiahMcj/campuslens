@@ -349,14 +349,19 @@ export function DataChart({ data, onPick, onAsk = null, onSend = null, highlight
           onClose={() => closePoint(true)}
           onAsk={onAsk === null ? null : () => {
             setPinned(null)
+            setActive(null)
             onAsk(pinned)
           }}
           onSend={onSend === null ? null : () => {
+            // The chart is what the dialog hands focus back to.
+            svgRef.current?.focus()
             setPinned(null)
+            setActive(null)
             onSend(pinned)
           }}
           onPick={onPick === null ? null : (series) => {
             setPinned(null)
+            setActive(null)
             onPick(series)
           }}
         />

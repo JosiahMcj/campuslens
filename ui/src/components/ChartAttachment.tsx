@@ -1,6 +1,7 @@
 import { chartAbout, chartQuestion, describePoint, type ChartFocus } from '../dataPage'
 import type { ChartSnapshot } from '../inbox'
 import { DataChart } from './DataChart'
+import { Legend } from './DataPage'
 
 import './DataPage.css'
 
@@ -53,7 +54,10 @@ export function ChartAttachment({
         </ul>
       )}
       {shown ? (
-        <DataChart data={chart} onPick={null} highlight={focus.index} compact />
+        <>
+          <DataChart data={chart} onPick={null} highlight={focus.index} compact />
+          {chart.series.length > 1 && <Legend series={chart.series} onPick={null} />}
+        </>
       ) : (
         <p className="hint">Every figure in this chart is withheld for your role's view of it.</p>
       )}

@@ -201,7 +201,20 @@ measure 68ch.
   with "Show all students". Cards (`--surface`, `--rule` hairline) fit as many 26rem columns as there is room for,
   one on a phone. Each card: title, the measure and its x axis in `--ink-soft`, the latest value
   for a single series, the chart, a legend whose entries are buttons that narrow every chart to
-  that group, notes, and a "Show the figures" fold with the table. Lines are 2 px with dots,
+  that group, notes, and a footer row: "Show the figures" (a disclosure that opens the table
+  under the row), "Ask about this" and "Send to department". The cards in a row line up: every
+  card has the same four rows (head, plot, legend and notes, footer) taken from the grid
+  (subgrid), so a row's cards are one height, their plots start at the same y and their footers
+  sit on one line. The legend is compact chips (pills, `--text-xs`; 44 px tall below 900 px) that
+  wrap to at most two rows, then "+N more" / "Show fewer"; a phrase every group shares ("College
+  of") is dropped from the chips and kept in their accessible names. Clicking a point (a dot, a
+  bar, a line, or anywhere on the plot for its nearest term) or Enter on the focused chart opens
+  a small popover with the exact value for that term and group (every group's, with Enter on a
+  chart of several, each choosable), and Ask about this, Send to department and Show only this
+  group; Escape closes it and focus returns to the chart. "Ask about this" starts a new chat
+  (as New question does) asked of Explore, with the chart named in a chip under the chat's
+  header ("About: <chart> · <group> · <term>"). "Send to department" opens Send alert with the
+  chart attached; the recipient sees it redrawn for their own role. Lines are 2 px with dots,
   bars, counts, money and rates start at zero; an average (GPA) fits its data with a minimum span and a break mark on the foot of its value axis. A
   withheld point is never drawn: the line breaks and a dashed `--ink-soft` guide marks the place;
   its tooltip and table cell say "Withheld: fewer than 10 students, or it could reveal a group that
