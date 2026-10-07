@@ -769,10 +769,15 @@ def _clauses(question: str) -> list[str]:
         r"\?|;|:\s+|\.\s+|\.$|,\s*(?:and\s+then\s+|then\s+|and\s+)?"
         + _NEXT_QUESTION
         + r"|,\s*(?:and\s+)?(?=its\b)"
+        # A lead-in that points back ("..., and in that major what is ...")
+        # starts a new part, so the earlier ranking's words stay with it.
+        + r"|,\s*(?:and\s+)?(?=(?:then\s+)?(?:in|for|within|among|of)\s+"
+        + r"(?:that|this|the\s+same|those|these|it)\b)"
         + r"|\s+and\s+then\s+|\s+and\s+"
         # After a bare "and", only a wh-word starts a new part: "taught MEEN
         # 3310 and have the highest DFW rates" stays one part.
-        + r"(?=(?:which|what|what's|whats|who|whom|how|where|when)\b)",
+        + r"(?=(?:(?:historically|also|then|now|and)\s+)?"
+        + r"(?:which|what|what's|whats|who|whom|how|where|when)\b)",
         question.strip(),
         flags=re.I,
     )

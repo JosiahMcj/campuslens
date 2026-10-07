@@ -591,6 +591,33 @@ def test_forty_variants_of_the_planted_questions_map_to_the_right_plan(
                 assert step["params"].get(name) == value, (question, name)
 
 
+# Owner's live wordings (2026-10-06): "in that major" after a comma once kept
+# "lowest" and "hardest" in one part and ranked the easiest course.
+OWNER_LIVE_WORDINGS = [
+    "What major has the lowest GPA, and in that major what is the hardest class "
+    "historically and who teaches it?",
+    "What major has the lowest GPA, and in that major what is the hardest class "
+    "historically and historically what teacher teaches it?",
+    "which major has the lowest gpa, in that major whats the hardest class and who "
+    "taught it",
+    "Which major has the lowest GPA, and for that major what is the hardest course "
+    "and who has taught it?",
+]
+
+
+def test_owner_live_wordings_rank_the_hardest_course_in_the_lowest_major(
+    catalog: Catalog,
+) -> None:
+    for question in OWNER_LIVE_WORDINGS:
+        steps = rule_plan(question, catalog)
+        assert steps is not None, question
+        got = [s.to_json() for s in steps]
+        assert [g["analysis_id"] for g in got] == [e[0] for e in _OWNER_CHAIN], question
+        for step, (_, params) in zip(got, _OWNER_CHAIN, strict=True):
+            for name, value in params.items():
+                assert step["params"].get(name) == value, (question, name)
+
+
 def test_model_planner_receives_only_the_catalog_and_the_question(
     catalog: Catalog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
