@@ -1,7 +1,7 @@
 # Demonstration University database schema
 
 `data/school/generate.py` writes one SQLite file (default `var/school/school.db`) with the
-21 tables below. The shape follows Ellucian's Ethos data model, flattened into relational
+24 tables below. The shape follows Ellucian's Ethos data model, flattened into relational
 tables a question engine can join. Each table names the Ethos resource it stands in for.
 Where Ethos has no exact resource we say so instead of inventing one.
 
@@ -293,6 +293,69 @@ program or college. A change of major or an advisor leaving starts a new relatio
 | `appointment_date` | Date of the appointment |
 | `appointment_type` | `registration_advising`, `academic_planning`, `academic_recovery` (students on probation), `degree_audit` (seniors) |
 | `status` | `completed`, `no_show`, `cancelled` |
+
+## Profiles, term-by-term enrollment, and outcomes elsewhere
+
+These three tables are derived after the simulation from their own seeded random
+streams (one per student), so the 21 simulated tables above, and every planted fact in
+`VERIFY.md`, are unchanged by them. They hold what a real registrar's warehouse carries
+for institutional research.
+
+### `student_profiles`
+**Ethos: `persons`** (the demographic fields only: gender, ethnicity, races; never a
+name or a birth date) and the student characteristics a registrar keeps (athletics,
+honors). One row per student.
+
+| Column | Meaning |
+|---|---|
+| `student_id` | The student |
+| `gender` | `female` or `male`. The share of women follows the entering major (88 % in Nursing, about 16 % in Mechanical Engineering, 56 % by default). |
+| `race_ethnicity` | IPEDS categories: `white`, `hispanic`, `black`, `asian`, `two_or_more`, `american_indian`, `pacific_islander`, `unknown`, and `nonresident` (U.S. Nonresident, exactly the international students). Drawn from first-generation and Pell status only, never from ability, so any outcome gap by race runs through those. |
+| `age_band_at_entry` | `under_20`, `20_24`, `25_34`, `35_plus`. Transfers and part-time students are older. No birth date is stored. |
+| `athlete` | 1 for an intercollegiate athlete (about 1 in 9 full-time first-time students, more in Kinesiology and Sport Management) |
+| `honors` | 1 for the honors program (first-time students with strong records) |
+
+### `student_term_enrollment`
+**Ethos: `student-academic-periods`** (the academic period enrollment status and the
+academic load) with **`housing-assignments`** (on or off campus). One row per student per
+fall and spring term, from entry (or Fall 2020) to Spring 2026.
+
+| Column | Meaning |
+|---|---|
+| `student_id`, `term_code` | The pair |
+| `status` | `enrolled`; or, in a term the student was not enrolled: `graduated` (after the degree), `stopped_out` (no degree, may return; also any gap before a return), `withdrawn` (left the university), `transferred_out` (found enrolled at another college from that term on), `suspended` (sitting out an academic suspension), `dismissed` |
+| `academic_load` | `full_time` (12 or more credit hours registered at census, withdrawals included) or `part_time`; null when not enrolled |
+| `census_hours` | Credit hours registered in the term (all registrations, W included); null when not enrolled |
+| `housing` | `on_campus` or `off_campus` for the academic year; null when not enrolled. First-year students mostly live on campus; first-year students who did not come back lived on campus less often. |
+
+Every enrolled fall and spring `student_term_records` row has exactly one `enrolled`
+row here and the reverse (checked); the load agrees with the registrations (checked).
+
+### `subsequent_enrollment`
+**Ethos: none.** Stands in for a National Student Clearinghouse StudentTracker match: a
+student who left without a degree and was later found enrolled at another college.
+
+| Column | Meaning |
+|---|---|
+| `student_id` | The student (only students who withdrew or stopped out; checked) |
+| `found_term` | First term found enrolled elsewhere, after their last term here |
+| `sector` | `four_year` or `two_year` |
+
+### What these make answerable
+
+First-year retention (first-time fall entrants enrolled the next fall), four- and
+six-year graduation (graduation term against entry term, in academic years), time to
+degree, dropout (left without a degree, not enrolled in the next two fall and spring
+terms or since, not transferred out), stop-out, transfer-out, and every measure by
+gender, race and ethnicity, age at entry, athletes, honors, housing, and full or part
+time. Class level, credits attempted and earned, major changes
+(`student_academic_programs.status = 'changed'`), course passes and withdrawals, holds,
+advising contacts, and probation were already in the tables above.
+
+At full scale: first-year retention 74.7 % (first-time fall entrants Fall 2020 to Fall
+2024), six-year graduation 47.4 % for the Fall 2020 entrants (through Spring 2026,
+where the data ends), 12 % of enrolled terms part-time. `check.py` keeps these inside
+plausible bands.
 
 ## Deliberately absent
 

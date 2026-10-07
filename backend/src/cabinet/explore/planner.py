@@ -1455,10 +1455,12 @@ def _general_params(text: str, e: _Entities, v: Vocab) -> dict[str, Any] | None:
             groups = [(at, g) for at, g in groups if g != "entry_cohort"]
             filters["entry_cohort"] = cohort
     group_keys = [g for _, g in groups]
-    new_attr = any(
-        k not in ("major", "college", "term", "modality", *_EQUITY_GROUPS)
-        for k in group_keys + list(filters)
+    # Section modality is new for the D, F or withdrawal rate (the older
+    # analyses compare modalities only for withdrawals).
+    skip = ("major", "college", "term", *_EQUITY_GROUPS) + (
+        () if measure_id == "dfw_rate" else ("modality",)
     )
+    new_attr = any(k not in skip for k in group_keys + list(filters))
     old_group = any(k in _EQUITY_GROUPS for k in group_keys + list(filters))
     if not new:
         if courses:

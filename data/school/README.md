@@ -17,6 +17,7 @@ academic years, Fall 2020 (`202110`) to Spring 2026 (`202620`), with summer term
 | Teaching | About 9,000 sections with caps, modality, meeting patterns, and an instructor of record |
 | Outcomes | About 140,000 registrations with final grades, term and cumulative GPA, credits earned, class level, academic standing, graduations, withdrawals, and stop-outs |
 | Services | Holds (financial, registrar, advising, library, student life) with amounts and dates, advisor relationships, advising appointments |
+| Profiles and history | Gender, IPEDS race and ethnicity, age band at entry, athletes, honors; each student's status in every fall and spring term (enrolled, stopped out, withdrew, transferred out, suspended, dismissed, graduated) with full or part time and housing; transfer-out matches |
 
 Every table and column is documented in `SCHEMA.md`, with the Ellucian Ethos resource it
 stands in for. Eight planted facts with exact expected values are in `VERIFY.md`.
@@ -49,7 +50,7 @@ hash, so a rebuilt database proves it is the documented one.
 
 `check.py` recomputes everything from raw rows and exits non-zero on any failure.
 
-- **Schema.** The 21 tables and their columns are exactly as documented, and every foreign
+- **Schema.** The 24 tables and their columns are exactly as documented, and every foreign
   key resolves.
 - **Privacy.** Student ids are pseudonymous (`S-` plus digits), there are no personal
   columns, and every instructor is marked fictional.
@@ -68,6 +69,10 @@ hash, so a rebuilt database proves it is the documented one.
 - **Plausibility.** Mean grade points are between 2.8 and 3.2 (3.07 at full scale), and at
   least 70 % of courses with 30 or more graded registrations have a DFW rate between 5 %
   and 25 % (79 % at full scale).
+- **Enrollment history.** Every student has a profile, every enrolled term matches a
+  term record, the load agrees with the registered hours, graduated and transferred-out
+  terms come only after the student left, and first-year retention, six-year
+  graduation, and the part-time share are inside plausible bands.
 - **Planted facts.** At full scale every value in `VERIFY.md` must match exactly. At any
   other scale each planted pattern is checked for direction.
 

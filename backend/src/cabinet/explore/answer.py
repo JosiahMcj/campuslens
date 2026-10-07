@@ -521,12 +521,28 @@ def _in_words(name: str) -> str:
     return name
 
 
+def _mid(step: StepResult, row: int) -> str:
+    """A row's name in the middle of a sentence: groups of people in lower
+    case ("students under 20 at entry", "freshmen"), names as they are."""
+    name = _in_words(_row_name(step, row))
+    return _lower_first(name) if _plural(step) else name
+
+
+def _in_scope(b: _Builder, step: StepResult) -> _Builder:
+    """ " in Spring 2026" for a measure read in one term (its scope cell)."""
+    if any(c.key == "scope" for c in step.columns) and step.rows:
+        b.t(" in ").c(step, 0, "scope")
+    return b
+
+
 def _value_phrase(b: _Builder, step: StepResult, row: int) -> _Builder:
     """The value with its counts: "39.5% (66 of 167 students)"."""
     keys = {c.key for c in step.columns}
     b.c(step, row, "value")
     if step.cell(row, "value") == SUPPRESSED_DISPLAY:
         return b
+    if general.MEASURES[str(step.params["measure"])].kind == "years":
+        b.t(" years")
     if "numerator" in keys and "denominator" in keys:
         den = _lower_first(
             next(c.label for c in step.columns if c.key == "denominator")
@@ -582,11 +598,11 @@ def _general_primary(step: StepResult, steps: list[StepResult]) -> Sentence:
     if natural and len(ranked) >= 2:
         first, last = ranked[0], ranked[-1]
         b.t(f"The {m.label}{scope_text} was ")
-        b.c(step, first, "value").t(f" for {_in_words(_row_name(step, first))} and ")
-        b.c(step, last, "value").t(f" for {_in_words(_row_name(step, last))}")
+        b.c(step, first, "value").t(f" for {_mid(step, first)} and ")
+        b.c(step, last, "value").t(f" for {_mid(step, last)}")
         if total is not None:
             b.t(", ").c(step, total, "value").t(" overall")
-        return b.t(".").done()
+        return _in_scope(b, step).t(".").done()
     if len(ranked) == 2 and _plural(step) and len(groups) == 1:
         # Two groups of people: one compared with the other.
         hi, lo = sorted(ranked, key=lambda i: -_number(step.cell(i, "value")))
@@ -596,7 +612,7 @@ def _general_primary(step: StepResult, steps: list[StepResult]) -> Sentence:
         b.t(f" for {_lower_first(_in_words(_row_name(step, lo)))}")
         if total is not None:
             b.t(" (").c(step, total, "value").t(" overall)")
-        return b.t(".").done()
+        return _in_scope(b, step).t(".").done()
     low = p.get("order", m.default_order) == "lowest_first" and not natural
     word = "lowest" if low else "highest"
     top = ranked[0]
@@ -610,7 +626,7 @@ def _general_primary(step: StepResult, steps: list[StepResult]) -> Sentence:
     _value_phrase(b, step, top)
     if total is not None:
         b.t(", against ").c(step, total, "value").t(" overall")
-    return b.t(".").done()
+    return _in_scope(b, step).t(".").done()
 
 
 def _general_secondary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
@@ -627,9 +643,7 @@ def _general_secondary(step: StepResult, steps: list[StepResult]) -> Sentence | 
     if len(ranked) == 2 and _plural(step) and len(groups) == 1:
         return None
     b = _Builder(steps)
-    b.t(f"Next is {_in_words(_row_name(step, ranked[1]))} at ").c(
-        step, ranked[1], "value"
-    )
+    b.t(f"Next is {_mid(step, ranked[1])} at ").c(step, ranked[1], "value")
     return b.t(".").done()
 
 
