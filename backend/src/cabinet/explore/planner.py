@@ -1508,6 +1508,16 @@ def _budget_step(text: str, v: Vocab) -> Step | None:
         if year is not None:
             p["fiscal_year"] = year
         return Step("tuition_discount", p)
+    revenue = _has(_REVENUE_WORDS, text) and not _has(r"\bstudents?\b", text)
+    spending = _has(
+        r"spen|expens|expenditure|over (?:the |their |its |our )?budget|department|"
+        r"division|office|cost cent|deficit",
+        text,
+    )
+    if revenue and not spending:
+        if year is not None:
+            p["fiscal_year"] = year
+        return Step("revenue_by_source", p)
     if _has(_BUDGET_WORDS, text):
         if year is not None:
             p["fiscal_year"] = year
@@ -1540,15 +1550,17 @@ _NEW_MEASURES: tuple[tuple[str, str], ...] = (
     ),
     (
         "avg_balance_owed",
-        r"average (?:past[- ]due |overdue |outstanding )?(?:balance|amount owed|debt)|"
-        r"average (?:amount )?(?:owed|past[- ]due)",
+        r"(?:average|avg|mean|typical) (?:past[- ]due |overdue |outstanding )?"
+        r"(?:balance|amount owed|debt)|"
+        r"(?:average|avg) (?:amount )?(?:owed|past[- ]due)",
     ),
     (
         "past_due_students",
-        r"how many (?:students )?(?:are |were )?(?:past[- ]due|overdue|delinquent|"
-        r"behind)|(?:number|count) of (?:students )?(?:past[- ]due|overdue|"
-        r"delinquent)|students (?:who are |that are )?(?:past[- ]due|overdue|"
-        r"delinquent|behind on)",
+        r"how many\b.*\b(?:are|were|is|have been) (?:past[- ]due|overdue|"
+        r"delinquent|behind)|how many (?:students )?(?:are |were )?(?:past[- ]due|"
+        r"overdue|delinquent|behind)|"
+        r"(?:number|count) of (?:students )?(?:past[- ]due|overdue|delinquent)|"
+        r"students (?:who are |that are )?(?:past[- ]due|overdue|delinquent|behind on)",
     ),
     (
         "on_time_payment_rate",
@@ -1816,6 +1828,11 @@ def _detect_measure(text: str) -> tuple[str | None, bool]:
     return None, False
 
 
+# Counts of students: a group named with one is a filter ("how many first-gen
+# students are past due"), never a comparison.
+_COUNTS_OF_STUDENTS = ("headcount", "past_due_students", "past_due_90_students")
+
+
 def _general_params(text: str, e: _Entities, v: Vocab) -> dict[str, Any] | None:
     """Parameters of ``measure_by_group`` for a clause, or None when the
     clause belongs to another analysis (or to none)."""
@@ -1907,7 +1924,7 @@ def _general_params(text: str, e: _Entities, v: Vocab) -> dict[str, Any] | None:
     params: dict[str, Any] = {"measure": measure_id}
     # A binary attribute named with no grouping ("average GPA of athletes")
     # is compared with the rest; a count ("how many athletes") is filtered.
-    if not group_keys and filters and measure_id != "headcount":
+    if not group_keys and filters and measure_id not in _COUNTS_OF_STUDENTS:
         compare = [
             k
             for k in filters
