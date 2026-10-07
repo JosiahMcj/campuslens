@@ -67,6 +67,7 @@ import { Institution, type ActiveDatasetMeta } from './components/Institution'
 import { LoginScreen } from './components/LoginScreen'
 import { SidePanel } from './components/SidePanel'
 import { StaffActionsPage } from './components/StaffActionsPage'
+import { InterventionsPage } from './components/InterventionsPage'
 import { LensMark } from './components/LensMark'
 import { Thinking } from './components/Thinking'
 import { BackIcon, MenuIcon } from './components/icons'
@@ -215,7 +216,7 @@ function focusLater(id: string, delay = 0, fallback: string | null = 'main-conte
 }
 
 /** Pages of cards or rows, which use the wider column. */
-const WIDE_PAGES: ReadonlySet<PanelId> = new Set<PanelId>(['actions', 'audit', 'aid', 'figures'])
+const WIDE_PAGES: ReadonlySet<PanelId> = new Set<PanelId>(['actions', 'audit', 'aid', 'figures', 'interventions'])
 
 /**
  * The one sentence under a page's title saying what the page is for. Pages
@@ -250,6 +251,8 @@ function pageIntro(page: PanelId, role: Role, fictional: boolean): string | unde
       return 'Every question, data request, refusal and decision is recorded here and can never be changed. Newest entries are first.'
     case 'students':
       return 'Look up one student by name to see their program, progress, GPA, holds and advisor.'
+    case 'interventions':
+      return 'Support offered early to students who meet a plain rule, how many it reaches, and an honest look at whether it works. Lists of students are prepared, approved by a person and recorded; nothing is sent to anyone.'
     case 'aid':
       return canEditAidQueue(role)
         ? 'Facts for the Financial Aid office to start its own review. CampusLens decides nothing about any student; a person in the office sets each status and note.'
@@ -1355,6 +1358,7 @@ function BriefingPage({
     'access',
     ...(aidQueue ? (['aid'] as PanelId[]) : []),
     ...(studentSearch ? (['students'] as PanelId[]) : []),
+    'interventions',
     ...(audit ? (['audit'] as PanelId[]) : []),
   ]
   // An address for a page this role does not have goes back to the conversation.
@@ -1467,6 +1471,7 @@ function BriefingPage({
     audit: 'Audit log',
     aid: 'Financial Aid review',
     students: 'Find a student',
+    interventions: 'Support programs',
     profile: 'Profile',
     settings: 'Settings',
   }
@@ -2218,6 +2223,7 @@ function BriefingPage({
             <AidQueuePanel canEdit={canEditAidQueue(role)} onOpenDecision={() => openPanel('decision')} />
           )}
           {shownPanel === 'students' && studentSearch && <StudentLookup />}
+          {shownPanel === 'interventions' && <InterventionsPage />}
           {shownPanel === 'profile' && (
             <ProfilePanel session={session} datasetName={datasetName} onSignOut={onSignOut} />
           )}

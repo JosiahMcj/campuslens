@@ -437,6 +437,9 @@ def test_every_protected_route_is_in_the_role_table() -> None:
         ("GET", "/admin/connections"),
         # The demonstration student directory (tests/test_roster.py).
         ("GET", "/students/search"),
+        # Support programs, aggregate (tests/test_interventions.py); the
+        # outreach routes carry ids and live in ROUTE_ROLE_PREFIXES.
+        ("GET", "/interventions"),
     }
     assert set(ROUTE_ROLES) == expected
 

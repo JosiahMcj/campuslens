@@ -313,6 +313,16 @@ export function ActionsNavIcon() {
   )
 }
 
+/** Support programs: a hand holding up a circle. */
+export function InterventionsNavIcon() {
+  return (
+    <NavGlyph>
+      <circle cx="12" cy="7.5" r="3" />
+      <path d="M3.5 15.5h3l3 2.5h4.5a1.5 1.5 0 0 0 0-3H11M6.5 15.5l2.6-2a2 2 0 0 1 1.3-.5H16l4-2" />
+    </NavGlyph>
+  )
+}
+
 export function DecisionNavIcon() {
   return (
     <NavGlyph>

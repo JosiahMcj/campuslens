@@ -110,6 +110,13 @@ function quotedFields(fields: string[]): string {
   return `${labels.join(', ')} field${labels.length === 1 ? '' : 's'}`
 }
 
+/** Support programs in the outreach events' sentences. */
+const PROGRAM_WORDS: Record<string, string> = {
+  ai_tutoring: 'AI tutoring and coaching',
+  theology_bridge: 'the theology and ministry funding bridge',
+  fit_advising: 'early major-fit advising',
+}
+
 function statusWord(value: unknown): string {
   return value === 'open' || value === 'in_review' || value === 'closed'
     ? aidStatusLabel(value as AidStatus).toLowerCase()
@@ -360,6 +367,22 @@ function describeEvent(
         mark: null,
         details,
       }
+    }
+    case 'outreach.prepared':
+    case 'outreach.decided':
+    case 'outreach.viewed':
+    case 'outreach.updated': {
+      const program = PROGRAM_WORDS[String(payload.program_id ?? '')] ?? 'a support program'
+      const count = typeof payload.count === 'number' ? payload.count : null
+      const sentence =
+        event.type === 'outreach.prepared'
+          ? `${Who} prepared the outreach list for ${program}${count === null ? '' : ` (${count} students)`}; it waits for approval.`
+          : event.type === 'outreach.decided'
+            ? `${Who} ${payload.decision === 'approved' ? 'approved' : 'declined'} the outreach list for ${program}.`
+            : event.type === 'outreach.viewed'
+              ? `${Who} opened the outreach list for ${program}.`
+              : `${Who} recorded outreach for one student on a support-program list.`
+      return { sentence, mark: null, details }
     }
     case 'student.searched': {
       const matches = typeof payload.matches === 'number' ? payload.matches : null

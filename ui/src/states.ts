@@ -316,6 +316,7 @@ export const PAGE_SLUGS = {
   audit: 'audit-log',
   aid: 'financial-aid-review',
   students: 'find-a-student',
+  interventions: 'support-programs',
   profile: 'profile',
   settings: 'settings',
 } as const
@@ -829,6 +830,11 @@ export const EVENT_TYPES = [
   'action.send_failed',
   // The demonstration student directory: a name search (never the text).
   'student.searched',
+  // Support-program outreach lists (counts and list ids, never a student id).
+  'outreach.prepared',
+  'outreach.decided',
+  'outreach.viewed',
+  'outreach.updated',
 ] as const
 
 export interface AuditEvent {

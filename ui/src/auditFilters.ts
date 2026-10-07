@@ -21,7 +21,7 @@ export const AUDIT_FILTERS = [
   {
     id: 'access',
     label: 'Data access',
-    types: ['data.granted', 'data.refused', 'student.searched'],
+    types: ['data.granted', 'data.refused', 'student.searched', 'outreach.viewed'],
   },
   {
     id: 'decisions',
@@ -34,6 +34,9 @@ export const AUDIT_FILTERS = [
       'task.sent',
       'aid.queued',
       'aid.updated',
+      'outreach.prepared',
+      'outreach.decided',
+      'outreach.updated',
     ],
   },
   {

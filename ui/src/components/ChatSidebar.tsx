@@ -27,6 +27,7 @@ import {
   EditIcon,
   GearIcon,
   MoonIcon,
+  InterventionsNavIcon,
   SearchIcon,
   SidebarToggleIcon,
   SignOutIcon,
@@ -43,6 +44,7 @@ export type PanelId =
   | 'audit'
   | 'aid'
   | 'students'
+  | 'interventions'
   | 'profile'
   | 'settings'
 
@@ -98,6 +100,7 @@ const PANEL_ROWS: Record<NavPanel, { label: string; icon: ReactNode }> = {
   audit: { label: 'Audit log', icon: <AuditNavIcon /> },
   aid: { label: 'Financial Aid review', icon: <AidQueueNavIcon /> },
   students: { label: 'Find a student', icon: <SearchIcon /> },
+  interventions: { label: 'Support programs', icon: <InterventionsNavIcon /> },
 }
 
 /** The capability groups, in sidebar order. Key figures, Evidence and the
@@ -106,6 +109,7 @@ const PANEL_ROWS: Record<NavPanel, { label: string; icon: ReactNode }> = {
  * it), and the employees are in "Data access". */
 const NAV_GROUPS: { label: string; panels: NavPanel[] }[] = [
   { label: 'Briefing', panels: ['briefing', 'actions', 'decision', 'students'] },
+  { label: 'Students', panels: ['interventions'] },
   { label: 'Governance', panels: ['access', 'audit', 'aid'] },
 ]
 
