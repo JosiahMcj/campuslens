@@ -11,6 +11,7 @@ import {
   getFinding,
   postApprove,
   postAsk,
+  postFollowUp,
   postComposeDispatch,
   askExplore,
   postGovernanceRequest,
@@ -65,6 +66,8 @@ import {
 import { ChatComposer } from './components/ChatComposer'
 import { ChatSidebar, type HistoryItem, type PanelId } from './components/ChatSidebar'
 import { ExploreAnswer, ExploreWorking, Thought } from './components/ExploreAnswer'
+import { BriefingFollowUp, FollowUpDeniedCard } from './components/BriefingFollowUp'
+import type { FollowUpAnswer, FollowUpDenied } from './followup'
 import { DecisionPanel, type DispatchUiState } from './components/DecisionPanel'
 import { EvidenceDrawer } from './components/EvidenceDrawer'
 // --- department accounts and the inbox (docs/ROLES.md) ---
@@ -624,6 +627,9 @@ function InstitutionPage({
 type ExchangeState =
   | AskState
   | { kind: 'restored' }
+  // A follow-up to the briefing, answered in code (POST /briefing/follow-up).
+  | { kind: 'followup'; response: FollowUpAnswer }
+  | { kind: 'followup-denied'; response: FollowUpDenied }
   | { kind: 'explore-sending'; trace?: ExploreTraceEvent[] }
   // The answer broke off part way (network, server): the question stays in
   // the thread with a plain sentence and Ask again, and any trace so far.
@@ -1109,15 +1115,62 @@ function BriefingPage({
     () => (questions !== null ? questions.map((q) => q.text) : [APPROVED_QUESTION]),
     [questions],
   )
+  // A follow-up to the briefing ("What is driving the gap?", "Create a
+  // seven-day action plan") is answered in code from the briefing's figures
+  // (POST /briefing/follow-up, no model and no rate-limited ask). The same
+  // route recognizes the briefing question in other words. Anything it does
+  // not handle goes on as before.
+  const hasBriefing =
+    cabinetBriefing !== null ||
+    thread.some((item) => item.state.kind === 'accepted' || item.state.kind === 'restored')
+  const followUp = useCallback(
+    async (question: string): Promise<boolean> => {
+      let response
+      try {
+        response = await postFollowUp(question, hasBriefing, flags)
+      } catch {
+        return false // an older server, or a hiccup: ask the usual way
+      }
+      if (!response.matched) return false
+      if (response.kind === 'approved') {
+        if (!act) return false
+        void ask(question)
+        return true
+      }
+      if (route !== '/') navigate('/')
+      if (restoredHidden && restoredId !== null) setViewFrom((current) => Math.max(current, restoredId + 1))
+      setRestoredSettled(true)
+      const exchangeId = nextExchangeId.current++
+      const state: ExchangeState =
+        response.kind === 'denied'
+          ? { kind: 'followup-denied', response }
+          : { kind: 'followup', response }
+      setThread((previous) => [...previous, { id: exchangeId, question, state }])
+      if (audit) void loadEvents()
+      return true
+    },
+    [hasBriefing, flags, act, ask, route, navigate, restoredHidden, restoredId, audit, loadEvents],
+  )
+  const [routing, setRouting] = useState(false)
   const submit = useCallback(
     (question: string) => {
-      if (act && (isApprovedQuestion(question, approvedTexts) || !explorer)) {
+      if (act && isApprovedQuestion(question, approvedTexts)) {
         void ask(question)
-      } else if (explorer) {
-        void explore(question)
+        return
       }
+      setRouting(true)
+      void followUp(question)
+        .then((handled) => {
+          if (handled) return
+          if (act && !explorer) {
+            void ask(question)
+          } else if (explorer) {
+            void explore(question)
+          }
+        })
+        .finally(() => setRouting(false))
     },
-    [act, explorer, approvedTexts, ask, explore],
+    [act, explorer, approvedTexts, ask, explore, followUp],
   )
 
   // "Check again" in a model-unavailable section re-runs the question that
@@ -1469,6 +1522,7 @@ function BriefingPage({
       question: isExplore(item.state) ? redactQuestion(item.question) : item.question,
       refused:
         item.state.kind === 'refused' ||
+        item.state.kind === 'followup-denied' ||
         (item.state.kind === 'explore' && item.state.response.refused),
       restored: item.state.kind === 'restored',
       explore: isExplore(item.state),
@@ -1480,7 +1534,7 @@ function BriefingPage({
     (item, index) =>
       !allHistory.slice(index + 1).some((later) => later.question === item.question),
   )
-  const sending = askState.kind === 'sending'
+  const sending = askState.kind === 'sending' || routing
   const ready = findingsState.kind === 'ready'
   const onInstitution = route === '/institution'
 
@@ -1798,6 +1852,41 @@ function BriefingPage({
             </button>
           </div>
         </>
+      )
+    }
+    if (state.kind === 'followup') {
+      return (
+        <BriefingFollowUp
+          response={state.response}
+          onOpenEvidence={openEvidence}
+          onAsk={submit}
+          busy={sending}
+          decisions={decisions}
+          canApprove={act}
+          approving={approving}
+          approveError={approveError}
+          onApprove={(id) => void approve(id)}
+          onSeeAuditLog={
+            audit
+              ? () => {
+                  openPanel('audit')
+                  void loadEvents()
+                }
+              : null
+          }
+        />
+      )
+    }
+    if (state.kind === 'followup-denied') {
+      return (
+        <FollowUpDeniedCard
+          response={state.response}
+          onSeeAuditLog={
+            audit
+              ? () => seeRefusal(state.response.event_ids.length > 0 ? Math.max(...state.response.event_ids) : null)
+              : null
+          }
+        />
       )
     }
     if (state.kind === 'explore') {
