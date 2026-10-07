@@ -533,83 +533,106 @@
   margin: 0 auto;
 }
 
-/* --- Slide-over panel ------------------------------------------------------------------*/
+/* --- Pages (everything outside the conversation) ---------------------------------------------*/
 
+/* A page fills the main column beside the sidebar (14rem, 3.25rem when
+   collapsed, none on phones where the sidebar is a drawer). The sidebar stays
+   usable, so another item opens in its place. */
 .panel-overlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 14rem;
   z-index: 9;
   display: flex;
-  justify-content: flex-end;
-  background: var(--scrim);
+  background: var(--paper);
+}
+
+.chat-app:has(.chat-sidebar[data-collapsed='true']) .panel-overlay {
+  left: 3.25rem;
 }
 
 .side-panel {
   display: flex;
   flex-direction: column;
-  width: min(46rem, 96vw);
+  width: 100%;
   height: 100%;
   background: var(--paper);
-  border-radius: var(--radius-surface) 0 0 var(--radius-surface);
-  box-shadow: var(--shadow-panel);
   outline: none;
 }
 
 .side-panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-5);
-  border-bottom: 1px solid var(--rule);
+  gap: var(--space-3);
+  width: min(52rem, 100%);
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-5) var(--space-3);
 }
 
-.side-panel-header h2 {
+.side-panel-header h1 {
   margin: 0;
-  font-size: var(--text-xl);
+  font-size: var(--text-2xl);
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+.page-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  min-height: var(--tap);
+  padding: 0 var(--space-3) 0 var(--space-2);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.page-back:hover {
+  background: var(--surface-hover);
+}
+
+.page-back:active {
+  background: var(--surface-pressed);
+}
+
+.page-back:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
 }
 
 .side-panel-body {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-1) var(--space-5) var(--space-7);
+  padding: var(--space-1) max(var(--space-5), calc((100% - 52rem) / 2 + var(--space-5)))
+    var(--space-7);
 }
 
 .side-panel-body .audit-log {
   margin-top: var(--space-4);
 }
 
-/* The evidence layer: a second .panel-overlay (.evidence-overlay) that opens
-   over the page or over another panel. It always sits above the first
-   panel, is a little narrower so that panel's edge stays in view, and over
-   another panel its scrim is lighter so the two scrims do not stack into
-   near black. */
+/* The evidence opened from a number is a page too, over the page it came
+   from (which turns inert under it). */
 .evidence-overlay {
   z-index: 10;
 }
 
-.panel-overlay + .evidence-overlay {
-  background: color-mix(in srgb, var(--scrim) 40%, transparent);
-}
-
-.side-panel.evidence-layer {
-  width: min(36rem, 92vw);
-}
-
-/* Panel motion (200 ms; none under reduced motion, from the system setting
+/* Page motion (200 ms; none under reduced motion, from the system setting
    or from Settings, whose html.reduce-motion rule cuts every animation):
-   - opening: the scrim fades in and the panel slides in from the right;
-   - closing: the app adds .is-closing to .panel-overlay and .side-panel
-     (the evidence layer included) and unmounts them 200 ms later;
-   - switching: the app gives .side-panel-body a new key per panel, so the
-     new content cross-fades in while the panel stays put. */
+   - opening: the page rises a little and fades in;
+   - closing: the app adds .is-closing and unmounts the page 200 ms later;
+   - switching: the body cross-fades while the page stays put. */
 @media (prefers-reduced-motion: no-preference) {
-  .panel-overlay {
-    animation: overlay-in var(--panel-motion) ease-out;
-  }
-
   .side-panel {
-    animation: panel-in var(--panel-motion) var(--ease-out);
+    animation: page-in var(--panel-motion) var(--ease-out);
   }
 
   .side-panel-body {
@@ -619,38 +642,23 @@
   .panel-overlay.is-closing {
     animation: overlay-out var(--panel-motion) ease-in forwards;
   }
-
-  .side-panel.is-closing {
-    animation: panel-out var(--panel-motion) ease-in forwards;
-  }
 }
 
-/* A closing panel no longer takes clicks, so the page behind is usable at once. */
+/* A closing page no longer takes clicks, so the page behind is usable at once. */
 .panel-overlay.is-closing {
   pointer-events: none;
 }
 
-@keyframes overlay-in {
+@keyframes page-in {
   from {
     opacity: 0;
+    transform: translateY(0.5rem);
   }
 }
 
 @keyframes overlay-out {
   to {
     opacity: 0;
-  }
-}
-
-@keyframes panel-in {
-  from {
-    transform: translateX(100%);
-  }
-}
-
-@keyframes panel-out {
-  to {
-    transform: translateX(100%);
   }
 }
 
@@ -679,10 +687,17 @@
     gap: var(--space-2);
   }
 
-  .side-panel,
-  .side-panel.evidence-layer {
-    width: 100vw;
-    border-radius: 0;
+  .panel-overlay,
+  .chat-app:has(.chat-sidebar[data-collapsed='true']) .panel-overlay {
+    left: 0;
+  }
+
+  .side-panel-header {
+    padding: var(--space-3) var(--space-4) var(--space-2);
+  }
+
+  .side-panel-header h1 {
+    font-size: var(--text-xl);
   }
 
   .side-panel-body {
@@ -1225,5 +1240,129 @@
     width: max(100%, var(--tap));
     height: max(100%, var(--tap));
     transform: translate(-50%, -50%);
+  }
+}
+
+/* --- Thinking (while a question is worked on) ----------------------------------------------*/
+
+.thinking {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+}
+
+.thinking-mark {
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.thinking-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.thinking-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  font-weight: 600;
+}
+
+.thinking-shimmer {
+  color: var(--ink);
+}
+
+.thinking-seconds {
+  color: var(--ink-soft);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.thinking-step {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+}
+
+.thinking .work-progress {
+  margin: var(--space-1) 0 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .thinking-shimmer {
+    background: linear-gradient(
+        90deg,
+        var(--ink-soft) 0%,
+        var(--ink-soft) 35%,
+        var(--brand-mid) 50%,
+        var(--brand-teal) 55%,
+        var(--ink-soft) 70%,
+        var(--ink-soft) 100%
+      )
+      0 0 / 250% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    animation: thinking-shimmer 1.8s linear infinite;
+  }
+
+  .thinking-step {
+    animation: thinking-step-in 300ms var(--ease-out);
+  }
+
+  .lens-mark.is-thinking > g:not(.lens-mark-glints),
+  .lens-mark.is-thinking > .lens-mark-glints {
+    animation: lens-search 2.4s ease-in-out infinite;
+  }
+
+  .lens-mark.is-thinking .lens-mark-glint {
+    transform-box: view-box;
+    transform-origin: 47px 59px;
+    animation: lens-glint 1.6s linear infinite;
+  }
+}
+
+@keyframes thinking-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+@keyframes thinking-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.25rem);
+  }
+}
+
+/* The lens searches in a small loop, the way a hand moves a magnifier. */
+@keyframes lens-search {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(3px, -2px);
+  }
+  50% {
+    transform: translate(0, -4px);
+  }
+  75% {
+    transform: translate(-3px, -2px);
+  }
+}
+
+@keyframes lens-glint {
+  to {
+    transform: rotate(360deg);
   }
 }

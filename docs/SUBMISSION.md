@@ -1,84 +1,93 @@
+<p align="center"><img src="brand/campuslens-logo.png" alt="CampusLens" width="240"></p>
+
 # CampusLens hackathon submission
 
 ## One-sentence pitch
 
-CampusLens transforms Ellucian SIS data into an executive briefing. It does so
-by coordinating permission-limited AI employees across enrollment and student success,
-helping university leaders see what matters, understand why, and direct timely human action.
+CampusLens gives university leaders straight answers about their students, computed from the
+student records and traceable to the source, by a team of permission-limited AI employees
+that never see a student's record and never act without a person's approval.
 
-## Thirty-second pitch
+## The problem
 
-University leaders have extensive student data, but answering one important question can
-still require several departments and multiple reports. CampusLens gives each
-analytical function a permission-limited AI employee. An AI Chief of Staff coordinates
-their work, verifies the evidence, and produces one executive briefing that separates staff
-actions from leadership decisions. Our first workflow answers a practical question. What
-should the president know about spring registration? The result is faster institutional
-understanding while people remain responsible for every consequential decision.
+Universities hold a great deal of student data, yet one leadership question ("Why is spring
+registration down?", "Which majors lose the most students?") still takes several offices,
+several reports and several days. The data sits in the student information system, the
+people who can query it are few, and handing student records to an AI tool is a privacy risk
+most institutions rightly refuse to take.
 
-## What is built
+## What we built
 
-We built the working prototype this pitch describes, a Python API that carries all of the
-logic with a thin web interface over it. Both run locally and bind to the loopback address
-only. We chose a small scope on purpose. One question, one briefing, one dataset.
+CampusLens answers in two ways, and both keep the same rules.
 
-The dataset is fictional and seeded, holding 185 current-term student records and 135
-prior-year records, and every metric is computed deterministically in code. The configured
-model endpoint explains the verified numbers and is never permitted to invent one, because
-a validator examines every analyst sentence before it renders. Each claim must name a
-finding the role received, each numeral must equal a computed value, and anything failing
-that examination is refused and recorded rather than shown.
+**The weekly briefing.** A president asks an approved question such as "What should I know
+about spring registration?". An AI Chief of Staff assigns narrow tasks to an Enrollment
+Analyst and a Student Success Analyst, and each sees only the fields its job allows. The
+answer is a seven-section briefing that separates staff actions, which offices can take now,
+from the leadership decision, which only a person approves.
 
-Three AI employees do the work. A Chief of Staff assigns narrow tasks, an Enrollment
-Analyst and a Student Success Analyst answer them, and each role sees only the fields its
-job allows. Every grant and every refusal lands in an append-only audit log that survives
-restarts.
+**Ask anything.** Any other question about the university ("Which major has the lowest GPA,
+what is its hardest class, and who has taught it?", "What majors have the highest dropout
+rate?") is answered from reviewed analyses computed in code over the institution's records.
+While it works, CampusLens shows what it is doing step by step. Each number in the answer
+links to the exact table cell it came from, and "How this was answered" shows every step.
 
-Every claim in the briefing opens to evidence demonstrating the formula, the exact source
-fields, and the row identifiers behind the number. Operational actions and the leadership
-decision stay visually separate throughout the briefing. Approving the decision records one
-simulated follow-up task to Financial Aid. Nothing is sent anywhere.
+**Work that gets done.** Staff actions become a tracked worklist with an owner, a status, a
+due date, notes and a history, and a named staff member can send an action to the
+responsible office's mailbox. The approved leadership decision is dispatched the same way.
+Nothing is ever sent on its own.
 
-We also built the failure path, a replay mode that serves recorded responses so the entire
-demonstration runs with the network down. We verified the application on the real path
-rather than only in tests, covering empty input, an unavailable model endpoint, and a
-restart mid-run. Two replay runs came back byte-identical. The full six-beat demonstration
-takes 204.9 seconds, comfortably under the four-minute limit.
+## The guardrails
 
-## How a judge runs it in five minutes
+- **The model never sees a student.** Every number is computed in code. The model only
+  explains numbers it is given, and a validator rejects any sentence whose number does not
+  match a computed value.
+- **Small groups stay hidden.** Any group under 10 students is withheld, including groups
+  that could otherwise be worked out by subtracting one answer from another.
+- **Some questions are refused before any model call.** Counseling records, questions about
+  a single student, and predictions about individuals are refused, and each refusal is
+  recorded.
+- **Each role sees only its job.** Administrators, executives, staff, reviewers and
+  Financial Aid each see different fields, and student-level records reach only the roles
+  that need them.
+- **Everything is on the record.** Every grant, refusal, approval and send is written to a
+  hash-chained audit log that anyone authorized can read in plain words.
+- **The model runs where the institution chooses.** CampusLens works with any standard
+  chat-completions endpoint over https, or a model on the institution's own machine.
+- **Students are people who may need support,** never risk scores.
 
-Setup needs Python 3.12 and Node 22, and a single `make setup` from the repo root installs
-everything. Two commands start the demo, `make api REPLAY=1` for the API and `make ui` for
-the interface, and the page then lives at `http://127.0.0.1:5200`. Ask the approved
-question about spring registration, then follow the six beats in order. The first beat asks
-the question, the second demonstrates the Chief of Staff dispatching two visibly scoped
-tasks, and the third reads through the seven-section briefing. The fourth beat opens the
-headline number to its evidence, the fifth approves the leadership decision, and the sixth
-filters the audit log to the recorded refusals. Run `make stop` when done. The replay path
-needs no key and no network.
+## Integrations
 
-## The numbers and where they come from
+- **Ellucian.** An Ethos connector imports the fields CampusLens needs through an exact allow
+  list, after the data steward's written authorization (`docs/ELLUCIAN.md`,
+  `docs/DATA-ACCESS.md`).
+- **Office mailboxes.** Approved sends go to each office's mailbox. By default they are
+  written to an outbox on the server, and real delivery is switched on only when the
+  institution configures its mail server.
+- **Uploads.** An administrator can load a dataset file, and counseling free text is
+  stripped at upload.
 
-Four numbers carry the demo, and every one of them is hand-countable from the fixture.
-Spring registration is 4.8 percent below the same date last year, a figure computed as 119
-divided by 125, minus one. Forty-two continuing students have not registered, and of those,
-eighteen hold an unresolved financial balance under $1,000 while twelve have no advising
-appointment this term. The file `data/VERIFY.md` lists the row identifiers behind each of
-119, 125, 42, 18, and 12, and `data/check_fixture.py` recomputes the same quantities and
-fails on any disagreement. A judge can recount each one. The fixture generator uses a
-fixed seed and no wall-clock
-values, and the as-of date is derived from the data rather than the clock.
+## How a judge runs it
+
+Setup needs Python 3.12 and Node 22. Run `make setup` once, then `make school-data` to build
+the demonstration university, then `make api REPLAY=1` and `make ui`, and open
+`http://127.0.0.1:5200`. Replay mode serves recorded model answers, so the demo needs no key
+and no network. `RUNBOOK.md` covers production serving and a live model endpoint.
+
+## The data
+
+All data is fictional. Demonstration University has 6,225 students and 139,060 graded
+registrations from Fall 2020 to Spring 2026, generated from a fixed seed. The briefing's
+four headline numbers are hand-countable from `data/fixture.json` (`data/VERIFY.md`), and
+`data/school/VERIFY.md` explains how to recount the university's figures.
+
+## Team
+
+Josiah McJunkin, Sharon Li, Dylan Poirier and Obinna Amadi.
 
 ## Currently out of scope
 
-We kept a deliberate list of exclusions, and we name them plainly here. The prototype has no
-production SIS access and uses no real student data. It makes no automatic changes to
-student records, and it performs no automatic email, text message, or case creation. It is
-not an unrestricted executive chatbot, and it does no predictive retention modeling or
-financial-aid eligibility decisions. It includes no tutor, international-student,
-or spiritual-care agents, and it is not a complete mobile application.
-
-## Format and deadline
-
-The submission format and the deadline are still to be confirmed on the hackathon page. We
-will complete this section when the page states them.
+CampusLens makes no changes to student records, sends nothing without a person, makes no
+individual predictions or financial-aid eligibility decisions, and reads no counseling or
+spiritual-care records. Real student data enters only after the Registrar's written
+authorization.

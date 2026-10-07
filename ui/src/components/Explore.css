@@ -288,3 +288,72 @@
     font-size: var(--text-md);
   }
 }
+
+/* The home screen's "Try asking": one card, one row per question. */
+.try-card {
+  width: 100%;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.try-card-title {
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-2);
+}
+
+.try-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.try-list > li + li {
+  border-top: 1px solid var(--rule);
+}
+
+.try-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  text-align: start;
+  cursor: pointer;
+}
+
+.try-row > svg {
+  flex: none;
+  margin-top: 0.15rem;
+  color: var(--ink-soft);
+}
+
+.try-row:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.try-row:hover:not(:disabled) > svg {
+  color: var(--navy);
+}
+
+.try-row:active:not(:disabled) {
+  background: var(--surface-pressed);
+}
+
+.try-row:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: -2px;
+}
+
+.try-row:disabled {
+  color: var(--ink-soft);
+  cursor: default;
+}

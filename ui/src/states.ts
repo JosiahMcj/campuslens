@@ -305,6 +305,38 @@ export function documentTitle(screen: string | null): string {
 }
 
 /** The routes the app knows; anything else goes to the conversation. */
+/** The pages outside the conversation and their addresses (/view/<slug>). */
+export const PAGE_SLUGS = {
+  briefing: 'briefing',
+  figures: 'key-figures',
+  evidence: 'evidence',
+  actions: 'staff-actions',
+  decision: 'decision',
+  access: 'ai-employees',
+  audit: 'audit-log',
+  aid: 'financial-aid-review',
+  profile: 'profile',
+  settings: 'settings',
+} as const
+
+export type PageId = keyof typeof PAGE_SLUGS
+
+export function pagePath(id: PageId): string {
+  return `/view/${PAGE_SLUGS[id]}`
+}
+
+export function isPagePath(path: string): boolean {
+  return path.startsWith('/view/')
+}
+
+/** The page an address names, or null for any other address. */
+export function panelFromPath(path: string): PageId | null {
+  if (!isPagePath(path)) return null
+  const slug = path.slice('/view/'.length).replace(/\/+$/, '')
+  const hit = (Object.keys(PAGE_SLUGS) as PageId[]).find((id) => PAGE_SLUGS[id] === slug)
+  return hit ?? null
+}
+
 export function normalizeRoute(path: string): '/' | '/login' | '/institution' {
   const trimmed = path.length > 1 ? path.replace(/\/+$/, '') : path
   if (trimmed === '/login' || trimmed === '/institution') return trimmed

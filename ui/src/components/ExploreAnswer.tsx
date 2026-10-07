@@ -17,6 +17,7 @@ import {
 } from '../explore'
 import { FIELD_LABELS, fieldLabels, normalizeField } from '../fieldLabels'
 import './Explore.css'
+import { Thinking } from './Thinking'
 
 /** Rows a step's table shows before "Show all N". */
 export const TABLE_PREVIEW_ROWS = 10
@@ -48,14 +49,7 @@ interface ExploreAnswerProps {
 
 /** "Working it out…": the reply while an Explore question is answered. */
 export function ExploreWorking() {
-  return (
-    <div className="explore-working" role="status" aria-busy="true">
-      <p className="explore-working-line">Working it out…</p>
-      <div className="skeleton skeleton-line" />
-      <div className="skeleton skeleton-line" />
-      <div className="skeleton skeleton-line short" />
-    </div>
-  )
+  return <Thinking />
 }
 
 function Suggestions({

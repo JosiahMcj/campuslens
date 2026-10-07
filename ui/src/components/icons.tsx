@@ -102,6 +102,10 @@ export function MenuIcon() {
   return <Glyph d="M2.5 4h11M2.5 8h11M2.5 12h11" size={18} />
 }
 
+export function BackIcon() {
+  return <Glyph d="M10 3L5 8l5 5" />
+}
+
 export function CloseIcon() {
   return <Glyph d="M4 4l8 8M12 4l-8 8" />
 }

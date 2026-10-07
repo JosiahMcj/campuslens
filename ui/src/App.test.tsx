@@ -253,7 +253,7 @@ describe('the conversation', () => {
     render(<App />)
     await screen.findByText('Student success briefing')
     fireEvent.click(screen.getByRole('button', { name: 'Decision' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Decision' })
+    const dialog = await screen.findByRole('region', { name: 'Decision' })
     await waitFor(() => expect(dialog.textContent).toContain("Couldn't load the decision"))
     expect(within(dialog).getByRole('button', { name: 'Retry' })).toBeTruthy()
   })
@@ -310,7 +310,7 @@ describe('wiring of the panels', () => {
     const open = await screen.findByRole('button', { name: 'Open the decision' })
     expect(screen.getByText('Authorize the eligibility review')).toBeTruthy()
     fireEvent.click(open)
-    await screen.findByRole('dialog', { name: 'Decision' })
+    await screen.findByRole('region', { name: 'Decision' })
     expect(await screen.findByText(/Approved by you at/)).toBeTruthy()
   })
 })
@@ -324,7 +324,7 @@ describe('the Full briefing when the decision fails to load', () => {
     render(<App />)
     await screen.findByText('Student success briefing')
     fireEvent.click(screen.getByRole('button', { name: 'Full briefing' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Full briefing' })
+    const dialog = await screen.findByRole('region', { name: 'Full briefing' })
     await waitFor(() => expect(dialog.textContent).toContain("Couldn't load the decision"))
     expect(dialog.textContent).not.toContain('Loading the decision')
     expect(within(dialog).getByRole('button', { name: 'Retry' })).toBeTruthy()
@@ -354,11 +354,11 @@ describe('routes and titles', () => {
     await screen.findByText('What would you like to know?')
     fireEvent.click(screen.getByRole('button', { name: 'Staff actions' }))
     await waitFor(() => expect(document.title).toBe('Staff actions · CampusLens'))
-    const dialog = screen.getByRole('dialog', { name: 'Staff actions' })
+    const dialog = screen.getByRole('region', { name: 'Staff actions' })
     act(() => {
       fireEvent.keyDown(dialog, { key: 'Escape' })
     })
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Staff actions' })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Staff actions' })).toBeNull())
     expect(document.title).toBe('Briefing · CampusLens')
   })
 })
@@ -375,7 +375,7 @@ describe('Explore', () => {
     ).toBeTruthy()
     expect(await screen.findByText(QUESTION)).toBeTruthy()
     expect(await screen.findByText(OWNER)).toBeTruthy()
-    expect(screen.getByText('Try')).toBeTruthy()
+    expect(screen.getByText('Try asking')).toBeTruthy()
     expect(screen.getByText('Every number is computed from the records and checked.')).toBeTruthy()
   })
 
@@ -531,7 +531,7 @@ describe('the sidebar clean-up', () => {
     expect(rows.queryByRole('button', { name: 'Data access' })).toBeNull()
     expect(rows.queryByRole('button', { name: 'AI employees' })).toBeNull()
     fireEvent.click(rows.getByRole('button', { name: 'AI employees and data access' }))
-    expect(await screen.findByRole('dialog', { name: 'AI employees and data access' })).toBeTruthy()
+    expect(await screen.findByRole('region', { name: 'AI employees and data access' })).toBeTruthy()
   })
 
   it('says the questions could not be loaded, with Retry, instead of the empty line', async () => {
@@ -559,7 +559,7 @@ describe('the briefing before any question', () => {
     render(<App />)
     await screen.findByText('What would you like to know?')
     fireEvent.click(screen.getByRole('button', { name: 'Full briefing' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Full briefing' })
+    const dialog = await screen.findByRole('region', { name: 'Full briefing' })
     const button = await within(dialog).findByRole('button', { name: 'Ask it now' })
     expect(button.className).toContain('btn-primary')
     fireEvent.click(button)
@@ -571,7 +571,7 @@ describe('the briefing before any question', () => {
     render(<App />)
     await screen.findByText('What would you like to know?')
     fireEvent.click(screen.getByRole('button', { name: 'Full briefing' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Full briefing' })
+    const dialog = await screen.findByRole('region', { name: 'Full briefing' })
     await waitFor(() =>
       expect(dialog.textContent).toContain('once an executive asks the spring registration question'),
     )
@@ -600,7 +600,7 @@ describe('the briefing before any question', () => {
     await screen.findByText('What would you like to know?')
     for (const name of ['Decision', 'Full briefing', 'Staff actions']) {
       fireEvent.click(screen.getByRole('button', { name }))
-      const dialog = await screen.findByRole('dialog', { name })
+      const dialog = await screen.findByRole('region', { name })
       await waitFor(() =>
         expect(dialog.textContent).toContain(
           'Ask the spring registration question first. The briefing and the decision appear here.',
@@ -634,7 +634,7 @@ describe('the briefing before any question', () => {
     expect(document.body.textContent).not.toContain('Showing your last briefing')
     // The work line opens the one AI employees panel, with each job named.
     fireEvent.click(screen.getByRole('button', { name: /Showing the latest briefing/ }))
-    const dialog = await screen.findByRole('dialog', { name: 'AI employees and data access' })
+    const dialog = await screen.findByRole('region', { name: 'AI employees and data access' })
     expect(within(dialog).getByText(/writes the summary and its limits/)).toBeTruthy()
   })
 })

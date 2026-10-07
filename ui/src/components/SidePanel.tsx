@@ -7,8 +7,8 @@ import {
   type ReactNode,
 } from 'react'
 
-import { PANEL_MOTION_MS, prefersReducedMotion, trapTab } from '../states'
-import { CloseIcon } from './icons'
+import { PANEL_MOTION_MS, prefersReducedMotion } from '../states'
+import { BackIcon } from './icons'
 
 interface SidePanelProps {
   title: string
@@ -33,12 +33,12 @@ function isTopLayer(element: HTMLElement | null): boolean {
 }
 
 /**
- * A slide-over panel for everything that is not the conversation (the full
- * briefing, the AI employees' task cards, the audit log). It opens from the
- * sidebar with one click and closes with the close button, Escape, or a click
- * on the backdrop. It is modal: focus moves in on open, Tab stays inside, the
- * page behind is made inert by the app, and focus returns on close. Escape is
- * handled here and stops, so a layer underneath never closes with it.
+ * A page of its own for everything that is not the conversation (the full
+ * briefing, the AI employees, the audit log, a figure's evidence). It fills
+ * the main column beside the sidebar, which stays usable, so another item
+ * opens in its place. Back (or Escape) returns to where you were, and focus
+ * goes back to what opened it. A layer on top (the evidence over a page)
+ * makes the page under it inert; Escape closes only the top one.
  */
 export function SidePanel({
   title,
@@ -134,9 +134,7 @@ export function SidePanel({
       event.stopPropagation()
       event.preventDefault()
       onClose()
-      return
     }
-    if (panelRef.current !== null) trapTab(event, panelRef.current)
   }
 
   return (
@@ -144,29 +142,22 @@ export function SidePanel({
       className={`panel-overlay${evidence ? ' evidence-overlay' : ''}${closing ? ' is-closing' : ''}`}
       data-evidence-drawer={evidence ? '' : undefined}
       inert={covered}
-      onClick={closing || covered ? undefined : onClose}
     >
       <div
         ref={panelRef}
         className={`side-panel${evidence ? ' evidence-layer' : ''}${closing ? ' is-closing' : ''}`}
-        role="dialog"
-        aria-modal="true"
+        role="region"
         aria-label={title}
         tabIndex={-1}
         inert={closing}
         onKeyDown={onKeyDown}
-        onClick={(event) => event.stopPropagation()}
       >
         <div className="side-panel-header">
-          <h2>{title}</h2>
-          <button
-            type="button"
-            className="icon-button"
-            aria-label={`Close ${title}`}
-            onClick={onClose}
-          >
-            <CloseIcon />
+          <button type="button" className="page-back" onClick={onClose}>
+            <BackIcon />
+            <span>Back</span>
           </button>
+          <h1>{title}</h1>
         </div>
         <div ref={bodyRef} className="side-panel-body">
           {children}

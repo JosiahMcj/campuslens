@@ -66,6 +66,7 @@ import { Institution, type ActiveDatasetMeta } from './components/Institution'
 import { LoginScreen } from './components/LoginScreen'
 import { SidePanel } from './components/SidePanel'
 import { LensMark } from './components/LensMark'
+import { Thinking } from './components/Thinking'
 import { MenuIcon } from './components/icons'
 import { StatRow } from './components/StatRow'
 import { friendlyError, friendlyLoadError, isRateLimited, retryAfterSeconds } from './errors'
@@ -89,6 +90,9 @@ import {
   maxEventId,
   nextPollDelay,
   normalizeRoute,
+  isPagePath,
+  pagePath,
+  panelFromPath,
   parseFlags,
   PANEL_MOTION_MS,
   POLL_BASE_MS,
@@ -266,7 +270,9 @@ function App() {
     if (auth.kind === 'checking') return
     const want =
       auth.kind === 'signed-out' ? '/login' : route === '/login' ? '/' : route
-    if (window.location.pathname !== want) {
+    // A page's own address (/view/...) is kept: the workspace reads it.
+    const onPage = want === '/' && auth.kind === 'signed-in' && isPagePath(window.location.pathname)
+    if (window.location.pathname !== want && !onPage) {
       window.history.replaceState(null, '', want + window.location.search + window.location.hash)
     }
     if (want !== route) {
@@ -571,7 +577,9 @@ function BriefingPage({
   // Approving later never hides the answer the person is looking at.
   const [restoredView, setRestoredView] = useState<'pending' | 'show' | 'hide'>('pending')
   // The Financial Aid role's work is the review queue, so it lands there.
-  const [panel, setPanel] = useState<PanelId | null>(() => (role === 'aid' ? 'aid' : null))
+  const [panel, setPanel] = useState<PanelId | null>(
+    () => panelFromPath(window.location.pathname) ?? (role === 'aid' ? 'aid' : null),
+  )
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const small = useSmallScreen()
@@ -1141,6 +1149,11 @@ function BriefingPage({
     ...(aidQueue ? (['aid'] as PanelId[]) : []),
     ...(audit ? (['audit'] as PanelId[]) : []),
   ]
+  // An address for a page this role does not have goes back to the conversation.
+  const pageAllowed = panel === null || panel === 'profile' || panel === 'settings' || panels.includes(panel)
+  useEffect(() => {
+    if (!pageAllowed) setPanel(null)
+  }, [pageAllowed])
   // What each AI employee was granted on the latest run: from the ask
   // response when this page asked, else from the audit log's task.assigned
   // events for the newest question that dispatched tasks.
@@ -1234,6 +1247,29 @@ function BriefingPage({
   useEffect(() => {
     document.title = documentTitle(screenTitle)
   }, [screenTitle])
+
+  // Each page has its own address, so Back and Forward and a reload work.
+  const fromHistory = useRef(false)
+  const firstSync = useRef(true)
+  useEffect(() => {
+    const onPop = () => {
+      fromHistory.current = true
+      setPanel(panelFromPath(window.location.pathname))
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+  useEffect(() => {
+    const here = window.location.pathname
+    const want = panel !== null ? pagePath(panel) : isPagePath(here) ? (onInstitution ? '/institution' : '/') : here
+    if (fromHistory.current) {
+      fromHistory.current = false
+    } else if (want !== here) {
+      if (firstSync.current) window.history.replaceState(null, '', want)
+      else window.history.pushState(null, '', want)
+    }
+    firstSync.current = false
+  }, [panel, onInstitution])
 
   const closePanel = useCallback(() => {
     setPanel(null)
@@ -1414,29 +1450,28 @@ function BriefingPage({
     }
     if (state.kind === 'sending' || state.kind === 'idle' || state.kind === 'error') {
       return (
-        <div className="reply-working" role="status">
-          <span className="typing" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </span>
-          <div className="work-text">
-            {stillWorking
-              ? 'Still working… the analysts are taking longer than usual.'
-              : liveTasks.length > 0
-                ? 'CampusLens is working…'
-                : 'The Chief of Staff is assigning the analysts…'}
-            {liveTasks.length > 0 && (
-              <ul className="work-progress">
-                {liveTasks.map((task) => (
-                  <li key={task.task_id} data-status={task.status}>
-                    {roleDisplayName(task.role)}: {TASK_STATUS_WORDS[task.status]}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
+        <Thinking
+          detail={
+            <div className="work-text">
+              <p className="thinking-step">
+                {stillWorking
+                  ? 'Still working… the analysts are taking longer than usual.'
+                  : liveTasks.length > 0
+                    ? 'The AI employees are working on it'
+                    : 'The Chief of Staff is assigning the analysts'}
+              </p>
+              {liveTasks.length > 0 && (
+                <ul className="work-progress">
+                  {liveTasks.map((task) => (
+                    <li key={task.task_id} data-status={task.status}>
+                      {roleDisplayName(task.role)}: {TASK_STATUS_WORDS[task.status]}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          }
+        />
       )
     }
     if (state.kind === 'refused') {
@@ -1575,7 +1610,7 @@ function BriefingPage({
       >
         {asker && !onInstitution ? 'Skip to question' : 'Skip to main content'}
       </a>
-      <div className="chat-layer" inert={pageCovered} style={{ display: 'contents' }}>
+      <div className="chat-layer" style={{ display: 'contents' }}>
         <ChatSidebar
           session={session}
           datasetName={datasetName}

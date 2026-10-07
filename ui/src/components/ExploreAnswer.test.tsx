@@ -1064,8 +1064,12 @@ describe('a refusal and a question no analysis answers', () => {
 })
 
 describe('while working', () => {
-  it('says "Working it out…"', () => {
+  it('shows the thinking animation with its first step', () => {
     render(<ExploreWorking />)
-    expect(screen.getByRole('status').textContent).toContain('Working it out…')
+    const status = screen.getByRole('status')
+    expect(status.getAttribute('aria-busy')).toBe('true')
+    expect(status.textContent).toContain('Thinking')
+    expect(status.textContent).toContain('Reading your question')
+    expect(status.querySelector('.lens-mark.is-thinking')).not.toBeNull()
   })
 })
