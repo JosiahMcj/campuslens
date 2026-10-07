@@ -56,7 +56,7 @@ anything per student.
 
 ```sh
 make setup-python
-make school-data      # writes var/school/school.db (about 3 s), then checks it
+make school-data      # writes var/school/school.db (about 25 s), then checks it (about 20 s)
 make explore-check    # the full-scale check (below), then prints the owner's example
 ```
 
@@ -391,7 +391,7 @@ institution chain.
 
 While a question is answered the screen shows what is really happening, line by line,
 under "Thinking": "Understood: Dropout rate by major", "Chose 1 approved analysis",
-"Reading six years of student records (fictional data): 6,225 students, Fall
+"Reading six years of student records (fictional data): 38,374 students, Fall
 2020 to Spring 2026", "Computing: Dropout rate by major", "Withheld 2 small groups
 (fewer than 10 students) to protect privacy", "Writing the answer from the tables",
 "Checked 5 numbers against the tables". When the answer arrives the trace folds into

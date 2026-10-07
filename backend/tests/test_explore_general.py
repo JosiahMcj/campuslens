@@ -1,6 +1,6 @@
 """Tests for the general analysis (measure by group) and the privacy fixes.
 
-Against the generator at --scale 0.05 in a tmp directory, like
+Against the generator at --scale 0.01 in a tmp directory, like
 test_explore.py: the reduced scale has many small groups, which is what the
 suppression and differencing tests need. They cover the planner's phrasings
 of the new questions (the owner's sentence with its typo included), every
@@ -314,7 +314,7 @@ GENERAL_PHRASINGS: list[tuple[str, dict[str, Any]]] = [
 def school_db(tmp_path_factory: pytest.TempPathFactory) -> Path:
     out = tmp_path_factory.mktemp("school-general") / "school.db"
     proc = subprocess.run(
-        [sys.executable, str(GENERATE), "--scale", "0.05", "--out", str(out)],
+        [sys.executable, str(GENERATE), "--scale", "0.01", "--out", str(out)],
         capture_output=True,
         text=True,
         check=False,

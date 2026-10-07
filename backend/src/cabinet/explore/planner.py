@@ -720,6 +720,8 @@ _COLLEGE_SYNONYMS = {
     "nursing college": "CNH",
     "education college": "COE",
     "arts and sciences": "CAS",
+    "social sciences": "CSB",
+    "behavioral sciences": "CSB",
     "theology college": "CTA",
 }
 

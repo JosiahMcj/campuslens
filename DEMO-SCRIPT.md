@@ -3,8 +3,8 @@
 The script is word for word, with the timings as targets. We tune the pauses in
 rehearsal, never the numbers. Every number on screen is computed in code from fictional
 data, never by the model. The ones we say out loud are **−4.8 %, 42, 18, 12** from the
-briefing, **2.62** and **41.8 %** from the lowest-GPA question, and **29.9 %** against
-**17.8 %** from the dropout question.
+briefing, **2.66** and **39.6 %** from the lowest-GPA question, and **19.6 %** against
+**12.1 %** from the dropout question.
 
 The person demoing is "the presenter", and the on-screen persona is "the president",
 who signs in as the executive account created in preflight.
@@ -111,14 +111,14 @@ historically and who teaches it?"*
 *Let the trace run: understood, plan, reading the student records, each step, checking
 every number. It folds into "Thought for".*
 
-> "Mechanical Engineering, 2.62. Its hardest required course is Thermodynamics I, at a
-> 41.8 percent D, F or withdrawal rate, and here is who has taught it most."
+> "Mechanical Engineering, 2.66. Its hardest required course is Thermodynamics I, at a
+> 39.6 percent D, F or withdrawal rate, and here is who has taught it most."
 
-*Click **41.8 %**: the table opens at that exact cell. Then type "what majors have the
+*Click **39.6 %**: the table opens at that exact cell. Then type "what majors have the
 highest dropout rate".*
 
-> "Public Health, 29.9 percent against 17.8 percent overall, and it tells you exactly
-> what it counted as a dropout."
+> "Mechanical Engineering again, 19.6 percent against 12.1 percent overall, and it tells
+> you exactly what it counted as a dropout."
 
 ## Beat 5, 2:35 to 3:15 · People act, and a person decides
 

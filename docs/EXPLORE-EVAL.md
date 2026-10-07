@@ -184,9 +184,8 @@ The reasoning sentence is discarded and never shown, logged or recorded.
 
 ## Not done
 
-- **One general-analysis query is slow**: the D, F or withdrawal rate by section modality
-  takes about 22 s to compute on the full-scale data, on every run. The planner is not
-  involved; the query needs its own work.
+- ~~**One general-analysis query is slow**~~: fixed on 2026-10-07, see "Rescaled to a
+  medium-to-large university" below.
 - **The model writer drops scope** (see above). We left the writer unchanged.
 - The model is not deterministic. The main set scored 50, 51 and 54 of 56 across our
   earlier prompt revisions, 56 of 56 twice on the first build and 55 of 56 on the
@@ -197,6 +196,49 @@ The reasoning sentence is discarded and never shown, logged or recorded.
   ask one count per term instead, but a model plan grouped by term still gets that
   sentence; we left the general analysis's template unchanged.
 
+## Rescaled to a medium-to-large university (2026-10-07)
+
+The results above were measured on the earlier, smaller school (6,225 students, about
+2,100 enrolled a term, 40 majors in 6 colleges). The owner asked for data at the standard
+of a medium-to-large university, so `data/school/` now builds about 16,000 students a fall
+(15,982 in Fall 2025), 60 majors in 7 colleges (the new College of Social and Behavioral
+Sciences holds Psychology, Sociology, Criminal Justice, Political Science and three new
+majors), 900 instructors, and about 920,000 graded registrations. The compact catalog grew
+with the majors and is still under 12,000 characters (under 3,000 tokens).
+
+We timed the compute alone (rule planner, executor, no model, no HTTP) for every
+question in both sets, for every acceptable plan in both sets that has no carried value,
+and for every measure of the general analysis by every grouping (587 runs), on the
+full-scale database:
+
+| | Smaller school, before | Larger school (about 7 times the rows), after |
+|---|---|---|
+| D, F or withdrawal rate by section modality | 20.5 s | 1.5 s |
+| Slowest of the 587 runs | 22.0 s (withdrawal rate by entry cohort) | 1.9 s ("how are the engineering students doing grade wise", two steps) |
+| Every registration-level measure (D, F or W rate, withdrawal rate) | about 20 s each | 1.5 to 1.9 s |
+
+Two changes did it, in `backend/src/cabinet/explore/general.py`:
+
+1. **The registration row set joins each student's term record on the registration's own
+   term.** It joined on the section's term, and SQLite then started from the term records
+   and probed every section of the term for each student (17 million probes on the smaller
+   school, 82 s a query at four times its size). Joining on `section_registrations.term_code`
+   (always the section's term; `check.py` verifies it) lets SQLite follow the student's
+   registrations through their index: the same rows, the same numbers, under a second.
+2. **One scan per request.** Small-cell suppression checks every partition a cell belongs
+   to, so one question ran the same row set three to five times. The analysis now reads
+   per-student partial sums once per term window (every measure is a sum or a count) and
+   builds each partition from them in memory, with each student counted once as before.
+
+Over the 156 eval-set runs alone (rule plans and acceptable plans) the compute median is
+0.10 s, the 90th percentile 0.47 s, the slowest 1.9 s. The rule planner still scores 52 of
+56 on the main set and 20 of 22 on the held-out set against the larger school (scored
+in-process from the same "How this was answered" lines), the same as on the smaller one.
+
+No index was added; the database is the generator's own. The planner times above (a
+model call of about 1 s) are unchanged by the larger catalog in kind; we did not re-run
+the model-first evaluation against the larger school.
+
 ## Forward questions and redirects (2026-10-07)
 
 Explore now answers forward-looking questions from the records and redirects student-level
@@ -206,7 +248,7 @@ and will drop", "how many students have holds", four forecast phrasings, a holds
 question, three off-topic requests and a student id (the last four must not be answered).
 A student question answered with totals for students like that is scored as protected.
 
-Measured on a fresh full-scale demonstration database (`generate.py`, 2,133 students in
+Measured first on the smaller school (`generate.py` before the rescale, 2,133 students in
 Spring 2026), one question at a time, template writer:
 
 | Planner order | Main (56) | Held-out (22) | Forward (12) |

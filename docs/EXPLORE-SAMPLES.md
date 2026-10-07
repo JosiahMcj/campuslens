@@ -1,5 +1,13 @@
 # Explore: any reasonable question, verified over HTTP
 
+> **A dated record.** These answers came from the earlier, smaller Demonstration University
+> (6,225 students, about 2,100 enrolled a term). On 2026-10-07 the school was rebuilt at a
+> medium-to-large size (about 16,000 students a fall, 60 programs, 7 colleges), so today's
+> numbers differ: for example the lowest-GPA question now answers Mechanical Engineering,
+> 2.66 across 1,242 students, Thermodynamics I at 39.6 %, Alicia Shelby (fictional) 10
+> sections at 52.0 %, and the highest dropout rate is Mechanical Engineering at 19.6 %
+> against 12.1 % overall. `data/school/VERIFY.md` has the current planted values.
+
 We asked a throwaway CampusLens server these questions over HTTP on 2026-10-06. The server ran this branch on port 8981 with its own temporary users database and its own copy of the school database (`make school-data`, scale 1.0, seed 20261005), the replay provider (rule planner, template answers, no model), and the ask rate limit raised for the run. Each question went to `POST /explore/stream`, signed in through `POST /auth/login`. The answers below are the `done` event's sentences, copied as returned. Every number in them is a cell of the step tables. The server was stopped afterwards.
 
 ## Seventeen questions as an executive

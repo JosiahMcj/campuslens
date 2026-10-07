@@ -39,6 +39,7 @@ Privacy, applied here in code (``MINIMUM_CELL_SIZE`` is 10 students):
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -742,7 +743,7 @@ _UNIT_FIELDS: dict[str, tuple[str, ...]] = {
     "student_term": ("student_term_records.term_code",),
     "cohort": ("students.entry_type",),
     "graduate": ("student_academic_programs.end_term",),
-    "registration": ("sections.term_code", "courses.grade_mode"),
+    "registration": ("section_registrations.term_code", "courses.grade_mode"),
 }
 
 
@@ -926,7 +927,7 @@ WITH b AS (
 )""",
     "registration": f"""
 WITH b AS (
-    SELECT r.student_id AS sid, s.term_code AS term, {_TERM_COLS}, {_PERSON_COLS},
+    SELECT r.student_id AS sid, r.term_code AS term, {_TERM_COLS}, {_PERSON_COLS},
         s.modality AS modality,
         g.grade IN ('D+', 'D', 'F', 'W') AS dfw, g.grade = 'W' AS w
     FROM final_grades g
@@ -934,15 +935,15 @@ WITH b AS (
     JOIN sections s ON s.section_id = r.section_id
     JOIN courses c ON c.course_id = s.course_id
     JOIN student_term_records t
-        ON t.student_id = r.student_id AND t.term_code = s.term_code
+        ON t.student_id = r.student_id AND t.term_code = r.term_code
     JOIN students st ON st.student_id = r.student_id
     JOIN student_profiles p ON p.student_id = r.student_id
     JOIN academic_programs ap ON ap.program_code = t.program_code
     LEFT JOIN student_term_enrollment e
-        ON e.student_id = r.student_id AND e.term_code = s.term_code
+        ON e.student_id = r.student_id AND e.term_code = r.term_code
     WHERE c.grade_mode = 'standard'
       AND g.grade IN ('A','A-','B+','B','B-','C+','C','C-','D+','D','F','W')
-      AND s.term_code BETWEEN :term_from AND :term_to
+      AND r.term_code BETWEEN :term_from AND :term_to
 )""",
 }
 
@@ -1045,6 +1046,13 @@ class _Runner:
                 "were not applied."
             )
         self.per_term = 1 if per_term else 0
+        # Partial sums per window (see ``_base``); a major is always read
+        # with its college, since majors are partitioned within colleges.
+        self._bases: dict[
+            tuple[str, str], tuple[tuple[str, ...], list[tuple[Any, ...]]]
+        ] = {}
+        involved = set(req.groups) | set(req.filters)
+        self.base_attrs = involved | ({"college"} if "major" in involved else set())
         # Cohort measures read first-time students only unless admit type
         # is asked about.
         self.admit_default = (
@@ -1072,6 +1080,36 @@ class _Runner:
             "g6_cohorts": json.dumps([t for t in fall_codes if within(t, 6)]),
         }
 
+    def _base(
+        self, window: tuple[str, str], attrs: tuple[str, ...]
+    ) -> list[tuple[Any, ...]]:
+        """Per-student partial sums over ``attrs`` for one term window:
+        rows ``(sid, *attr values, num, den)``. Every measure's numerator and
+        denominator is a SUM or COUNT, so any coarser cell is the sum of these
+        rows (and its student count the distinct ids among them). One query
+        per window serves every partition a request checks, instead of one
+        scan of the row set per partition."""
+        cached = self._bases.get(window)
+        if cached is not None and set(attrs) <= set(cached[0]):
+            return cached[1]
+        if cached is not None:
+            attrs = tuple(sorted(set(attrs) | set(cached[0])))
+        m = self.req.measure
+        params = dict(self.params)
+        params["term_from"], params["term_to"] = window
+        cols = "".join(f", {_column(k)}" for k in attrs)
+        sql = (
+            UNIT_SQL[m.unit]
+            + f"\nSELECT b.sid{cols}, {m.num}, {m.den} FROM b WHERE {m.where} "
+            f"GROUP BY b.sid{cols}"
+        )
+        rows = [
+            (row[0], *(str(x) for x in row[1:-2]), row[-2], row[-1])
+            for row in self.con.execute(sql, params)
+        ]
+        self._bases[window] = (attrs, rows)
+        return rows
+
     def cells(
         self,
         keys: list[str],
@@ -1081,32 +1119,37 @@ class _Runner:
         term_to: str | None = None,
     ) -> dict[tuple[str, ...], Cell]:
         """Aggregate cells over ``keys`` with ``filters`` (all bound)."""
-        m = self.req.measure
-        params = dict(self.params)
-        if term_from is not None:
-            params["term_from"] = term_from
-        if term_to is not None:
-            params["term_to"] = term_to
-        where = [m.where]
-        for i, (key, value) in enumerate(sorted(filters.items())):
-            column = _column(key)
-            where.append(f"{column} = :f{i}")
-            params[f"f{i}"] = value
-        select = ", ".join(_column(k) for k in keys)
-        group = f"GROUP BY {select}" if keys else ""
-        sql = (
-            UNIT_SQL[m.unit]
-            + f"\nSELECT {select + ', ' if keys else ''}COUNT(DISTINCT b.sid), "
-            f"{m.num}, {m.den} FROM b WHERE {' AND '.join(where)} {group}"
+        for key in [*keys, *filters]:
+            _column(key)  # an unknown grouping is an error, as before
+        window = (
+            term_from if term_from is not None else self.params["term_from"],
+            term_to if term_to is not None else self.params["term_to"],
         )
-        out: dict[tuple[str, ...], Cell] = {}
-        for row in self.con.execute(sql, params):
-            cell_key = tuple(str(x) for x in row[: len(keys)])
-            n, num, den = row[len(keys) :]
-            if not n:
+        wanted = set(keys) | set(filters) | self.base_attrs
+        rows = self._base(window, tuple(sorted(wanted)))
+        attrs = self._bases[window][0]
+        pos = {a: i + 1 for i, a in enumerate(attrs)}
+        key_pos = [pos[k] for k in keys]
+        filter_pos = [(pos[k], v) for k, v in filters.items()]
+        sids: dict[tuple[str, ...], set[Any]] = {}
+        nums: dict[tuple[str, ...], list[float]] = {}
+        dens: dict[tuple[str, ...], list[float]] = {}
+        for row in rows:
+            if any(row[i] != v for i, v in filter_pos):
                 continue
-            out[cell_key] = Cell(cell_key, int(n), float(num or 0), float(den or 0))
-        return out
+            cell_key = tuple(row[i] for i in key_pos)
+            sids.setdefault(cell_key, set()).add(row[0])
+            nums.setdefault(cell_key, []).append(float(row[-2] or 0))
+            dens.setdefault(cell_key, []).append(float(row[-1] or 0))
+        return {
+            cell_key: Cell(
+                cell_key,
+                len(sids[cell_key]),
+                math.fsum(nums[cell_key]),
+                math.fsum(dens[cell_key]),
+            )
+            for cell_key in sorted(sids)
+        }
 
 
 def _hidden(
