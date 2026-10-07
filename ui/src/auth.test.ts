@@ -218,6 +218,10 @@ describe('canSeeAuditLog — the audit-log gate for every role', () => {
       executive: true,
       staff: false,
       aid: false,
+      finance: false,
+      registrar: false,
+      studentlife: false,
+      it: true,
     }
     for (const role of Object.keys(expected) as Role[]) {
       expect(canSeeAuditLog(role)).toBe(expected[role])
@@ -233,6 +237,10 @@ describe('the Financial Aid review queue gates, matching the API table', () => {
       executive: { read: true, edit: false, act: true },
       reviewer: { read: true, edit: false, act: false },
       staff: { read: false, edit: false, act: false },
+      finance: { read: false, edit: false, act: false },
+      registrar: { read: false, edit: false, act: false },
+      studentlife: { read: false, edit: false, act: false },
+      it: { read: false, edit: false, act: false },
     }
     for (const role of Object.keys(expected) as Role[]) {
       expect(canSeeAidQueue(role)).toBe(expected[role].read)

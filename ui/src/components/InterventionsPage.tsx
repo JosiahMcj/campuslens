@@ -68,6 +68,11 @@ export function InterventionsPage() {
     )
   }
   const { data } = state
+  // An office role sees the programs it runs (the aid office: the theology
+  // bridge); the president and the admin see every program.
+  const programs = data.programs.some((p) => p.can_prepare)
+    ? data.programs.filter((p) => p.can_prepare || p.can_decide)
+    : data.programs
   return (
     <div className="iv-page">
       <p className="iv-principle">
@@ -75,13 +80,13 @@ export function InterventionsPage() {
         can read, and the figures below are totals for groups of at least 10 students.
       </p>
       <nav className="iv-jump" aria-label="Programs on this page">
-        {data.programs.map((p) => (
+        {programs.map((p) => (
           <a key={p.id} href={`#program-${p.id}`}>
             {p.name}
           </a>
         ))}
       </nav>
-      {data.programs.map((p) => (
+      {programs.map((p) => (
         <ProgramCard key={p.id} program={p} termName={data.current_term_name} onChanged={reload} />
       ))}
     </div>

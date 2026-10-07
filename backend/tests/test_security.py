@@ -437,6 +437,17 @@ def test_every_protected_route_is_in_the_role_table() -> None:
         ("GET", "/admin/connections"),
         # The demonstration student directory (tests/test_roster.py).
         ("GET", "/students/search"),
+        # Briefing follow-ups, answered in code (tests/test_followup.py).
+        ("POST", "/briefing/follow-up"),
+        # The Data page (tests/test_dashboards.py).
+        ("GET", "/data/dashboards"),
+        ("GET", "/data/series"),
+        # Department accounts and the inbox (tests/test_roles_inbox.py).
+        ("GET", "/admin/sessions"),
+        ("GET", "/departments/overview"),
+        ("GET", "/inbox"),
+        ("GET", "/inbox/recipients"),
+        ("POST", "/inbox"),
         # Support programs, aggregate (tests/test_interventions.py); the
         # outreach routes carry ids and live in ROUTE_ROLE_PREFIXES.
         ("GET", "/interventions"),
@@ -551,6 +562,8 @@ _PREFIX_SAMPLES: tuple[tuple[str, str], ...] = (
     ("PATCH", "/staff-actions/999"),
     ("POST", "/staff-actions/999/notes"),
     ("POST", "/staff-actions/999/send"),
+    ("POST", "/inbox/999/read"),
+    ("POST", "/inbox/999/reviewed"),
 )
 
 # A route that is open to a role in the table but narrows itself inside

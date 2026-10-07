@@ -104,6 +104,14 @@ EVENT_TYPES: tuple[str, ...] = (
     # matches, shown, directory). Never the search text and never a student
     # id or name: the log records that a lookup happened and by whom.
     "student.searched",
+    # The per-account inbox (cabinet.inbox). inbox.sent: a named person sent
+    # an alert to another account (payload: message_id, recipient_id,
+    # recipient_role, source_kind, source_ref, has_review_by). inbox.read /
+    # inbox.reviewed: the recipient opened it / marked it reviewed (payload:
+    # message_id, sender_id). Never the note text and never a student id.
+    "inbox.sent",
+    "inbox.read",
+    "inbox.reviewed",
     # Support-program outreach lists (cabinet.outreach). outreach.prepared:
     # a person prepared the list a program's rule names for a term
     # (payload: list_id, program_id, term, count). outreach.decided: an

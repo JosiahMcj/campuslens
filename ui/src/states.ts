@@ -316,9 +316,15 @@ export const PAGE_SLUGS = {
   audit: 'audit-log',
   aid: 'financial-aid-review',
   students: 'find-a-student',
+  data: 'data',
   interventions: 'support-programs',
   profile: 'profile',
   settings: 'settings',
+  overview: 'department-overview',
+  inbox: 'inbox',
+  accounts: 'accounts',
+  sessions: 'sign-in-activity',
+  connections: 'connections',
 } as const
 
 export type PageId = keyof typeof PAGE_SLUGS
@@ -830,6 +836,10 @@ export const EVENT_TYPES = [
   'action.send_failed',
   // The demonstration student directory: a name search (never the text).
   'student.searched',
+  // The per-account inbox (never the note's text).
+  'inbox.sent',
+  'inbox.read',
+  'inbox.reviewed',
   // Support-program outreach lists (counts and list ids, never a student id).
   'outreach.prepared',
   'outreach.decided',

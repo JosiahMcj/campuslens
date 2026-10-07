@@ -63,7 +63,15 @@ export interface ExploreCatalog {
 /** Every role but the Financial Aid office may ask Explore questions
  * (the API answers the aid role 403). Matches ROUTE_ROLES in the API. */
 export function canExplore(role: Role): boolean {
-  return role === 'admin' || role === 'executive' || role === 'staff' || role === 'reviewer'
+  return (
+    role === 'admin' ||
+    role === 'executive' ||
+    role === 'staff' ||
+    role === 'reviewer' ||
+    role === 'finance' ||
+    role === 'registrar' ||
+    role === 'studentlife'
+  )
 }
 
 /** The owner's example: always one of the three "Try" questions. */

@@ -181,8 +181,10 @@ from cabinet.audit import EVENT_TYPES
 from cabinet.auth import (
     COOKIE_NAME,
     ENV_ENV,
+    IT_MANAGED_ROLES,
     PRODUCTION,
     ROLE_ADMIN,
+    ROLE_IT,
     ROLE_STAFF,
     USER_ROLES,
     AuthStore,
@@ -195,10 +197,18 @@ from cabinet.auth import (
 )
 from cabinet.connections import router as connections_router
 from cabinet.counseling import M9_ID, authorization_block, m9_finding
+from cabinet.dashboards import router as dashboards_router
 from cabinet.datasets import UploadError, validate_upload
+from cabinet.departments import router as departments_router
 from cabinet.explore.api import router as explore_router
-from cabinet.explore.privacy import redact_question
+from cabinet.explore.privacy import counseling_message, redact_question
 from cabinet.fixture import parse_fixture
+from cabinet.followup import COUNSELING_FIELDS
+from cabinet.followup import EMPLOYEE_TITLES as FOLLOW_UP_TITLES
+from cabinet.followup import Context as FollowUpContext
+from cabinet.followup import answer as answer_follow_up
+from cabinet.followup import classify as classify_follow_up
+from cabinet.inbox import router as inbox_router
 from cabinet.metrics import findings as compute_findings
 from cabinet.migrations import (
     BOOTSTRAP_SLUG,
@@ -237,6 +247,7 @@ from cabinet.questions import DEMO_DECISION_ID as DEMO_DECISION_ID
 from cabinet.questions import OUT_OF_SCOPE_REFUSAL as OUT_OF_SCOPE_REFUSAL
 from cabinet.roster import router as roster_router
 from cabinet.security import (
+    AUDIT_ROLES,
     GENERIC_LOGIN_ERROR,
     ROW_ROLES,
     CabinetSecurityMiddleware,
@@ -271,6 +282,22 @@ LEGACY_TASK_STATUS = "simulated, nothing sent"
 
 class AskRequest(BaseModel):
     question: str
+
+
+# The events of one briefing run that its audit trail shows.
+TRAIL_EVENT_TYPES = (
+    "question.asked",
+    "task.assigned",
+    "finding.produced",
+    "briefing.produced",
+)
+
+
+class FollowUpRequest(BaseModel):
+    question: str
+    # The conversation already shows a briefing: questions that lean on it
+    # ("the change", "this plan") are follow-ups only then.
+    has_briefing: bool = False
 
 
 class ApproveRequest(BaseModel):
@@ -1384,6 +1411,142 @@ def create_app(
             }
         return {"granted": True, "role": body.role, "granted_fields": granted}
 
+    @app.post("/briefing/follow-up")
+    def post_briefing_follow_up(
+        body: FollowUpRequest, request: Request
+    ) -> dict[str, Any]:
+        """A question asked after (or about) the registration briefing,
+        answered in code from the findings, the briefing's actions and
+        decision, the dataset metadata and the audit log. No model call,
+        no student identifier, nothing approved or sent.
+
+        ``{"matched": false}`` (nothing recorded) when the question is not
+        a follow-up: the UI then asks Explore, which records it itself.
+        ``{"matched": true, "kind": "approved"}`` when it is the approved
+        briefing question in other words: the UI asks it through /ask.
+        ``kind: "denied"`` for a counseling request to a named AI employee:
+        the permission gate refuses the counseling fields to that employee
+        and records the refusal. ``kind: "answer"`` carries the answer."""
+        question = " ".join(body.question.split())[:500]
+        route = classify_follow_up(question, body.has_briefing)
+        if route is None:
+            return {"matched": False}
+        if route.kind == "approved":
+            return {
+                "matched": True,
+                "kind": "approved",
+                "question": DEFAULT_QUESTION.text,
+            }
+        institution_id = request_institution(request)
+        audit = store.audit_for(institution_id)
+        user = request.scope["cabinet_user"]
+        asked = audit.append(
+            "question.asked",
+            actor=str(user["email"]),
+            payload={
+                "question": redact_question(question),
+                "route": "/briefing/follow-up",
+                "role": str(user["role"]),
+                **({"intent": route.intent} if route.intent else {}),
+            },
+        )
+        task_id = f"follow-up-{asked['id']}"
+        if route.kind == "denied":
+            employee = route.employee or CHIEF_OF_STAFF
+            try:
+                request_fields(employee, list(COUNSELING_FIELDS), task_id, audit)
+            except FieldRequestRefused as exc:
+                refused_event = exc.event
+            else:  # pragma: no cover - the gate refuses counseling to every role
+                raise RuntimeError("counseling fields were granted")
+            return {
+                "matched": True,
+                "kind": "denied",
+                "employee": employee,
+                "employee_title": FOLLOW_UP_TITLES.get(employee, "AI employee"),
+                "message": counseling_message(employee),
+                "event_ids": [asked["id"], refused_event["id"]],
+            }
+        runtime = runtime_for(institution_id)
+        dataset_id = int(runtime.dataset["id"])
+        briefing = store.latest_briefing(institution_id, dataset_id=dataset_id)
+        all_events = store.audit_events(institution_id)
+        produced = [e for e in all_events if e["type"] == "briefing.produced"]
+        # The audit trail and the briefing times come from the audit log, so
+        # only the roles that may read the log (GET /events) see them.
+        audit_reader = str(user["role"]) in AUDIT_ROLES
+        extra: dict[str, Any] = {"audit_reader": audit_reader}
+        if len(produced) >= 2:
+            low, high = produced[-2]["id"], produced[-1]["id"]
+            extra["dataset_changed_between"] = any(
+                e["type"] == "dataset.activated" and low < e["id"] < high
+                for e in all_events
+            )
+        if produced and audit_reader:
+            start = produced[-1]["payload"].get("question_event_id")
+            run = [
+                e
+                for e in all_events
+                if isinstance(start, int)
+                and start <= e["id"] <= produced[-1]["id"]
+                and e["type"] in TRAIL_EVENT_TYPES
+            ]
+            decided = [
+                e
+                for e in all_events
+                if e["id"] > produced[-1]["id"]
+                and e["type"] in ("decision.approved", "task.created")
+            ]
+            extra["trail"] = (run + decided)[:16]
+        approvals = store.approvals(institution_id, dataset_id=dataset_id)
+        context = FollowUpContext(
+            findings=runtime.findings,
+            document=runtime.document,
+            dataset=dict(runtime.dataset),
+            briefing=briefing,
+            briefing_events=produced,
+            approvals=approvals,
+            decisions=DEFAULT_QUESTION.build_decisions(runtime.findings),
+            actions=DEFAULT_QUESTION.build_actions(runtime.findings),
+            fictional=runtime.fictional,
+            role=str(user["role"]),
+            extra=extra,
+        )
+        assert route.intent is not None
+        result = answer_follow_up(route.intent, context)
+        finding_ids = list(result.get("finding_ids") or [])
+        fields_read = sorted(
+            {
+                str(field)
+                for fid in finding_ids
+                for field in (runtime.findings.get(fid) or {}).get("source_fields", [])
+            }
+        )
+        event_ids = [asked["id"]]
+        if fields_read:
+            # Only when the answer read figures: the permissions, employees
+            # and changes answers read no student field.
+            granted = audit.append(
+                "data.granted",
+                actor=CHIEF_OF_STAFF,
+                payload={
+                    "task_id": task_id,
+                    "question_event_id": asked["id"],
+                    "findings": finding_ids,
+                    "fields_read": fields_read,
+                    "aggregate_only": True,
+                    "intent": route.intent,
+                },
+            )
+            event_ids.append(granted["id"])
+        return {
+            "matched": True,
+            "kind": "answer",
+            **result,
+            "event_ids": event_ids,
+            "fictional": runtime.fictional,
+        }
+
     def briefing_response(
         role: str, force_refresh: bool, request: Request
     ) -> JSONResponse:
@@ -2376,9 +2539,30 @@ def create_app(
                 "sha256": dataset["sha256"],
             },
         )
+        disable_demo_accounts(institution_id, user)
         dataset = store.dataset_row(institution_id, dataset_id)
         assert dataset is not None
         return JSONResponse(content={"dataset": dataset_body(dataset)})
+
+    def disable_demo_accounts(institution_id: int, by: dict[str, Any]) -> None:
+        """Real data switches the demonstration sign-ins off: once the active
+        dataset is not the fictional one, every enabled ``@demo.test``
+        account of the institution is disabled (one admin.changed event
+        each), except administrators and the person activating, so nobody
+        is locked out. Re-enabling one is a deliberate admin action."""
+        if runtime_for(institution_id).fictional:
+            return
+        for row in store.users_for(institution_id):
+            if (
+                row["disabled"]
+                or row["role"] == ROLE_ADMIN
+                or int(row["id"]) == int(by["id"])
+                or not str(row["email"]).endswith("@demo.test")
+            ):
+                continue
+            updated = store.set_user_disabled(institution_id, int(row["id"]), True)
+            if updated is not None:
+                admin_changed(institution_id, "disabled", updated, by)
 
     @app.delete("/admin/datasets/{dataset_id}")
     def delete_admin_dataset(dataset_id: int, request: Request) -> JSONResponse:
@@ -2446,6 +2630,30 @@ def create_app(
             },
         )
 
+    def it_refusal(
+        request: Request, caller: dict[str, Any], *roles: str
+    ) -> JSONResponse | None:
+        """IT manages the department and staff accounts only: an IT caller
+        touching an admin, executive or IT account (or giving one of those
+        roles) is a logged 403. None for every other caller and case."""
+        if caller["role"] != ROLE_IT or all(r in IT_MANAGED_ROLES for r in roles):
+            return None
+        detail = (
+            "IT manages department and staff accounts; an administrator "
+            "changes admin, executive and IT accounts"
+        )
+        store.audit_append(
+            int(caller["institution_id"]),
+            "data.refused",
+            actor=str(caller["id"]),
+            payload={
+                "reason": detail,
+                "method": request.method,
+                "path": request.url.path,
+            },
+        )
+        return JSONResponse(status_code=403, content={"detail": detail})
+
     @app.get("/admin/users")
     def get_admin_users(request: Request) -> list[dict[str, Any]]:
         """Every user of the caller's institution (the admin's own row
@@ -2473,6 +2681,9 @@ def create_app(
                     f"expected one of {', '.join(USER_ROLES)}"
                 ),
             )
+        refused = it_refusal(request, admin, body.role)
+        if refused is not None:
+            return refused
         password = generate_password()
         try:
             user_id = store.create_user(
@@ -2484,13 +2695,18 @@ def create_app(
         target = store.user_in_institution(institution_id, user_id)
         assert target is not None  # just created
         admin_changed(institution_id, "created", target, admin)
+        # IT creates the account but never learns its password: whoever
+        # holds it could sign in as a role that reads the briefing. An
+        # administrator issues the first password (make reset-password).
+        issued_by_admin = admin["role"] == ROLE_IT
         return JSONResponse(
             status_code=201,
             content={
                 "id": user_id,
                 "email": email,
                 "role": body.role,
-                "one_time_password": password,
+                "one_time_password": None if issued_by_admin else password,
+                "password_issued_by_admin": issued_by_admin,
             },
         )
 
@@ -2510,6 +2726,9 @@ def create_app(
             return JSONResponse(
                 status_code=404, content={"detail": f"unknown user id {user_id}"}
             )
+        refused = it_refusal(request, admin, str(target["role"]))
+        if refused is not None:
+            return refused
         if disabled:
             if int(target["id"]) == int(admin["id"]):
                 return JSONResponse(
@@ -2574,6 +2793,9 @@ def create_app(
             return JSONResponse(
                 status_code=404, content={"detail": f"unknown user id {user_id}"}
             )
+        refused = it_refusal(request, admin, str(target["role"]), body.role)
+        if refused is not None:
+            return refused
         if target["role"] == body.role:
             return JSONResponse(
                 content={"user": admin_user_body(target), "changed": False}
@@ -2603,6 +2825,12 @@ def create_app(
     app.include_router(outreach_router)  # /interventions, /outreach/{id}
     app.include_router(connections_router)  # GET /admin/connections
     app.include_router(roster_router)  # GET /students/search
+    app.include_router(dashboards_router)  # GET /data/dashboards, /data/series
+    # GET /departments/overview (cabinet.departments)
+    app.include_router(departments_router)
+    # GET/POST /inbox, /inbox/recipients, /inbox/{id}/read|reviewed,
+    # GET /admin/sessions (cabinet.inbox)
+    app.include_router(inbox_router)
 
     # The built UI, served by the same process. Mounted after every API
     # route so an API path always wins over the static mount; a missing

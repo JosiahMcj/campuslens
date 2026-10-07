@@ -71,8 +71,8 @@ PURPOSE: dict[str, str] = {
     "credit_hours_by_term": "credit hours attempted and earned in each term",
     "measure_by_group": "ONE measure (below) for all students, or broken down by "
     "up to two groupings, with filters; counts and rates for any student group",
-    "program_impact": "did a support program work (AI tutoring, theology funding "
-    "bridge, major-fit advising)",
+    "program_impact": "is a support program working or helping (AI tutoring, "
+    "theology funding bridge, major-fit advising)",
     "program_reach": "students eligible for a support program, and take-up",
 }
 

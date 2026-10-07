@@ -78,6 +78,14 @@ it cannot ask, sign off on a decision, prepare or send a message, or read the au
 | `reviewer` | no | yes | yes | no | yes | no | no |
 | `aid` | no | yes | no | no | yes | yes | no |
 
+Four more roles came with the department accounts. `finance`, `registrar` and
+`studentlife` read the briefing's aggregate figures, ask aggregate Explore
+questions and read their own department overview. `it` manages the department
+and staff accounts, reads sign-in activity, the connections and the audit
+log, and reads nothing about students: the findings, the briefing and
+Explore all answer it 403. None of the four is in `ROW_ROLES`. The table of
+who sees what, the inbox and its audit events are in docs/ROLES.md.
+
 **Student ids in the findings.** `GET /findings` is open to every role, but the
 pseudonymous student ids behind each figure (every `row_ids` list, M5's per-office
 `hold_row_ids`, and M8's per-student `row_rules`) go to the `executive` and `admin`

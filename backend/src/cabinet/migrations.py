@@ -68,7 +68,7 @@ def ensure_private_db_file(path: str | os.PathLike[str]) -> None:
             os.chmod(side, DB_FILE_MODE)
 
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 
 class SchemaVersionError(RuntimeError):
@@ -547,6 +547,43 @@ def _migration_9(conn: sqlite3.Connection) -> None:
 
 
 def _migration_10(conn: sqlite3.Connection) -> None:
+    """The per-account inbox: ``inbox_messages``.
+
+    One row per alert one person sends another in the same institution
+    (``cabinet.inbox``): a short note, an optional review-by date, and what
+    it points at (``source_kind``/``source_ref``) with ``snapshot``, the
+    aggregate the sender saw, built by the server at send time (a finding's
+    figure without its student ids, an overview figure, or an Explore
+    answer's sentences) — never a student row. ``read_at`` and
+    ``reviewed_at`` are set by the recipient only.
+    """
+    for statement in (
+        """
+        CREATE TABLE IF NOT EXISTS inbox_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            institution_id INTEGER NOT NULL REFERENCES institutions(id),
+            sender_id INTEGER NOT NULL REFERENCES users(id),
+            recipient_id INTEGER NOT NULL REFERENCES users(id),
+            note TEXT NOT NULL,
+            review_by TEXT,
+            source_kind TEXT NOT NULL
+                CHECK (source_kind IN ('note', 'finding', 'overview', 'explore')),
+            source_ref TEXT,
+            snapshot TEXT,
+            created_at TEXT NOT NULL,
+            read_at TEXT,
+            reviewed_at TEXT
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_inbox_recipient"
+        " ON inbox_messages (institution_id, recipient_id)",
+        "CREATE INDEX IF NOT EXISTS idx_inbox_sender"
+        " ON inbox_messages (institution_id, sender_id)",
+    ):
+        conn.execute(statement)
+
+
+def _migration_11(conn: sqlite3.Connection) -> None:
     """Support-program outreach lists (``cabinet.outreach``).
 
     A person allowed per-student rows prepares the list of students a
@@ -604,7 +641,8 @@ MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (7, "counseling aggregate authorization", _migration_7),
     (8, "demonstration institution display name", _migration_8),
     (9, "staff action worklist", _migration_9),
-    (SCHEMA_VERSION, "support-program outreach lists", _migration_10),
+    (10, "per-account inbox", _migration_10),
+    (SCHEMA_VERSION, "support-program outreach lists", _migration_11),
 ]
 
 
