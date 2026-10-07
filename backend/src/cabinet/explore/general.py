@@ -69,9 +69,13 @@ class Grouping:
     ordinal: bool = False  # shown in natural order unless a ranking is asked
 
 
-ALL_UNITS = frozenset({"student", "student_term", "cohort", "graduate", "registration"})
+ALL_UNITS = frozenset(
+    {"student", "student_term", "cohort", "graduate", "registration", "account"}
+)
 PERSON_UNITS = ALL_UNITS
-TERM_UNITS = frozenset({"student", "student_term", "registration", "graduate"})
+TERM_UNITS = frozenset(
+    {"student", "student_term", "registration", "graduate", "account"}
+)
 
 NOT_RECORDED = "not_recorded"
 
@@ -90,7 +94,7 @@ GROUPINGS: dict[str, Grouping] = {
                 "Junior": "Juniors",
                 "Senior": "Seniors",
             },
-            frozenset({"student", "student_term", "registration"}),
+            frozenset({"student", "student_term", "registration", "account"}),
             ordinal=True,
         ),
         Grouping("term", "Term", "term", {}, TERM_UNITS, ordinal=True),
@@ -228,11 +232,25 @@ GROUPINGS: dict[str, Grouping] = {
             },
             frozenset({"student", "student_term"}),
         ),
+        Grouping(
+            "aging",
+            "Days past due",
+            "days past due",
+            {
+                "1_30": "1 to 30 days past due",
+                "31_60": "31 to 60 days past due",
+                "61_90": "61 to 90 days past due",
+                "over_90": "More than 90 days past due",
+            },
+            frozenset({"account"}),
+            ordinal=True,
+        ),
     )
 }
 GROUPING_KEYS: tuple[str, ...] = tuple(GROUPINGS)
 CLASS_ORDER = ("Freshman", "Sophomore", "Junior", "Senior")
 AGE_ORDER = ("under_20", "20_24", "25_34", "35_plus")
+AGING_ORDER = ("1_30", "31_60", "61_90", "over_90")
 
 
 # --- measures ---------------------------------------------------------------------
@@ -243,7 +261,7 @@ class Measure:
     id: str
     label: str  # "dropout rate"
     unit: str
-    kind: str  # pct, gpa, count, average, years
+    kind: str  # pct, gpa, count, average, years, dollars (a sum), avg_dollars
     num: str  # SQL aggregate over base alias b
     den: str
     where: str  # extra condition on base rows for this measure ("1 = 1" if none)
@@ -667,8 +685,153 @@ MEASURES: dict[str, Measure] = {
             "Graded registrations",
             "window",
         ),
+        # Student accounts (the billing tables): one row per student per
+        # billed fall or spring term. See ACCOUNT_NOTE.
+        Measure(
+            "past_due_balance",
+            "past-due balance",
+            "account",
+            "dollars",
+            "SUM(b.balance)",
+            "COUNT(*)",
+            "b.past_due = 1",
+            "Balances still unpaid on billed terms whose due date has passed, as of "
+            "the "
+            "end of the records (May 8, 2026), in dollars rounded to the nearest $100. "
+            "Each student counted in the major of the billed term.",
+            "Past-due balance ($)",
+            "Past-due balance",
+            "Students past due",
+            "window",
+        ),
+        Measure(
+            "past_due_students",
+            "number of students past due",
+            "account",
+            "count",
+            "COUNT(DISTINCT b.sid)",
+            "COUNT(DISTINCT b.sid)",
+            "b.past_due = 1",
+            "Students with an unpaid balance on a billed term whose due date has "
+            "passed, "
+            "as of the end of the records (May 8, 2026); each student counted once.",
+            "Students past due",
+            "Students past due",
+            "Students past due",
+            "window",
+        ),
+        Measure(
+            "past_due_90_students",
+            "number of students more than 90 days past due",
+            "account",
+            "count",
+            "COUNT(DISTINCT b.sid)",
+            "COUNT(DISTINCT b.sid)",
+            "b.past_due = 1 AND b.days_past_due > 90",
+            "Students with an unpaid balance more than 90 days past its due date, as "
+            "of "
+            "the end of the records (May 8, 2026).",
+            "Students more than 90 days past due",
+            "Students",
+            "Students",
+            "window",
+        ),
+        Measure(
+            "on_time_payment_rate",
+            "on-time payment rate",
+            "account",
+            "pct",
+            "SUM(b.on_time)",
+            "COUNT(*)",
+            "1 = 1",
+            "Share of the students billed for the term (by default the latest fall or "
+            "spring) who paid in full by the due date or are on a payment plan.",
+            "Paid on time (%)",
+            "Paid on time",
+            "Students billed",
+            "term",
+            "lowest_first",
+        ),
+        Measure(
+            "payment_plan_share",
+            "payment-plan share",
+            "account",
+            "pct",
+            "SUM(b.on_plan)",
+            "COUNT(*)",
+            "1 = 1",
+            "Share of the students billed for the term (by default the latest fall or "
+            "spring) who pay through an installment payment plan.",
+            "On a payment plan (%)",
+            "On a payment plan",
+            "Students billed",
+            "term",
+        ),
+        Measure(
+            "collection_rate",
+            "collection rate",
+            "account",
+            "pct",
+            "SUM(b.paid)",
+            "SUM(b.charged)",
+            "1 = 1",
+            "Dollars paid over dollars billed for the term (by default the latest fall "
+            "or spring), as of the end of the records (May 8, 2026).",
+            "Collected (%)",
+            "Paid ($)",
+            "Billed ($)",
+            "term",
+            "lowest_first",
+        ),
+        Measure(
+            "avg_balance_owed",
+            "average past-due balance",
+            "account",
+            "avg_dollars",
+            "SUM(b.balance)",
+            "COUNT(DISTINCT b.sid)",
+            "b.past_due = 1",
+            "The past-due balance divided by the students who owe it, rounded to the "
+            "nearest $10.",
+            "Average past-due balance ($)",
+            "Past-due balance ($)",
+            "Students past due",
+            "window",
+        ),
     )
 }
+ACCOUNT_MEASURES = frozenset(m.id for m in MEASURES.values() if m.unit == "account")
+PAST_DUE_MEASURES = frozenset(
+    (
+        "past_due_balance",
+        "past_due_students",
+        "past_due_90_students",
+        "avg_balance_owed",
+    )
+)
+BILLING_TABLES = ("student_charges", "student_payments", "payment_plans")
+BILLING_MISSING = (
+    "Student account records (charges, payments and payment plans) are not in this "
+    "school database yet."
+)
+ACCOUNT_NOTE = (
+    "Nothing is written off in these records: a balance left unpaid stays past due, "
+    "however old. A balance on an active payment plan is not past due."
+)
+
+
+def has_billing(con: sqlite3.Connection) -> bool:
+    """Whether the school database carries the student billing tables."""
+    names = {
+        r[0]
+        for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (?, ?, ?)",
+            BILLING_TABLES,
+        )
+    }
+    return names == set(BILLING_TABLES)
+
+
 MEASURE_KEYS: tuple[str, ...] = tuple(MEASURES)
 
 
@@ -698,6 +861,7 @@ _GROUPING_FIELDS: dict[str, tuple[str, ...]] = {
     "honors": ("student_profiles.honors",),
     "modality": ("sections.modality",),
     "hold": ("person_holds.term_code",),
+    "aging": ("student_charges.due_date", "student_payments.paid_on"),
 }
 
 _ELSEWHERE = "subsequent_enrollment (enrolled at another college)"
@@ -734,6 +898,13 @@ _MEASURE_FIELDS: dict[str, tuple[str, ...]] = {
     "graduates": ("student_academic_programs.status",),
     "dfw_rate": ("final_grades.grade",),
     "withdrawal_rate": ("final_grades.grade",),
+    "past_due_balance": ("student_charges.amount", "student_payments.amount"),
+    "past_due_students": ("student_charges.due_date", "student_payments.paid_on"),
+    "past_due_90_students": ("student_charges.due_date", "student_payments.paid_on"),
+    "on_time_payment_rate": ("student_payments.paid_on", "payment_plans.term_code"),
+    "payment_plan_share": ("payment_plans.term_code",),
+    "collection_rate": ("student_charges.amount", "student_payments.amount"),
+    "avg_balance_owed": ("student_charges.amount", "student_payments.amount"),
 }
 
 # Who is counted, by unit: the term each row belongs to, and the rows a unit
@@ -744,6 +915,7 @@ _UNIT_FIELDS: dict[str, tuple[str, ...]] = {
     "cohort": ("students.entry_type",),
     "graduate": ("student_academic_programs.end_term",),
     "registration": ("section_registrations.term_code", "courses.grade_mode"),
+    "account": ("student_charges.term_code",),
 }
 
 
@@ -774,6 +946,8 @@ def allowed_groupings(measure: Measure) -> tuple[str, ...]:
     if measure.id == "hold_rate":
         # Split by hold status, the hold rate is always 0% or 100%.
         out = [k for k in out if k != "hold"]
+    if measure.id not in PAST_DUE_MEASURES:
+        out = [k for k in out if k != "aging"]
     return tuple(out)
 
 
@@ -930,6 +1104,60 @@ WITH b AS (
     LEFT JOIN student_term_enrollment e
         ON e.student_id = sap.student_id AND e.term_code = sap.end_term
     WHERE sap.status = 'graduated' AND sap.end_term BETWEEN :term_from AND :term_to
+)""",
+    "account": f"""
+WITH asof AS (SELECT MAX(end_date) AS d FROM academic_periods),
+chg AS (
+    SELECT student_id, term_code, SUM(amount) AS charged, MIN(due_date) AS due_date
+    FROM student_charges WHERE term_code BETWEEN :term_from AND :term_to
+    GROUP BY student_id, term_code
+),
+pay AS (
+    SELECT c.student_id, c.term_code,
+        COALESCE(SUM(CASE WHEN p.paid_on <= (SELECT d FROM asof) THEN p.amount END), 0)
+            AS paid,
+        COALESCE(SUM(CASE WHEN p.paid_on <= c.due_date THEN p.amount END), 0)
+            AS paid_by_due
+    FROM chg c LEFT JOIN student_payments p
+        ON p.student_id = c.student_id AND p.term_code = c.term_code
+    GROUP BY c.student_id, c.term_code
+),
+acct AS (
+    SELECT c.student_id, c.term_code, c.charged, c.due_date,
+        MIN(y.paid, c.charged) AS paid, y.paid_by_due,
+        pl.student_id IS NOT NULL AS on_plan,
+        CASE WHEN c.charged - y.paid > 0.005 AND pl.student_id IS NULL
+                  AND c.due_date < (SELECT d FROM asof)
+             THEN CAST(julianday((SELECT d FROM asof)) - julianday(c.due_date)
+                       AS INTEGER)
+        END AS days_past_due
+    FROM chg c
+    JOIN pay y ON y.student_id = c.student_id AND y.term_code = c.term_code
+    LEFT JOIN payment_plans pl
+        ON pl.student_id = c.student_id AND pl.term_code = c.term_code
+),
+b AS (
+    SELECT a.student_id AS sid, a.term_code AS term, {_TERM_COLS}, {_PERSON_COLS},
+        a.charged AS charged, a.paid AS paid,
+        CASE WHEN a.days_past_due IS NULL THEN 0
+             ELSE ROUND(a.charged - a.paid, 2) END AS balance,
+        a.days_past_due IS NOT NULL AS past_due,
+        a.days_past_due AS days_past_due,
+        CASE WHEN a.days_past_due IS NULL THEN 'not_past_due'
+             WHEN a.days_past_due <= 30 THEN '1_30'
+             WHEN a.days_past_due <= 60 THEN '31_60'
+             WHEN a.days_past_due <= 90 THEN '61_90'
+             ELSE 'over_90' END AS aging,
+        a.on_plan AS on_plan,
+        (a.on_plan OR a.paid_by_due >= a.charged - 0.005) AS on_time
+    FROM acct a
+    JOIN student_term_records t
+        ON t.student_id = a.student_id AND t.term_code = a.term_code
+    JOIN students st ON st.student_id = a.student_id
+    JOIN student_profiles p ON p.student_id = a.student_id
+    JOIN academic_programs ap ON ap.program_code = t.program_code
+    LEFT JOIN student_term_enrollment e
+        ON e.student_id = a.student_id AND e.term_code = a.term_code
 )""",
     "registration": f"""
 WITH b AS (
@@ -1219,6 +1447,10 @@ def _column(key: str) -> str:
 def _value_of(cell: Cell, m: Measure) -> float | int:
     if m.kind == "count":
         return int(cell.num)
+    if m.kind == "dollars":
+        return int(round(cell.num / 100.0)) * 100
+    if m.kind == "avg_dollars":
+        return int(round(cell.num / cell.den / 10.0)) * 10 if cell.den else 0
     if not cell.den:
         return 0.0
     ratio = cell.num / cell.den
@@ -1275,6 +1507,8 @@ def _sort_key(key: str, value: str) -> Any:
         return CLASS_ORDER.index(value) if value in CLASS_ORDER else 99
     if key == "age_band":
         return AGE_ORDER.index(value) if value in AGE_ORDER else 99
+    if key == "aging":
+        return AGING_ORDER.index(value) if value in AGING_ORDER else 99
     return value
 
 
@@ -1285,6 +1519,8 @@ def run(
     groups = [g for g in (p.get("group_by"), p.get("then_by")) if g]
     filters = {k: str(p[k]) for k in GROUPING_KEYS if k not in ("term",) and p.get(k)}
     m, groups_t = check_request(str(p.get("measure")), groups, filters)
+    if m.unit == "account" and not has_billing(con):
+        raise GeneralError(BILLING_MISSING)
     req = Request(m, groups_t, filters, p.get("term_from"), p.get("term_to"))
     r = _Runner(con, req, v)
     keys = list(groups_t)
@@ -1301,7 +1537,9 @@ def run(
                 "group" if not any(c[0] == "group" for c in columns) else "group_2"
             )
             columns.append((label_key, GROUPINGS[g].label, "text"))
-    value_kind = {"years": "average"}.get(m.kind, m.kind)
+    value_kind = {"years": "average", "dollars": "money", "avg_dollars": "money"}.get(
+        m.kind, m.kind
+    )
     scope_name = (
         v.terms.get(r.term_to, r.term_to)
         if m.scope == "term" and "term" not in keys
@@ -1317,6 +1555,9 @@ def run(
         columns.append(("window", "Window", "text"))
     if m.kind == "count":
         columns.append(("value", m.value_label, "count"))
+    elif m.kind == "dollars":
+        columns.append(("students", m.den_label, "count"))
+        columns.append(("value", m.value_label, value_kind))
     else:
         per_student = _per_student(m)
         columns.append(
@@ -1340,15 +1581,11 @@ def run(
             else:
                 row["group" if label_slot == 0 else "group_2"] = _labels(g, value, v)
                 label_slot += 1
-        if m.kind == "count":
-            row["value"] = int(cell.num)
-        else:
-            row["students"] = cell.students
-            row["denominator"] = _num_out(cell.den, m, den=True)
-            row["numerator"] = _num_out(cell.num, m, den=False)
-            row["value"] = _value_of(cell, m)
+        _fill(row, cell, m)
         row["_sort"] = (
-            (cell.num / cell.den) if (cell.den and m.kind != "count") else cell.num
+            (cell.num / cell.den)
+            if (cell.den and m.kind not in ("count", "dollars"))
+            else cell.num
         )
         row["_key"] = tuple(_sort_key(g, x) for g, x in zip(keys, key, strict=True))
         return row
@@ -1381,7 +1618,9 @@ def run(
 
     # The whole (one grouping): the parent of every row above, checked the
     # same way as a cell of its own.
-    if len(keys) == 1:
+    # (Not by days past due: a student with balances of different ages is in
+    # more than one group, so the groups do not add up to a whole.)
+    if len(keys) == 1 and keys != ["aging"]:
         total = r.cells([], filters)
         if () in total and () not in _hidden(r, [], filters, total, v):
             whole_row = row_for_total(total[()], m, keys)
@@ -1406,6 +1645,13 @@ def run(
         )
     if cut_note is not None:
         notes.append(cut_note)
+    if m.id in PAST_DUE_MEASURES:
+        notes.append(ACCOUNT_NOTE)
+    if "aging" in keys:
+        notes.append(
+            "Each billed term's balance is aged from its own due date, so a student "
+            "with balances of different ages is counted in each group."
+        )
     if "hold" in keys or "hold" in filters:
         notes.append(
             "A student counts as having a hold when a hold was placed on their "
@@ -1438,28 +1684,41 @@ def row_for_total(cell: Cell, m: Measure, keys: list[str]) -> dict[str, Any]:
         row[f"{g}_name"] = "All students"
     else:
         row["group"] = "All students"
-    if m.kind == "count":
-        row["value"] = int(cell.num)
-    else:
-        row["students"] = cell.students
-        row["denominator"] = _num_out(cell.den, m, den=True)
-        row["numerator"] = _num_out(cell.num, m, den=False)
-        row["value"] = _value_of(cell, m)
+    _fill(row, cell, m)
     row["_sort"] = None
     row["_total"] = True
     return row
 
 
+def _fill(row: dict[str, Any], cell: Cell, m: Measure) -> None:
+    """The figures of one cell: a count, a dollar sum with its students, or a
+    value with its numerator and denominator."""
+    if m.kind == "count":
+        row["value"] = int(cell.num)
+        return
+    row["students"] = cell.students
+    if m.kind != "dollars":
+        row["denominator"] = _num_out(cell.den, m, den=True)
+        row["numerator"] = _num_out(cell.num, m, den=False)
+    row["value"] = _value_of(cell, m)
+
+
 def _per_student(m: Measure) -> bool:
     """The denominator is the students themselves (one row per student)."""
-    return m.unit in ("student", "cohort", "graduate") and m.den == "COUNT(*)"
+    return (m.unit in ("student", "cohort", "graduate") and m.den == "COUNT(*)") or (
+        m.den == "COUNT(DISTINCT b.sid)"
+    )
 
 
 def _den_kind(m: Measure) -> str:
+    if m.id == "collection_rate":
+        return "money"
     return "hours" if m.id == "credit_completion_rate" else "count"
 
 
 def _num_kind(m: Measure) -> str:
+    if m.id == "collection_rate" or m.kind == "avg_dollars":
+        return "money"
     if m.kind == "gpa":
         return "average"
     if m.kind in ("average", "years") or m.id == "credit_completion_rate":
@@ -1468,6 +1727,8 @@ def _num_kind(m: Measure) -> str:
 
 
 def _num_out(value: float, m: Measure, *, den: bool) -> float | int:
+    if m.kind == "avg_dollars" and not den:
+        return int(round(value / 100.0)) * 100
     if (
         den
         or m.kind in ("pct", "count")

@@ -287,6 +287,17 @@ _COMMON_WORDS_TEXT = """
     asian american native pacific islander alaska hawaiian nonresident multiracial
     veteran veterans accounts life main academic student-life headcount yield
     applicants applications admitted admit accepted acceptance deposits dfw stem
+    budget budgets budgeted actual actuals spend spending spent overspend
+    overspending overspent underspent underspending expense expenses expenditure
+    expenditures revenue revenues income gift gifts grant grants endowment draw
+    deficit surplus discount discounting discounted net gross fund funds funded
+    fiscal fy cost costs center centers division divisions category categories
+    variance payment payments installment installments paid pay paying owe owed
+    owes owing balance balances overdue past-due delinquent delinquency receivable
+    receivables collection collections collected aging bill bills billed billing
+    charge charges late on-time money dollars salaries salary benefits operations
+    travel technology facilities auxiliary restricted operating source sources
+    ledger books spiritual chapel advancement administration plan plans
 """
 # Short and common names of subjects people type ("failed Calc").
 _ABBREVIATIONS_TEXT = """

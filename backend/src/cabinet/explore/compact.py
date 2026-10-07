@@ -65,6 +65,9 @@ PURPOSE: dict[str, str] = {
     "credit_hours_by_term": "credit hours attempted and earned in each term",
     "measure_by_group": "ONE measure (below) for all students, or broken down by "
     "up to two groupings, with filters; counts and rates for any student group",
+    "budget_vs_actual": "spending vs budget",
+    "revenue_by_source": "revenue by source vs budget",
+    "tuition_discount": "gross and net tuition, discount rate, by FY",
 }
 
 # One line per measure of measure_by_group.
@@ -95,6 +98,13 @@ MEASURE_LINES: dict[str, str] = {
     "graduates": "number of graduates",
     "dfw_rate": "D, F or withdrawal rate of course registrations",
     "withdrawal_rate": "course withdrawal rate",
+    "past_due_balance": "$ past due on student accounts",
+    "past_due_students": "students past due",
+    "past_due_90_students": "students over 90 days past due",
+    "on_time_payment_rate": "share paid on time",
+    "payment_plan_share": "share on a payment plan",
+    "collection_rate": "$ paid of $ billed",
+    "avg_balance_owed": "average past-due balance",
 }
 
 # Short names people use, beyond the names in the lists.
@@ -164,8 +174,8 @@ RULES = (
     "alone ranks nothing. A single group ('for Pell students', 'in Nursing') is "
     "a filter, not a grouping. To cover a college or several majors use one step "
     "with a college filter or group_by, never one step per major.\n"
-    "- order highest_first puts the highest rate first (hardest courses, most "
-    "failing, most students); lowest_first the lowest (easiest).\n"
+    "- order highest_first: highest first (hardest courses, most students); "
+    "lowest_first: lowest first.\n"
     "- A share or percent of students who are X uses the matching *_share "
     "measure.\n"
     "- 'Students with holds' is the filter hold: hold on the asked measure "
@@ -173,8 +183,7 @@ RULES = (
     "- Course difficulty: hardest/easiest classes is dfw_by_course; one named "
     "course's rate is course_dfw_trend; who taught a course is "
     "course_instructors.\n"
-    "- Set a term only when the question names one; headcount_growth compares "
-    "Fall 2020 with Fall 2025 unless other terms are named. Name terms like "
+    "- Set a term only when the question names one. Name terms like "
     '"Fall 2024"; courses by code or title; majors and '
     "colleges by name or code from the lists; instructors as written.\n"
     "- A later step may use an earlier step's top row: "
@@ -203,10 +212,13 @@ _KIND_TYPES = {
     "instructor": "instructor name",
     "academic_year": "academic year, e.g. 2024-2025",
     "entry_cohort": "entry cohort, e.g. 2021-2022",
+    "fiscal_year": "FY",
 }
 
 
 def _param_text(param: Param, catalog: Catalog) -> str:
+    if param.name == "top":
+        return "top: n"  # rounded up to an offered count (_round_top)
     if param.kind == "choice":
         kind = "|".join(str(c) for c in param.choices)
     elif param.kind == "category":
@@ -246,9 +258,16 @@ def _build(catalog: Catalog) -> str:
     lines = [INTRO, "", "ANALYSES (id: purpose. params; * = required):"]
     filter_keys = set(general.GROUPING_KEYS) - {"term"}
     for analysis in ANALYSES:
+        # The general analysis's measures and groupings are listed once,
+        # below, not again as parameter choices.
+        listed = {
+            "measure": "measure*: one of MEASURES",
+            "group_by": "group_by: one of GROUPINGS",
+            "then_by": "then_by: same as group_by",
+        }
         params = [
-            "then_by: same as group_by"
-            if p.name == "then_by"
+            listed[p.name]
+            if analysis.id == general.ANALYSIS_ID and p.name in listed
             else _param_text(p, catalog)
             for p in analysis.params
             if not (analysis.id == general.ANALYSIS_ID and p.name in filter_keys)
@@ -286,6 +305,11 @@ def _build(catalog: Catalog) -> str:
         f"TERMS: {terms[0]} to {terms[-1]} (Fall, Spring, Summer); the current "
         f"term is {current}."
     )
+    if v.fiscal_years:
+        lines.append(
+            f"FISCAL YEARS: {v.fiscal_years[0]}-{v.fiscal_years[-1]}; this year "
+            f"{v.fiscal_years[-1]}."
+        )
     lines.append("SYNONYMS: " + SYNONYMS)
     lines.append("")
     lines.append(RULES)
@@ -518,6 +542,34 @@ def _academic_year(text: str, options: tuple[str, ...]) -> str | None:
     return _year_range(raw, options)
 
 
+_THIS_YEAR = re.compile(r"^(?:this|current|the current|latest)(?: fiscal)? year$|^now$")
+_LAST_YEAR = re.compile(r"^(?:last|previous|prior)(?: fiscal)? year$")
+
+
+def fiscal_year(text: str, years: tuple[str, ...]) -> str | None:
+    """A fiscal year from "FY2025", "FY25", "fiscal 2025", "2025", "2024-2025",
+    "2024-25", "this year" or "last year" (the fiscal year ends in June of
+    the year named)."""
+    if not years:
+        return None
+    raw = _norm(text)
+    if _THIS_YEAR.match(raw):
+        return years[-1]
+    if _LAST_YEAR.match(raw):
+        return years[-2] if len(years) > 1 else None
+    match = re.fullmatch(r"(?:fy|fiscal(?: year)?)\s*(\d{4}|\d{2})", raw)
+    if match:
+        year = match.group(1)
+        end = int(year) if len(year) == 4 else 2000 + int(year)
+    else:
+        match = re.fullmatch(r"(\d{4})(?:\s+(?:20)?(\d{2}))?", raw)
+        if not match:
+            return None
+        end = int(match.group(1)) + (1 if match.group(2) else 0)
+    value = f"FY{end}"
+    return value if value in years else None
+
+
 def _choice(param: Param, value: Any) -> Any:
     if any(str(c) == str(value) for c in param.choices):
         return value
@@ -569,6 +621,8 @@ def _resolve_value(param: Param, value: Any, catalog: Catalog) -> Any:
         resolved = _academic_year(value, v.academic_years)
     elif param.kind == "entry_cohort":
         resolved = _academic_year(value, v.entry_cohorts)
+    elif param.kind == "fiscal_year":
+        resolved = fiscal_year(value, v.fiscal_years)
     elif param.kind == "category":
         resolved = next(
             (

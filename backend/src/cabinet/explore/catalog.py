@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from cabinet.counseling import MINIMUM_CELL_SIZE, SUPPRESSED_DISPLAY
+from cabinet.explore import finance as _finance
 from cabinet.explore import general as _general
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -129,6 +130,7 @@ class Vocab:
     hold_categories: tuple[str, ...]
     institution: str
     entry_cohorts: tuple[str, ...] = ()  # academic years of entry, oldest first
+    fiscal_years: tuple[str, ...] = ()  # FY2021 ... (empty without budget records)
 
     def course_label(self, course: str) -> str:
         return f"{course} {self.courses.get(course, '')}".strip()
@@ -185,6 +187,7 @@ def load_vocab(con: sqlite3.Connection) -> Vocab:
                 "|| substr(entry_term, 1, 4) FROM students ORDER BY 1"
             )
         ),
+        fiscal_years=_finance.fiscal_years(con),
     )
 
 
@@ -250,6 +253,9 @@ class Analysis:
     columns: tuple[Column, ...]
     run: Runner
     instructor_level: bool = False
+    # The roles that may run it at all (None: every Explore role). Another
+    # role is refused before it runs (403 and data.refused).
+    roles: tuple[str, ...] | None = None
 
     def param(self, name: str) -> Param | None:
         return next((p for p in self.params if p.name == name), None)
@@ -1675,6 +1681,124 @@ _DFW_COLS = (
 )
 
 
+def _finance_runner(
+    fn: Callable[
+        [sqlite3.Connection, dict[str, Any]], tuple[list[dict[str, Any]], list[str]]
+    ],
+) -> Runner:
+    def run(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Result:
+        try:
+            rows, notes = fn(con, p)
+        except _finance.BudgetMissing as exc:
+            raise AnalysisError(str(exc)) from None
+        return Result(rows, notes)
+
+    return run
+
+
+_P_FISCAL_YEAR = Param("fiscal_year", "Fiscal year", "fiscal_year")
+_BUDGET_FIELDS = (
+    "budget_lines.budget_amount",
+    "budget_lines.actual_amount",
+    "cost_centers.division",
+    "cost_centers.name",
+)
+_BUDGET_COLS = (
+    Column("budget", "Budget ($)", "money"),
+    Column("actual", "Actual ($)", "money"),
+    Column("variance", "Actual less budget ($)", "money"),
+    Column("variance_pct", "Over (+) or under (-) budget (%)", "pct"),
+)
+BUDGET_ANALYSES: tuple[Analysis, ...] = (
+    Analysis(
+        "budget_vs_actual",
+        "University budget against actual",
+        "The university's expense budget against actual spending for one fiscal year "
+        "(this year by default), by division, department or office, expense category, "
+        "or fund; optionally only those over budget.",
+        (
+            _P_FISCAL_YEAR,
+            Param(
+                "by",
+                "By",
+                "choice",
+                choices=_finance.BY_CHOICES,
+                choice_labels=_finance.BY_LABELS,
+                shown="By {}",
+            ),
+            Param(
+                "over_budget",
+                "Only over budget",
+                "choice",
+                choices=("yes",),
+                shown="Only those over budget",
+            ),
+            Param(
+                "order",
+                "Order",
+                "choice",
+                choices=ORDER_LOW_HIGH,
+                choice_labels={
+                    "highest_first": "most over budget first",
+                    "lowest_first": "most under budget first",
+                },
+                shown="Ranked: {}",
+            ),
+        ),
+        _BUDGET_FIELDS,
+        (Column("group", "Division, office or category"), *_BUDGET_COLS),
+        _finance_runner(_finance.budget_vs_actual),
+        roles=_finance.BUDGET_ROLES,
+    ),
+    Analysis(
+        "revenue_by_source",
+        "University revenue by source",
+        "Revenue for one fiscal year (this year by default) by source: gross tuition "
+        "less institutional aid, fees, housing, dining, gifts, grants and the "
+        "endowment "
+        "draw, budget against actual, and net revenue.",
+        (_P_FISCAL_YEAR,),
+        (
+            "revenue_lines.source",
+            "revenue_lines.budget_amount",
+            "revenue_lines.actual_amount",
+        ),
+        (Column("group", "Source"), *_BUDGET_COLS),
+        _finance_runner(_finance.revenue_by_source),
+        roles=_finance.BUDGET_ROLES,
+    ),
+    Analysis(
+        "tuition_discount",
+        "Tuition revenue and discount rate",
+        "Gross tuition, institutional aid, net tuition revenue (with its budget) and "
+        "the tuition discount rate in every fiscal year, or one.",
+        (_P_FISCAL_YEAR,),
+        (
+            "tuition_revenue.gross_tuition",
+            "tuition_revenue.institutional_aid",
+            "tuition_revenue.net_tuition",
+            "revenue_lines.budget_amount",
+        ),
+        (
+            Column("fiscal_year", "Fiscal year"),
+            Column("student_terms", "Student terms", "count"),
+            Column("gross_tuition", "Gross tuition ($)", "money"),
+            Column("institutional_aid", "Institutional aid ($)", "money"),
+            Column("net_tuition", "Net tuition revenue ($)", "money"),
+            Column("net_tuition_budget", "Net tuition budget ($)", "money"),
+            Column("discount_rate", "Discount rate (%)", "pct"),
+        ),
+        _finance_runner(_finance.tuition_discount),
+        roles=_finance.BUDGET_ROLES,
+    ),
+)
+
+
+def may_run(analysis: Analysis, role: str) -> bool:
+    """Whether the role may run the analysis at all."""
+    return analysis.roles is None or role in analysis.roles
+
+
 def _measure_by_group(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Result:
     try:
         rows, notes, columns = _general.run(con, p, v)
@@ -1723,7 +1847,9 @@ MEASURE_BY_GROUP = Analysis(
     "One reviewed measure (headcount, average GPA, dropout, stop-out, first-year "
     "retention, 4- and 6-year graduation, time to degree, D, F or withdrawal and "
     "withdrawal rates, probation, credits, major changes, advising, holds, Pell, "
-    "first-generation, international, part-time and on-campus shares) by up to two "
+    "first-generation, international, part-time and on-campus shares; student "
+    "accounts: past-due balances and students, on-time payment, payment plans, "
+    "collection) by up to two "
     "groupings (major, college, class level, term, entry cohort, residency, "
     "first-generation, Pell, gender, race and ethnicity, age at entry, admit type, "
     "full or part time, housing, athletes, honors, modality), with filters on any "
@@ -1779,6 +1905,9 @@ MEASURE_BY_GROUP = Analysis(
         "person_holds.term_code",
         "final_grades.grade",
         "sections.modality",
+        "student_charges (amount, due date)",
+        "student_payments (amount, date paid)",
+        "payment_plans.term_code",
     ),
     (
         Column("major", "Major code", entity="major"),
@@ -2342,6 +2471,7 @@ ANALYSES: tuple[Analysis, ...] = (
         _credit_hours,
     ),
     MEASURE_BY_GROUP,
+    *BUDGET_ANALYSES,
 )
 
 ANALYSIS_BY_ID: dict[str, Analysis] = {a.id: a for a in ANALYSES}
@@ -2408,6 +2538,8 @@ class Catalog:
             return v.hold_categories
         if param.kind == "entry_cohort":
             return v.entry_cohorts
+        if param.kind == "fiscal_year":
+            return v.fiscal_years
         raise ValueError(f"unknown parameter kind {param.kind!r}")
 
     def is_allowed(self, param: Param, value: Any) -> bool:

@@ -55,7 +55,12 @@ from cabinet.explore.catalog import (
     Param,
     Vocab,
 )
-from cabinet.explore.compact import Unresolved, compact_catalog, resolve_plan
+from cabinet.explore.compact import (
+    Unresolved,
+    compact_catalog,
+    fiscal_year,
+    resolve_plan,
+)
 from cabinet.explore.privacy import (
     count_form,
     historical_form,
@@ -1090,6 +1095,9 @@ class _ClausePlanner:
         return (terms[0], None) if terms else (None, None)
 
     def plan(self, text: str) -> Step | None:  # noqa: C901 - one rule per analysis
+        budget = _budget_step(text, self.m.vocab)
+        if budget is not None:
+            return budget
         e = self.m.extract(text)
         low = _LOW_RE.search(text) is not None
         high = _HIGH_RE.search(text) is not None
@@ -1443,8 +1451,103 @@ _LAST_YEAR_WORDS = r"\b(?:last|previous|prior)\s+(?:academic\s+)?year\b"
 
 # --- the general analysis: measure words, grouping words, filter words ------
 
+# --- the university's own budget (cabinet.explore.finance) ------------------
+
+_FY_WORDS = re.compile(
+    r"\b(?:fy\s?\d{2,4}|fiscal(?: year)?\s+\d{4}|(?:this|current|last|previous|"
+    r"prior)(?: fiscal)? year|(?:19|20)\d{2}\s*[-–/]\s*(?:19|20)?\d{2})\b",
+    re.I,
+)
+_TUITION_WORDS = (
+    r"discount(?:ing)? rate|tuition discount|\bdiscount(?:ing)?\b|net tuition|"
+    r"gross tuition|tuition revenue|institutional aid"
+)
+_REVENUE_WORDS = (
+    r"\brevenues?\b|\bincome\b|where (?:does|did) (?:our|the) money come from|"
+    r"\bgifts?\b|\bendowment\b|\bgrants? revenue"
+)
+_BUDGET_WORDS = (
+    r"\bbudget(?:s|ed)?\b|over ?spen|under ?spen|\bspending\b|\bexpenses?\b|"
+    r"\bexpenditures?\b|\bdeficit\b|\bsurplus\b"
+)
+_OVER_WORDS = (
+    r"over (?:the |their |its |our )?budget|over ?spen|exceed\w* (?:the |their |its )?"
+    r"budget|went over|ran over"
+)
+
+
+def _fiscal_year_in(text: str, v: Vocab) -> str | None:
+    match = _FY_WORDS.search(text)
+    if match is None:
+        return None
+    return fiscal_year(match.group(0), v.fiscal_years)
+
+
+def _budget_step(text: str, v: Vocab) -> Step | None:
+    """The university's budget, revenue or tuition discount, when the clause
+    asks about them (never about a student's balance)."""
+    if _has(r"past[- ]due|overdue|owe|balance|payment|\bpaid\b|\bpay\b|"
+            r"student accounts?|collection", text):
+        return None
+    p: dict[str, Any] = {}
+    year = _fiscal_year_in(text, v)
+    if _has(_TUITION_WORDS, text):
+        if year is not None:
+            p["fiscal_year"] = year
+        return Step("tuition_discount", p)
+    if _has(_BUDGET_WORDS, text) or _has(r"budget vs|vs\.? budget|against budget", text):
+        if year is not None:
+            p["fiscal_year"] = year
+        if _has(r"department|cost cent|office|\bunits?\b|program", text):
+            p["by"] = "cost_center"
+        elif _has(r"categor|by type|kind of", text):
+            p["by"] = "category"
+        elif _has(r"\bfunds?\b", text):
+            p["by"] = "fund"
+        if _has(_OVER_WORDS, text):
+            p["over_budget"] = "yes"
+            p["order"] = "highest_first"
+        elif _has(r"under (?:the |their |its |our )?budget|underspen", text):
+            p["order"] = "lowest_first"
+        return Step("budget_vs_actual", p)
+    if _has(_REVENUE_WORDS, text) and not _has(r"\bstudents?\b", text):
+        if year is not None:
+            p["fiscal_year"] = year
+        return Step("revenue_by_source", p)
+    return None
+
+
 # Measures only the general analysis computes, in the order they are tried.
 _NEW_MEASURES: tuple[tuple[str, str], ...] = (
+    # Student accounts (the billing tables), before any word they share.
+    (
+        "past_due_90_students",
+        r"(?:more than|over|beyond|at least|past) (?:90|ninety) days|90\+ days|"
+        r"(?:90|ninety) days (?:or more )?(?:past[- ]due|late|overdue|delinquent)",
+    ),
+    (
+        "avg_balance_owed",
+        r"average (?:past[- ]due |overdue |outstanding )?(?:balance|amount owed|debt)|"
+        r"average (?:amount )?(?:owed|past[- ]due)",
+    ),
+    (
+        "past_due_students",
+        r"how many (?:students )?(?:are |were )?(?:past[- ]due|overdue|delinquent|"
+        r"behind)|(?:number|count) of (?:students )?(?:past[- ]due|overdue|"
+        r"delinquent)|students (?:who are |that are )?(?:past[- ]due|overdue|"
+        r"delinquent|behind on)",
+    ),
+    (
+        "on_time_payment_rate",
+        r"on[- ]time payment|pa(?:y|id|ying) on time|pay(?:ing)? late|late payments?",
+    ),
+    ("payment_plan_share", r"payment plans?|installment plans?|installments"),
+    ("collection_rate", r"collection rate|collect(?:ed|ions?)\b"),
+    (
+        "past_due_balance",
+        r"past[- ]due|overdue|delinquen|outstanding balances?|accounts? receivable|"
+        r"\baging\b|how much (?:is |do students )?(?:owed|owe)",
+    ),
     (
         "time_to_degree",
         r"time[- ]to[- ](?:degree|graduat)|years? to (?:a )?(?:degree|"
@@ -1599,6 +1702,8 @@ _GROUPING_WORDS: dict[str, str] = {
     r"(?:non|other|regular)|non[- ]?honors|honors status|by honors",
     "modality": r"modalit|in[- ]person (?:vs\.?|versus|and|or) online|"
     r"online (?:vs\.?|versus|and|or) in[- ]person|delivery mode",
+    "aging": r"\baging\b|by (?:days|how long|how far) past[- ]due|"
+    r"how (?:long|far) past[- ]due|days past[- ]due (?:buckets?|bands?|groups?)",
     "hold": r"hold status|by holds?\b|with (?:and|or|vs\.?|versus) without "
     r"(?:a |any )?holds?|holds? (?:vs\.?|versus|and|or) (?:no|without) holds?",
 }

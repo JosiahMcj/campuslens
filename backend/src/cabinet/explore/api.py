@@ -47,8 +47,10 @@ from cabinet.explore.catalog import (
     SchoolDataMissing,
     catalog_for,
     connect_readonly,
+    may_run,
 )
 from cabinet.explore.execute import StepResult, execute
+from cabinet.explore.finance import BUDGET_REFUSAL
 from cabinet.explore.planner import (
     EXAMPLE_QUESTIONS,
     GREETING_MESSAGE,
@@ -518,6 +520,39 @@ def _explore(
 
         planned = outcome.steps
         assert planned is not None  # every path without steps returned above
+        barred = [
+            s.analysis_id
+            for s in planned
+            if not may_run(ANALYSES_BY_ID[s.analysis_id], role)
+        ]
+        if barred:
+            # The university budget, asked by a role that may not read it:
+            # refused before anything is read, and recorded.
+            audit.append(
+                "data.refused",
+                actor=EXPLORE_ACTOR,
+                payload={
+                    "task_id": task_id,
+                    "question_event_id": asked["id"],
+                    "category": "institutional_budget",
+                    "role": role,
+                    "analysis_ids": barred,
+                    "reason": BUDGET_REFUSAL,
+                    "before": "any analysis",
+                },
+            )
+            not_answered(outcome.planner)
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "refused": True,
+                    "message": BUDGET_REFUSAL,
+                    "answer": [],
+                    "steps": [],
+                    "suggestions": [],
+                    "source": None,
+                },
+            )
         # What the plan answers, in plain words from the validated plan (the
         # model's own reasoning text is never shown).
         emit({"type": "understood", "text": understood(planned, catalog, role)})
