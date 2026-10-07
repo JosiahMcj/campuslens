@@ -3,7 +3,7 @@
 Explore answers specific questions about the synthetic university in `data/school/`, like a
 real school's institutional research office would. Ask "Which major has the lowest GPA? In
 that major, what is historically the hardest class, and which instructor has historically
-taught it?" and the Cabinet answers in a few plain sentences, shows the three tables the
+taught it?" and CampusLens answers in a few plain sentences, shows the three tables the
 answer came from, and shows how each table was computed.
 
 Four rules hold for every answer.
@@ -90,7 +90,7 @@ and typos, such as "worst", "toughest", "lowest-performing", "who teaches", and
 - Which offices hold the most active holds?
 - What is the hardest class in Chemistry, and who taught it?
 
-A question no analysis answers gets "The Cabinet can't answer that from the approved
+A question no analysis answers gets "CampusLens can't answer that from the approved
 analyses yet." with the three example questions closest to it.
 
 ## How an answer is computed
@@ -98,7 +98,7 @@ analyses yet." with the three example questions closest to it.
 1. **Refusal check** (`explore/privacy.py`). Counseling and spiritual care, a student id or
    a numbered student, a request for individual students, and predictions about students
    are refused here. The API records `question.asked` and `data.refused`, and nothing else
-   runs. The screen shows a refusal as a calm note headed "Not something the Cabinet
+   runs. The screen shows a refusal as a calm note headed "Not something CampusLens
    answers", not as an error: "Individual counseling and spiritual-care records are never
    disclosed." for counseling (the briefing may still show an authorized aggregate count),
    and a line about totals only for a single student or a prediction.

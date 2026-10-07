@@ -691,7 +691,7 @@ def test_rate_limit_defaults_fit_a_shared_campus_address() -> None:
     assert DEFAULT_RATE_GENERAL_PER_MIN == 600
     assert DEFAULT_RATE_SESSION_PER_MIN == 120
     assert DEFAULT_RATE_ASK_PER_MIN == 5
-    assert RATE_LIMIT_MESSAGE == "The Cabinet is busy. Wait a minute and try again."
+    assert RATE_LIMIT_MESSAGE == "CampusLens is busy. Wait a minute and try again."
 
 
 def test_session_rate_limit_is_its_own_bucket(

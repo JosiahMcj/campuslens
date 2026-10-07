@@ -1168,7 +1168,7 @@ export function Institution({
             {uploadState.result.validation.counseling !== 'absent' && (
               <p className="hint">
                 The file includes counseling details. They are stored with the
-                upload, and the Cabinet always refuses them.
+                upload, and CampusLens always refuses them.
               </p>
             )}
           </div>

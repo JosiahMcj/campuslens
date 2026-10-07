@@ -241,8 +241,8 @@ export function ExploreAnswer({
     return (
       <div className="explore-answer">
         <div className="explore-declined" role="status">
-          <h3>Not something the Cabinet answers</h3>
-          <p>{response.message ?? 'The Cabinet answers with totals only.'}</p>
+          <h3>Not something CampusLens answers</h3>
+          <p>{response.message ?? 'CampusLens answers with totals only.'}</p>
           <p className="explore-recorded">
             The question and the refusal are recorded in the audit log.
             {onSeeAuditLog !== null && (
@@ -273,7 +273,7 @@ export function ExploreAnswer({
     return (
       <div className="explore-answer">
         <p className="explore-message">
-          {response.message ?? 'The Cabinet could not answer that question.'}
+          {response.message ?? 'CampusLens could not answer that question.'}
         </p>
         <Suggestions
           title="Try one of these"

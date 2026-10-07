@@ -458,7 +458,7 @@ def create_app(
         )
 
     app = FastAPI(
-        title="Golden Eagle AI Cabinet API",
+        title="CampusLens API",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -730,7 +730,7 @@ def create_app(
 
     @app.get("/questions")
     def get_questions() -> list[dict[str, str]]:
-        """The approved questions the Cabinet answers (the registry)."""
+        """The approved questions CampusLens answers (the registry)."""
         return [{"id": q.id, "text": q.text} for q in QUESTIONS]
 
     @app.get("/findings")

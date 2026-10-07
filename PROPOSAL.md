@@ -1,11 +1,11 @@
-# Golden Eagle AI Cabinet — Project Proposal for Executive SIS Intelligence
+# CampusLens — Project Proposal for Executive SIS Intelligence
 
 *Prepared for university leadership and the Gloo AI Hackathon team. Added to the repo
 2026-09-24 as the source of scope; `ROADMAP.md` turns it into dated work.*
 
 ## Project Identity
 
-Golden Eagle AI Cabinet is a governed team of permission-limited AI employees that helps
+CampusLens is a governed team of permission-limited AI employees that helps
 university leaders turn Student Information System data into clear executive understanding
 and timely human action.
 
@@ -16,7 +16,7 @@ human-centered action.
 
 The two-week prototype will deliver a President Weekly Student Success Briefing. A
 university leader asks one question in ordinary language: "What should I know about spring
-registration?" The AI Cabinet analyzes synthetic Ellucian-style data, produces an
+registration?" CampusLens analyzes synthetic Ellucian-style data, produces an
 evidence-based briefing, identifies actions for staff, and separates operational
 recommendations from decisions that require leadership.
 
@@ -50,7 +50,7 @@ what decision remains.
 
 ### The Product Opportunity
 
-Golden Eagle AI Cabinet treats institutional analysis as coordinated staff work. A Chief of
+CampusLens treats institutional analysis as coordinated staff work. A Chief of
 Staff agent receives an executive question, assigns narrow analytical tasks, and combines
 the results. Specialist agents work within defined permissions and return structured
 findings with source fields. The system presents proposed actions but leaves decisions and
@@ -58,7 +58,7 @@ communications to authorized people.
 
 ### Why AI Employees Instead of One Chatbot
 
-| Single General Chatbot | Golden Eagle AI Cabinet |
+| Single General Chatbot | CampusLens |
 |---|---|
 | May receive more data than the question requires | Routes each task to a role with limited data access |
 | Produces one answer without clear analytical ownership | Shows which AI employee produced each finding |
@@ -76,7 +76,7 @@ communications to authorized people.
 The prototype will answer only the spring-registration question. Additional questions
 belong to the product roadmap, not the two-week build.
 
-## AI Cabinet Structure
+## CampusLens Structure
 
 | AI Employee | Role in the Prototype | Data Boundary |
 |---|---|---|
@@ -190,7 +190,7 @@ connections, but not the private content of those conversations.
 
 The prototype is complete when we can run the full demonstration in four minutes,
 every reported metric matches the fictional source data, every major statement exposes its
-evidence, the AI Cabinet produces one coherent briefing, a human approves the leadership
+evidence, CampusLens produces one coherent briefing, a human approves the leadership
 follow-up, and one unauthorized request is visibly refused and recorded.
 
 ## Data and Technical Approach
@@ -223,7 +223,7 @@ follow-up, and one unauthorized request is visibly refused and recorded.
 | Days 3 and 4 | Generate fictional records, implement calculations, and build the dashboard shell. | Verified data service and interface |
 | Days 5 and 6 | Build the Enrollment Analyst and evidence links. | Enrollment findings with source support |
 | Days 7 and 8 | Build the Student Success Analyst and barrier analysis. | Student-success findings with source support |
-| Day 9 | Build the Chief of Staff routing and consolidated briefing. | Complete AI Cabinet response |
+| Day 9 | Build the Chief of Staff routing and consolidated briefing. | Complete CampusLens response |
 | Day 10 | Add action assignment, executive decision, and audit log. | Human approval workflow |
 | Day 11 | Add permission boundaries and one refusal demonstration. | Governance demonstration |
 | Days 12 to 14 | Validate calculations, test edge cases, improve design, record a backup demo, and rehearse. | Competition-ready submission |
@@ -270,14 +270,13 @@ follow-up, and one unauthorized request is visibly refused and recorded.
 
 ## Competition Pitch
 
-**One sentence:** Golden Eagle AI Cabinet transforms Ellucian SIS data into an executive
+**One sentence:** CampusLens transforms Ellucian SIS data into an executive
 briefing by coordinating permission-limited AI employees across enrollment and student
 success, helping university leaders see what matters, understand why, and direct timely
 human action.
 
 **Thirty second pitch:** University leaders have extensive student data, but answering one
-important question can still require several departments and multiple reports. Golden
-Eagle AI Cabinet gives each analytical function a permission-limited AI employee. An AI
+important question can still require several departments and multiple reports. CampusLens gives each analytical function a permission-limited AI employee. An AI
 Chief of Staff coordinates their work, verifies the evidence, and produces one executive
 briefing that separates staff actions from leadership decisions. Our first workflow answers
 the practical question of what the president should know about spring registration. The result
@@ -295,7 +294,7 @@ consequential decision.
 
 ## Approval Requested
 
-Approve Golden Eagle AI Cabinet as the project name and approve the President Weekly
+Approve CampusLens as the project name and approve the President Weekly
 Student Success Briefing as the two-week prototype. We should not add another AI
 employee or another executive question until the complete briefing, evidence, approval, and
 audit workflow operates reliably.

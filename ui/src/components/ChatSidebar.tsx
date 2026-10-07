@@ -11,7 +11,7 @@ import { createPortal } from 'react-dom'
 import { canSeeInstitution, roleDisplayName, type Session } from '../auth'
 import { trapTab } from '../states'
 import { effectiveTheme, setPrefs, usePrefs } from '../theme'
-import { AscentMark } from './AscentMark'
+import { LensMark } from './LensMark'
 import { GlideGroup } from './GlideGroup'
 import {
   AccessNavIcon,
@@ -260,7 +260,7 @@ function WorkspaceMenu({
             anchor.focus()
           }}
         >
-          <AscentMark className="menu-monogram" />
+          <LensMark className="menu-monogram" />
           <span className="menu-label menu-label-strong">{institutionName}</span>
           <span className="menu-check">
             <CheckSmallIcon />
@@ -421,7 +421,7 @@ export function ChatSidebar({
       id="cabinet-sidebar"
       className={`chat-sidebar${open ? ' open' : ''}`}
       data-collapsed={collapsed ? 'true' : 'false'}
-      aria-label="Cabinet navigation"
+      aria-label="CampusLens navigation"
       role={drawer ? 'dialog' : undefined}
       aria-modal={drawer ? 'true' : undefined}
       // Off screen on a phone while closed: out of the tab order too.
@@ -435,7 +435,7 @@ export function ChatSidebar({
             data-workspace-trigger
             className="workspace-control"
             aria-haspopup="menu"
-            aria-label="Golden Eagle AI Cabinet: workspace menu"
+            aria-label="CampusLens: workspace menu"
             aria-expanded={menuAnchor !== null}
             aria-hidden={collapsed && !small}
             tabIndex={collapsed && !small ? -1 : 0}
@@ -444,9 +444,9 @@ export function ChatSidebar({
               setMenuAnchor((current) => (current === null ? trigger : null))
             }}
           >
-            <AscentMark className="workspace-logo" />
-            <span className="sidebar-copy workspace-name" title="Golden Eagle AI Cabinet">
-              Cabinet
+            <LensMark className="workspace-logo" />
+            <span className="sidebar-copy workspace-name" title="CampusLens">
+              CampusLens
             </span>
             <span className="sidebar-copy workspace-chevron">
               <ChevronDownIcon />

@@ -159,7 +159,7 @@ describe('service worker cache allow-list', () => {
   it('drops the old shell cache on activate', async () => {
     const { handlers, deleteCache } = loadWorker(
       () => Promise.resolve(fakeResponse(true, 'text/html')),
-      ['cabinet-shell-v1', 'cabinet-shell-v2', 'cabinet-shell-v3'],
+      ['cabinet-shell-v1', 'cabinet-shell-v2', 'cabinet-shell-v3', 'cabinet-shell-v4'],
     )
     let waited: Promise<unknown> | undefined
     handlers.activate({
@@ -170,6 +170,7 @@ describe('service worker cache allow-list', () => {
     await waited
     expect(deleteCache).toHaveBeenCalledWith('cabinet-shell-v1')
     expect(deleteCache).toHaveBeenCalledWith('cabinet-shell-v2')
-    expect(deleteCache).not.toHaveBeenCalledWith('cabinet-shell-v3')
+    expect(deleteCache).toHaveBeenCalledWith('cabinet-shell-v3')
+    expect(deleteCache).not.toHaveBeenCalledWith('cabinet-shell-v4')
   })
 })

@@ -35,7 +35,7 @@ function submitButton(): HTMLButtonElement {
 describe('LoginScreen', () => {
   it('names the product and asks plainly, with no event badge', () => {
     const { container } = render(<LoginScreen notice={null} onSignedIn={() => {}} />)
-    expect(screen.getByText('Golden Eagle AI Cabinet')).toBeTruthy()
+    expect(screen.getByText('CampusLens')).toBeTruthy()
     expect(screen.getByRole('heading', { level: 2, name: 'Sign in' })).toBeTruthy()
     expect(screen.getByText('Use the email your administrator set up.')).toBeTruthy()
     const text = container.textContent ?? ''

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  deploy/launchd/com.goldeneagle.cabinet.plist — keep the Cabinet running
+  deploy/launchd/com.goldeneagle.cabinet.plist — keep CampusLens running
   across reboots on macOS.
 
   Install (as the operator, once the paths below match the machine):

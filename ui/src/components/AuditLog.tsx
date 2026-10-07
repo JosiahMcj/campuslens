@@ -93,7 +93,7 @@ function actorName(actor: string, viewerEmail: string | null = null): string {
   if (ROLE_NAMES[actor] !== undefined) return ROLE_NAMES[actor]
   if (actor.includes('@')) return personName(actor, viewerEmail)
   if (/^\d+$/.test(actor)) return 'a signed-in person'
-  return 'the Cabinet'
+  return 'CampusLens'
 }
 
 function str(value: unknown): string | null {

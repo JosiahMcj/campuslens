@@ -5,7 +5,7 @@ security. Please route to whoever owns Ethos Integration API access.
 
 ## Who we are and what we are asking for
 
-We operate the Golden Eagle AI Cabinet, a small service that prepares the
+We operate CampusLens, a small service that prepares the
 president's weekly student success briefing. The briefing answers one
 question: how is spring registration going, compared with the same point
 last year, and who needs outreach before registration closes. The full data

@@ -334,7 +334,7 @@ recomputes M8 and each rule's count independently.
 
 ## M9. Students in M2 with any counseling contact this term *(only with a recorded authorization)*
 
-We added M9 on 2026-10-05. It is the one counseling figure the Cabinet can show,
+We added M9 on 2026-10-05. It is the one counseling figure CampusLens can show,
 and only in aggregate. Per-student counseling and spiritual-care data stays refused
 to every role and every AI employee, exactly as before.
 

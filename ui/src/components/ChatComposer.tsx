@@ -148,7 +148,7 @@ export function ChatComposer({
       )}
       <form className="composer" onSubmit={submit}>
         <label htmlFor="question-input" className="visually-hidden">
-          Ask the Cabinet a question
+          Ask CampusLens a question
         </label>
         <input
           id="question-input"
@@ -162,8 +162,8 @@ export function ChatComposer({
         <button
           type="submit"
           className="send-button"
-          aria-label="Ask the Cabinet"
-          title="Ask the Cabinet"
+          aria-label="Ask CampusLens"
+          title="Ask CampusLens"
           disabled={sending || question.trim().length === 0}
         >
           <SendIcon />

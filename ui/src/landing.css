@@ -273,23 +273,28 @@
   }
 }
 
-/* --- The mark (used on every screen; see AscentMark.tsx) ------------------------- */
+/* --- The mark (used on every screen; see LensMark.tsx) ---------------------------- */
 
-.ascent-mark-tile {
-  fill: var(--navy);
-  stroke: color-mix(in srgb, var(--ink) 18%, transparent);
-  stroke-width: 2;
+.lens-mark-stop-deep {
+  stop-color: var(--brand-deep);
 }
 
-.ascent-mark-upper,
-.ascent-mark-lower {
+.lens-mark-stop-mid {
+  stop-color: var(--brand-mid);
+}
+
+.lens-mark-stop-teal {
+  stop-color: var(--brand-teal);
+}
+
+.lens-mark-glint {
   fill: none;
-  stroke: var(--paper);
-  stroke-width: 9;
+  stroke: var(--brand-glint);
+  stroke-opacity: 0.85;
+  stroke-width: 3.2;
   stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
-.ascent-mark-lower {
-  stroke-opacity: 0.7;
+.lens-mark-glint-soft {
+  stroke: var(--brand-glint-soft);
 }

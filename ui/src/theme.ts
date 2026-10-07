@@ -8,23 +8,19 @@ import { useSyncExternalStore } from 'react'
  * every access is guarded because storage can be blocked (private windows,
  * strict settings), and the app works without it.
  *
- * Light is the default for everyone: the demo is projected in a lit room, so
- * the operating system's dark setting does not switch the theme on its own.
- * Dark applies only when someone chooses it here.
+ * By default the theme follows the computer's own light or dark setting, and
+ * changes with it. Choosing light or dark from the theme switch overrides
+ * that for this browser.
  */
 
 export type Theme = 'light' | 'dark'
-/**
- * What callers may pass when setting the theme. 'system' is accepted only so
- * an older caller keeps compiling; it is no longer an option and is stored as
- * 'light'.
- */
+/** A stored theme choice: light, dark, or 'system' (follow the computer). */
 export type ThemeChoice = Theme | 'system'
 export type TextSize = 'standard' | 'large'
 export type Motion = 'full' | 'reduced'
 
 export interface Prefs {
-  theme: Theme
+  theme: ThemeChoice
   textSize: TextSize
   motion: Motion
 }
@@ -37,11 +33,19 @@ export interface PrefsUpdate {
 
 const STORAGE_KEY = 'cabinet-prefs'
 const LEGACY_THEME_KEY = 'cabinet-theme'
-const DEFAULTS: Prefs = { theme: 'light', textSize: 'standard', motion: 'full' }
+const DEFAULTS: Prefs = { theme: 'system', textSize: 'standard', motion: 'full' }
 
-/** Anything but an explicit 'dark' (including an old stored 'system') is light. */
-function toTheme(value: unknown): Theme {
-  return value === 'dark' ? 'dark' : 'light'
+/** An explicit 'light' or 'dark' is kept; anything else follows the computer. */
+function toChoice(value: unknown): ThemeChoice {
+  return value === 'dark' || value === 'light' ? value : 'system'
+}
+
+function systemTheme(): Theme {
+  try {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  } catch {
+    return 'light'
+  }
 }
 
 function readStored(): Prefs {
@@ -51,7 +55,7 @@ function readStored(): Prefs {
       const parsed = JSON.parse(raw) as Partial<Record<keyof Prefs, unknown>> | null
       if (parsed !== null && typeof parsed === 'object') {
         return {
-          theme: toTheme(parsed.theme),
+          theme: toChoice(parsed.theme),
           textSize: parsed.textSize === 'large' ? 'large' : 'standard',
           motion: parsed.motion === 'reduced' ? 'reduced' : 'full',
         }
@@ -59,7 +63,7 @@ function readStored(): Prefs {
       return DEFAULTS
     }
     const legacy = window.localStorage.getItem(LEGACY_THEME_KEY)
-    if (legacy !== null) return { ...DEFAULTS, theme: toTheme(legacy) }
+    if (legacy !== null) return { ...DEFAULTS, theme: toChoice(legacy) }
   } catch {
     // Storage blocked or unreadable: the defaults apply.
   }
@@ -71,12 +75,31 @@ const listeners = new Set<() => void>()
 
 /** The theme shown. Kept as a function so callers need not know the rule. */
 export function effectiveTheme(choice: ThemeChoice = prefs.theme): Theme {
-  return toTheme(choice)
+  return choice === 'system' ? systemTheme() : choice
+}
+
+let watchingSystem = false
+
+/** Re-apply when the computer switches between light and dark. */
+function watchSystemTheme(): void {
+  if (watchingSystem) return
+  try {
+    const query = window.matchMedia('(prefers-color-scheme: dark)')
+    query.addEventListener('change', () => {
+      if (prefs.theme !== 'system') return
+      applyPrefs()
+      listeners.forEach((listener) => listener())
+    })
+    watchingSystem = true
+  } catch {
+    // No media queries here: the stored or default theme stays as it is.
+  }
 }
 
 export function applyPrefs(): void {
+  watchSystemTheme()
   const root = document.documentElement.classList
-  root.toggle('dark', prefs.theme === 'dark')
+  root.toggle('dark', effectiveTheme() === 'dark')
   root.toggle('text-large', prefs.textSize === 'large')
   root.toggle('reduce-motion', prefs.motion === 'reduced')
 }
@@ -87,7 +110,7 @@ export function getPrefs(): Prefs {
 
 export function setPrefs(next: PrefsUpdate): void {
   prefs = {
-    theme: next.theme === undefined ? prefs.theme : toTheme(next.theme),
+    theme: next.theme === undefined ? prefs.theme : toChoice(next.theme),
     textSize: next.textSize ?? prefs.textSize,
     motion: next.motion ?? prefs.motion,
   }
@@ -112,7 +135,7 @@ export function usePrefs(): Prefs {
 
 // The original single-theme API, kept for the Institution page's masthead.
 export function currentTheme(): Theme {
-  return prefs.theme
+  return effectiveTheme()
 }
 
 export function setTheme(theme: Theme): void {

@@ -150,7 +150,7 @@ export function DecisionPanel({
       <h2 id={headingId ?? undefined}>{title}</h2>
       <p className="panel-intro">
         {role === 'executive'
-          ? 'The Cabinet advises. You decide. Nothing is sent on its own.'
+          ? 'CampusLens advises. You decide. Nothing is sent on its own.'
           : 'Leadership decides. Nothing is sent on its own.'}
       </p>
       {decisions === null &&

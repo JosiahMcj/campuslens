@@ -38,18 +38,32 @@ afterEach(() => {
 })
 
 describe('display preferences', () => {
-  it('defaults to light, even when the operating system is dark', async () => {
+  it('follows a dark computer by default', async () => {
     const { classList } = stubBrowser({}, true)
     const theme = await loadTheme()
-    expect(theme.getPrefs().theme).toBe('light')
+    expect(theme.getPrefs().theme).toBe('system')
+    theme.applyPrefs()
+    expect(classList.contains('dark')).toBe(true)
+  })
+
+  it('follows a light computer by default', async () => {
+    const { classList } = stubBrowser({}, false)
+    const theme = await loadTheme()
     theme.applyPrefs()
     expect(classList.contains('dark')).toBe(false)
   })
 
-  it('migrates an old stored "system" choice to light', async () => {
+  it('keeps a stored "system" choice', async () => {
     stubBrowser({ 'cabinet-prefs': JSON.stringify({ theme: 'system', textSize: 'large' }) }, true)
     const theme = await loadTheme()
-    expect(theme.getPrefs()).toEqual({ theme: 'light', textSize: 'large', motion: 'full' })
+    expect(theme.getPrefs()).toEqual({ theme: 'system', textSize: 'large', motion: 'full' })
+  })
+
+  it('keeps an explicit light choice on a dark computer', async () => {
+    const { classList } = stubBrowser({ 'cabinet-prefs': JSON.stringify({ theme: 'light' }) }, true)
+    const theme = await loadTheme()
+    theme.applyPrefs()
+    expect(classList.contains('dark')).toBe(false)
   })
 
   it('keeps a stored dark choice and applies it', async () => {
@@ -68,15 +82,15 @@ describe('display preferences', () => {
   it('falls back to the defaults on unreadable storage', async () => {
     stubBrowser({ 'cabinet-prefs': 'not json' })
     const theme = await loadTheme()
-    expect(theme.getPrefs().theme).toBe('light')
+    expect(theme.getPrefs().theme).toBe('system')
   })
 
-  it('stores "system" from an older caller as light', async () => {
+  it('goes back to following the computer when "system" is chosen', async () => {
     const { store } = stubBrowser({ 'cabinet-prefs': JSON.stringify({ theme: 'dark' }) })
     const theme = await loadTheme()
     theme.setPrefs({ theme: 'system' })
-    expect(theme.getPrefs().theme).toBe('light')
-    expect(JSON.parse(store.get('cabinet-prefs') ?? '{}').theme).toBe('light')
+    expect(theme.getPrefs().theme).toBe('system')
+    expect(JSON.parse(store.get('cabinet-prefs') ?? '{}').theme).toBe('system')
   })
 
   it('remembers a dark choice and the other preferences', async () => {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { LoginError, login, type Session } from '../auth'
-import { AscentMark } from './AscentMark'
+import { LensMark } from './LensMark'
 import { EyeIcon, EyeOffIcon } from './icons'
 
 interface LoginScreenProps {
@@ -79,15 +79,15 @@ export function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
   return (
     <main className="landing">
       <header className="landing-brand">
-        <AscentMark className="landing-mark" />
-        <span>Golden Eagle AI Cabinet</span>
+        <LensMark className="landing-mark" />
+        <span>CampusLens</span>
       </header>
 
       <div className="landing-grid">
         <section className="landing-hero" aria-labelledby="landing-title">
           <h1 id="landing-title">Student success, briefed and ready.</h1>
           <p className="landing-lede">
-            Golden Eagle AI Cabinet reads your student records, explains what has changed, and
+            CampusLens reads your student records, explains what has changed, and
             leaves the decision to you. Every number traces back to its source.
           </p>
         </section>

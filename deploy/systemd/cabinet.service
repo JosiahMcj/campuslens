@@ -1,4 +1,4 @@
-# deploy/systemd/cabinet.service — keep the Cabinet running across reboots
+# deploy/systemd/cabinet.service — keep CampusLens running across reboots
 # on Linux.
 #
 # Install (as the operator, once the paths below match the machine):
@@ -16,7 +16,7 @@
 # the journal — `journalctl -u cabinet -f`.
 
 [Unit]
-Description=Golden Eagle AI Cabinet (FastAPI, production)
+Description=CampusLens (FastAPI, production)
 After=network-online.target
 Wants=network-online.target
 

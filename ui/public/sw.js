@@ -1,4 +1,4 @@
-/* Golden Eagle AI Cabinet service worker.
+/* CampusLens service worker.
  *
  * Caches only the application shell, from an ALLOW-LIST: navigation HTML
  * responses, the manifest, the icons, and the hashed build assets under
@@ -9,7 +9,7 @@
  * object and CSRF token. Offline means exactly this: the shell opens, and
  * the API is required for every number on it.
  */
-const CACHE = 'cabinet-shell-v3'
+const CACHE = 'cabinet-shell-v4'
 const SHELL = [
   '/',
   '/index.html',

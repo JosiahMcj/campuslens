@@ -298,7 +298,7 @@ export function AidQueuePanel({
   return (
     <div className="aid-queue">
       <p className="panel-intro">
-        Facts for the Financial Aid office to start its own review. The Cabinet
+        Facts for the Financial Aid office to start its own review. CampusLens
         decides nothing about any student; a person in the office sets each
         status and note.{canEdit ? '' : ' This view is read only.'}
       </p>

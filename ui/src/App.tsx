@@ -65,7 +65,7 @@ import { EvidenceDrawer } from './components/EvidenceDrawer'
 import { Institution, type ActiveDatasetMeta } from './components/Institution'
 import { LoginScreen } from './components/LoginScreen'
 import { SidePanel } from './components/SidePanel'
-import { AscentMark } from './components/AscentMark'
+import { LensMark } from './components/LensMark'
 import { MenuIcon } from './components/icons'
 import { StatRow } from './components/StatRow'
 import { friendlyError, friendlyLoadError, isRateLimited, retryAfterSeconds } from './errors'
@@ -1040,7 +1040,7 @@ function BriefingPage({
           kind: 'error',
           message:
             'The request was allowed, but this test expects a refusal. ' +
-            'Ask your administrator to check the Cabinet is up to date.',
+            'Ask your administrator to check CampusLens is up to date.',
         })
         return
       }
@@ -1424,7 +1424,7 @@ function BriefingPage({
             {stillWorking
               ? 'Still working… the analysts are taking longer than usual.'
               : liveTasks.length > 0
-                ? 'The Cabinet is working…'
+                ? 'CampusLens is working…'
                 : 'The Chief of Staff is assigning the analysts…'}
             {liveTasks.length > 0 && (
               <ul className="work-progress">
@@ -1660,8 +1660,8 @@ function BriefingPage({
 
           {!onInstitution && ready && visible.length === 0 && !restoredPending && (
             <div className="chat-empty">
-              <AscentMark className="empty-mark" />
-              <h1>{asker ? 'What would you like to know?' : 'The Cabinet’s briefings'}</h1>
+              <LensMark className="empty-mark" />
+              <h1>{asker ? 'What would you like to know?' : 'CampusLens briefings'}</h1>
               <p className="empty-lede">
                 {act
                   ? "Ask an approved briefing question, or ask anything about Demonstration University's students, courses and majors. Every number is computed from the records."
@@ -1669,7 +1669,7 @@ function BriefingPage({
                     ? "Ask anything about Demonstration University's students, courses and majors. Every number is computed from the records."
                     : briefingStatus.kind === 'error'
                       ? "We couldn't load the last briefing."
-                      : 'Briefings appear here once an executive asks the Cabinet a question.'}
+                      : 'Briefings appear here once an executive asks CampusLens a question.'}
               </p>
               {!act && briefingStatus.kind === 'error' && (
                 <button type="button" className="secondary btn-secondary" onClick={retryBriefing}>
@@ -1689,9 +1689,9 @@ function BriefingPage({
                       <p>{item.question}</p>
                     </div>
                     <div className="msg msg-cabinet">
-                      <AscentMark className="msg-avatar" />
+                      <LensMark className="msg-avatar" />
                       <div className="msg-body">
-                        <p className="msg-author">Cabinet</p>
+                        <p className="msg-author">CampusLens</p>
                         {reply(item)}
                       </div>
                     </div>

@@ -35,7 +35,7 @@ separate list, 320 records in total.
 
 | Field | Type | Value in this fixture |
 |---|---|---|
-| `meta.title` | string | `"Golden Eagle AI Cabinet - fictional spring registration fixture"` |
+| `meta.title` | string | `"CampusLens - fictional spring registration fixture"` |
 | `meta.description` | string | provenance sentence naming the planted values |
 | `meta.fictional` | boolean | `true`, always |
 | `meta.seed` | integer | `20260924` |

@@ -58,7 +58,7 @@
   background: var(--surface-hover);
 }
 
-/* The GE mark on the empty screen and beside each cabinet reply. */
+/* The CampusLens mark on the empty screen and beside each reply. */
 .empty-mark,
 .msg-avatar {
   display: inline-grid;

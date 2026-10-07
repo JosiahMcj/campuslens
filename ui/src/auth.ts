@@ -172,7 +172,7 @@ export async function login(email: string, password: string): Promise<Session> {
     })
   } catch {
     throw new LoginError(
-      "We couldn't reach the Cabinet. Check your connection and try again.",
+      "We couldn't reach CampusLens. Check your connection and try again.",
     )
   }
   if (response.status === 401) {

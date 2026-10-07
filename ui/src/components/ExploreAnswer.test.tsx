@@ -1024,7 +1024,7 @@ describe('a refusal and a question no analysis answers', () => {
     expect(document.querySelector('.refusal-card')).toBeNull()
     const card = screen.getByRole('status')
     expect(card.className).toBe('explore-declined')
-    expect(within(card).getByText('Not something the Cabinet answers')).toBeTruthy()
+    expect(within(card).getByText('Not something CampusLens answers')).toBeTruthy()
     expect(card.textContent).toContain('never disclosed')
     expect(card.textContent).not.toContain('not in this data')
     expect(card.textContent).toContain('recorded in the audit log')
@@ -1037,14 +1037,14 @@ describe('a refusal and a question no analysis answers', () => {
     const { onAsk } = show(
       exploreResponseFrom({
         refused: false,
-        message: "The Cabinet can't answer that from the approved analyses yet.",
+        message: "CampusLens can't answer that from the approved analyses yet.",
         answer: [],
         steps: [],
         suggestions: ['Which majors have the highest average GPA?', 'What is the average GPA by college?', 'Who has taught Organic Chemistry I?'],
         source: null,
       }),
     )
-    expect(screen.getByText("The Cabinet can't answer that from the approved analyses yet.")).toBeTruthy()
+    expect(screen.getByText("CampusLens can't answer that from the approved analyses yet.")).toBeTruthy()
     expect(screen.queryByRole('alert')).toBeNull()
     fireEvent.click(screen.getByText('Who has taught Organic Chemistry I?'))
     expect(onAsk).toHaveBeenCalledWith('Who has taught Organic Chemistry I?')

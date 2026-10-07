@@ -199,7 +199,7 @@ describe('AidQueuePanel', () => {
     fireEvent.change(within(row).getByLabelText('Note'), { target: { value: 'x' } })
     fireEvent.click(within(row).getByRole('button', { name: 'Save' }))
     const alert = await within(row).findByRole('alert')
-    expect(alert.textContent).toContain("We couldn't reach the Cabinet")
+    expect(alert.textContent).toContain("We couldn't reach CampusLens")
     expect(alert.textContent).not.toContain('Failed to fetch')
   })
 

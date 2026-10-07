@@ -95,7 +95,7 @@ describe('DecisionPanel — the decision and Approve', () => {
   it('says who decides in one line, shows the decision once, and offers Approve', () => {
     const html = render(true)
 
-    expect(html).toContain('The Cabinet advises. You decide. Nothing is sent on its own.')
+    expect(html).toContain('CampusLens advises. You decide. Nothing is sent on its own.')
     expect(html).toContain('btn-approve')
     expect(html).toContain('>Approve</button>')
     expect(html.split('Authorize a focused review below the threshold.')).toHaveLength(2)
@@ -180,9 +180,9 @@ describe('DecisionPanel — the decision and Approve', () => {
     for (const role of ['staff', 'reviewer'] as const) {
       const html = render(false, { role })
       expect(html).toContain('Leadership decides. Nothing is sent on its own.')
-      expect(html).not.toContain('The Cabinet advises. You decide.')
+      expect(html).not.toContain('CampusLens advises. You decide.')
     }
-    expect(render(true)).toContain('The Cabinet advises. You decide. Nothing is sent on its own.')
+    expect(render(true)).toContain('CampusLens advises. You decide. Nothing is sent on its own.')
     expect(render(true)).toContain('class="panel-intro"')
     expect(render(true)).not.toContain('panel-note')
   })

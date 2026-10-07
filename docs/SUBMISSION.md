@@ -1,15 +1,15 @@
-# Golden Eagle AI Cabinet hackathon submission
+# CampusLens hackathon submission
 
 ## One-sentence pitch
 
-Golden Eagle AI Cabinet transforms Ellucian SIS data into an executive briefing. It does so
+CampusLens transforms Ellucian SIS data into an executive briefing. It does so
 by coordinating permission-limited AI employees across enrollment and student success,
 helping university leaders see what matters, understand why, and direct timely human action.
 
 ## Thirty-second pitch
 
 University leaders have extensive student data, but answering one important question can
-still require several departments and multiple reports. Golden Eagle AI Cabinet gives each
+still require several departments and multiple reports. CampusLens gives each
 analytical function a permission-limited AI employee. An AI Chief of Staff coordinates
 their work, verifies the evidence, and produces one executive briefing that separates staff
 actions from leadership decisions. Our first workflow answers a practical question. What

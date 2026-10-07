@@ -1,5 +1,5 @@
 #!/bin/sh
-# Run the Cabinet in production. `make serve` backgrounds this script;
+# Run CampusLens in production. `make serve` backgrounds this script;
 # the launchd plist and the systemd unit exec it directly, so the production
 # flags live in exactly one place.
 #
