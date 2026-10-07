@@ -19,6 +19,11 @@ interface SidePanelProps {
   covered?: boolean
   /** The evidence layer, which opens over the page or over another panel. */
   evidence?: boolean
+  /** A page of cards or rows (a worklist, a log) that uses the wider
+   * column; reading pages keep the narrower one. */
+  wide?: boolean
+  /** The one sentence under the title saying what the page is for. */
+  intro?: string
   children: ReactNode
 }
 
@@ -46,6 +51,8 @@ export function SidePanel({
   closing = false,
   covered = false,
   evidence = false,
+  wide = false,
+  intro,
   children,
 }: SidePanelProps) {
   const panelRef = useRef<HTMLDivElement>(null)
@@ -145,7 +152,7 @@ export function SidePanel({
     >
       <div
         ref={panelRef}
-        className={`side-panel${evidence ? ' evidence-layer' : ''}${closing ? ' is-closing' : ''}`}
+        className={`side-panel${evidence ? ' evidence-layer' : ''}${wide ? ' is-wide' : ''}${closing ? ' is-closing' : ''}`}
         role="region"
         aria-label={title}
         tabIndex={-1}
@@ -160,6 +167,7 @@ export function SidePanel({
           <h1>{title}</h1>
         </div>
         <div ref={bodyRef} className="side-panel-body">
+          {intro !== undefined && <p className="panel-intro page-intro">{intro}</p>}
           {children}
         </div>
       </div>

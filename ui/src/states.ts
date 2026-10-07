@@ -805,7 +805,22 @@ export const EVENT_TYPES = [
   // The governed execution step: a draft composed in code, then a named
   // person's Send (payloads carry the provider and its reference).
   'task.dispatched',
+  'task.send_failed',
   'task.sent',
+  // Dataset administration.
+  'dataset.uploaded',
+  'dataset.activated',
+  'dataset.deleted',
+  // The Financial Aid review queue.
+  'aid.queued',
+  'aid.updated',
+  // Explore: one answer computed from the records.
+  'explore.answered',
+  // The staff action worklist (never a note's text or a student id).
+  'action.updated',
+  'action.noted',
+  'action.sent',
+  'action.send_failed',
 ] as const
 
 export interface AuditEvent {

@@ -45,6 +45,9 @@ interface DecisionPanelProps {
    * instead of "Loading" forever. */
   loadError?: string | null
   onRetry?: () => void
+  /** The Decision page: a step line (approve, prepare, send, queue) above
+   * each decision, so where it stands reads at a glance. */
+  progress?: boolean
 }
 
 const COMPOSE_ROLES: readonly Role[] = ['staff', 'executive', 'admin']
@@ -91,6 +94,51 @@ function BusyLabel({ busy, working, idle }: { busy: boolean; working: string; id
   )
 }
 
+/** Where a decision stands, as four short steps: done (a check), the next
+ * one (highlighted), and the ones after it. Text carries the state too. */
+function DecisionSteps({
+  approved,
+  office,
+  prepared,
+  sent,
+  queue,
+}: {
+  approved: boolean
+  office: string
+  prepared: boolean
+  sent: boolean
+  /** null when this decision opens no review queue. */
+  queue: boolean | null
+}) {
+  const steps: { label: string; done: boolean }[] = [
+    { label: 'Leadership approves', done: approved },
+    { label: `Message to ${office} prepared`, done: prepared },
+    { label: `Sent to the ${office} mailbox`, done: sent },
+    ...(queue !== null ? [{ label: 'Review queue ready', done: queue }] : []),
+  ]
+  const next = steps.findIndex((step) => !step.done)
+  return (
+    <ol className="decision-steps" aria-label="Where this decision stands">
+      {steps.map((step, index) => (
+        <li
+          key={step.label}
+          className={step.done ? 'step-done' : index === next ? 'step-next' : 'step-later'}
+        >
+          <span className="step-mark" aria-hidden="true">
+            {step.done ? '✓' : index + 1}
+          </span>
+          <span>
+            {step.label}
+            <span className="visually-hidden">
+              {step.done ? ': done' : index === next ? ': next' : ': not yet'}
+            </span>
+          </span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 /**
  * The leadership decision (Beat 5, PROPOSAL.md section 6). One line says who
  * decides, the decision appears once, and Approve (gold) records the
@@ -124,6 +172,7 @@ export function DecisionPanel({
   onOpenAidQueue = null,
   loadError = null,
   onRetry,
+  progress = false,
 }: DecisionPanelProps) {
   const canCompose = COMPOSE_ROLES.includes(role)
   const canSend = SEND_ROLES.includes(role)
@@ -208,6 +257,19 @@ export function DecisionPanel({
             : null
         return (
           <div key={decision.id} className="decision-card">
+            {progress && (
+              <DecisionSteps
+                approved={approved}
+                office={office}
+                prepared={dispatch !== null}
+                sent={dispatch?.status === 'sent'}
+                queue={
+                  dispatchState?.info?.aid_queue?.supported === true
+                    ? dispatchState.info.aid_queue.count !== null
+                    : null
+                }
+              />
+            )}
             <h3>{decision.title}</h3>
             <p>{decision.text}</p>
 

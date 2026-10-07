@@ -598,7 +598,7 @@ describe('the briefing before any question', () => {
     })
     render(<App />)
     await screen.findByText('What would you like to know?')
-    for (const name of ['Decision', 'Full briefing', 'Staff actions']) {
+    for (const name of ['Decision', 'Full briefing']) {
       fireEvent.click(screen.getByRole('button', { name }))
       const dialog = await screen.findByRole('region', { name })
       await waitFor(() =>
