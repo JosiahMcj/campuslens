@@ -166,7 +166,7 @@ def test_pseudonym_stable_with_same_key_different_with_another(
     assert all(sid.startswith("S-") for sid in ids(first))
 
 
-# -- resource allow-list and deny list ----------------------------------------
+# -- resource allow list ------------------------------------------------------
 
 BYPASS_PATHS = [
     "person-counseling-notes/",
@@ -230,7 +230,7 @@ def test_persons_override_refused_before_any_request() -> None:
         assert server.state.auth_count == 0
 
 
-def test_deny_list_fires_before_any_request() -> None:
+def test_off_allow_list_path_fires_before_any_request() -> None:
     resources = build_ethos_resources(load_fixture_document())
     with EthosMockServer(resources) as server:
         config = ellucian.default_resources()

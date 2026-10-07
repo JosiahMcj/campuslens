@@ -245,3 +245,49 @@ def test_backup_and_restore_write_private_files(tmp_path: Any) -> None:
     assert _mode(db_path) == 0o600
     restored = [p for p in data_dir.rglob("*") if p.is_file()]
     assert restored and {_mode(p) for p in restored} == {0o600}
+
+
+# --- 4. Ellucian: an exact allow list of resource paths -------------------------
+
+REFUSED_ETHOS_PATHS = [
+    "person-emails",
+    "person-addresses",
+    "health-records",
+    "person-emergency-contacts",
+    "persons",
+    "person-holds-v2",
+    "students-detail",
+]
+
+
+@pytest.mark.parametrize("path", REFUSED_ETHOS_PATHS)
+@pytest.mark.parametrize("key", ["students", "person_holds", "student_appointments"])
+def test_ellucian_refuses_any_path_off_the_allow_list(
+    monkeypatch: pytest.MonkeyPatch, key: str, path: str
+) -> None:
+    from cabinet import ellucian
+
+    monkeypatch.setenv("CABINET_ETHOS_RESOURCES", json.dumps({key: {"path": path}}))
+    with pytest.raises(ellucian.EthosError, match="allow list"):
+        ellucian.resources_from_env()
+
+
+def test_ellucian_allow_list_accepts_its_own_paths_and_version_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cabinet import ellucian
+
+    monkeypatch.setenv(
+        "CABINET_ETHOS_RESOURCES",
+        json.dumps({"person_holds": {"path": "person-holds", "version": 5}}),
+    )
+    resources = ellucian.resources_from_env()
+    assert resources["person_holds"] == {"path": "person-holds", "version": 5}
+    assert {key: spec["path"] for key, spec in resources.items()} == (
+        ellucian.ALLOWED_RESOURCE_PATHS
+    )
+    # Swapping two allowed paths between resources is refused too.
+    config = ellucian.default_resources()
+    config["students"]["path"] = "person-holds"
+    with pytest.raises(ellucian.EthosError, match="allow list"):
+        ellucian.validate_resource_config(config)

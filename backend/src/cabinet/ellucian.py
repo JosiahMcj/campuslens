@@ -10,9 +10,9 @@ SCHEMA.md does not name, and emits an upload document that
 live Ellucian tenant by itself: tests and demos run against
 ``backend/tests/ethos_mock.py``.
 
-Ethos resources assumed (Education Data Model; names and versions are
-overridable per tenant with ``CABINET_ETHOS_RESOURCES``, validated by
-:func:`validate_resource_config`):
+Ethos resources requested, an exact allow list (Education Data Model;
+versions are overridable per tenant with ``CABINET_ETHOS_RESOURCES``, and
+:func:`validate_resource_config` refuses any path but each resource's own):
 
 - ``students`` (v6) — per person: ``person.id`` is the pseudonym source (the
   tenant-wide ``persons`` resource is never requested: every id the
@@ -55,12 +55,13 @@ person ids that ``students[].person.id`` carries. When that does not hold,
 no records join and the run refuses loudly ("the export would be empty")
 instead of exporting zeros.
 
-Resources that are never requested: :func:`validate_resource_config`
-rejects, before the first request, any configured path that fails
-``^[a-z][a-z0-9-]*$`` or that contains a deny substring (:data:`DENY_SUBSTRINGS`:
-counseling, spiritual care and chaplaincy, financial aid, medical,
-discipline). Case tricks, trailing slashes, query strings, and path
-traversal all fail the regex.
+Resources that are never requested: everything not in
+:data:`ALLOWED_RESOURCE_PATHS`. :func:`validate_resource_config` rejects,
+before the first request, any configured path that is not exactly its
+resource's allowed path, so persons, person emails and addresses,
+emergency contacts, health records, counseling, spiritual care, financial
+aid, and discipline are all refused, as are case tricks, trailing slashes,
+query strings, and path traversal.
 
 Transport rules: the base URL must be ``https`` (plain ``http`` is accepted
 only for the 127.0.0.1/localhost mock), and redirects are never followed —
@@ -100,7 +101,6 @@ import hashlib
 import hmac
 import json
 import os
-import re
 import secrets
 import sys
 import time
@@ -130,11 +130,9 @@ DATE_FORMAT = "YYYY-MM-DD"
 # application/vnd.hedtech.integration.v<n>+json with per-resource <n>.
 MEDIA_TYPE_TEMPLATE = "application/vnd.hedtech.integration.v{version}+json"
 
-# The allow-list of resources the connector requests, with assumed EDM
-# versions; docs/ELLUCIAN.md says what to change per tenant. Overrides via
-# CABINET_ETHOS_RESOURCES may rename a path, but every path must pass
-# validate_resource_config. There is deliberately no `persons` entry:
-# students[].person.id carries every id the connector needs.
+# The resources the connector requests, with assumed EDM versions;
+# docs/ELLUCIAN.md says what to change per tenant. There is deliberately no
+# `persons` entry: students[].person.id carries every id the connector needs.
 DEFAULT_RESOURCES: dict[str, dict[str, Any]] = {
     "students": {"path": "students", "version": 6},
     "academic_periods": {"path": "academic-periods", "version": 3},
@@ -144,32 +142,15 @@ DEFAULT_RESOURCES: dict[str, dict[str, Any]] = {
     "student_appointments": {"path": "student-appointments", "version": 1},
 }
 
-# An override path must be a plain Ethos resource name and nothing else: no
-# slashes, no query strings, no traversal, no uppercase tricks.
-RESOURCE_PATH_RE = re.compile(r"[a-z][a-z0-9-]*")
-
-# Substrings that mark a resource the connector must never request, matched
-# against the lowercased path: counseling and spiritual care are out of
-# scope by policy (ROADMAP §5/§9), and financial-aid decisions, discipline,
-# and medical records have no place in a registration briefing. Substring
-# matching (not exact names) so a tenant's local variant cannot slip past.
-DENY_SUBSTRINGS = (
-    "counsel",
-    "chaplain",
-    "spiritual",
-    "financial-aid",
-    "financialaid",
-    "finaid",
-    "medical",
-    "disciplin",
-)
-
-# Exact-name denies, where a substring would hit a resource the connector
-# legitimately requests ("person" would catch person-holds). The tenant-wide
-# persons resource is never requested: it carries every name, email,
-# credential, and phone number in the system, and students[].person.id
-# already carries every id the connector needs.
-DENIED_EXACT = frozenset({"persons"})
+# The exact allow list: each connector resource may request its one Ethos
+# resource path and nothing else. CABINET_ETHOS_RESOURCES may change a
+# resource's version, never its path to anything outside this table, so
+# persons, person-emails, person-addresses, person-emergency-contacts,
+# health records, counseling, and every other resource are refused before
+# the first request, however the configuration is edited.
+ALLOWED_RESOURCE_PATHS: dict[str, str] = {
+    key: str(spec["path"]) for key, spec in DEFAULT_RESOURCES.items()
+}
 
 # Ethos person-holds type categories -> the SCHEMA.md hold categories. An
 # Ethos category absent from this table maps to "other" with a warning, so a
@@ -220,37 +201,29 @@ def default_resources() -> dict[str, dict[str, Any]]:
 
 
 def validate_resource_config(resources: dict[str, dict[str, Any]]) -> None:
-    """Refuse any configured resource that is not a plain allow-listed name.
+    """Refuse any configured resource that is not exactly on the allow list.
 
-    Every path must match ``^[a-z][a-z0-9-]*$`` (so case tricks, trailing
-    slashes, query strings, and traversal all fail), must not be an
-    exact-name deny (:data:`DENIED_EXACT`), and must survive the substring
-    deny list after lowercasing; every version must be an int. Runs before
-    the first request, whoever edited the configuration.
+    Every key must be one of the connector's resources, and its path must be
+    exactly that resource's path in :data:`ALLOWED_RESOURCE_PATHS` (so case
+    tricks, trailing slashes, query strings, traversal, and every resource
+    the connector does not need all fail); every version must be a positive
+    int. Runs before the first request, whoever edited the configuration.
     """
     for key, spec in resources.items():
+        allowed = ALLOWED_RESOURCE_PATHS.get(key)
+        if allowed is None:
+            raise EthosError(
+                f"resource {key!r} is not one the connector requests; expected "
+                "one of " + ", ".join(sorted(ALLOWED_RESOURCE_PATHS))
+            )
         path = spec.get("path")
-        if not isinstance(path, str) or not RESOURCE_PATH_RE.fullmatch(path):
+        if path != allowed:
             raise EthosError(
-                f"resource {key!r}: path {path!r} is not an allowed Ethos "
-                "resource name (lowercase letters, digits, dashes only; no "
-                "slashes, queries, or traversal)"
-            )
-        if path in DENIED_EXACT:
-            raise EthosError(
-                f"resource {key!r}: {path!r} is never requested, however "
-                "the configuration is edited — it carries every name, "
-                "email, credential, and phone number in the tenant, and "
-                "students[].person.id already carries every id the "
-                "connector needs (docs/ELLUCIAN.md)"
-            )
-        hit = next((s for s in DENY_SUBSTRINGS if s in path.lower()), None)
-        if hit is not None:
-            raise EthosError(
-                f"resource {key!r}: path {path!r} is on the never-requested "
-                f"list (matched {hit!r}); counseling, spiritual-care, "
-                "financial-aid, discipline, and medical resources are never "
-                "requested (docs/ELLUCIAN.md)"
+                f"resource {key!r}: path {path!r} is not on the allow list; "
+                f"{key!r} may request only {allowed!r}, and nothing else is "
+                "ever requested (no persons, person emails, addresses, "
+                "emergency contacts, health, counseling, or financial-aid "
+                "records; docs/ELLUCIAN.md)"
             )
         version = spec.get("version")
         if isinstance(version, bool) or not isinstance(version, int) or version < 1:

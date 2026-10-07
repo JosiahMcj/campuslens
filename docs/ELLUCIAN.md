@@ -47,13 +47,17 @@ Ethos host, the resource versions, the extraction time, and the row counts.
 
 ## Resource mapping (Ethos Education Data Model)
 
-Assumed resources and versions; both are overridable per tenant with
-`CABINET_ETHOS_RESOURCES` (JSON, keyed by the connector's resource name,
-each value with optional `path` and `version`). Overrides are validated
-before the first request: a path must match `^[a-z][a-z0-9-]*$` (so case
-tricks, trailing slashes, query strings, and path traversal are all
-refused) and must survive the deny lists below; a version must be
-an integer.
+The connector requests exactly these six resources and nothing else. The
+assumed versions are overridable per tenant with `CABINET_ETHOS_RESOURCES`
+(JSON, keyed by the connector's resource name, each value with optional
+`path` and `version`). Overrides are validated before the first request: a
+version must be a positive integer, and a path must be exactly the resource
+path in the table below for that connector name (`ALLOWED_RESOURCE_PATHS` in
+`backend/src/cabinet/ellucian.py`). Anything else is refused, which covers
+case tricks, trailing slashes, query strings, path traversal, a tenant's
+renamed variant, and every resource the connector does not need. A tenant
+that names one of these resources differently needs a code change, reviewed
+like any other, never a configuration edit.
 
 | Connector name | Ethos resource (assumed version) | Becomes |
 |---|---|---|
@@ -113,18 +117,18 @@ zeros.
 
 ## What is never requested
 
-Before the first request, every configured resource path is checked two
-ways. It must not be an exact-name deny, because `persons` is on that list (a
-substring would catch the legitimate `person-holds`), so the tenant-wide
-persons resource is never requested, however the configuration is edited.
-And it is matched, after lowercasing, against these deny substrings:
-`counsel`, `chaplain`, `spiritual`, `financial-aid`, `financialaid`,
-`finaid`, `medical`, `disciplin`. Substring matching, on purpose: a
-tenant's local variant (say `student-finaid-records` or
-`counseling-notes-v2`) cannot slip past an exact-name list. Counseling and
-spiritual care are out of scope by policy (ROADMAP §5/§9); financial-aid
-decisions, discipline, and medical records have no place in a registration
-briefing.
+Everything not in the table above. The check is an exact allow list, not a
+deny list: before the first request, each configured resource's path must
+equal its own allowed path, so no configuration edit can point the connector
+at another resource. That refuses, among everything else, `persons` (every
+id the connector needs already arrives as `students[].person.id`),
+`person-emails`, `person-addresses`, `person-emergency-contacts`,
+`health-records`, and any counseling, spiritual-care, chaplaincy,
+financial-aid, discipline, or medical resource. Counseling and spiritual care
+are out of scope by policy (ROADMAP §5/§9); the rest have no place in a
+registration briefing. The test suite refuses each named resource under
+several connector names and checks that the refusal comes before any
+request reaches the server.
 
 ## Configuration
 
@@ -133,7 +137,7 @@ briefing.
 | `CABINET_ETHOS_BASE_URL` | the institution's Ethos Integration base URL (https) |
 | `CABINET_ETHOS_API_KEY_FILE` | file holding the Ethos API key (0600, outside the repo) |
 | `CABINET_PSEUDONYM_KEY_FILE` | file holding the pseudonym key (0600); never leaves the institution |
-| `CABINET_ETHOS_RESOURCES` | optional JSON overrides for resource names/versions, validated as above |
+| `CABINET_ETHOS_RESOURCES` | optional JSON overrides for resource versions; a path may only restate its allowed name (exact allow list, above) |
 | `CABINET_ETHOS_TIMEZONE` | date-semantics timezone (default `America/Chicago`) |
 | `CABINET_EXPORTS_DIR` | export directory (default `var/exports/`) |
 
