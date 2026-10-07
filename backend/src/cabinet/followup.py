@@ -1065,7 +1065,11 @@ def _approval(ctx: Context, d: Derived) -> dict[str, Any]:
     blocks.append(
         table(
             LABEL_RECOMMENDATION,
-            "Recommended follow-up (prepared, awaiting your approval)",
+            (
+                "Recommended follow-up (approved)"
+                if card["approved"]
+                else "Recommended follow-up (prepared, awaiting your approval)"
+            ),
             ["Item", "Detail"],
             [
                 ["Proposed action", str(card["follow_up"])],
