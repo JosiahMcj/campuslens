@@ -391,7 +391,11 @@ def test_chat_correct_sends_the_same_messages_plus_the_correction(
     sent: list[dict[str, Any]] = []
 
     def fake_post(
-        self: ChatProvider, url: str, key: str, payload: dict[str, Any]
+        self: ChatProvider,
+        url: str,
+        key: str,
+        payload: dict[str, Any],
+        timeout: float = 55,
     ) -> dict[str, Any]:
         sent.append(payload)
         return {

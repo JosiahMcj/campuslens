@@ -113,6 +113,7 @@ def _isolated_security_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
         "CABINET_LLM_REASONING_EFFORT",
         "CABINET_LLM_MAX_TOKENS",
         "CABINET_EXPLORE_PLANNER",
+        "CABINET_EXPLORE_PLANNER_TIMEOUT",
     ):
         monkeypatch.delenv(name, raising=False)
 

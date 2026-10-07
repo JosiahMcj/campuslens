@@ -55,6 +55,7 @@ from cabinet.explore.planner import (
     is_small_talk,
     nearest_examples,
     plan_question,
+    understood,
     uses_model,
 )
 from cabinet.explore.privacy import redact_question, refusal_for
@@ -269,11 +270,6 @@ def _invalid(body: ExploreRequest) -> JSONResponse | None:
     return None
 
 
-def _understood(steps: list[Any], catalog: Any) -> str:
-    """What the question was taken to ask, in plain words, from the plan."""
-    return _describe(steps[0])
-
-
 def _describe(first: Any) -> str:
     """One planned step in plain words ("Dropout rate by major")."""
     analysis = ANALYSES_BY_ID[first.analysis_id]
@@ -426,7 +422,9 @@ def _explore(
             )
 
         planned = outcome.steps
-        emit({"type": "understood", "text": _understood(planned, catalog)})
+        # What the plan answers, in plain words from the validated plan (the
+        # model's own reasoning text is never shown).
+        emit({"type": "understood", "text": understood(planned, catalog, role)})
         emit(
             {
                 "type": "plan",

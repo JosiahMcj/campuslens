@@ -167,9 +167,12 @@ shows every step, the fields it read, and its table.
   never sees a student row. Questions about counseling or spiritual care, about one
   student, or about what a student will do next are refused before anything runs,
   and the refusal is recorded. Groups under 10 students are withheld.
-- **Planning.** The reviewed rule planner maps the question to analyses. The live
-  model plans only what the rules cannot map, and its plan is checked against the
-  catalog (`CABINET_EXPLORE_PLANNER=model-first` reverses the order).
+- **Planning.** With a live model, the model reads a compact catalog (under 3,000
+  tokens) and plans first, in about a second on a local model; its plan is resolved
+  to catalog values and checked, and the reviewed rule planner answers whenever the
+  plan cannot be used or takes longer than 20 s (`CABINET_EXPLORE_PLANNER`:
+  `model-first` by default, `rules-first`, or `rules-only`). The measurements are in
+  `docs/EXPLORE-EVAL.md`.
 
 The live model is configured in the gitignored `cabinet.local.env` at the repo root.
 Any hosted chat-completions endpoint over https works (`CABINET_LLM_BASE_URL`,
