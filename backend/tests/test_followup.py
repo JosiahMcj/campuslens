@@ -77,6 +77,7 @@ EXPLORE_QUESTIONS = (
     "Compare GPA this year versus last year",
     "How many students have holds?",
     "Which courses have the highest DFW rate?",
+    "What can we do now about the dropout rate?",
 )
 
 STUDENT_ID = re.compile(r"\b(?:STU|PRI)-\d+", re.IGNORECASE)
@@ -330,6 +331,9 @@ def test_step_3_withholds_small_groups(briefed: TestClient) -> None:
     body = _ask_follow_up(briefed, STEP_3)
     levels = _block(body, "table", "class level")
     assert ["Junior", "fewer than 10"] in levels["rows"]
+    # complementary suppression: the next-smallest group is withheld too, so
+    # the small one cannot be worked out from the total of 42 on screen
+    assert ["Sophomore", "withheld"] in levels["rows"]
     text = _shown_text(body)
     assert "program counts are withheld" in text
     assert "counseling" not in text.lower().replace(
@@ -371,9 +375,11 @@ def test_step_4_plan_is_a_proposed_table_and_executes_nothing(
 def test_step_5_separates_staff_work_from_the_decision(briefed: TestClient) -> None:
     body = _ask_follow_up(briefed, STEP_5)
     now = _block(body, "list", "Staff can begin now")
-    assert not any("Financial Aid" in item for item in now["items"])
+    # the hold review is routine (as in the briefing's staff actions); the
+    # emergency-aid eligibility review is the decision
+    assert any(item.startswith("Financial Aid: Review the 18") for item in now["items"])
     decision = _block(body, "list", "Needs your decision")
-    assert "18 continuing students" in decision["items"][0]
+    assert "emergency-aid eligibility review for the 18" in decision["items"][0]
     options = _block(body, "table", "Options and tradeoffs")
     assert options["label"] == "interpretation" and len(options["rows"]) == 3
     recommendation = [
@@ -512,3 +518,35 @@ def test_roles(app: FastAPI) -> None:
     )
     aid = make_authenticated_client(app, role="aid")
     assert aid.post("/briefing/follow-up", json={"question": STEP_2}).status_code == 403
+
+
+def test_suppression_withholds_the_cell_that_would_reveal_a_small_one() -> None:
+    from cabinet.followup import suppress
+
+    assert suppress([("a", 12), ("b", 11), ("c", 6), ("d", 13)]) == {
+        "a": "12",
+        "b": "withheld",
+        "c": "fewer than 10",
+        "d": "13",
+    }
+    assert suppress([("a", 3), ("b", 4), ("c", 20)]) == {
+        "a": "fewer than 10",
+        "b": "fewer than 10",
+        "c": "20",
+    }
+
+
+def test_follow_ups_do_not_spend_the_question_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CABINET_PROVIDER", "fake")
+    monkeypatch.setenv("CABINET_RATE_ASK_PER_MIN", "1")
+    client = make_authenticated_client(create_app(), role="executive")
+    for question in list(FOLLOW_UPS)[:6]:
+        response = client.post("/briefing/follow-up", json={"question": question})
+        assert response.status_code == 200, response.text
+
+
+def test_answers_that_read_no_figures_record_no_grant(briefed: TestClient) -> None:
+    body = _ask_follow_up(briefed, "What data was each AI employee permitted to access?")
+    assert len(body["event_ids"]) == 1

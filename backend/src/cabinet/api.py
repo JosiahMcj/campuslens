@@ -1512,23 +1512,28 @@ def create_app(
                 for field in (runtime.findings.get(fid) or {}).get("source_fields", [])
             }
         )
-        granted = audit.append(
-            "data.granted",
-            actor=CHIEF_OF_STAFF,
-            payload={
-                "task_id": task_id,
-                "question_event_id": asked["id"],
-                "findings": finding_ids,
-                "fields_read": fields_read,
-                "aggregate_only": True,
-                "intent": route.intent,
-            },
-        )
+        event_ids = [asked["id"]]
+        if fields_read:
+            # Only when the answer read figures: the permissions, employees
+            # and changes answers read no student field.
+            granted = audit.append(
+                "data.granted",
+                actor=CHIEF_OF_STAFF,
+                payload={
+                    "task_id": task_id,
+                    "question_event_id": asked["id"],
+                    "findings": finding_ids,
+                    "fields_read": fields_read,
+                    "aggregate_only": True,
+                    "intent": route.intent,
+                },
+            )
+            event_ids.append(granted["id"])
         return {
             "matched": True,
             "kind": "answer",
             **result,
-            "event_ids": [asked["id"], granted["id"]],
+            "event_ids": event_ids,
             "fictional": runtime.fictional,
         }
 

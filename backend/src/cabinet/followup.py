@@ -278,9 +278,13 @@ def classify(question: str, has_briefing: bool) -> Route | None:
     for rule in _RULES:
         if not rule.pattern.search(folded):
             continue
-        if rule.intent in _SELF_ANCHORED or anchored:
+        if anchored:
             return Route("answer", intent=rule.intent)
-        if has_briefing and not _EXPLORE_SUBJECT_RE.search(folded):
+        # A question about Explore's subjects (GPA, dropout, courses, ...)
+        # that never names the briefing's topic belongs to Explore.
+        if _EXPLORE_SUBJECT_RE.search(folded):
+            return None
+        if rule.intent in _SELF_ANCHORED or has_briefing:
             return Route("answer", intent=rule.intent)
         return None
     return None
@@ -379,6 +383,7 @@ class Derived:
     by_program: list[tuple[str, int, int]]
     by_class_now_vs_prior: list[tuple[str, int, int]]
     unregistered_by_class: list[tuple[str, int]]
+    unregistered_by_program: list[tuple[str, int]]
     unregistered_programs: int | None
 
 
@@ -456,10 +461,31 @@ def derive(ctx: Context) -> Derived:
         by_program=by_program,
         by_class_now_vs_prior=by_class,
         unregistered_by_class=unregistered_by_class,
+        unregistered_by_program=sorted(
+            Counter(program(current[i]) for i in m2_ids).items(),
+            key=lambda item: (-item[1], item[0]),
+        ),
         unregistered_programs=(
             len({program(current[i]) for i in m2_ids}) if m2_ids else None
         ),
     )
+
+
+WITHHELD = "withheld"
+
+
+def suppress(cells: list[tuple[str, int]]) -> dict[str, str]:
+    """What each cell of a breakdown may show, when its total is on screen:
+    a count of at least ``MINIMUM_CELL_SIZE``, else "fewer than 10". When
+    exactly one cell is small, the next-smallest is withheld too, so the
+    small one cannot be worked out by subtracting from the total."""
+    small = [name for name, n in cells if n < MINIMUM_CELL_SIZE]
+    shown = {name: _cell(n) for name, n in cells}
+    if len(small) == 1:
+        others = sorted((n, name) for name, n in cells if name not in small)
+        if others:
+            shown[others[0][1]] = WITHHELD
+    return shown
 
 
 def _cell(count: int) -> str:
@@ -715,31 +741,45 @@ def _support(ctx: Context, d: Derived) -> dict[str, Any]:
         ),
     ]
     if d.unregistered_by_class:
-        withheld = [lv for lv, n in d.unregistered_by_class if n < MINIMUM_CELL_SIZE]
-        blocks.append(
-            table(
-                LABEL_FACT,
-                "Unregistered continuing students by class level",
-                ["Class level", "Students"],
-                [[lv.capitalize(), _cell(n)] for lv, n in d.unregistered_by_class],
-                ["M2"],
-            )
-        )
-        if withheld:
+        shown = suppress(d.unregistered_by_class)
+        if sum(1 for value in shown.values() if not value[0].isdigit()) < len(shown) - 1:
             blocks.append(
-                text(
-                    LABEL_NOTE,
-                    f"Groups under {MINIMUM_CELL_SIZE} students are withheld to protect privacy.",
+                table(
+                    LABEL_FACT,
+                    "Unregistered continuing students by class level",
+                    ["Class level", "Students"],
+                    [[lv.capitalize(), shown[lv]] for lv, _ in d.unregistered_by_class],
+                    ["M2"],
                 )
             )
-    if d.unregistered_programs is not None:
-        blocks.append(
-            text(
-                LABEL_FACT,
-                f"By program, they are spread across {d.unregistered_programs} programs and no program has {MINIMUM_CELL_SIZE} or more of them, so program counts are withheld.",
-                ["M2"],
+            if any(not value[0].isdigit() for value in shown.values()):
+                blocks.append(
+                    text(
+                        LABEL_NOTE,
+                        f"Groups under {MINIMUM_CELL_SIZE} students are withheld to protect privacy, and so is the next-smallest group when that would reveal one.",
+                    )
+                )
+    if d.unregistered_by_program:
+        shown = suppress(d.unregistered_by_program)
+        visible = [(name, shown[name]) for name, _ in d.unregistered_by_program if shown[name][0].isdigit()]
+        if visible:
+            blocks.append(
+                table(
+                    LABEL_FACT,
+                    "Unregistered continuing students by program (groups under 10 withheld)",
+                    ["Program", "Students"],
+                    [[name, value] for name, value in visible],
+                    ["M2"],
+                )
             )
-        )
+        else:
+            blocks.append(
+                text(
+                    LABEL_FACT,
+                    f"By program, they are spread across {d.unregistered_programs} programs and no program has {MINIMUM_CELL_SIZE} or more of them, so program counts are withheld.",
+                    ["M2"],
+                )
+            )
     if bursar is not None:
         blocks.append(
             text(
@@ -792,7 +832,7 @@ def _plan_rows(ctx: Context, d: Derived) -> tuple[list[list[str]], list[list[str
         ],
         [
             "Financial Aid",
-            f"Review the {_count(m3)} small-balance cases (holds under {limit}) for eligibility",
+            f"Review the {_count(m3)} small-balance cases (unresolved financial holds below {limit})",
             f"{five[1]} ({five[0]})",
             f"Holds reviewed, of {_count(m3)}",
         ],
@@ -885,7 +925,7 @@ def _decision(ctx: Context, d: Derived) -> dict[str, Any]:
     days = _value(f, "M6")
     limit = f"${M3_AMOUNT_LIMIT:,.0f}"
     rows, _ = _plan_rows(ctx, d)
-    now = [f"{row[0]}: {row[1]}" for row in rows if row[0] != "Financial Aid"]
+    now = [f"{row[0]}: {row[1]}" for row in rows]
     blocks: list[dict[str, Any]] = [
         bullets(
             LABEL_RECOMMENDATION,
@@ -896,7 +936,7 @@ def _decision(ctx: Context, d: Derived) -> dict[str, Any]:
             LABEL_FACT,
             "Needs your decision (policy and funding)",
             [
-                f"Whether to authorize a focused emergency-aid eligibility review for the {_count(m3)} continuing students whose barrier is an unresolved financial hold under {limit}. It commits Financial Aid staff time and may lead to aid spending, which is decided separately.",
+                f"Whether to authorize a focused emergency-aid eligibility review for the {_count(m3)} continuing students whose barrier is an unresolved financial hold under {limit}. Reviewing the holds is routine office work; opening an emergency-aid eligibility review commits Financial Aid staff time and may lead to aid spending, which is decided separately.",
             ],
         ),
         table(
@@ -906,7 +946,7 @@ def _decision(ctx: Context, d: Derived) -> dict[str, Any]:
             [
                 [
                     "A. Approve the review",
-                    f"Financial Aid reviews the {_count(m3)} cases this week",
+                    f"Financial Aid reviews the {_count(m3)} cases for emergency aid this week",
                     "Staff time now; the fastest way to remove the most common barrier",
                 ],
                 [
@@ -1115,10 +1155,16 @@ def _programs(ctx: Context, d: Derived) -> dict[str, Any]:
         for row in d.by_program
         if row[1] >= MINIMUM_CELL_SIZE and row[2] >= MINIMUM_CELL_SIZE
     ]
+    if len(d.by_program) - len(shown) == 1 and shown:
+        # One withheld program could be worked out from the totals on screen.
+        smallest = min(shown, key=lambda row: min(row[1], row[2]))
+        shown = [row for row in shown if row is not smallest]
     withheld = len(d.by_program) - len(shown)
     blocks: list[dict[str, Any]] = []
     if d.by_class_now_vs_prior:
         level_rows = sorted(d.by_class_now_vs_prior, key=lambda r: r[2] - r[1])
+        before = suppress([(lv, p) for lv, p, _ in level_rows])
+        after = suppress([(lv, n) for lv, _, n in level_rows])
         blocks.append(
             table(
                 LABEL_FACT,
@@ -1127,11 +1173,11 @@ def _programs(ctx: Context, d: Derived) -> dict[str, Any]:
                 [
                     [
                         lv.capitalize(),
-                        _cell(p),
-                        _cell(n),
+                        before[lv],
+                        after[lv],
                         _signed(n - p)
-                        if min(p, n) >= MINIMUM_CELL_SIZE
-                        else "withheld",
+                        if before[lv][0].isdigit() and after[lv][0].isdigit()
+                        else WITHHELD,
                     ]
                     for lv, p, n in level_rows
                 ],
@@ -1157,7 +1203,10 @@ def _programs(ctx: Context, d: Derived) -> dict[str, Any]:
         )
     if d.by_class_now_vs_prior:
         worst = min(d.by_class_now_vs_prior, key=lambda r: r[2] - r[1])
-        if worst[2] - worst[1] < 0 and min(worst[1], worst[2]) >= MINIMUM_CELL_SIZE:
+        every_cell_shown = all(
+            min(p, n) >= MINIMUM_CELL_SIZE for _, p, n in d.by_class_now_vs_prior
+        )
+        if worst[2] - worst[1] < 0 and every_cell_shown:
             blocks.append(
                 text(
                     LABEL_INTERPRETATION,
@@ -1489,7 +1538,7 @@ def _changes(ctx: Context, d: Derived) -> dict[str, Any]:
                 f"were both computed from {name}, so every figure is the same."
             )
         blocks = [text(LABEL_FACT, body)]
-    decided = [did for did in ctx.approvals]
+    decided = [did for did in ctx.approvals if did in {d["id"] for d in ctx.decisions}]
     blocks.append(
         text(
             LABEL_FACT,
