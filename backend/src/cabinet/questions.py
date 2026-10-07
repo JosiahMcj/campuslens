@@ -494,6 +494,11 @@ def match_question(text: str) -> Question | None:
     for question in QUESTIONS:
         if _normalize(question.text) == normalized:
             return question
+    # The spring registration question in other words ("... today?").
+    from cabinet.followup import is_briefing_question
+
+    if is_briefing_question(text):
+        return DEFAULT_QUESTION
     return None
 
 

@@ -437,6 +437,8 @@ def test_every_protected_route_is_in_the_role_table() -> None:
         ("GET", "/admin/connections"),
         # The demonstration student directory (tests/test_roster.py).
         ("GET", "/students/search"),
+        # Briefing follow-ups, answered in code (tests/test_followup.py).
+        ("POST", "/briefing/follow-up"),
     }
     assert set(ROUTE_ROLES) == expected
 

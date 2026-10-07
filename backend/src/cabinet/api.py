@@ -197,8 +197,13 @@ from cabinet.connections import router as connections_router
 from cabinet.counseling import M9_ID, authorization_block, m9_finding
 from cabinet.datasets import UploadError, validate_upload
 from cabinet.explore.api import router as explore_router
-from cabinet.explore.privacy import redact_question
+from cabinet.explore.privacy import counseling_message, redact_question
 from cabinet.fixture import parse_fixture
+from cabinet.followup import COUNSELING_FIELDS
+from cabinet.followup import EMPLOYEE_TITLES as FOLLOW_UP_TITLES
+from cabinet.followup import Context as FollowUpContext
+from cabinet.followup import answer as answer_follow_up
+from cabinet.followup import classify as classify_follow_up
 from cabinet.metrics import findings as compute_findings
 from cabinet.migrations import (
     BOOTSTRAP_SLUG,
@@ -270,6 +275,22 @@ LEGACY_TASK_STATUS = "simulated, nothing sent"
 
 class AskRequest(BaseModel):
     question: str
+
+
+# The events of one briefing run that its audit trail shows.
+TRAIL_EVENT_TYPES = (
+    "question.asked",
+    "task.assigned",
+    "finding.produced",
+    "briefing.produced",
+)
+
+
+class FollowUpRequest(BaseModel):
+    question: str
+    # The conversation already shows a briefing: questions that lean on it
+    # ("the change", "this plan") are follow-ups only then.
+    has_briefing: bool = False
 
 
 class ApproveRequest(BaseModel):
@@ -1382,6 +1403,134 @@ def create_app(
                 "event": exc.event,
             }
         return {"granted": True, "role": body.role, "granted_fields": granted}
+
+    @app.post("/briefing/follow-up")
+    def post_briefing_follow_up(
+        body: FollowUpRequest, request: Request
+    ) -> dict[str, Any]:
+        """A question asked after (or about) the registration briefing,
+        answered in code from the findings, the briefing's actions and
+        decision, the dataset metadata and the audit log. No model call,
+        no student identifier, nothing approved or sent.
+
+        ``{"matched": false}`` (nothing recorded) when the question is not
+        a follow-up: the UI then asks Explore, which records it itself.
+        ``{"matched": true, "kind": "approved"}`` when it is the approved
+        briefing question in other words: the UI asks it through /ask.
+        ``kind: "denied"`` for a counseling request to a named AI employee:
+        the permission gate refuses the counseling fields to that employee
+        and records the refusal. ``kind: "answer"`` carries the answer."""
+        question = " ".join(body.question.split())[:500]
+        route = classify_follow_up(question, body.has_briefing)
+        if route is None:
+            return {"matched": False}
+        if route.kind == "approved":
+            return {
+                "matched": True,
+                "kind": "approved",
+                "question": DEFAULT_QUESTION.text,
+            }
+        institution_id = request_institution(request)
+        audit = store.audit_for(institution_id)
+        user = request.scope["cabinet_user"]
+        asked = audit.append(
+            "question.asked",
+            actor=str(user["email"]),
+            payload={
+                "question": redact_question(question),
+                "route": "/briefing/follow-up",
+                "role": str(user["role"]),
+                **({"intent": route.intent} if route.intent else {}),
+            },
+        )
+        task_id = f"follow-up-{asked['id']}"
+        if route.kind == "denied":
+            employee = route.employee or CHIEF_OF_STAFF
+            try:
+                request_fields(employee, list(COUNSELING_FIELDS), task_id, audit)
+            except FieldRequestRefused as exc:
+                refused_event = exc.event
+            else:  # pragma: no cover - the gate refuses counseling to every role
+                raise RuntimeError("counseling fields were granted")
+            return {
+                "matched": True,
+                "kind": "denied",
+                "employee": employee,
+                "employee_title": FOLLOW_UP_TITLES.get(employee, "AI employee"),
+                "message": counseling_message(employee),
+                "event_ids": [asked["id"], refused_event["id"]],
+            }
+        runtime = runtime_for(institution_id)
+        dataset_id = int(runtime.dataset["id"])
+        briefing = store.latest_briefing(institution_id, dataset_id=dataset_id)
+        all_events = store.audit_events(institution_id)
+        produced = [e for e in all_events if e["type"] == "briefing.produced"]
+        extra: dict[str, Any] = {}
+        if len(produced) >= 2:
+            low, high = produced[-2]["id"], produced[-1]["id"]
+            extra["dataset_changed_between"] = any(
+                e["type"] == "dataset.activated" and low < e["id"] < high
+                for e in all_events
+            )
+        if produced:
+            start = produced[-1]["payload"].get("question_event_id")
+            run = [
+                e
+                for e in all_events
+                if isinstance(start, int)
+                and start <= e["id"] <= produced[-1]["id"]
+                and e["type"] in TRAIL_EVENT_TYPES
+            ]
+            decided = [
+                e
+                for e in all_events
+                if e["id"] > produced[-1]["id"]
+                and e["type"] in ("decision.approved", "task.created")
+            ]
+            extra["trail"] = (run + decided)[:16]
+        approvals = store.approvals(institution_id, dataset_id=dataset_id)
+        context = FollowUpContext(
+            findings=runtime.findings,
+            document=runtime.document,
+            dataset=dict(runtime.dataset),
+            briefing=briefing,
+            briefing_events=produced,
+            approvals=approvals,
+            decisions=DEFAULT_QUESTION.build_decisions(runtime.findings),
+            actions=DEFAULT_QUESTION.build_actions(runtime.findings),
+            fictional=runtime.fictional,
+            role=str(user["role"]),
+            extra=extra,
+        )
+        assert route.intent is not None
+        result = answer_follow_up(route.intent, context)
+        finding_ids = list(result.get("finding_ids") or [])
+        fields_read = sorted(
+            {
+                str(field)
+                for fid in finding_ids
+                for field in (runtime.findings.get(fid) or {}).get("source_fields", [])
+            }
+        )
+        granted = audit.append(
+            "data.granted",
+            actor=CHIEF_OF_STAFF,
+            payload={
+                "task_id": task_id,
+                "question_event_id": asked["id"],
+                "findings": finding_ids,
+                "fields_read": fields_read,
+                "aggregate_only": True,
+                "intent": route.intent,
+            },
+        )
+        return {
+            "matched": True,
+            "kind": "answer",
+            **result,
+            "event_ids": [asked["id"], granted["id"]],
+            "fictional": runtime.fictional,
+        }
 
     def briefing_response(
         role: str, force_refresh: bool, request: Request

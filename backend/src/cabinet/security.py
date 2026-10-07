@@ -130,6 +130,8 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/findings"): READ_ROLES,
     ("GET", "/events"): AUDIT_ROLES,
     ("GET", "/briefing"): READ_ROLES,
+    # Follow-up questions about the briefing, answered in code (no model).
+    ("POST", "/briefing/follow-up"): ACT_ROLES + (ROLE_STAFF, ROLE_REVIEWER),
     ("GET", "/briefing/enrollment"): READ_ROLES,
     ("GET", "/briefing/student-success"): READ_ROLES,
     ("GET", "/decisions"): READ_ROLES,
