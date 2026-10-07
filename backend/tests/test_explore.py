@@ -406,7 +406,7 @@ def test_catalog_route(app: FastAPI) -> None:
     body = _client(app, "staff").get("/explore/catalog").json()
     assert len(body["analyses"]) == 18
     assert all(set(a) == {"id", "title", "description"} for a in body["analyses"])
-    assert len(body["examples"]) == 12
+    assert len(body["examples"]) == 17
     assert body["fictional"] is True
 
 

@@ -93,6 +93,11 @@ EXAMPLE_QUESTIONS: tuple[str, ...] = (
     "Which term had the largest gap between online and in-person withdrawal rates?",
     "Which majors have the highest probation rates?",
     "Which offices hold the most active holds?",
+    "What majors have the highest dropout rate?",
+    "What is first-year retention by first-generation status?",
+    "What is the 6-year graduation rate for Pell students by college?",
+    "How many international students are in Nursing?",
+    "What is the average GPA of athletes vs non-athletes?",
 )
 
 # Phrasings the rule planner maps, with the analyses each plan must run (in
@@ -178,6 +183,15 @@ RULE_PHRASINGS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "What is the hardest class in Chemistry, and who taught it?",
         ("dfw_by_course", "course_instructors"),
+    ),
+    ("what majors have teh highest drop out rate", ("measure_by_group",)),
+    ("Retention by first-gen status", ("measure_by_group",)),
+    ("Graduation rate for Pell students by college", ("measure_by_group",)),
+    ("How many international students are in Nursing?", ("measure_by_group",)),
+    ("Average GPA of athletes vs non-athletes", ("measure_by_group",)),
+    (
+        "Which major has the highest dropout rate, and what is its hardest class?",
+        ("measure_by_group", "dfw_by_course"),
     ),
     (
         "Which course has the highest DFW rate in Computer Science, and how has it "
@@ -1175,7 +1189,7 @@ _NEW_MEASURES: tuple[tuple[str, str], ...] = (
     (
         "grad_rate_6yr",
         r"(?:6|six)[- ]years? grad|graduat\w* (?:with)?in (?:6|six) years|"
-        r"graduation rates?|grad rates?|completion rates?",
+        r"graduation rates?|grad rates?|(?<!credit )completion rates?",
     ),
     (
         "retention_rate",
@@ -1276,8 +1290,10 @@ _GROUPING_WORDS: dict[str, str] = {
     "housing": r"\bhousing\b|on[- ]campus (?:vs\.?|versus|and|or) off[- ]campus|"
     r"off[- ]campus (?:vs\.?|versus|and|or) on[- ]campus|where (?:they|students) live|"
     r"commuters? (?:vs\.?|versus|and|or)|residential (?:vs\.?|versus|and|or) commuter",
-    "athlete": r"athlet|\bsports?\b|athletics",
-    "honors": r"\bhonors\b|\bhonours\b",
+    "athlete": r"athlet\w* (?:vs\.?|versus|and|or|compared (?:with|to)) non|"
+    r"non[- ]?athlet|athlete status|by athlet|athletics status",
+    "honors": r"honors (?:vs\.?|versus|and|or|compared (?:with|to)) "
+    r"(?:non|other|regular)|non[- ]?honors|honors status|by honors",
     "modality": r"modalit|in[- ]person (?:vs\.?|versus|and|or) online|"
     r"online (?:vs\.?|versus|and|or) in[- ]person|delivery mode",
 }
@@ -1376,6 +1392,16 @@ def _general_params(text: str, e: _Entities, v: Vocab) -> dict[str, Any] | None:
     measure_id, new = _detect_measure(text)
     if measure_id is None:
         return None
+    # A course title that is itself a grouping phrase ("Race and Ethnicity")
+    # is read as the grouping here.
+    courses = [
+        c
+        for c in e.courses
+        if not any(
+            re.search(pat, v.courses.get(c, ""), re.I)
+            for pat in _GROUPING_WORDS.values()
+        )
+    ]
     measure = general.MEASURES[measure_id]
     allowed = set(general.allowed_groupings(measure))
     cohort_like = measure.scope in ("latest", "cohort")
@@ -1425,7 +1451,8 @@ def _general_params(text: str, e: _Entities, v: Vocab) -> dict[str, Any] | None:
     if cohort_match and "entry_cohort" in allowed:
         year = int(cohort_match.group(1) or cohort_match.group(2))
         cohort = f"{year}-{year + 1}"
-        if cohort in v.entry_cohorts and all(g != "entry_cohort" for _, g in groups):
+        if cohort in v.entry_cohorts:
+            groups = [(at, g) for at, g in groups if g != "entry_cohort"]
             filters["entry_cohort"] = cohort
     group_keys = [g for _, g in groups]
     new_attr = any(
@@ -1434,7 +1461,7 @@ def _general_params(text: str, e: _Entities, v: Vocab) -> dict[str, Any] | None:
     )
     old_group = any(k in _EQUITY_GROUPS for k in group_keys + list(filters))
     if not new:
-        if e.courses:
+        if courses:
             return None  # a course question: the course analyses answer it
         if measure_id == "dfw_rate" and old_group and e.majors and not new_attr:
             return None  # the equity gap in a major
@@ -1442,7 +1469,7 @@ def _general_params(text: str, e: _Entities, v: Vocab) -> dict[str, Any] | None:
             return None
         if measure_id in ("headcount", "graduates") and not (new_attr or old_group):
             return None
-    elif e.courses and measure_id in ("dfw_rate", "withdrawal_rate"):
+    elif courses and measure_id in ("dfw_rate", "withdrawal_rate"):
         return None
     params: dict[str, Any] = {"measure": measure_id}
     # A binary attribute named with no grouping ("average GPA of athletes")
