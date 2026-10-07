@@ -84,9 +84,11 @@ from starlette.responses import JSONResponse, Response
 from cabinet.auth import (
     COOKIE_NAME,
     CSRF_HEADER,
+    DEPARTMENT_ROLES,
     ROLE_ADMIN,
     ROLE_AID,
     ROLE_EXECUTIVE,
+    ROLE_IT,
     ROLE_REVIEWER,
     ROLE_STAFF,
     AuthStore,
@@ -106,16 +108,50 @@ BODY_CAP_OVERRIDES: tuple[tuple[str, int], ...] = (
     ("/admin/datasets", UPLOAD_BODY_BYTES),
 )
 
-ALL_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF, ROLE_REVIEWER, ROLE_AID)
-READ_ROLES = ALL_ROLES  # every logged-in role may read
+# --- roles (docs/ROLES.md has the table of who sees what) --------------------
+# The department accounts: Finance / Student Accounts, the Registrar and
+# Student Life (cabinet.auth.DEPARTMENT_ROLES). Each reads the briefing's
+# aggregate figures, asks aggregate Explore questions and opens its own
+# department overview.
+# Every role that reads the briefing's aggregate figures: everyone but IT,
+# whose work is the accounts and the system, never students.
+READ_ROLES = (
+    ROLE_ADMIN,
+    ROLE_EXECUTIVE,
+    ROLE_STAFF,
+    ROLE_REVIEWER,
+    ROLE_AID,
+    *DEPARTMENT_ROLES,
+)
+ALL_ROLES = (*READ_ROLES, ROLE_IT)  # every logged-in role
 ACT_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE)  # ask / approve / refresh
 # The student ids behind a finding (GET /findings row lists, M5's per-office
 # holds, M8's per-student indicators): the executive and admin, whose work
 # acts on the records. Every other role reads the figures and counts only.
 ROW_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE)
-# The audit log itself: admin and reviewer, and the executive (the
-# president runs the Beat 6 audit walkthrough; staff still may not).
-AUDIT_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_REVIEWER)
+# The audit log itself: admin and reviewer, the executive (the president
+# runs the Beat 6 audit walkthrough; staff still may not), and IT.
+AUDIT_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_REVIEWER, ROLE_IT)
+# Explore: aggregate questions over the school data. The president, the
+# admin, staff, the reviewer and the department accounts; never the aid
+# office (its work is the queue) and never IT. Instructor-level rows stay
+# with the executive and admin (cabinet.explore.catalog.INSTRUCTOR_ROLES).
+EXPLORE_ROLES = (
+    ROLE_ADMIN,
+    ROLE_EXECUTIVE,
+    ROLE_STAFF,
+    ROLE_REVIEWER,
+    *DEPARTMENT_ROLES,
+)
+# Account management: the admin, and IT for the non-privileged accounts
+# (the user routes refuse IT on an admin, executive or IT account).
+USER_ADMIN_ROLES = (ROLE_ADMIN, ROLE_IT)
+# Sign-in activity (GET /admin/sessions): counts per account, never a
+# session id. IT and the admin run it; the president may look.
+SESSION_VIEW_ROLES = (ROLE_ADMIN, ROLE_IT, ROLE_EXECUTIVE)
+# The department overviews (cabinet.departments): each department account
+# reads its own; the president and the admin read every one.
+OVERVIEW_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, *DEPARTMENT_ROLES)
 # The Financial Aid review queue holds per-student rows, so it is narrower
 # than READ_ROLES: the aid office works it, the admin manages it, and the
 # executive and reviewer may watch it. Staff may create it from the decision
@@ -151,29 +187,35 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     ("PUT", "/admin/institution/counseling-authorization"): (ROLE_ADMIN,),
     # Institution admins manage their own institution's users; the
     # institution always comes from the session, never from the client.
-    ("GET", "/admin/users"): (ROLE_ADMIN,),
-    ("POST", "/admin/users"): (ROLE_ADMIN,),
-    # Explore (cabinet.explore): aggregate questions over the school data;
-    # every role but aid.
-    ("POST", "/explore"): (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF, ROLE_REVIEWER),
-    ("POST", "/explore/stream"): (
-        ROLE_ADMIN,
-        ROLE_EXECUTIVE,
-        ROLE_STAFF,
-        ROLE_REVIEWER,
-    ),
-    ("GET", "/explore/catalog"): AUDIT_ROLES + (ROLE_STAFF,),
+    # IT manages the non-privileged accounts (the handlers narrow it).
+    ("GET", "/admin/users"): USER_ADMIN_ROLES,
+    ("POST", "/admin/users"): USER_ADMIN_ROLES,
+    # Explore (cabinet.explore): aggregate questions over the school data.
+    ("POST", "/explore"): EXPLORE_ROLES,
+    ("POST", "/explore/stream"): EXPLORE_ROLES,
+    ("GET", "/explore/catalog"): EXPLORE_ROLES,
     # The staff action worklist (cabinet.staffactions_api): every role reads
     # it (the aid role sees Financial Aid's actions only, filtered by the
     # route).
     ("GET", "/staff-actions"): READ_ROLES,
     # The outside connections (Ellucian import, outgoing mail): whether each
-    # is configured, never a credential. Admin only.
-    ("GET", "/admin/connections"): (ROLE_ADMIN,),
+    # is configured, never a credential. Admin and IT.
+    ("GET", "/admin/connections"): USER_ADMIN_ROLES,
     # The demonstration student directory (cabinet.roster): a name search
     # that returns named student records, so only the roles that may open
     # the records behind a figure. Every search is logged.
     ("GET", "/students/search"): ROW_ROLES,
+    # --- department accounts and the inbox (docs/ROLES.md) ---
+    # Sign-in activity per account (cabinet.inbox): counts, no session ids.
+    ("GET", "/admin/sessions"): SESSION_VIEW_ROLES,
+    # One department's aggregate overview (cabinet.departments); the route
+    # narrows a department account to its own department.
+    ("GET", "/departments/overview"): OVERVIEW_ROLES,
+    # The per-account inbox (cabinet.inbox): every role has one. Sending
+    # is open to every role; what may be attached is checked per source.
+    ("GET", "/inbox"): ALL_ROLES,
+    ("GET", "/inbox/recipients"): ALL_ROLES,
+    ("POST", "/inbox"): ALL_ROLES,
 }
 
 # Prefix rules, checked when the exact table misses (routes with path
@@ -184,8 +226,8 @@ ROUTE_ROLE_PREFIXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("GET", "/admin/datasets", (ROLE_ADMIN,)),
     ("POST", "/admin/datasets", (ROLE_ADMIN,)),
     ("DELETE", "/admin/datasets", (ROLE_ADMIN,)),
-    ("POST", "/admin/users", (ROLE_ADMIN,)),
-    ("PATCH", "/admin/users", (ROLE_ADMIN,)),
+    ("POST", "/admin/users", USER_ADMIN_ROLES),
+    ("PATCH", "/admin/users", USER_ADMIN_ROLES),
     # The dispatch routes carry the decision id in the path. Reading the
     # draft is open to every role (the reviewer watches governance); both
     # composing and sending are POSTs, and the send route itself narrows
@@ -202,6 +244,9 @@ ROUTE_ROLE_PREFIXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     # 403, like the decision dispatch).
     ("PATCH", "/staff-actions/", (ROLE_ADMIN, ROLE_STAFF)),
     ("POST", "/staff-actions/", (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF)),
+    # One inbox message by id: mark it read or reviewed. Every role; the
+    # route answers 404 unless the caller is the message's recipient.
+    ("POST", "/inbox/", ALL_ROLES),
 )
 
 # No session needed: liveness, readiness, and login itself.
@@ -697,6 +742,8 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
             ("POST", "/ask"),
             ("POST", "/explore"),
             ("POST", "/explore/stream"),
+            # An inbox alert puts a message in front of another person.
+            ("POST", "/inbox"),
         ) or (
             # Both Sends (a decision's dispatch, a staff action) end in /send.
             method == "POST" and path.endswith("/send")

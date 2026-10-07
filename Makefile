@@ -12,7 +12,7 @@ PYBIN := $(VENV)/bin
 	lint lint-python lint-ui \
 	typecheck typecheck-python typecheck-ui \
 	test test-python test-ui \
-	check audit check-config bootstrap-admin institution user demo-mailboxes import-ethos api ui stop record-golden \
+	check audit check-config bootstrap-admin institution user demo-mailboxes demo-accounts import-ethos api ui stop record-golden \
 	migrate backup restore purge-deleted build serve school-data school-check explore-check
 
 setup: setup-python setup-ui
@@ -78,7 +78,7 @@ institution:
 	$(PYBIN)/python -m cabinet.institutions add --name "$(NAME)" --slug "$(SLUG)"
 
 user:
-	@if [ -z "$(EMAIL)" ] || [ -z "$(ROLE)" ]; then echo "usage: make user EMAIL=... ROLE=admin|executive|staff|reviewer [INSTITUTION=slug]" >&2; exit 2; fi
+	@if [ -z "$(EMAIL)" ] || [ -z "$(ROLE)" ]; then echo "usage: make user EMAIL=... ROLE=admin|executive|staff|reviewer|aid|finance|registrar|studentlife|it [INSTITUTION=slug]" >&2; exit 2; fi
 	@if [ -n "$(INSTITUTION)" ]; then \
 		$(PYBIN)/python -m cabinet.users add --email "$(EMAIL)" --role "$(ROLE)" --institution "$(INSTITUTION)"; \
 	else \
@@ -99,6 +99,17 @@ demo-mailboxes:
 	else \
 		$(PYBIN)/python -m cabinet.users demo-mailboxes; \
 	fi
+
+# Demonstration only: one sign-in per demonstration persona (docs/ROLES.md):
+# president@, it@, finance@, aid@, registrar@, studentlife@, staff@ and
+# reviewer@demo.test. Existing accounts are left alone (never reset). The
+# generated passwords are appended to OUT (created mode 600; keep it OUTSIDE
+# the repository) or, without OUT, printed once. Refuses unless the
+# institution's active dataset is the fictional demonstration data. Uses
+# CABINET_DB like every other command.
+# Example: make demo-accounts OUT=$$HOME/campuslens-demo-accounts.txt
+demo-accounts:
+	$(PYBIN)/python -m cabinet.users demo-accounts $(if $(INSTITUTION),--institution "$(INSTITUTION)",) $(if $(OUT),--out "$(OUT)",)
 
 # Import one term from the institution's Ellucian Ethos Integration API
 # (docs/ELLUCIAN.md): fetch the mapped resources at the institution's edge,

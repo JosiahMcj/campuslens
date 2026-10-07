@@ -181,8 +181,10 @@ from cabinet.audit import EVENT_TYPES
 from cabinet.auth import (
     COOKIE_NAME,
     ENV_ENV,
+    IT_MANAGED_ROLES,
     PRODUCTION,
     ROLE_ADMIN,
+    ROLE_IT,
     ROLE_STAFF,
     USER_ROLES,
     AuthStore,
@@ -196,9 +198,11 @@ from cabinet.auth import (
 from cabinet.connections import router as connections_router
 from cabinet.counseling import M9_ID, authorization_block, m9_finding
 from cabinet.datasets import UploadError, validate_upload
+from cabinet.departments import router as departments_router
 from cabinet.explore.api import router as explore_router
 from cabinet.explore.privacy import redact_question
 from cabinet.fixture import parse_fixture
+from cabinet.inbox import router as inbox_router
 from cabinet.metrics import findings as compute_findings
 from cabinet.migrations import (
     BOOTSTRAP_SLUG,
@@ -2445,6 +2449,30 @@ def create_app(
             },
         )
 
+    def it_refusal(
+        request: Request, caller: dict[str, Any], *roles: str
+    ) -> JSONResponse | None:
+        """IT manages the department and staff accounts only: an IT caller
+        touching an admin, executive or IT account (or giving one of those
+        roles) is a logged 403. None for every other caller and case."""
+        if caller["role"] != ROLE_IT or all(r in IT_MANAGED_ROLES for r in roles):
+            return None
+        detail = (
+            "IT manages department and staff accounts; an administrator "
+            "changes admin, executive and IT accounts"
+        )
+        store.audit_append(
+            int(caller["institution_id"]),
+            "data.refused",
+            actor=str(caller["id"]),
+            payload={
+                "reason": detail,
+                "method": request.method,
+                "path": request.url.path,
+            },
+        )
+        return JSONResponse(status_code=403, content={"detail": detail})
+
     @app.get("/admin/users")
     def get_admin_users(request: Request) -> list[dict[str, Any]]:
         """Every user of the caller's institution (the admin's own row
@@ -2472,6 +2500,9 @@ def create_app(
                     f"expected one of {', '.join(USER_ROLES)}"
                 ),
             )
+        refused = it_refusal(request, admin, body.role)
+        if refused is not None:
+            return refused
         password = generate_password()
         try:
             user_id = store.create_user(
@@ -2509,6 +2540,9 @@ def create_app(
             return JSONResponse(
                 status_code=404, content={"detail": f"unknown user id {user_id}"}
             )
+        refused = it_refusal(request, admin, str(target["role"]))
+        if refused is not None:
+            return refused
         if disabled:
             if int(target["id"]) == int(admin["id"]):
                 return JSONResponse(
@@ -2573,6 +2607,9 @@ def create_app(
             return JSONResponse(
                 status_code=404, content={"detail": f"unknown user id {user_id}"}
             )
+        refused = it_refusal(request, admin, str(target["role"]), body.role)
+        if refused is not None:
+            return refused
         if target["role"] == body.role:
             return JSONResponse(
                 content={"user": admin_user_body(target), "changed": False}
@@ -2601,6 +2638,11 @@ def create_app(
     app.include_router(staff_actions_router)
     app.include_router(connections_router)  # GET /admin/connections
     app.include_router(roster_router)  # GET /students/search
+    # GET /departments/overview (cabinet.departments)
+    app.include_router(departments_router)
+    # GET/POST /inbox, /inbox/recipients, /inbox/{id}/read|reviewed,
+    # GET /admin/sessions (cabinet.inbox)
+    app.include_router(inbox_router)
 
     # The built UI, served by the same process. Mounted after every API
     # route so an API path always wins over the static mount; a missing
