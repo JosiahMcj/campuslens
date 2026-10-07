@@ -16,8 +16,8 @@ Usage:
     python3 data/school/generate.py                 # scale 1.0 -> var/school/school.db
     python3 data/school/generate.py --scale 0.01 --out /tmp/school.db
 
-Scale 1.0 is the documented university: about 3,400 first-time students
-enter each fall and about 15,000 students enroll in a fall term. Smaller
+Scale 1.0 is the documented university: about 3,500 first-time students
+enter each fall and about 16,000 students enroll in a fall term. Smaller
 scales shrink every cohort (the tests use 0.01).
 
 Stdlib only (sqlite3, random, datetime, hashlib, json).
