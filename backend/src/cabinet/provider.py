@@ -409,8 +409,18 @@ class ChatProvider:
         assert base_url and model and key  # narrowing for the type checker
 
         from cabinet.analysts import build_prompt
+        from cabinet.permissions import coarsen_small_counts
 
-        system, user = build_prompt(findings, role)
+        # A live call never carries an M5 office count or an M8 indicator
+        # count under 10: those read "fewer than 10" in the prompt. Only the
+        # prompt changes; the received findings (the replay key and what the
+        # validator checks against) are untouched.
+        # Explore's payloads are its own (aggregate tables, cabinet.explore)
+        # and pass through unchanged.
+        prompt_findings = (
+            findings if role.startswith("explore_") else coarsen_small_counts(findings)
+        )
+        system, user = build_prompt(prompt_findings, role)
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": user},

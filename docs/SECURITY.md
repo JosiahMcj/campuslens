@@ -260,6 +260,25 @@ is typed unavailability naming the redirect, the request is never repeated to th
 test runs a real local endpoint that answers 302 and checks that nothing reaches the
 redirect target.
 
+**Small operational counts.** M5 counts unresolved holds per responsible office
+(for example Library 1, Registrar 2), and M8 counts students per support indicator,
+some of them 0. We decided these are operational work counts, not population
+statistics: they tell an office how many items are in its own queue, so the briefing
+and the evidence drawer keep showing them exactly to every signed-in role, as before
+(the student ids behind them go to executives and administrators only, above). They
+are not sent to a model when they are small. Just before a live model call, every
+office count and indicator count under 10 (the same minimum as M9), zero included,
+is replaced by the words "fewer than 10", so the model reads the office list and
+the indicator list with those phrases (`permissions.coarsen_small_counts`, applied
+in `ChatProvider`). Counts of 10 or more, and the M5 and M8 totals, go as before. The
+validator accepts "fewer than 10" (or "fewer than ten") in a claim that cites M5 or
+M8 only while that finding has a count under 10, and a bare "10" is still rejected.
+We applied this to the live prompt only, not to the findings a role receives,
+because those findings are the key of every recorded answer: changing them would
+orphan the committed replay recordings, and they cannot be re-recorded offline. So
+replay keeps working unchanged, and a recorded answer made before this change may
+still name a small office count in the demo. The next live recording will not.
+
 **The model's output and the corrective retry.** The model sees only the
 findings its role received, and we show nothing it writes until the validator
 passes it. Every claim must cite a finding the role received, and every

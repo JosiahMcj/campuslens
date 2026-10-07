@@ -414,3 +414,150 @@ def test_model_client_refuses_a_redirect_and_never_forwards_the_key(
     assert "sk-test-secret-key" not in excinfo.value.reason
     assert origin_hits == ["/v1/chat/completions"]
     assert target_hits == []
+
+
+# --- 6. small operational counts never reach the live model -------------------
+
+
+def _demo_findings() -> dict[str, Any]:
+    from cabinet.api import DEFAULT_FIXTURE_PATH
+    from cabinet.fixture import load_fixture
+    from cabinet.metrics import findings
+
+    fixture = load_fixture(DEFAULT_FIXTURE_PATH)
+    return findings(fixture, fixture_path=DEFAULT_FIXTURE_PATH)
+
+
+def _capture_live_prompt(
+    monkeypatch: pytest.MonkeyPatch, received: dict[str, Any], role: str, answer: str
+) -> tuple[str, Any]:
+    """Run ChatProvider.explain against a fake endpoint; return the user prompt
+    it sent and the explanation."""
+    import cabinet.provider as provider_module
+    from cabinet.provider import ChatProvider
+
+    sent: list[dict[str, Any]] = []
+
+    class Response:
+        def __init__(self) -> None:
+            self.body = json.dumps(
+                {
+                    "choices": [
+                        {
+                            "message": {"role": "assistant", "content": answer},
+                            "finish_reason": "stop",
+                        }
+                    ]
+                }
+            ).encode("utf-8")
+
+        def read(self) -> bytes:
+            return self.body
+
+        def __enter__(self) -> Response:
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            return None
+
+    def fake_urlopen(request: Any, timeout: float) -> Response:
+        sent.append(json.loads(request.data.decode("utf-8")))
+        return Response()
+
+    monkeypatch.setattr(provider_module, "_urlopen", fake_urlopen)
+    monkeypatch.setenv("CABINET_LLM_BASE_URL", "https://model.example.edu/v1")
+    monkeypatch.setenv("CABINET_LLM_MODEL", "test-model")
+    monkeypatch.setenv("CABINET_LLM_API_KEY", "sk-test")
+    explanation = ChatProvider().explain(received, role)
+    assert len(sent) == 1
+    return str(sent[0]["messages"][1]["content"]), explanation
+
+
+def test_live_analyst_prompt_carries_no_office_or_indicator_count_under_10(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cabinet.analysts import STUDENT_SUCCESS_ANALYST
+    from cabinet.provider import canonical_findings_json
+    from cabinet.questions import DEFAULT_QUESTION, received_for
+
+    findings_obj = _demo_findings()
+    small_offices = [o for o in findings_obj["M5"]["value"] if o["count"] < 10]
+    small_rules = [r for r in findings_obj["M8"]["rules"] if r["count"] < 10]
+    assert small_offices and small_rules  # the demo data has both
+    received = received_for(DEFAULT_QUESTION, STUDENT_SUCCESS_ANALYST, findings_obj)
+    before = canonical_findings_json(received)
+
+    prompt, _ = _capture_live_prompt(
+        monkeypatch, received, STUDENT_SUCCESS_ANALYST, "Holds are spread out [M5]."
+    )
+    payload = json.loads(prompt[prompt.index("{") :])
+    for office in payload["M5"]["value"]:
+        original = next(
+            o for o in findings_obj["M5"]["value"] if o["office"] == office["office"]
+        )
+        if original["count"] < 10:
+            assert office["count"] == "fewer than 10"
+        else:
+            assert office["count"] == original["count"]
+    for rule in payload["M8"]["rules"]:
+        original = next(r for r in findings_obj["M8"]["rules"] if r["id"] == rule["id"])
+        expected = "fewer than 10" if original["count"] < 10 else original["count"]
+        assert rule["count"] == expected
+    # The received findings (the replay key) are untouched.
+    assert canonical_findings_json(received) == before
+
+
+def test_live_chief_prompt_carries_no_office_or_indicator_count_under_10(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cabinet.analysts import CHIEF_OF_STAFF, chief_received
+
+    findings_obj = _demo_findings()
+    received = chief_received(findings_obj, {"enrollment_analyst": "x [M2]."})
+    prompt, _ = _capture_live_prompt(
+        monkeypatch,
+        received,
+        CHIEF_OF_STAFF,
+        json.dumps({"executive_summary": "s [M2].", "limitations": "l [M2]."}),
+    )
+    start = prompt.index("{")
+    aggregate, _ = json.JSONDecoder().raw_decode(prompt[start:])
+    counts = [o["count"] for o in aggregate["M5"]["value"]] + [
+        r["count"] for r in aggregate["M8"]["rules"]
+    ]
+    assert "fewer than 10" in counts
+    assert all(c == "fewer than 10" or c >= 10 for c in counts)
+    assert received["findings"]["M5"]["value"] == [
+        {"office": o["office"], "count": o["count"]}
+        for o in findings_obj["M5"]["value"]
+    ]
+
+
+def test_validator_accepts_fewer_than_10_only_with_a_small_count() -> None:
+    from cabinet.analysts import OutputRejected, validate_explanation
+
+    small = {
+        "M5": {
+            "value": [
+                {"office": "Library", "count": 1},
+                {"office": "Bursar", "count": 40},
+            ],
+            "display": "41 unresolved holds",
+        }
+    }
+    validate_explanation("The Library has fewer than 10 unresolved holds [M5].", small)
+    validate_explanation("Fewer than ten holds sit with the Library [M5].", small)
+    validate_explanation("The Bursar has 40 unresolved holds [M5].", small)
+    # A bare 10 is still not a number in the findings.
+    with pytest.raises(OutputRejected):
+        validate_explanation("The Library has 10 unresolved holds [M5].", small)
+    large = {
+        "M5": {
+            "value": [{"office": "Bursar", "count": 40}],
+            "display": "40 unresolved holds",
+        }
+    }
+    with pytest.raises(OutputRejected):
+        validate_explanation(
+            "The Bursar has fewer than 10 unresolved holds [M5].", large
+        )
