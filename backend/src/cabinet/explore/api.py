@@ -77,8 +77,8 @@ from cabinet.explore.privacy import (
     is_forward_looking,
     is_off_topic,
     mentions_campus_data,
-    redact_question,
     refusal_for,
+    strip_names,
 )
 from cabinet.provider import Provider, provider_from_env
 
@@ -353,14 +353,20 @@ def _explore(
             "question.asked",
             actor=str(user["email"]),
             payload={
-                "question": redact_question(question),
+                # Ids and person names are replaced: the log never stores a
+                # student a person typed ("Did [name withheld] pass ...").
+                "question": strip_names(question, catalog.title_names),
                 "route": "/explore",
                 "role": role,
             },
         )
         task_id = f"explore-{asked['id']}"
 
-        def refuse(category: str, reason: str) -> None:
+        def refuse(
+            category: str,
+            reason: str,
+            before: str = "planning and any model call",
+        ) -> None:
             audit.append(
                 "data.refused",
                 actor=EXPLORE_ACTOR,
@@ -369,12 +375,12 @@ def _explore(
                     "question_event_id": asked["id"],
                     "category": category,
                     "reason": reason,
-                    "before": "planning and any model call",
+                    "before": before,
                 },
             )
 
-        def off_topic() -> JSONResponse:
-            refuse("off_topic", OFF_TOPIC_REFUSAL)
+        def off_topic(before: str = "planning and any model call") -> JSONResponse:
+            refuse("off_topic", OFF_TOPIC_REFUSAL, before)
             return JSONResponse(
                 content={
                     "refused": True,
@@ -479,10 +485,15 @@ def _explore(
             forward = is_forward_looking(question)
             outcome = plan_question(question, catalog, provider, role, forward=forward)
             if outcome.steps is None:
-                if outcome.declined and not mentions_campus_data(question):
+                if outcome.declined and not mentions_campus_data(
+                    question, catalog.title_names
+                ):
                     # The model found nothing in the catalog for a question
                     # that names nothing in the records: off-topic.
-                    return off_topic()
+                    return off_topic(
+                        "any analysis (the model planner found no approved "
+                        "analysis for it)"
+                    )
                 not_answered(outcome.planner)
                 return JSONResponse(
                     content={
