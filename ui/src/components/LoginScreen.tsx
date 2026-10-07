@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { LoginError, login, type Session } from '../auth'
 import { LensMark } from './LensMark'
-import { EyeIcon, EyeOffIcon } from './icons'
+import { EyeIcon, EyeOffIcon, LockIcon, MailIcon } from './icons'
 
 interface LoginScreenProps {
   /** A line above the form, e.g. "Your session ended. Sign in again." */
@@ -15,10 +15,12 @@ export const SIGN_IN_FALLBACK_ERROR = 'Something went wrong on our side. Try aga
 
 /**
  * The sign-in screen, drawn from the app's own tokens so it follows the
- * chosen theme (light by default, dark when the person picked dark): the
- * product's one-line description on the left, the sign-in card on the
- * right, stacked on phones. The page scrolls whenever it is taller than the
- * screen, so enlarged text never hides the form. Errors name the problem
+ * chosen theme (light by default, dark when the person picked dark): one
+ * centred column over a slow backdrop in the mark's own blues and teal, the
+ * product's one-line description above a frosted sign-in card. Each part
+ * settles in once, in order; nothing moves under reduced motion. The page
+ * scrolls whenever it is taller than the screen, so enlarged text never
+ * hides the form. Errors name the problem
  * the sign-in client can honestly report: wrong email or password (which
  * deliberately also covers a disabled account), too many attempts, or an
  * unreachable service.
@@ -78,6 +80,13 @@ export function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
 
   return (
     <main className="landing">
+      {/* The backdrop: three soft shapes in the mark's colours, decoration only. */}
+      <div className="landing-backdrop" aria-hidden="true">
+        <span className="landing-glow landing-glow-deep" />
+        <span className="landing-glow landing-glow-mid" />
+        <span className="landing-glow landing-glow-teal" />
+      </div>
+
       <header className="landing-brand">
         <LensMark className="landing-mark" />
         <span>CampusLens</span>
@@ -105,26 +114,31 @@ export function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
           <form onSubmit={submit} noValidate>
             <div className="landing-field">
               <label htmlFor="login-email">Email</label>
-              <input
-                ref={emailRef}
-                id="login-email"
-                type="email"
-                autoComplete="username"
-                inputMode="email"
-                spellCheck={false}
-                placeholder="e.g. you@university.edu"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                disabled={submitting}
-                aria-invalid={emailError !== undefined}
-                aria-describedby={
-                  emailError !== undefined
-                    ? 'login-email-error'
-                    : error !== null
-                      ? 'login-error'
-                      : undefined
-                }
-              />
+              <div className="landing-input">
+                <span className="landing-input-icon" aria-hidden="true">
+                  <MailIcon />
+                </span>
+                <input
+                  ref={emailRef}
+                  id="login-email"
+                  type="email"
+                  autoComplete="username"
+                  inputMode="email"
+                  spellCheck={false}
+                  placeholder="e.g. you@university.edu"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  disabled={submitting}
+                  aria-invalid={emailError !== undefined}
+                  aria-describedby={
+                    emailError !== undefined
+                      ? 'login-email-error'
+                      : error !== null
+                        ? 'login-error'
+                        : undefined
+                  }
+                />
+              </div>
               {emailError !== undefined && (
                 <p className="landing-field-error" id="login-email-error">
                   {emailError}
@@ -134,7 +148,10 @@ export function LoginScreen({ notice, onSignedIn }: LoginScreenProps) {
 
             <div className="landing-field">
               <label htmlFor="login-password">Password</label>
-              <div className="landing-password">
+              <div className="landing-input landing-password">
+                <span className="landing-input-icon" aria-hidden="true">
+                  <LockIcon />
+                </span>
                 <input
                   ref={passwordRef}
                   id="login-password"

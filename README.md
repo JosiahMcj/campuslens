@@ -3,6 +3,10 @@
 # CampusLens
 
 *Governed AI employees helping university leaders turn SIS data into human-centered action.*
+
+**Live demo:** https://golden-eagle-cabinet-git-demo-obis-projects-1a457e7e.vercel.app
+(fictional data, recorded answers; anything done in it resets when the host recycles).
+
 We built this for the Gloo AI Hackathon (Boulder, Oct 6-8, 2026), and `ROADMAP.md` is the
 plan. In one sentence, CampusLens transforms Ellucian SIS data into an
 executive briefing by coordinating permission-limited AI employees across enrollment and
