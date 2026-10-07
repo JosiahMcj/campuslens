@@ -579,17 +579,29 @@ def resolve_plan(raw: Any, catalog: Catalog) -> Any:
     if not isinstance(steps, list):
         return plan
     out_steps: list[Any] = []
-    for step in steps:
+    # Where each of the model's steps ended up, after a repeated table is
+    # dropped, so a later step's reference still points at the right table.
+    moved: dict[int, int] = {}
+    for raw_index, step in enumerate(steps):
         if not isinstance(step, dict):
+            moved[raw_index] = len(out_steps)
             out_steps.append(step)
             continue
         analysis = ANALYSIS_BY_ID.get(str(step.get("analysis_id")))
         params = step.get("params")
         if analysis is None or not isinstance(params, dict):
+            moved[raw_index] = len(out_steps)
             out_steps.append(step)
             continue
         resolved: dict[str, Any] = {}
-        params = dict(params)
+        params = {
+            name: (
+                {**value, "from_step": moved[value["from_step"]]}
+                if isinstance(value, dict) and value.get("from_step") in moved
+                else value
+            )
+            for name, value in params.items()
+        }
         for key in ("filter", "filters"):
             # {"filters": {"major": "Nursing"}}: the same filters, nested.
             nested = params.get(key)
@@ -620,10 +632,15 @@ def resolve_plan(raw: Any, catalog: Catalog) -> Any:
                 resolved[name] = value
         if analysis.id == general.ANALYSIS_ID:
             _drop_default_window(resolved, catalog)
-            _rank_something(resolved, steps, len(out_steps))
+            _rank_something(resolved, steps, raw_index)
         candidate = {**step, "params": resolved}
-        if any(_same_table(candidate, earlier) for earlier in out_steps):
+        same = [
+            i for i, earlier in enumerate(out_steps) if _same_table(candidate, earlier)
+        ]
+        if same:
+            moved[raw_index] = same[0]
             continue  # the same table again, only ordered differently
+        moved[raw_index] = len(out_steps)
         out_steps.append(candidate)
     plan["steps"] = out_steps
     return plan

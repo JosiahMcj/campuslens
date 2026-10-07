@@ -525,3 +525,24 @@ def test_a_conversational_lead_in_is_dropped(
         assert rule_plan(question, catalog) == [
             Step("measure_by_group", {"measure": "headcount", "major": "CSCI"})
         ], question
+
+
+def test_a_reference_after_a_dropped_repeat_still_points_at_its_table(
+    catalog: Catalog,
+) -> None:
+    plan = resolve_plan(
+        {
+            "steps": [
+                {"analysis_id": "gpa_by_major", "params": {"order": "lowest_first"}},
+                {"analysis_id": "gpa_by_major", "params": {"order": "highest_first"}},
+                {
+                    "analysis_id": "dfw_by_course",
+                    "params": {"major_required": {"from_step": 1, "column": "major"}},
+                },
+            ]
+        },
+        catalog,
+    )
+    steps = validate_plan(plan, catalog)
+    assert [s.analysis_id for s in steps] == ["gpa_by_major", "dfw_by_course"]
+    assert steps[1].params["major_required"].from_step == 0
