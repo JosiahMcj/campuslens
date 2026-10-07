@@ -96,7 +96,8 @@ def test_ranking_key_points_name_highest_lowest_and_gap(
     steps, card = _answer("What majors have the highest dropout rate?", con, catalog)
     texts = [s.text for s in card.key_points]
     assert texts[0].startswith("Highest: ")
-    assert texts[1].startswith("Lowest: ")
+    # A top-10 ranking: its last row is the lowest shown, not the lowest.
+    assert texts[1].startswith("Lowest of the 10 shown: ")
     assert any("the whole" in t for t in texts)
     assert 2 <= len(card.key_points) <= 4
     _check_claims(steps, card)

@@ -8,7 +8,7 @@ import {
   type Mark,
   type TemplateId,
 } from '../answerCard'
-import { formatCell, type ExploreClaim } from '../explore'
+import { formatCell, SUPPRESSED, type ExploreClaim } from '../explore'
 import { DataChart } from './DataChart'
 import './DataPage.css'
 import './AnswerCard.css'
@@ -105,11 +105,15 @@ function TrendLine({ model }: RendererProps<Extract<ChartModel, { template: 'tre
 }
 
 function GroupedBars({ model }: RendererProps<Extract<ChartModel, { template: 'grouped_bars' }>>) {
+  // Horizontal, one block per group: long names wrap and a phone fits.
+  const { data } = model
+  const values = data.series.flatMap((s) => s.points.flatMap((p) => (p.value !== null ? [p.value] : [])))
+  const max = Math.max(...values, 0) || 1
+  const kind = data.kind === 'dollars' ? 'money' : data.kind
   return (
     <>
-      <DataChart data={model.data} onPick={null} />
       <ul className="ac-keys" aria-label="Groups">
-        {model.data.series.map((series) => (
+        {data.series.map((series) => (
           <li key={series.key}>
             <span
               className="swatch"
@@ -120,6 +124,46 @@ function GroupedBars({ model }: RendererProps<Extract<ChartModel, { template: 'g
           </li>
         ))}
       </ul>
+      <ol className="ac-groups">
+        {data.x.slice(0, 12).map((x, xi) => (
+          <li key={x.key} className="ac-group">
+            <p className="ac-group-label">{x.label}</p>
+            <ol className="ac-bars">
+              {data.series.map((series) => {
+                const point = series.points[xi]
+                const withheld = point?.status === 'withheld'
+                const value = point?.status === 'ok' ? point.value : null
+                return (
+                  <li key={series.key} className="ac-bar-row is-compact" data-withheld={withheld || undefined}>
+                    <span className="ac-bar-label">{series.label}</span>
+                    <span className="ac-bar-track" aria-hidden="true">
+                      {value !== null && (
+                        <span
+                          className="ac-bar-fill"
+                          style={{
+                            width: share(value, max),
+                            background: `var(--series-${((series.slot ?? 0) % 7) + 1})`,
+                          }}
+                        />
+                      )}
+                    </span>
+                    <span className="ac-value">
+                      {withheld
+                        ? `withheld (${SUPPRESSED} students)`
+                        : value === null
+                          ? 'no figure'
+                          : formatMark({ key: '', label: '', value, withheld: false, claim: null }, kind)}
+                    </span>
+                  </li>
+                )
+              })}
+            </ol>
+          </li>
+        ))}
+      </ol>
+      {data.x.length > 12 && (
+        <p className="ac-more">The first 12 of {data.x.length} groups are drawn; every row is in the evidence table.</p>
+      )}
     </>
   )
 }
@@ -289,7 +333,7 @@ const RENDERERS: { [K in TemplateId]: (props: RendererProps<Extract<ChartModel, 
 export function AnswerChart({ model, onOpen = null }: { model: ChartModel; onOpen?: OpenCell }) {
   const Renderer = RENDERERS[model.template] as (props: RendererProps<ChartModel>) => ReactNode
   return (
-    <figure className={`answer-chart ac-${model.template}`} data-template={model.template}>
+    <figure className={`answer-chart ac-t-${model.template}`} data-template={model.template}>
       <figcaption className="ac-caption">
         <span className="ac-kicker">{TEMPLATE_TITLES[model.template]}</span> {model.title}
       </figcaption>

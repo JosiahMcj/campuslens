@@ -189,7 +189,7 @@
       ]
      },
      {
-      "text": "Lowest: Marketing, 13.8%.",
+      "text": "Lowest of the 10 shown: Marketing, 13.8%.",
       "claims": [
        {
         "table": 0,
@@ -219,7 +219,7 @@
      "form": "bar",
      "table": 0,
      "value": "value",
-     "value_label": "Dropout rate (%)",
+     "value_label": "Dropout rate",
      "kind": "pct",
      "label": [
       "major_name"
@@ -283,7 +283,7 @@
       ]
      },
      {
-      "text": "Ask Student Success what the group with the lowest dropout rate does differently. Lowest: Marketing, 13.8%.",
+      "text": "Ask Student Success what the group with the lowest dropout rate does differently. Lowest of the 10 shown: Marketing, 13.8%.",
       "claims": [
        {
         "table": 0,
@@ -387,7 +387,7 @@
    "card": {
     "key_points": [
      {
-      "text": "Students: 41 in Spring 2026.",
+      "text": "Headcount: 41 in Spring 2026.",
       "claims": [
        {
         "table": 0,
@@ -442,7 +442,7 @@
      "form": "number",
      "table": 0,
      "value": "value",
-     "value_label": "Students",
+     "value_label": "Headcount",
      "kind": "count",
      "label": [],
      "series": null,
@@ -846,7 +846,7 @@
      "form": "line",
      "table": 0,
      "value": "value",
-     "value_label": "Pell recipients (%)",
+     "value_label": "Pell share",
      "kind": "pct",
      "label": [
       "term_name"
@@ -1372,7 +1372,7 @@
      "form": "grouped",
      "table": 0,
      "value": "value",
-     "value_label": "With a hold placed (%)",
+     "value_label": "Hold rate",
      "kind": "pct",
      "label": [
       "college_name"

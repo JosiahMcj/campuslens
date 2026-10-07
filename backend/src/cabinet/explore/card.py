@@ -245,7 +245,13 @@ def _shape(step: StepResult) -> _Shape | None:
         if len(groups) == 2:
             x = groups.index(timed[0]) if timed else 0
             series = keys[1 - x]
-        return _Shape(step, "value", col.kind, col.label, form, groups, series)
+        measure = general.MEASURES.get(str(p.get("measure")))
+        label = (
+            measure.label[:1].upper() + measure.label[1:]
+            if measure is not None
+            else col.label
+        )
+        return _Shape(step, "value", col.kind, label, form, groups, series)
     named = _NAMED.get(a)
     if named is None:
         return None
@@ -623,9 +629,15 @@ def _ranked_points(
     b = _Builder(steps)
     b.t("Highest: ").t(_row_label(step, hi)).t(", ").c(step, hi, shape.value).t(".")
     out.append(("highest", b.done()))
+    cut = next(
+        (n for n in step.notes if re.match(r"The first \d+ of [\d,]+ ", n)), None
+    )
     if len(ranked) >= 2 and lo != hi:
         b = _Builder(steps)
-        b.t("Lowest: ").t(_row_label(step, lo)).t(", ").c(step, lo, shape.value).t(".")
+        # A ranking cut to its top rows: its last row is not the lowest.
+        b.t(f"Lowest of the {len(ranked)} shown: " if cut else "Lowest: ").t(
+            _row_label(step, lo)
+        ).t(", ").c(step, lo, shape.value).t(".")
         out.append(("lowest", b.done()))
     total = _total_row(step)
     if (

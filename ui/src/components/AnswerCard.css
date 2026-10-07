@@ -155,12 +155,10 @@
   font-weight: 600;
 }
 
-.ac-delta[data-direction='up'] {
-  color: var(--series-6);
-}
-
-.ac-delta[data-direction='down'] {
-  color: var(--alert);
+/* Up or down is not good or bad by itself (a dropout rate falling is
+   good, a headcount falling is not), so the change reads in ink. */
+.ac-delta {
+  color: var(--ink);
 }
 
 .ac-kpi-value {
@@ -207,6 +205,7 @@
 }
 
 .ac-funnel-bar {
+  min-width: 2.5rem;
   height: 28px;
   border-radius: 6px;
   background: var(--series-1);
@@ -340,8 +339,53 @@
     min-height: 44px;
   }
 
-  .ac-actions li,
+  .ac-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
   .ac-actions button {
-    flex: 1 1 auto;
+    width: 100%;
+  }
+}
+
+.ac-funnel-text {
+  text-align: center;
+}
+
+/* Comparison: one block per group, a bar per second group. */
+.ac-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: var(--space-4) var(--space-5);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ac-group-label {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.ac-bar-row.is-compact {
+  grid-template-columns: 6.5rem minmax(3rem, 1fr) auto;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.ac-bar-row.is-compact .ac-bar-track {
+  height: 10px;
+}
+
+@media (max-width: 640px) {
+  .ac-bar-row.is-compact {
+    grid-template-columns: 5.5rem minmax(3rem, 1fr) auto;
+  }
+
+  .ac-bar-row.is-compact .ac-bar-track {
+    grid-column: auto;
+    grid-row: auto;
   }
 }
