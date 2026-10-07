@@ -72,7 +72,11 @@ from cabinet.explore.planner import (
     rule_plan_detail,
     validate_plan,
 )
-from cabinet.explore.privacy import COUNSELING_REFUSAL, refusal_for
+from cabinet.explore.privacy import (
+    COUNSELING_REFUSAL,
+    counseling_message,
+    refusal_for,
+)
 from cabinet.provider import (
     Explanation,
     FakeProvider,
@@ -375,17 +379,17 @@ def test_refusals_are_recorded_before_any_planning(
     monkeypatch.setattr(explore_api, "provider_from_env", never)
     before = len(_events(app))
     body = _ask(_client(app, "executive"), question)
-    assert body["refused"] is True and body["steps"] == [] and body["answer"] == []
-    assert body["message"]
+    # Not the off-topic card: related questions, or totals for students
+    # like that from the rule planner (never a model, never the student).
+    assert body["refused"] is False
+    assert body["redirect"] in ("counseling", "individual_student", "prediction")
+    assert body.get("message") or body["answer"]
     new = _events(app)[before:]
     types = [e["type"] for e in new]
-    assert types == ["question.asked", "data.refused"]
-    assert "S-1234" not in json.dumps(new)
-    assert new[1]["payload"]["category"] in (
-        "counseling",
-        "individual_student",
-        "prediction",
-    )
+    assert types[:2] == ["question.asked", "data.refused"]
+    assert "S-1234" not in json.dumps(new) and "S-1234" not in json.dumps(body)
+    assert "100245" not in json.dumps(new) and "100245" not in json.dumps(body)
+    assert new[1]["payload"]["category"] == body["redirect"]
 
 
 def test_refusal_rules() -> None:
@@ -397,7 +401,7 @@ def test_refusal_rules() -> None:
 
 
 def test_unmappable_question_suggests_three_examples(app: FastAPI) -> None:
-    body = _ask(_client(app, "executive"), "What is the weather on campus?")
+    body = _ask(_client(app, "executive"), "What is tuition at the university?")
     assert body["refused"] is False
     assert body["message"] == UNANSWERABLE_MESSAGE
     assert len(body["suggestions"]) == 3
@@ -1450,11 +1454,20 @@ def test_api_shows_reader_parameters_without_codes_or_row_limits(
     )
 
 
-def test_counseling_refusal_says_records_are_never_disclosed(app: FastAPI) -> None:
+def test_counseling_question_gets_no_figure_and_related_questions(
+    app: FastAPI,
+) -> None:
     body = _ask(_client(app, "executive"), "How many students saw a counselor?")
-    assert body["refused"] is True
-    assert body["message"] == COUNSELING_REFUSAL
+    assert body["refused"] is False and body["redirect"] == "counseling"
+    assert body["message"] == counseling_message("chief_of_staff")
+    assert body["message"].startswith("Access denied.")
+    assert "the Chief of Staff's authorized scope" in body["message"]
+    assert body["answer"] == [] and body["steps"] == []
     assert "not in this data" not in body["message"]
+    assert not re.search(r"\d", body["message"])
+    refused = _events(app, "data.refused")[-1]["payload"]
+    assert refused["category"] == "counseling"
+    assert refused["reason"] == COUNSELING_REFUSAL
 
 
 @FULL

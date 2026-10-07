@@ -155,14 +155,20 @@ function refusalWords(
       }
     case 'individual_student':
       return {
-        sentence: 'A question about a single student was refused before any AI employee was asked.',
+        sentence:
+          'A question about a single student was answered with group totals only; the student was never looked up.',
         reason: plain ?? 'CampusLens answers with totals only, never about a single student.',
       }
     case 'prediction':
       return {
         sentence:
-          'A question asking to predict what a student will do was refused before any AI employee was asked.',
+          'A question asking to predict what a student will do was answered with group totals from the records only.',
         reason: plain ?? 'CampusLens does not predict what an individual student will do.',
+      }
+    case 'off_topic':
+      return {
+        sentence: 'A request that was not about the student records was turned away before any analysis ran.',
+        reason: plain ?? 'CampusLens answers questions about students, courses and majors only.',
       }
     case 'instructor_level': {
       const role = SIGN_IN_ROLES[str(payload.role) ?? ''] ?? 'this person'

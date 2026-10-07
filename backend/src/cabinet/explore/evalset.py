@@ -326,7 +326,66 @@ HELD_OUT: tuple[tuple[str, list[Plan] | None], ...] = (
     ("can you list every student on probation", None),
 )
 
-SETS = {"main": EVAL_SET, "held-out": HELD_OUT}
+# Questions that used to be refused (owner direction 2026-10-07): what will
+# happen, at-risk groups, holds. Each is answered from the records, so each
+# lists the historical plans that answer it. ``None`` here is a request that
+# must not be answered at all (off-topic, or a single student).
+FORWARD_SET: tuple[tuple[str, list[Plan] | None], ...] = (
+    (
+        "how many students have holds and will drop",
+        [
+            _hc(hold="hold")
+            + _mbg("dropout_rate", group_by="hold")
+            + _mbg("stop_out_rate", group_by="hold"),
+            _hc(hold="hold") + _mbg("dropout_rate", group_by="hold"),
+            _hc(hold="hold") + _mbg("stop_out_rate", group_by="hold"),
+            _mbg("dropout_rate", group_by="hold"),
+        ],
+    ),
+    ("how many students have holds", [_hc(hold="hold")]),
+    (
+        "will enrollment fall next year",
+        [[("enrollment_by_term", {})], _hc(group_by="term")],
+    ),
+    ("what % will graduate", [_mbg("grad_rate_6yr"), _mbg("grad_rate_4yr")]),
+    (
+        "at-risk students in nursing",
+        [
+            _mbg("dropout_rate", major="NURS")
+            + _mbg("stop_out_rate", major="NURS"),
+            _mbg("dropout_rate", major="NURS"),
+            _mbg("stop_out_rate", major="NURS"),
+        ],
+    ),
+    (
+        "how many nursing students are likely to drop out next year",
+        [
+            _hc(major="NURS")
+            + _mbg("dropout_rate", major="NURS")
+            + _mbg("stop_out_rate", major="NURS"),
+            _hc(major="NURS") + _mbg("dropout_rate", major="NURS"),
+            _mbg("dropout_rate", major="NURS"),
+        ],
+    ),
+    (
+        "will retention go down for pell students",
+        [
+            _mbg("retention_rate", group_by="pell"),
+            _mbg("retention_rate", pell="pell"),
+            _mbg("retention_rate", group_by="entry_cohort", pell="pell"),
+        ],
+    ),
+    (
+        "what is the dropout rate for students with holds",
+        [_mbg("dropout_rate", group_by="hold"), _mbg("dropout_rate", hold="hold")],
+    ),
+    ("code me a website", None),
+    ("write a poem about graduation", None),
+    ("what's the weather today", None),
+    ("what is S-1234's gpa", None),
+)
+
+SETS = {"main": EVAL_SET, "held-out": HELD_OUT, "forward": FORWARD_SET}
 
 # Parameters that only shape the table; an extra one is not a wrong plan.
 LENIENT = {
@@ -394,7 +453,10 @@ def score(
     """(correct, why) for one /explore response."""
     steps = body.get("steps") or []
     if expected is None:
-        ok = not steps
+        # A student-level question answered with totals for students like
+        # that ("redirect") is protected as expected: the student is never
+        # answered.
+        ok = not steps or bool(body.get("redirect"))
         return (
             ok,
             "not answered, as expected" if ok else "answered a question it should not",
