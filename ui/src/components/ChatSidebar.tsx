@@ -8,6 +8,8 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 
+import './Roles.css'
+
 import { canSeeInstitution, roleDisplayName, type Session } from '../auth'
 import { trapTab } from '../states'
 import { effectiveTheme, setPrefs, usePrefs } from '../theme'
@@ -26,7 +28,10 @@ import {
   ChevronDownIcon,
   CrossSmallIcon,
   EditIcon,
+  AccountsNavIcon,
+  ActivityNavIcon,
   GearIcon,
+  MailIcon,
   MoonIcon,
   SearchIcon,
   SidebarToggleIcon,
@@ -47,6 +52,12 @@ export type PanelId =
   | 'data'
   | 'profile'
   | 'settings'
+  // Department accounts, the inbox and the IT pages (docs/ROLES.md).
+  | 'overview'
+  | 'inbox'
+  | 'accounts'
+  | 'sessions'
+  | 'connections'
 
 export interface HistoryItem {
   id: number
@@ -84,6 +95,10 @@ interface ChatSidebarProps {
   onNavigate: (path: string) => void
   onSignOut: () => void
   onClose: () => void
+  /** Unread alerts in the inbox: a count on the Inbox row. */
+  inboxUnread?: number
+  /** False for a role that asks no questions (IT): no Questions list. */
+  showQuestions?: boolean
 }
 
 type NavPanel = Exclude<PanelId, 'profile' | 'settings'>
@@ -101,6 +116,11 @@ const PANEL_ROWS: Record<NavPanel, { label: string; icon: ReactNode }> = {
   aid: { label: 'Financial Aid review', icon: <AidQueueNavIcon /> },
   students: { label: 'Find a student', icon: <SearchIcon /> },
   data: { label: 'Data', icon: <DataNavIcon /> },
+  overview: { label: 'Department overview', icon: <FiguresNavIcon /> },
+  inbox: { label: 'Inbox', icon: <MailIcon /> },
+  accounts: { label: 'Accounts', icon: <AccountsNavIcon /> },
+  sessions: { label: 'Sign-in activity', icon: <ActivityNavIcon /> },
+  connections: { label: 'Connections', icon: <GearIcon /> },
 }
 
 /** The capability groups, in sidebar order. Key figures, Evidence and the
@@ -108,7 +128,9 @@ const PANEL_ROWS: Record<NavPanel, { label: string; icon: ReactNode }> = {
  * answer, the evidence opens from each number (and the Full briefing lists
  * it), and the employees are in "Data access". */
 const NAV_GROUPS: { label: string; panels: NavPanel[] }[] = [
-  { label: 'Briefing', panels: ['briefing', 'data', 'actions', 'decision', 'students'] },
+  { label: 'Your work', panels: ['inbox', 'overview', 'data'] },
+  { label: 'Briefing', panels: ['briefing', 'actions', 'decision', 'students'] },
+  { label: 'System', panels: ['accounts', 'sessions', 'connections'] },
   { label: 'Governance', panels: ['access', 'audit', 'aid'] },
 ]
 
@@ -137,12 +159,15 @@ function RailButton({
   label,
   active = false,
   note,
+  badge,
   onClick,
 }: {
   icon: ReactNode
   label: string
   active?: boolean
   note?: string
+  /** A count shown as a badge (unread alerts); nothing when 0 or absent. */
+  badge?: number
   onClick: () => void
 }) {
   return (
@@ -157,6 +182,11 @@ function RailButton({
       <span className="rail-icon">{icon}</span>
       <span className="sidebar-copy rail-label">{label}</span>
       {note !== undefined && <span className="sidebar-copy rail-note">{note}</span>}
+      {badge !== undefined && badge > 0 && (
+        <span className="sidebar-copy rail-badge" aria-label={`${badge} unread`}>
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
     </button>
   )
 }
@@ -332,6 +362,8 @@ export function ChatSidebar({
   onNavigate,
   onSignOut,
   onClose,
+  inboxUnread = 0,
+  showQuestions = true,
 }: ChatSidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   // The open workspace menu's trigger (null while closed).
@@ -507,6 +539,7 @@ export function ChatSidebar({
                       icon={PANEL_ROWS[panel].icon}
                       label={PANEL_ROWS[panel].label}
                       active={activePanel === panel}
+                      badge={panel === 'inbox' ? inboxUnread : undefined}
                       onClick={() => onOpenPanel(panel)}
                     />
                   ))}
@@ -523,7 +556,7 @@ export function ChatSidebar({
             )
           })}
 
-        <div className="sidebar-recents">
+        {showQuestions && <div className="sidebar-recents">
           <div className="sidebar-copy recents-head">
             <button
               type="button"
@@ -625,7 +658,7 @@ export function ChatSidebar({
               )}
             </GlideGroup>
           )}
-        </div>
+        </div>}
 
         </div>
 

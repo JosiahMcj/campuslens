@@ -35,7 +35,10 @@ WRITER_SYSTEM = (
 
 def build_explore_prompt(payload: dict[str, Any], role: str) -> tuple[str, str]:
     if role == PLANNER_ROLE:
-        return str(payload["catalog"]), f"Q: {payload['question']}"
+        user = f"Q: {payload['question']}"
+        if payload.get("hint"):
+            user += f"\nNote: {payload['hint']}"
+        return str(payload["catalog"]), user
     if role == WRITER_ROLE:
         user = "Computed tables:\n" + json.dumps(
             payload["tables"], ensure_ascii=False, indent=1

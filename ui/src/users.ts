@@ -7,7 +7,7 @@
 // empty (ui/src/adminErrors.ts); the screen words it with friendlyError.
 
 import { failureFrom, apiFailure, type KnownDetails } from './adminErrors'
-import { apiFetch, type Role } from './auth'
+import { ALL_ROLES, apiFetch, type Role } from './auth'
 
 export interface UserRow {
   id: number
@@ -21,10 +21,12 @@ export interface CreatedUser {
   id: number
   email: string
   role: Role
-  one_time_password: string
+  /** Null when an administrator issues the password: IT creates accounts
+   * but never sees their passwords. */
+  one_time_password: string | null
 }
 
-const ROLES: readonly string[] = ['admin', 'executive', 'staff', 'reviewer', 'aid']
+const ROLES: readonly string[] = ALL_ROLES
 
 function userFrom(value: unknown): UserRow | null {
   if (typeof value !== 'object' || value === null) return null
@@ -45,6 +47,10 @@ export const USER_REFUSALS: KnownDetails = [
   ['already exists', 'Someone with that email can already sign in.'],
   ['cannot disable their own account', "You can't disable your own account."],
   [
+    'IT manages department',
+    'IT manages department and staff accounts. An administrator changes admin, executive and IT accounts.',
+  ],
+  [
     'last enabled administrator',
     'This is the last active administrator. Make someone else an administrator first.',
   ],
@@ -59,7 +65,7 @@ export function createdUserFrom(status: number, body: unknown): CreatedUser {
     typeof record.email === 'string' &&
     typeof record.role === 'string' &&
     ROLES.includes(record.role) &&
-    typeof record.one_time_password === 'string'
+    (typeof record.one_time_password === 'string' || record.one_time_password === null)
   ) {
     return {
       id: record.id,

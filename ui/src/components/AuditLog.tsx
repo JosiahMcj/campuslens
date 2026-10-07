@@ -67,6 +67,10 @@ const SIGN_IN_ROLES: Record<string, string> = {
   staff: 'staff',
   reviewer: 'the reviewer',
   aid: 'Financial Aid',
+  finance: 'Finance — Student Accounts',
+  registrar: 'the Registrar',
+  studentlife: 'Student Life',
+  it: 'IT',
 }
 
 function capitalize(text: string): string {
@@ -151,14 +155,20 @@ function refusalWords(
       }
     case 'individual_student':
       return {
-        sentence: 'A question about a single student was refused before any AI employee was asked.',
+        sentence:
+          'A question about a single student was answered with group totals only; the student was never looked up.',
         reason: plain ?? 'CampusLens answers with totals only, never about a single student.',
       }
     case 'prediction':
       return {
         sentence:
-          'A question asking to predict what a student will do was refused before any AI employee was asked.',
+          'A question asking to predict what a student will do was answered with group totals from the records only.',
         reason: plain ?? 'CampusLens does not predict what an individual student will do.',
+      }
+    case 'off_topic':
+      return {
+        sentence: 'A request that was not about the student records was turned away before any analysis ran.',
+        reason: plain ?? 'CampusLens answers questions about students, courses and majors only.',
       }
     case 'instructor_level': {
       const role = SIGN_IN_ROLES[str(payload.role) ?? ''] ?? 'this person'
@@ -441,6 +451,23 @@ function describeEvent(
           return { sentence: `${by} changed an institution setting.`, mark: null, details }
       }
     }
+    case 'inbox.sent': {
+      const to = SIGN_IN_ROLES[str(payload.recipient_role) ?? ''] ?? 'another person'
+      const what: Record<string, string> = {
+        finding: ' about a briefing figure',
+        overview: ' about a department figure',
+        explore: ' about an answer',
+      }
+      return {
+        sentence: `${Who} sent an alert to ${to}${what[str(payload.source_kind) ?? ''] ?? ''}.`,
+        mark: 'sent',
+        details,
+      }
+    }
+    case 'inbox.read':
+      return { sentence: `${Who} opened an alert.`, mark: null, details }
+    case 'inbox.reviewed':
+      return { sentence: `${Who} marked an alert reviewed.`, mark: 'approved', details }
     case 'dataset.uploaded':
       add('Data', str(payload.name))
       return { sentence: `${Who} uploaded new briefing data.`, mark: null, details }

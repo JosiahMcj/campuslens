@@ -19,8 +19,19 @@ import sys
 from cabinet.explore.answer import write_answer
 from cabinet.explore.catalog import SchoolDataMissing, catalog_for, connect_readonly
 from cabinet.explore.execute import execute
-from cabinet.explore.planner import UNANSWERABLE_MESSAGE, nearest_examples, rule_plan
-from cabinet.explore.privacy import refusal_for
+from cabinet.explore.planner import (
+    UNANSWERABLE_MESSAGE,
+    forward_rule_plan_detail,
+    nearest_examples,
+    rule_plan,
+)
+from cabinet.explore.privacy import (
+    FORWARD_LEAD,
+    OFF_TOPIC_MESSAGE,
+    is_forward_looking,
+    is_off_topic,
+    refusal_for,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -41,10 +52,20 @@ def main(argv: list[str] | None = None) -> int:
     try:
         refusal = refusal_for(args.question)
         if refusal is not None:
-            print(f"Refused before planning: {refusal[1]}")
+            # POST /explore answers these with related questions or totals
+            # for students like that; this check tool only names the reason.
+            print(f"Protected before planning ({refusal[0]}): {refusal[1]}")
             return 0
         catalog = catalog_for(con)
-        steps = rule_plan(args.question, catalog)
+        if is_off_topic(args.question, catalog.known_names):
+            print(OFF_TOPIC_MESSAGE)
+            return 0
+        forward = is_forward_looking(args.question)
+        steps = (
+            forward_rule_plan_detail(args.question, catalog)[0]
+            if forward
+            else rule_plan(args.question, catalog)
+        )
         if steps is None:
             print(UNANSWERABLE_MESSAGE)
             for example in nearest_examples(args.question):
@@ -76,6 +97,8 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0
+    if forward:
+        print(FORWARD_LEAD)
     for sentence in answer:
         print(sentence.text)
     print(f"({source})")

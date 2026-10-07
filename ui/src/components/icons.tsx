@@ -418,3 +418,24 @@ export function RefreshIcon() {
     </MarkSvg>
   )
 }
+
+/** Accounts (IT): the people who can sign in. */
+export function AccountsNavIcon() {
+  return (
+    <NavGlyph>
+      <circle cx="9" cy="8.5" r="3" />
+      <path d="M3.5 19c.5-3 2.7-5 5.5-5s5 2 5.5 5" />
+      <path d="M15.5 5.75a2.75 2.75 0 0 1 0 5.5M17 14.3c2 .5 3.2 2.1 3.5 4.7" />
+    </NavGlyph>
+  )
+}
+
+/** Sign-in activity: a clock. */
+export function ActivityNavIcon() {
+  return (
+    <NavGlyph>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
+    </NavGlyph>
+  )
+}

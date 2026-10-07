@@ -979,12 +979,15 @@ def test_the_stream_reports_withheld_groups() -> None:
     assert "fewer than 10" in suppression[0]["text"]
 
 
-def test_the_stream_refuses_before_planning_and_records_it() -> None:
+def test_the_stream_redirects_before_planning_and_records_it() -> None:
     app = create_app()
     client = make_authenticated_client(app, role="staff")
     events = _stream(client, "Tell me about S-100023")
-    assert [e["type"] for e in events] == ["refused"]
-    assert events[0]["response"]["refused"] is True
+    assert [e["type"] for e in events] == ["done"]
+    assert events[0]["response"]["refused"] is False
+    assert events[0]["response"]["redirect"] == "individual_student"
+    assert events[0]["response"]["steps"] == []
+    assert "100023" not in json.dumps(events)
     store = app.state.auth
     institution = store.institution_by_slug("bootstrap")
     recorded = store.audit_events(int(institution["id"]))

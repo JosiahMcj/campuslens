@@ -310,8 +310,12 @@ never by code changes.
 | `CABINET_LOCAL_ENV` | path of the env file to load, where service managers point | `cabinet.local.env` at the repo root |
 
 **Security.** Every route except `/health` and `/ready` requires a logged-in
-user with the right role. The five roles are admin, executive, staff, reviewer,
-and aid (Financial Aid staff), and the executive reads the institution's audit log. Sessions are
+user with the right role. The roles are admin, executive, staff, reviewer,
+aid (Financial Aid staff), the department accounts finance, registrar and
+studentlife, and it, and the executive reads the institution's audit log. Each
+sign-in sees its own pages, and anyone can send an alert to another account's
+inbox (docs/ROLES.md; `make demo-accounts OUT=…` creates the demonstration
+personas). Sessions are
 server-side and HMAC-signed, passwords are scrypt-hashed, and every POST needs
 the session's CSRF token. Sign-in throttling hard-locks an IP, or an IP and
 email pair, after 5 failures in 15 minutes, answering 429 with a `Retry-After`
@@ -327,6 +331,12 @@ audit log is a verifiable hash chain in the `audit_events` table
 Institution screen or with `make user EMAIL=… ROLE=…`. `make check-config`
 shows the configuration with values redacted, and `make audit` scans the
 dependencies. The threat model and control list live in `docs/SECURITY.md`.
+
+**Gloo AI.** `cabinet.local.env.example` is set up for Gloo AI's guarded endpoint
+(`https://platform.ai.gloo.com/ai/v2/guarded`, model `gloo-qwen-3.7-flash`). Copy it to
+`cabinet.local.env`, paste your key from the Gloo AI Studio console into
+`CABINET_LLM_API_KEY`, and restart. Keep `CABINET_LLM_REASONING_EFFORT=none`: with it the
+planner answers in about 10 s a question, with every plan valid in our checks.
 
 The `CABINET_LLM_*` settings can also live in a gitignored `cabinet.local.env` at the
 repo root (copy `cabinet.local.env.example`), and the real environment wins. With no

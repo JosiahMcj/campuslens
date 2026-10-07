@@ -8,9 +8,11 @@ caller's institution chain:
 
 - ``question.asked`` for every question (a student-id-shaped token in it is
   replaced before it is recorded);
-- ``data.refused`` when the question is refused before planning (counseling,
-  an individual student, a prediction about one), and when instructor rows
-  are withheld from a role;
+- ``data.refused`` when the question touches protected data before planning
+  (counseling, an individual student, a prediction about one: the reply is
+  related questions or totals for students like that, never the protected
+  data), when a request is off-topic, and when instructor rows are withheld
+  from a role;
 - ``data.granted`` per step, before the step reads anything: the analysis id,
   the fields it reads, ``aggregate_only: true``;
 - ``explore.answered`` once per answer: step ids and row counts, never values.
@@ -38,7 +40,7 @@ from pydantic import BaseModel
 
 from cabinet.counseling import SUPPRESSED_DISPLAY
 from cabinet.explore import general
-from cabinet.explore.answer import SOURCE_MODEL, write_answer
+from cabinet.explore.answer import SOURCE_MODEL, Sentence, write_answer
 from cabinet.explore.catalog import (
     ANALYSES,
     INSTRUCTOR_ROLES,
@@ -51,15 +53,34 @@ from cabinet.explore.planner import (
     EXAMPLE_QUESTIONS,
     GREETING_MESSAGE,
     UNANSWERABLE_MESSAGE,
+    PlanOutcome,
     describe_analysis,
+    forward_rule_plan_detail,
     is_small_talk,
     nearest_examples,
     plan_question,
+    rule_plan_detail,
+    scoped_to_a_group,
     understood,
     uses_model,
 )
-from cabinet.explore.privacy import redact_question, refusal_for
-from cabinet.provider import provider_from_env
+from cabinet.explore.privacy import (
+    COUNSELING_SUGGESTIONS,
+    FORWARD_LEAD,
+    INDIVIDUAL_LEAD,
+    INDIVIDUAL_MESSAGE,
+    OFF_TOPIC_MESSAGE,
+    OFF_TOPIC_REFUSAL,
+    PREDICTION_LEAD,
+    aggregate_form,
+    counseling_message,
+    is_forward_looking,
+    is_off_topic,
+    mentions_campus_data,
+    refusal_for,
+    strip_names,
+)
+from cabinet.provider import Provider, provider_from_env
 
 logger = logging.getLogger(__name__)
 
@@ -332,16 +353,20 @@ def _explore(
             "question.asked",
             actor=str(user["email"]),
             payload={
-                "question": redact_question(question),
+                # Ids and person names are replaced: the log never stores a
+                # student a person typed ("Did [name withheld] pass ...").
+                "question": strip_names(question, catalog.known_names),
                 "route": "/explore",
                 "role": role,
             },
         )
         task_id = f"explore-{asked['id']}"
 
-        refusal = refusal_for(question, catalog.title_names)
-        if refusal is not None:
-            category, message = refusal
+        def refuse(
+            category: str,
+            reason: str,
+            before: str = "planning and any model call",
+        ) -> None:
             audit.append(
                 "data.refused",
                 actor=EXPLORE_ACTOR,
@@ -349,21 +374,25 @@ def _explore(
                     "task_id": task_id,
                     "question_event_id": asked["id"],
                     "category": category,
-                    "reason": message,
-                    "before": "planning and any model call",
+                    "reason": reason,
+                    "before": before,
                 },
             )
+
+        def off_topic(before: str = "planning and any model call") -> JSONResponse:
+            refuse("off_topic", OFF_TOPIC_REFUSAL, before)
             return JSONResponse(
                 content={
                     "refused": True,
-                    "message": message,
+                    "message": OFF_TOPIC_MESSAGE,
                     "answer": [],
                     "steps": [],
+                    "suggestions": list(EXAMPLE_QUESTIONS[1:4]),
                     "source": None,
                 }
             )
 
-        if is_small_talk(question):
+        def not_answered(planner: str) -> None:
             audit.append(
                 "explore.answered",
                 actor=EXPLORE_ACTOR,
@@ -372,11 +401,73 @@ def _explore(
                     "question_event_id": asked["id"],
                     "steps": [],
                     "row_counts": [],
-                    "planner": "greeting",
+                    "planner": planner,
                     "writer": None,
                     "answered": False,
                 },
             )
+
+        lead: str | None = None
+        redirect: str | None = None
+        provider: Provider | None = None
+        guard = refusal_for(question, catalog.known_names)
+        if guard is not None:
+            # Protected data: recorded as a refusal, and never answered. The
+            # reply is related questions or totals for students like that.
+            category, reason = guard
+            refuse(category, reason)
+            redirect = category
+            if category == "counseling":
+                # No figure at all, not even a total.
+                return JSONResponse(
+                    content={
+                        "refused": False,
+                        "redirect": category,
+                        # Explore answers as the Chief of Staff (the
+                        # audit actor), so the denial names it.
+                        "message": counseling_message(EXPLORE_ACTOR),
+                        "answer": [],
+                        "steps": [],
+                        "suggestions": list(COUNSELING_SUGGESTIONS),
+                        "source": None,
+                    }
+                )
+            # Totals for students like that, from the rule planner only (the
+            # model planner is not asked); masked names and ids are removed.
+            text, named = aggregate_form(question, catalog.known_names)
+            forward = is_forward_looking(text)
+            # A list ("which students ...") was rewritten to "how many": the
+            # historical rate answers it, not a count of the group now.
+            totals, _ = (
+                forward_rule_plan_detail(text, catalog, count_now=False)
+                if forward
+                else rule_plan_detail(text, catalog)
+            )
+            if totals and named and not scoped_to_a_group(totals):
+                totals = None  # one student by id or name, and no group named
+            if not totals:
+                not_answered("rule")
+                return JSONResponse(
+                    content={
+                        "refused": False,
+                        "redirect": category,
+                        "message": INDIVIDUAL_MESSAGE,
+                        "answer": [],
+                        "steps": [],
+                        "suggestions": nearest_examples(text),
+                        "source": None,
+                    }
+                )
+            outcome = PlanOutcome(totals, "rule")
+            lead = (
+                PREDICTION_LEAD
+                if category == "prediction" or forward
+                else INDIVIDUAL_LEAD
+            )
+        elif is_off_topic(question, catalog.known_names):
+            return off_topic()
+        elif is_small_talk(question):
+            not_answered("greeting")
             return JSONResponse(
                 content={
                     "refused": False,
@@ -387,41 +478,43 @@ def _explore(
                     "source": None,
                 }
             )
-
-        provider = provider_from_env()
-        emit(
-            {
-                "type": "planning",
-                "text": "Matching the question to the approved analyses",
-            }
-        )
-        outcome = plan_question(question, catalog, provider, role)
-        if outcome.steps is None:
-            audit.append(
-                "explore.answered",
-                actor=EXPLORE_ACTOR,
-                payload={
-                    "task_id": task_id,
-                    "question_event_id": asked["id"],
-                    "steps": [],
-                    "row_counts": [],
-                    "planner": outcome.planner,
-                    "writer": None,
-                    "answered": False,
-                },
-            )
-            return JSONResponse(
-                content={
-                    "refused": False,
-                    "message": UNANSWERABLE_MESSAGE,
-                    "answer": [],
-                    "steps": [],
-                    "suggestions": nearest_examples(question),
-                    "source": None,
+        else:
+            provider = provider_from_env()
+            emit(
+                {
+                    "type": "planning",
+                    "text": "Matching the question to the approved analyses",
                 }
             )
+            # A question about what will happen is answered from the records.
+            forward = is_forward_looking(question)
+            outcome = plan_question(question, catalog, provider, role, forward=forward)
+            if outcome.steps is None:
+                if outcome.declined and not mentions_campus_data(
+                    question, catalog.known_names
+                ):
+                    # The model found nothing in the catalog for a question
+                    # that names nothing in the records: off-topic.
+                    return off_topic(
+                        "any analysis (the model planner found no approved "
+                        "analysis for it)"
+                    )
+                not_answered(outcome.planner)
+                return JSONResponse(
+                    content={
+                        "refused": False,
+                        "message": UNANSWERABLE_MESSAGE,
+                        "answer": [],
+                        "steps": [],
+                        "suggestions": nearest_examples(question),
+                        "source": None,
+                    }
+                )
+            if forward:
+                lead = FORWARD_LEAD
 
         planned = outcome.steps
+        assert planned is not None  # every path without steps returned above
         # What the plan answers, in plain words from the validated plan (the
         # model's own reasoning text is never shown).
         emit({"type": "understood", "text": understood(planned, catalog, role)})
@@ -474,7 +567,7 @@ def _explore(
                 )
 
         try:
-            steps = execute(outcome.steps, con, catalog, role, on_step=granted)
+            steps = execute(planned, con, catalog, role, on_step=granted)
             withheld = sum(_withheld_count(s) for s in steps)
             if withheld:
                 emit(
@@ -487,12 +580,19 @@ def _explore(
                     }
                 )
             emit({"type": "writing", "text": "Writing the answer from the tables"})
-            reword = uses_model(provider) and os.environ.get(
-                "CABINET_EXPLORE_WRITER", ""
-            ).strip().lower() != "template"
+            reword = (
+                provider is not None
+                and uses_model(provider)
+                and os.environ.get("CABINET_EXPLORE_WRITER", "").strip().lower()
+                != "template"
+            )
             answer, source, writer_fallback = write_answer(
                 steps, provider if reword else None
             )
+            if lead is not None:
+                # One plain line first, added after the writer so a model
+                # rewording never drops it. It carries no number.
+                answer = [Sentence(lead, []), *answer]
             claims = sum(len(s.claims) for s in answer)
             emit(
                 {
@@ -511,7 +611,7 @@ def _explore(
                 payload={
                     "task_id": task_id,
                     "question_event_id": asked["id"],
-                    "steps": [s.analysis_id for s in outcome.steps],
+                    "steps": [s.analysis_id for s in planned],
                     "row_counts": [],
                     "planner": outcome.planner,
                     "writer": None,
@@ -538,11 +638,14 @@ def _explore(
                 "planner": outcome.planner,
                 "writer": "model" if source == SOURCE_MODEL else "template",
                 "answered": True,
+                **({"redirect": redirect} if redirect else {}),
+                **({"lead": "forward"} if lead == FORWARD_LEAD else {}),
             },
         )
         return JSONResponse(
             content={
                 "refused": False,
+                **({"redirect": redirect} if redirect else {}),
                 "answer": [s.to_json() for s in answer],
                 "steps": [_step_json(s) for s in steps],
                 "source": source,

@@ -239,6 +239,46 @@ No index was added; the database is the generator's own. The planner times above
 model call of about 1 s) are unchanged by the larger catalog in kind; we did not re-run
 the model-first evaluation against the larger school.
 
+## Forward questions and redirects (2026-10-07)
+
+Explore now answers forward-looking questions from the records and redirects student-level
+questions instead of refusing them (docs/EXPLORE.md, "Questions about the future"). A third
+set, `--set forward` (12 questions), covers it: the owner's "how many students have holds
+and will drop", "how many students have holds", four forecast phrasings, a holds rate
+question, three off-topic requests and a student id (the last four must not be answered).
+A student question answered with totals for students like that is scored as protected.
+
+Measured first on the smaller school (`generate.py` before the rescale, 2,133 students in
+Spring 2026), one question at a time, template writer:
+
+| Planner order | Main (56) | Held-out (22) | Forward (12) |
+|---|---|---|---|
+| Rules only | 52 (93%), median 0.0 s | 20 (91%) | 12 (100%) |
+| Model first (qwen3:14b) | 55 (98%), median 1.0 s, p90 2.2 s | 21 (95%) | 12 (100%), median 0.1 s |
+
+The main and held-out scores are the same as before the change (main's one model miss was
+"how are the engineering students doing grade wise", planned as four steps; the model is
+not deterministic). Before forward questions went to the rules first, model first scored
+8 of 12 on the forward set: it planned the hold rate by term for "have holds and will
+drop", fall-only enrollment for "will enrollment fall", and probation and suspension for
+"at-risk students in nursing". The rules now plan forward questions first, and the model
+plans only what they cannot map; a model plan of the hold rate split by hold status is
+rejected (always 100%).
+
+Re-measured on the larger school (15,982 enrolled in Fall 2025, 13,871 in Spring 2026), the
+same day, after the merge:
+
+| Planner order | Main (56) | Held-out (22) | Forward (12) |
+|---|---|---|---|
+| Rules only | 52 (93%), median 0.2 s | 20 (91%) | 12 (100%) |
+| Model first (qwen3:14b) | 56 (100%), median 1.7 s, p90 3.3 s | 21 (95%), median 1.4 s | 12 (100%), median 0.1 s |
+
+The held-out miss is the one described above ("online vs in person dfw rates"). On this
+school the owner's question reads: "2,303 students with a hold were enrolled in Spring
+2026. Students with a hold have a dropout rate of 35.8% (2,109 of 5,886 students), against
+7.7% for students without a hold (12.1% overall)", with the stop-out rate (14.3% against
+4.5%) beside it.
+
 ## Re-running
 
 With a server running and a user who may use Explore:
@@ -250,5 +290,5 @@ PYTHONPATH=$PWD/backend/src CABINET_SCHOOL_DB=<the server's school.db> \
   --label model-first --set main --out results.jsonl
 ```
 
-`--set held-out` runs the held-out set, and `--only 0 1 2` runs chosen questions.
+`--set held-out` runs the held-out set, `--set forward` the forward set, and `--only 0 1 2` runs chosen questions.
 Keep runs one at a time: a local model serves one question at a time.

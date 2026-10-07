@@ -2370,6 +2370,20 @@ class Catalog:
             )
         )
 
+        # Every name the catalog knows, kept when a question is masked for
+        # person names (explore/privacy.py ``mask_names``): the titles above,
+        # colleges, subjects and terms.
+        self.known_names: tuple[str, ...] = tuple(
+            dict.fromkeys(
+                [
+                    *self.title_names,
+                    *vocab.colleges.values(),
+                    *vocab.subjects.values(),
+                    *vocab.terms.values(),
+                ]
+            )
+        )
+
     def allowed(self, param: Param) -> tuple[Any, ...]:
         v = self.vocab
         if param.kind == "choice":

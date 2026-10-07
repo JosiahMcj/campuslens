@@ -218,6 +218,16 @@ GROUPINGS: dict[str, Grouping] = {
             },
             frozenset({"registration"}),
         ),
+        Grouping(
+            "hold",
+            "Hold placed in the term",
+            "hold status",
+            {
+                "hold": "Students with a hold",
+                "no_hold": "Students without a hold",
+            },
+            frozenset({"student", "student_term"}),
+        ),
     )
 }
 GROUPING_KEYS: tuple[str, ...] = tuple(GROUPINGS)
@@ -687,6 +697,7 @@ _GROUPING_FIELDS: dict[str, tuple[str, ...]] = {
     "athlete": ("student_profiles.athlete",),
     "honors": ("student_profiles.honors",),
     "modality": ("sections.modality",),
+    "hold": ("person_holds.term_code",),
 }
 
 _ELSEWHERE = "subsequent_enrollment (enrolled at another college)"
@@ -760,6 +771,9 @@ def allowed_groupings(measure: Measure) -> tuple[str, ...]:
     out = [k for k, g in GROUPINGS.items() if measure.unit in g.units]
     if measure.scope in ("latest", "cohort"):
         out = [k for k in out if k != "term"]
+    if measure.id == "hold_rate":
+        # Split by hold status, the hold rate is always 0% or 100%.
+        out = [k for k in out if k != "hold"]
     return tuple(out)
 
 
@@ -786,6 +800,14 @@ _NEXT_REGULAR = (
     "CASE substr(t.term_code, 5, 2) WHEN '10' THEN substr(t.term_code, 1, 4) || '20' "
     "ELSE (CAST(substr(t.term_code, 1, 4) AS INTEGER) + 1) || '10' END"
 )
+
+
+# Hold status: a hold placed on the student's account in the row's term (the
+# same definition as the hold rate). For a measure read once per student
+# (dropout, GPA), the term is the student's latest term in the window.
+_HOLD_COL = """CASE WHEN EXISTS (SELECT 1 FROM person_holds h
+                WHERE h.student_id = t.student_id AND h.term_code = t.term_code)
+             THEN 'hold' ELSE 'no_hold' END AS hold"""
 
 
 def _term_index(col: str) -> str:
@@ -824,7 +846,8 @@ b AS (
              WHEN la.last_term = :dropout_cutoff THEN NULL
              ELSE 0 END AS dropped,
         CASE WHEN st.enrollment_status != 'graduated' AND se.student_id IS NOT NULL
-             THEN 1 ELSE 0 END AS transferred
+             THEN 1 ELSE 0 END AS transferred,
+        {_HOLD_COL}
     FROM pick t
     JOIN students st ON st.student_id = t.student_id
     JOIN student_profiles p ON p.student_id = t.student_id
@@ -855,7 +878,8 @@ WITH b AS (
            AND h.category = 'financial') AS fin_amount,
         CASE WHEN substr(t.term_code, 5, 2) = '30' THEN NULL
              WHEN nx.status IS NULL OR nx.status = 'graduated' THEN NULL
-             WHEN nx.status = 'enrolled' THEN 0 ELSE 1 END AS stopped
+             WHEN nx.status = 'enrolled' THEN 0 ELSE 1 END AS stopped,
+        {_HOLD_COL}
     FROM student_term_records t
     JOIN academic_standings a
         ON a.student_id = t.student_id AND a.term_code = t.term_code
@@ -1225,6 +1249,7 @@ def check_request(
         clean.append(g)
     if len(clean) > 2:
         raise GeneralError("at most two groupings")
+
     for key in filters:
         if key not in allowed and key != "term":
             raise GeneralError(f"the {m.label} cannot be filtered by {key}")
@@ -1381,6 +1406,16 @@ def run(
         )
     if cut_note is not None:
         notes.append(cut_note)
+    if "hold" in keys or "hold" in filters:
+        notes.append(
+            "A student counts as having a hold when a hold was placed on their "
+            "account in the term counted"
+            + (
+                " (their latest term, for a figure read once per student)."
+                if m.unit == "student" and m.scope == "latest"
+                else "."
+            )
+        )
     if m.unit == "cohort" and r.admit_default:
         notes.append(
             "Entering students are first-time students unless admit type is asked."
