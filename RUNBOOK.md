@@ -243,7 +243,10 @@ refusal is one clear line on stderr, not a traceback. `make migrate` runs the
 migrations explicitly and shows what applied. Migration 8 renames the first
 institution from "Bootstrap Institution" to "Demonstration University" when it
 still has the old name. A name an admin already changed is left alone, and the
-slug stays `bootstrap`.
+slug stays `bootstrap`. Migration 9 adds the staff action worklist
+(`staff_actions`, `staff_action_notes`, `staff_action_history`); an upgraded
+database starts with an empty list, which fills from the figures the first time
+anyone opens Staff actions.
 
 ```bash
 make migrate
@@ -518,6 +521,58 @@ changed since it was read, the save is refused with 409 and the message "This
 row changed since you opened it. Reload to see the latest." Read the row again
 with GET /aid-queue and send its current `updated_at`. Only rows of the active
 dataset can be changed. A row of an inactive or deleted dataset is a 404.
+
+## Staff actions
+
+The Staff actions page is the worklist behind briefing section 5: one action per
+office, built in code from the figures. Student Success reaches the students with
+no advising contact this term, Financial Aid reviews the small-balance holds, and
+each office with unresolved holds resolves them. Each action keeps a status (To
+do, In progress, Done), an owner (a staff member, admin or Financial Aid user, or
+the office itself), a due date, notes, and a history of every change. Nothing
+needs leadership approval.
+
+Who can do what: staff and admins change status, owner and due date, add notes,
+and send an action to its office. The executive follows the list and adds notes.
+The reviewer reads it. A Financial Aid user sees only Financial Aid's action.
+
+"Send to office" goes to the office's mailbox from Institution settings, Offices
+(every office the actions name is listed there, so an admin can fill in each
+mailbox). The message carries the action, the count, the status, owner and due
+date, who sent it, and a sign-in link. It never carries a student name or id.
+It goes through the same outbound provider as the decision messages above:
+with the default `outbox` it is written to `var/outbox/<slug>/<id>.eml` and
+nothing leaves the machine. An action is sent at most once per dataset; a
+failed send is recorded and the same button retries it.
+
+The sign-in link is `CABINET_PUBLIC_URL` (for example
+`https://campuslens.example.edu`) plus `/view/staff-actions`. Set it in
+production; without it the message names the page instead of linking it.
+Outside production it falls back to the bind address.
+
+```bash
+curl -b /tmp/cookies http://127.0.0.1:8910/staff-actions          # every role
+curl -b /tmp/cookies -X PATCH http://127.0.0.1:8910/staff-actions/<id> \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
+  -d '{"status": "in_progress", "owner": "staff@example.edu",
+       "due_date": "2026-10-20", "expected_updated_at": null}'   # staff, admin
+curl -b /tmp/cookies -X POST http://127.0.0.1:8910/staff-actions/<id>/notes \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
+  -d '{"text": "Called the office."}'                             # staff, admin, executive
+curl -b /tmp/cookies -X POST http://127.0.0.1:8910/staff-actions/<id>/send \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF"   # staff, admin
+```
+
+Saves follow the aid queue's rule: send `expected_updated_at` (422 without it),
+and a save over someone else's change is refused with 409 and the action as it
+now stands. The worklist belongs to its dataset and is purged with it. We audit
+`action.updated` (which fields changed, the status before and after),
+`action.noted` (never the note text), `action.sent` and `action.send_failed`,
+each with the acting user and the office, never a student id.
+
+Institution settings also shows **Connections**: whether the Ellucian import is
+configured on this server (each setting set or not, never its value) with its
+last import, and whether office messages stay in the outbox or go by email.
 
 ## Recording a counseling authorization
 

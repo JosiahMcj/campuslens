@@ -48,6 +48,15 @@ fifth role, `aid`, works the queue by setting each row's status and keeping a no
 and the executive and the reviewer can read it. No row, fact, or note ever reaches a
 model (`RUNBOOK.md`, "The Financial Aid review queue").
 
+The operational actions in the briefing are a worklist on the Staff actions page:
+one action per office, built in code from the figures (Student Success and the
+students with no advising contact, Financial Aid and the small-balance holds, each
+office with unresolved holds). Staff track each one with a status, an owner, a due
+date, notes, and a history of changes; the executive follows along and comments; a
+named staff member can send an action to its office mailbox with the count and a
+sign-in link, never a student name or id, through the same outbox
+(`RUNBOOK.md`, "Staff actions").
+
 The briefing also reports M8, students with one or more support indicators
 (`backend/src/cabinet/indicators.py`, contract in `CONTRACTS.md`). Each indicator
 is a named, deterministic rule with a plain-language reason. The four rules test

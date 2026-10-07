@@ -99,7 +99,7 @@ export function StaffActionsPage({
   const intro = list === null
     ? 'Work staff can start now, each with a responsible office.'
     : list.can_edit
-      ? 'Work staff can start now, each with a responsible office. Set who has it, when it is due and how far it has got. No leadership approval is needed, and nothing goes to an office until a named person sends it.'
+      ? 'Work staff can start now, each with a responsible office. Track who has it, when it is due and how far it has got. No leadership approval is needed, and nothing goes to an office until you send it.'
       : list.can_note
         ? 'Work staff can start now, each with a responsible office. You can follow progress and add a note for the staff working on it. No leadership approval is needed.'
         : 'Work staff can start now, each with a responsible office. This view is read only.'
@@ -459,6 +459,19 @@ function ActionEditor({
           </select>
         </div>
         <div className="editor-field">
+          <label htmlFor={`${ids}-due`}>Due date</label>
+          <input
+            id={`${ids}-due`}
+            className="field"
+            type="date"
+            value={due}
+            onChange={(event) => {
+              setDue(event.target.value)
+              setSavedNote(false)
+            }}
+          />
+        </div>
+        <div className="editor-field editor-field-owner">
           <label htmlFor={`${ids}-owner`}>Owner</label>
           <select
             id={`${ids}-owner`}
@@ -477,19 +490,6 @@ function ActionEditor({
               </option>
             ))}
           </select>
-        </div>
-        <div className="editor-field">
-          <label htmlFor={`${ids}-due`}>Due date</label>
-          <input
-            id={`${ids}-due`}
-            className="field"
-            type="date"
-            value={due}
-            onChange={(event) => {
-              setDue(event.target.value)
-              setSavedNote(false)
-            }}
-          />
         </div>
       </div>
       {error !== null && (

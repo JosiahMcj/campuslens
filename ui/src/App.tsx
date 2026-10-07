@@ -1856,7 +1856,9 @@ function BriefingPage({
                 onRetry={retryEvents}
               />
             ))}
-          {shownPanel === 'aid' && aidQueue && <AidQueuePanel canEdit={canEditAidQueue(role)} />}
+          {shownPanel === 'aid' && aidQueue && (
+            <AidQueuePanel canEdit={canEditAidQueue(role)} onOpenDecision={() => openPanel('decision')} />
+          )}
           {shownPanel === 'profile' && (
             <ProfilePanel session={session} datasetName={datasetName} onSignOut={onSignOut} />
           )}

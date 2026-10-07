@@ -155,7 +155,12 @@ and never the note text), and their actor is the acting user's email. The
 audit log is append-only and outlives the dataset purge, so neither event names
 a student. Explore added `explore.answered`, which closes each answered question with
 the task id, the question event id, the analysis ids of its steps, their row counts, and
-which planner and writer ran, never a value. Explore also writes the existing
+which planner and writer ran, never a value. The staff action worklist added
+`action.updated` (the action id, its office and figure, which fields changed, and the
+status before and after), `action.noted` (the action id and office, never the note text),
+`action.sent` and `action.send_failed` (the office, the message's dispatch id, the provider
+and its reference or error); the actor is the acting user's email, and an action has no
+student column, so none of them can name a student. Explore also writes the existing
 `question.asked` (any student-id-shaped token in the question is replaced first),
 `data.refused` (counseling, one student, or a prediction, refused before planning, and
 withheld instructor rows), and one `data.granted` per step with the analysis id, the fields
@@ -299,7 +304,7 @@ or the note.
   still records the cabinet role as actor. The dispatch events are the exception
   and the direction of travel. `task.dispatched` and `task.sent` record the
   acting user's email, because a named person sending is the point of the
-  feature. `aid.queued` and `aid.updated` follow the same rule.
+  feature. `aid.queued`, `aid.updated` and the `action.*` events follow the same rule.
 
 ## Data-handling posture
 

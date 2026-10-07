@@ -177,6 +177,16 @@
   font-size: var(--text-lg);
 }
 
+/* The count is a phrase ("12 students with no advising contact this
+   term"), so unlike a bare figure it wraps. */
+.action-count .finding-link {
+  text-align: start;
+}
+
+.action-count .num {
+  white-space: normal;
+}
+
 .action-what {
   margin: var(--space-2) 0 0;
   color: var(--ink-soft);
@@ -204,10 +214,16 @@
   border-top: 1px solid var(--rule);
 }
 
+/* Status and due date share a row; the owner (an office or an email
+   address, often long) takes the full width under them. */
 .action-editor-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
+}
+
+.editor-field-owner {
+  grid-column: 1 / -1;
 }
 
 .editor-field {

@@ -1339,7 +1339,7 @@ details[open]::details-content {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-4);
-  margin: 0 0 var(--space-4);
+  margin: var(--space-4) 0;
   padding: 0 0 var(--space-3);
   list-style: none;
   border-bottom: 1px solid var(--rule);

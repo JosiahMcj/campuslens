@@ -335,7 +335,9 @@ export function DecisionPanel({
                     {dispatch === null && canCompose && (
                       <button
                         type="button"
-                        className="btn-secondary secondary"
+                        className={
+                          progress ? 'btn-primary primary-button' : 'btn-secondary secondary'
+                        }
                         aria-busy={composeBusy}
                         onClick={() => {
                           if (composeBusy) return

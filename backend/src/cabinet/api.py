@@ -65,6 +65,13 @@ Endpoints:
   required (422 without it), and a save against a row that changed since it
   was opened is a 409. Logs ``aid.updated`` with the acting
   user, the row id, and the status transition, never the student id.
+- ``GET /staff-actions``, ``PATCH /staff-actions/{id}``, ``POST
+  /staff-actions/{id}/notes`` and ``/send`` — the staff action worklist
+  (``cabinet.staffactions_api``): status, owner, due date, notes, history,
+  and Send to office. Logs ``action.*`` events, never a note or a student id.
+- ``GET  /admin/connections`` (admin role) — whether the Ellucian import is
+  configured and its last import, and where office messages go
+  (``cabinet.connections``); never a credential.
 - ``GET  /admin/offices`` / ``PUT /admin/offices`` (admin role) — the
   institution's office address book, the only source of dispatch
   recipients. Offices, never student addresses.
