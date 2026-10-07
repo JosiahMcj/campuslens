@@ -265,6 +265,20 @@ drop", fall-only enrollment for "will enrollment fall", and probation and suspen
 plans only what they cannot map; a model plan of the hold rate split by hold status is
 rejected (always 100%).
 
+Re-measured on the larger school (15,982 enrolled in Fall 2025, 13,871 in Spring 2026), the
+same day, after the merge:
+
+| Planner order | Main (56) | Held-out (22) | Forward (12) |
+|---|---|---|---|
+| Rules only | 52 (93%), median 0.2 s | 20 (91%) | 12 (100%) |
+| Model first (qwen3:14b) | 56 (100%), median 1.7 s, p90 3.3 s | 21 (95%), median 1.4 s | 12 (100%), median 0.1 s |
+
+The held-out miss is the one described above ("online vs in person dfw rates"). On this
+school the owner's question reads: "2,303 students with a hold were enrolled in Spring
+2026. Students with a hold have a dropout rate of 35.8% (2,109 of 5,886 students), against
+7.7% for students without a hold (12.1% overall)", with the stop-out rate (14.3% against
+4.5%) beside it.
+
 ## Re-running
 
 With a server running and a user who may use Explore:
