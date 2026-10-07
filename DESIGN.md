@@ -195,13 +195,14 @@ measure 68ch.
 
 - **Data page:** `DataPage.tsx` with `DataChart.tsx` (hand-written SVG). The dashboards a role
   may open (Students, Student finances, Campus life and academics) as segmented toggles, then the
-  filter bar: From and To academic years and Compare by on one row, every other attribute in a
-  "Narrow to a group of students" fold, and the chosen ones as removable chips with "Clear
-  filters". Cards (`--surface`, `--rule` hairline) fit as many 26rem columns as there is room for,
+  filter bar: From and To academic years, Students (one group, chosen from one select grouped
+  by attribute) and Compare by on one row, a line saying a chart shows one group or compares
+  groups, never both (choosing one clears the other), and the chosen group as a removable chip
+  with "Show all students". Cards (`--surface`, `--rule` hairline) fit as many 26rem columns as there is room for,
   one on a phone. Each card: title, the measure and its x axis in `--ink-soft`, the latest value
   for a single series, the chart, a legend whose entries are buttons that narrow every chart to
   that group, notes, and a "Show the figures" fold with the table. Lines are 2 px with dots,
-  bars start at zero, counts and money start at zero, rates keep a minimum 10-point span. A
+  bars, counts, money and rates start at zero; an average (GPA) fits its data with a minimum span and a break mark on the foot of its value axis. A
   withheld point is never drawn: the line breaks and a dashed `--ink-soft` guide marks the place;
   its tooltip and table cell say "Withheld: fewer than 10 students, or it could reveal a group that
   small". The chart takes focus; the arrow keys, Home and End move through the terms and the

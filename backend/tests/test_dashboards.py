@@ -105,11 +105,19 @@ def test_the_catalog_lists_only_the_roles_dashboards(
     assert [b["id"] for b in body["dashboards"]] == boards
     assert body["years"][0] == "2020-2021" and len(body["years"]) == 6
     filters = {f["key"]: f for f in body["filters"]}
-    assert set(filters) == set(d.FILTER_KEYS)
-    assert {"value": "pell", "label": "Pell recipients"} in filters["pell"]["options"]
+    # Pell status is a financial attribute: the executive and aid only.
+    pell = role in ("executive", "aid")
+    expected = [k for k in d.FILTER_KEYS if pell or k != "pell"]
+    assert list(filters) == expected
+    if pell:
+        assert {"value": "pell", "label": "Pell recipients"} in filters["pell"][
+            "options"
+        ]
     # Summer's "not recorded" is never offered as a choice.
     assert all(o["value"] != "not_recorded" for o in filters["housing"]["options"])
-    assert [c["key"] for c in body["compare"]] == list(d.COMPARE_KEYS)
+    assert [c["key"] for c in body["compare"]] == [
+        k for k in d.COMPARE_KEYS if pell or k != "pell"
+    ]
     assert body["minimum_cell_size"] == 10
 
 
@@ -187,7 +195,7 @@ def test_new_students_split_first_time_and_transfer() -> None:
 
 def test_compare_by_splits_rates_and_adds_everyone() -> None:
     body = (
-        _client("executive").get("/data/series?chart=retention&compare=gender").json()
+        _client("executive").get("/data/series?chart=on_campus&compare=gender").json()
     )
     labels = [s["label"] for s in body["series"]]
     assert labels == ["Women", "Men", "All students"]
@@ -213,7 +221,12 @@ def test_a_fixed_split_ignores_compare_and_a_filter_collapses_it() -> None:
     assert body["split"]["key"] == "college"
     body = client.get("/data/series?chart=headcount_by_college&college=COE").json()
     assert body["split"] is None
-    assert [s["label"] for s in body["series"]] == ["Selected students"]
+    assert [s["label"] for s in body["series"]] == ["College of Education"]
+    # Narrowed by another attribute, the chart is not also split by college.
+    body = client.get("/data/series?chart=headcount_by_college&gender=female").json()
+    assert body["split"] is None
+    assert [s["label"] for s in body["series"]] == ["Women"]
+    assert any("narrows or splits, never both" in n for n in body["notes"])
 
 
 def test_filters_narrow_every_point() -> None:
@@ -293,11 +306,11 @@ def test_an_unknown_chart_is_not_found() -> None:
 
 
 SMALL_QUERIES = [
-    "chart=headcount&race_ethnicity=pacific_islander&compare=college",
-    "chart=headcount_by_college&race_ethnicity=american_indian",
+    "chart=headcount&race_ethnicity=pacific_islander",
+    "chart=headcount_by_college",
     "chart=retention&compare=age_band",
     "chart=financial_hold_students&compare=residency",
-    "chart=dfw&major=MEEN&compare=class_level",
+    "chart=dfw&major=MEEN",
     "chart=headcount&compare=college",
     "chart=stop_out&compare=honors",
 ]
@@ -331,9 +344,8 @@ def test_withheld_parts_cannot_be_recovered_from_the_total(
     """Counts by college per term: whatever is withheld in a term adds up to
     at least 10 students, so subtracting the visible colleges from the
     published term total never reveals a small college."""
-    filters = {"race_ethnicity": "pacific_islander"}
-    split = d.compute(con, d.CHARTS_BY_ID["headcount_by_college"], filters, None, vocab)
-    whole = d.compute(con, d.CHARTS_BY_ID["headcount"], filters, None, vocab)
+    split = d.compute(con, d.CHARTS_BY_ID["headcount"], {}, "college", vocab)
+    whole = d.compute(con, d.CHARTS_BY_ID["headcount"], {}, None, vocab)
     totals = {p["x"]: p for p in whole["series"][0]["points"]}
     for i, x in enumerate(split["x"]):
         total = totals[x["key"]]
@@ -415,6 +427,178 @@ def test_repeat_requests_are_served_from_the_cache(
     con: sqlite3.Connection, vocab: Vocab
 ) -> None:
     chart = d.CHARTS_BY_ID["stop_out"]
-    first = d.cached_series(chart, {"gender": "male"}, "pell")
-    assert d.cached_series(chart, {"gender": "male"}, "pell") is first
-    assert first == d.compute(con, chart, {"gender": "male"}, "pell", vocab)
+    first = d.cached_series(chart, {}, "pell")
+    assert d.cached_series(chart, {}, "pell") is first
+    assert first == d.compute(con, chart, {}, "pell", vocab)
+
+
+# --- one attribute per request (review 2026-10-07) ---------------------------------
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "chart=financial_balance_total&admit_type=first_time&compare=athlete",
+        "chart=headcount&gender=female&pell=pell",
+        "chart=headcount&chart=dfw",
+        "chart=headcount&compare=gender&compare=pell",
+    ],
+)
+def test_a_request_narrows_or_splits_never_both_and_is_logged(query: str) -> None:
+    """Narrowing by one attribute and splitting by another would publish a
+    two-way table whose margins (each one-way chart) solve the withheld
+    cells; such a request is refused and the refusal is recorded."""
+    app = create_app()
+    client = make_authenticated_client(app, role="executive")
+    response = client.get(f"/data/series?{query}")
+    assert response.status_code == 422
+    refused = app.state.auth.audit_for(1).events("data.refused")
+    assert refused and refused[-1]["payload"]["route"] == "/data/series"
+
+
+def _one_way(client: TestClient, chart: str, key: str) -> dict[str, Any]:
+    return dict(client.get(f"/data/series?chart={chart}&compare={key}").json())
+
+
+ONE_WAY = [
+    ("headcount", "college"),
+    ("headcount", "race_ethnicity"),
+    ("headcount", "age_band"),
+    ("financial_balance_total", "residency"),
+    ("financial_hold_students", "honors"),
+    ("on_campus", "gender"),
+    ("stop_out", "honors"),
+    ("dfw", "admit_type"),
+    ("retention", "age_band"),
+    ("financial_hold_rate", "class_level"),
+]
+
+
+@pytest.mark.parametrize(("chart", "key"), ONE_WAY)
+def test_a_narrowed_chart_is_the_same_group_of_the_split_chart(
+    chart: str, key: str, con: sqlite3.Connection, vocab: Vocab
+) -> None:
+    """Narrowing to a group shows exactly that group's points (values and
+    withholding) as the chart split by the same attribute."""
+    c = d.CHARTS_BY_ID[chart]
+    # (Race and ethnicity is a filter only on the page, but the same table.)
+    split = d.compute(con, c, {}, key, vocab)
+    groups = d.domain(key, vocab)
+    by_group = {s["key"]: s["points"] for s in split["series"]}
+    for value in groups:
+        narrowed = d.compute(con, c, {key: value}, None, vocab)
+        (series,) = narrowed["series"]
+        if value in by_group:
+            assert series["points"] == by_group[value]
+        else:  # dropped from the split: withheld (or empty) in every year
+            assert all(p["status"] != "ok" for p in series["points"])
+
+
+@pytest.mark.parametrize(
+    ("chart", "key"), [p for p in ONE_WAY if p[1] != "race_ethnicity"]
+)
+def test_withheld_groups_cannot_be_worked_out_from_the_total(
+    chart: str, key: str, con: sqlite3.Connection, vocab: Vocab
+) -> None:
+    """In every term (or class), the published total minus the shown groups
+    is either nothing or at least 10: students, and for a rate also the
+    count it rests on either way (who did and who did not)."""
+    c = d.CHARTS_BY_ID[chart]
+    split = d.compute(con, c, {}, key, vocab)
+    whole = d.compute(con, c, {}, None, vocab)["series"][0]["points"]
+    groups = [s for s in split["series"] if s["slot"] is not None]
+    # Groups withheld in every year are dropped from the series: count them
+    # as withheld, which only makes this check stricter.
+    for i, total in enumerate(whole):
+        if total["status"] != "ok":
+            continue
+        shown = [s["points"][i] for s in groups if s["points"][i]["status"] == "ok"]
+        names = ["students"]
+        if split["kind"] == "pct":
+            names += ["numerator", "rest"]
+
+        def get(p: dict[str, Any], name: str) -> int:
+            if name == "rest":
+                return int(p["denominator"]) - int(p["numerator"])
+            return int(p[name])
+
+        for name in names:
+            gap = get(total, name) - sum(get(p, name) for p in shown)
+            assert gap == 0 or gap >= 10, (chart, key, total["x"], name, gap)
+
+
+def test_no_shown_rate_rests_on_fewer_than_10_either_way(
+    con: sqlite3.Connection, vocab: Vocab
+) -> None:
+    for c in d.CHARTS:
+        if c.measure.kind != "pct":
+            continue
+        for key in [None, *[k for k in d.COMPARE_KEYS if d.applies(c, k)]]:
+            for s in d.compute(con, c, {}, key, vocab)["series"]:
+                for p in s["points"]:
+                    if p["status"] == "ok":
+                        assert p["numerator"] >= 10, (c.id, key, p)
+                        assert p["denominator"] - p["numerator"] >= 10, (c.id, key, p)
+                    else:
+                        assert "numerator" not in p
+
+
+def test_medians_need_20_students_and_are_rounded_to_100(
+    con: sqlite3.Connection, vocab: Vocab
+) -> None:
+    c = d.CHARTS_BY_ID["financial_balance_median"]
+    for key in [None, "gender", "residency"]:
+        for s in d.compute(con, c, {}, key, vocab)["series"]:
+            for p in s["points"]:
+                if p["status"] == "ok":
+                    assert p["students"] >= 20 and p["value"] % 100 == 0
+    notes = " ".join(d.compute(con, c, {}, None, vocab)["notes"])
+    assert "latest term in the records and is not complete" in notes
+
+
+def test_notes_name_the_terms_from_the_data(
+    con: sqlite3.Connection, vocab: Vocab
+) -> None:
+    grad4 = d.compute(con, d.CHARTS_BY_ID["grad4"], {}, None, vocab)
+    assert any("Fall 2020 to Fall 2022" in n for n in grad4["notes"])
+    stop = d.compute(con, d.CHARTS_BY_ID["stop_out"], {}, None, vocab)
+    assert any(n.startswith("Spring 2026 has no next term") for n in stop["notes"])
+
+
+@pytest.mark.parametrize(
+    ("role", "query", "status"),
+    [
+        ("staff", "chart=retention&compare=pell", 403),
+        ("staff", "chart=headcount&pell=pell", 403),
+        ("reviewer", "chart=stop_out&compare=pell", 403),
+        ("staff", "chart=retention&compare=gender", 200),
+        ("executive", "chart=retention&compare=pell", 200),
+        ("aid", "chart=financial_hold_rate&pell=no_pell", 200),
+    ],
+)
+def test_pell_status_is_for_the_finance_roles_only(
+    role: str, query: str, status: int
+) -> None:
+    app = create_app()
+    client = make_authenticated_client(app, role=role)
+    assert client.get(f"/data/series?{query}").status_code == status
+    if status == 403:
+        (event,) = app.state.auth.audit_for(1).events("data.refused")
+        assert event["payload"]["category"] == "role_attribute"
+
+
+def test_a_chart_that_cannot_take_the_choice_is_logged_as_refused() -> None:
+    app = create_app()
+    client = make_authenticated_client(app, role="executive")
+    body = client.get("/data/series?chart=retention&class_level=Junior").json()
+    assert body["not_applicable"]["key"] == "class_level"
+    (event,) = app.state.auth.audit_for(1).events("data.refused")
+    assert event["payload"]["category"] == "not_applicable"
+
+
+def test_the_department_roles_are_mapped() -> None:
+    assert dashboards_for("finance") == ("finances",)
+    assert dashboards_for("registrar") == ("students",)
+    assert dashboards_for("studentlife") == ("students",)
+    assert dashboards_for("it") == ()
+    assert "it" not in DATA_ROLES and "finance" in DATA_ROLES

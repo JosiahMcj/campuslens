@@ -37,7 +37,13 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from cabinet.counseling import MINIMUM_CELL_SIZE
-from cabinet.data_roles import CAMPUS, FINANCES, STUDENTS, dashboards_for
+from cabinet.data_roles import (
+    CAMPUS,
+    FINANCES,
+    STUDENTS,
+    attribute_allowed,
+    dashboards_for,
+)
 from cabinet.explore import general
 from cabinet.explore.catalog import (
     SchoolDataMissing,
@@ -235,8 +241,8 @@ CHARTS: tuple[Chart, ...] = (
         "entry_cohort",
         "bar",
         cohorts="g4",
-        note="Only the classes that entered in Fall 2020 to Fall 2022 have had four "
-        "years in these records.",
+        note="Only the classes that entered in {span} have had four years in these "
+        "records.",
     ),
     _c(
         "grad6",
@@ -246,7 +252,8 @@ CHARTS: tuple[Chart, ...] = (
         "entry_cohort",
         "bar",
         cohorts="g6",
-        note="Fall 2020 is the only entering class these records follow for six years.",
+        note="Only the classes that entered in {span} have had six years in these "
+        "records.",
     ),
     _c(
         "stop_out",
@@ -255,7 +262,7 @@ CHARTS: tuple[Chart, ...] = (
         M["stop_out_rate"],
         "term",
         "line",
-        note="Spring 2026 has no next term in the records yet.",
+        note="{last} has no next term in the records yet.",
     ),
     _c(
         "dropout",
@@ -306,6 +313,7 @@ CHARTS: tuple[Chart, ...] = (
         "term",
         "line",
         stat="median",
+        partial_last=True,
         note="The median: half of the students with a financial hold owed less, "
         "half owed more. Rounded to the nearest $10.",
     ),
@@ -596,6 +604,14 @@ def _medians(
     return {k: statistics.median(a.values()) for k, a in per.items()}
 
 
+MEDIAN_MINIMUM = 20  # students behind a published median
+MEDIAN_ROUNDING = 100  # dollars
+
+
+class TooManyAttributes(Exception):
+    """A request that both narrows and splits, or narrows by two attributes."""
+
+
 def _point(
     chart: Chart,
     cell: general.Cell | None,
@@ -609,9 +625,10 @@ def _point(
     m = chart.measure
     out: dict[str, Any] = {"status": "ok", "students": cell.students}
     if chart.stat == "median":
-        # Rounded to the nearest $10: a median of an odd number of students
+        # Rounded to the nearest $100: a median of an odd number of students
         # is one student's own balance, which is never published exactly.
-        out["value"] = int(round((median or 0.0) / 10.0) * 10)
+        step = MEDIAN_ROUNDING
+        out["value"] = int(round((median or 0.0) / step) * step)
     elif m.kind == "count":
         out["value"] = int(cell.num)
     elif m.kind == "dollars":
@@ -629,30 +646,106 @@ def _point(
     return out
 
 
+def _small_share(cell: general.Cell) -> bool:
+    """A share whose count either way is under 10 (a rate times its base
+    gives the count, so the count is as public as the rate)."""
+    return cell.num < MINIMUM_CELL_SIZE or cell.den - cell.num < MINIMUM_CELL_SIZE
+
+
+def _complete(sizes: dict[str, float], hidden: set[str]) -> set[str]:
+    """Complementary withholding for one partition with a published total:
+    while the withheld groups add up to fewer than 10, withhold the next
+    smallest visible group too."""
+    hidden = set(hidden)
+    if not hidden:
+        return hidden
+    visible = sorted((n, k) for k, n in sizes.items() if k not in hidden)
+    while sum(sizes[k] for k in hidden) < MINIMUM_CELL_SIZE and visible:
+        hidden.add(visible.pop(0)[1])
+    return hidden
+
+
+def _share_hidden(
+    xs: list[str],
+    main: dict[tuple[str, ...], general.Cell],
+    hidden: set[tuple[str, ...]],
+    total: dict[tuple[str, ...], general.Cell],
+    total_hidden: set[tuple[str, ...]],
+) -> tuple[set[tuple[str, ...]], set[tuple[str, ...]]]:
+    """Withhold share points whose count either way is under 10, and then,
+    within each term (or class), enough other groups that the published total
+    minus the shown groups never gives a count under 10 either way."""
+    hidden = set(hidden)
+    total_hidden = set(total_hidden) | {k for k, c in total.items() if _small_share(c)}
+    for x in xs:
+        groups = {k[1]: c for k, c in main.items() if k[0] == x}
+        pre = {g for g, c in groups.items() if (x, g) in hidden or _small_share(c)}
+        if (x,) not in total_hidden:
+            nums = {g: c.num for g, c in groups.items()}
+            rest = {g: c.den - c.num for g, c in groups.items()}
+            while True:
+                grown = _complete(rest, _complete(nums, pre))
+                if grown == pre:
+                    break
+                pre = grown
+        hidden |= {(x, g) for g in pre}
+    return hidden, total_hidden
+
+
 def compute(
     con: Any, chart: Chart, filters: dict[str, str], compare: str | None, v: Vocab
 ) -> dict[str, Any]:
-    """One chart as series of points; raises NotApplicable when a filter or
-    the split cannot apply to the chart's records."""
+    """One chart as series of points.
+
+    A request reads ONE attribute besides the term: it narrows to one group
+    (a filter) or splits into groups (a comparison, or the chart's own
+    split), never both, so every published figure is a cell of a one-way
+    table (term by one attribute) whose only totals are the term totals,
+    where complementary withholding is complete. A narrowed chart is the
+    same table's one group, withheld exactly as in the split chart.
+
+    Raises TooManyAttributes for more than one, and NotApplicable when the
+    attribute cannot apply to the chart's records."""
+    if len(filters) + (1 if compare else 0) > 1:
+        raise TooManyAttributes()
     for key in filters:
         if not applies(chart, key):
             raise NotApplicable(key)
-    split = chart.split if chart.split is not None else compare
-    if split is not None and split in filters:
-        split = None  # narrowed to one group: one series
-    if split is not None and not applies(chart, split):
-        raise NotApplicable(split)
-    m = chart.measure
-    keys = [chart.x] + ([split] if split else [])
-    r = _SeriesRunner(
-        con, general.Request(m, tuple(keys), filters, None, None), v, chart.x
+    narrowed = next(iter(filters.items()), None)
+    dropped_split = (
+        chart.split if narrowed is not None and chart.split != narrowed[0] else None
     )
+    attr = narrowed[0] if narrowed is not None else (chart.split or compare)
+    if attr is not None and not applies(chart, attr):
+        raise NotApplicable(attr)
+    m = chart.measure
+    keys = [chart.x] + ([attr] if attr else [])
+    r = _SeriesRunner(con, general.Request(m, tuple(keys), {}, None, None), v, chart.x)
     if chart.all_entrants:
         r.params["admit_default"] = 0
-    main = r.cells(keys, filters)
-    hidden = general._hidden(r, keys, filters, main, v)
-    medians = _medians(r, keys, filters) if chart.stat == "median" else {}
+    main = r.cells(keys, {})
+    hidden = general._hidden(r, keys, {}, main, v)
+    total = r.cells([chart.x], {}) if attr else main
+    total_hidden = general._hidden(r, [chart.x], {}, total, v) if attr else hidden
     xs = _x_domain(chart, r, v)
+    x_keys = [x["key"] for x in xs]
+    if m.kind == "pct":
+        if attr:
+            hidden, total_hidden = _share_hidden(
+                x_keys, main, hidden, total, total_hidden
+            )
+        else:
+            hidden = hidden | {k for k, c in main.items() if _small_share(c)}
+            total_hidden = hidden
+    medians: dict[tuple[str, ...], float] = {}
+    total_med: dict[tuple[str, ...], float] = {}
+    if chart.stat == "median":
+        medians = _medians(r, keys, {})
+        total_med = _medians(r, [chart.x], {}) if attr else medians
+        hidden = hidden | {k for k, c in main.items() if c.students < MEDIAN_MINIMUM}
+        total_hidden = total_hidden | {
+            k for k, c in total.items() if c.students < MEDIAN_MINIMUM
+        }
 
     def points(
         cells: dict[tuple[str, ...], general.Cell],
@@ -669,10 +762,9 @@ def compute(
 
     series: list[dict[str, Any]] = []
     notes: list[str] = []
-    if split is None:
-        label = "Selected students" if filters else "All students"
-        if chart.all_entrants and "admit_type" not in filters:
-            label = "New students"
+    split: str | None = None
+    if attr is None:
+        label = "New students" if chart.all_entrants else "All students"
         series.append(
             {
                 "key": "all",
@@ -681,12 +773,29 @@ def compute(
                 "points": points(main, hidden, medians, ()),
             }
         )
+    elif narrowed is not None:
+        key, value = narrowed
+        series.append(
+            {
+                "key": value,
+                "label": value_label(key, value, v),
+                "slot": 0,
+                "points": points(main, hidden, medians, (value,)),
+            }
+        )
+        if dropped_split is not None:
+            notes.append(
+                f"Narrowed to one group, this chart is not split by "
+                f"{key_label(dropped_split).lower()}: a chart narrows or splits, "
+                "never both, so no group under 10 students can be worked out."
+            )
     else:
+        split = attr
         empty: list[str] = []
         withheld_all: list[str] = []
-        for slot, value in enumerate(domain(split, v)):
+        for slot, value in enumerate(domain(attr, v)):
             pts = points(main, hidden, medians, (value,))
-            name = value_label(split, value, v)
+            name = value_label(attr, value, v)
             if not any(p["status"] == "ok" for p in pts):
                 if any(p["status"] == "withheld" for p in pts):
                     withheld_all.append(name)
@@ -704,35 +813,41 @@ def compute(
         # Rates and averages also show everyone, for reference; counts do not
         # (the parts add up to it).
         if m.kind not in ("count", "dollars"):
-            total = r.cells([chart.x], filters)
-            total_hidden = general._hidden(r, [chart.x], filters, total, v)
-            total_med = (
-                _medians(r, [chart.x], filters) if chart.stat == "median" else {}
-            )
-            label = "All selected students" if filters else "All students"
             series.append(
                 {
                     "key": "all",
-                    "label": label,
+                    "label": "All students",
                     "slot": None,
                     "points": points(total, total_hidden, total_med, ()),
                 }
             )
-    if m.unit == "cohort" and not chart.all_entrants and "admit_type" not in filters:
+    if m.unit == "cohort" and not chart.all_entrants and attr != "admit_type":
         notes.append("Entering students are first-time students.")
+    if m.kind == "pct":
+        notes.append(
+            "A rate is also withheld when fewer than 10 are counted either way "
+            "(for example fewer than 10 who returned, or fewer than 10 who did "
+            "not)."
+        )
+    if chart.stat == "median":
+        notes.append(
+            f"A median needs at least {MEDIAN_MINIMUM} students with a hold, and "
+            f"is rounded to the nearest ${MEDIAN_ROUNDING}."
+        )
     if chart.partial_last and xs:
         notes.append(
             f"{xs[-1]['label']} is the latest term in the records and is not "
             "complete: holds placed later in that term are not in them yet."
         )
-    if chart.note:
-        notes.append(chart.note)
-    kind = m.kind
+    if chart.note and xs:
+        first, last = xs[0]["label"], xs[-1]["label"]
+        span = first if first == last else f"{first} to {last}"
+        notes.append(chart.note.format(first=first, last=last, span=span))
     return {
         "chart": chart.id,
         "title": chart.title,
         "form": chart.form,
-        "kind": kind,
+        "kind": m.kind,
         "value_label": (
             "Median balance ($)" if chart.stat == "median" else m.value_label
         ),
@@ -894,8 +1009,13 @@ def get_dashboards(request: Request) -> JSONResponse:
             "filters": [
                 {"key": k, "label": key_label(k), "options": _filter_options(k, v)}
                 for k in FILTER_KEYS
+                if attribute_allowed(role, k)
             ],
-            "compare": [{"key": k, "label": key_label(k)} for k in COMPARE_KEYS],
+            "compare": [
+                {"key": k, "label": key_label(k)}
+                for k in COMPARE_KEYS
+                if attribute_allowed(role, k)
+            ],
             "years": list(v.academic_years),
             "minimum_cell_size": MINIMUM_CELL_SIZE,
         }
@@ -915,18 +1035,45 @@ def _series(request: Request) -> JSONResponse:
     user = request.scope["cabinet_user"]
     role = str(user["role"])
     params = request.query_params
-    chart = CHARTS_BY_ID.get(params.get("chart", ""))
+    chart_id = params.get("chart", "")
+    store = request.app.state.auth
+
+    def refuse(status: int, message: str, category: str) -> JSONResponse:
+        """A refused chart request: logged (never a value), then answered."""
+        store.audit_for(int(user["institution_id"])).append(
+            "data.refused",
+            actor=str(user["email"]),
+            payload={
+                "route": "/data/series",
+                "chart": chart_id[:64],
+                "category": category,
+                "reason": message,
+                "role": role,
+            },
+        )
+        return _error(status, message)
+
+    chart = CHARTS_BY_ID.get(chart_id)
     if chart is None:
-        return _error(404, "There is no such chart.")
+        return refuse(404, "There is no such chart.", "unknown_chart")
     if chart.dashboard not in dashboards_for(role):
-        return _error(403, "This chart is not on a dashboard for your role.")
+        return refuse(
+            403, "This chart is not on a dashboard for your role.", "role_dashboard"
+        )
+    keys = [k for k, _ in params.multi_items()]
+    if len(keys) != len(set(keys)):
+        return refuse(422, "Each choice may be given once.", "invalid_request")
     allowed = set(FILTER_KEYS) | {"chart", "compare"}
-    unknown = [k for k in params if k not in allowed]
+    unknown = [k for k in keys if k not in allowed]
     if unknown:
-        return _error(422, "Unknown filter: " + ", ".join(sorted(unknown)) + ".")
+        return refuse(
+            422,
+            "Unknown filter: " + ", ".join(sorted(unknown)) + ".",
+            "invalid_request",
+        )
     compare = params.get("compare") or None
     if compare is not None and compare not in COMPARE_KEYS:
-        return _error(422, "That comparison is not available.")
+        return refuse(422, "That comparison is not available.", "invalid_request")
     try:
         con = connect_readonly()
     except SchoolDataMissing:
@@ -941,14 +1088,42 @@ def _series(request: Request) -> JSONResponse:
         if not value:
             continue
         if value not in domain(key, v):
-            return _error(422, f"That {key_label(key).lower()} is not available.")
+            return refuse(
+                422,
+                f"That {key_label(key).lower()} is not available.",
+                "invalid_request",
+            )
         filters[key] = value
+    for key in [*filters, *([compare] if compare else [])]:
+        if not attribute_allowed(role, key):
+            return refuse(
+                403,
+                f"Your role may not narrow or compare by {key_label(key).lower()}.",
+                "role_attribute",
+            )
+    if len(filters) + (1 if compare else 0) > 1:
+        return refuse(
+            422,
+            "A chart narrows to one group or compares groups, not both at once.",
+            "one_attribute",
+        )
     try:
         result = cached_series(chart, filters, compare)
     except SchoolDataMissing:
         return _missing()
     except NotApplicable as exc:
         key = str(exc.args[0])
+        store.audit_for(int(user["institution_id"])).append(
+            "data.refused",
+            actor=str(user["email"]),
+            payload={
+                "route": "/data/series",
+                "chart": chart.id,
+                "category": "not_applicable",
+                "reason": f"The chart cannot be narrowed or split by {key}.",
+                "role": role,
+            },
+        )
         return JSONResponse(
             content={
                 "chart": chart.id,
@@ -957,7 +1132,6 @@ def _series(request: Request) -> JSONResponse:
             }
         )
     split = result["split"]["key"] if result["split"] else None
-    store = request.app.state.auth
     store.audit_for(int(user["institution_id"])).append(
         "data.granted",
         actor=str(user["email"]),

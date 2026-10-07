@@ -148,17 +148,35 @@ describe('DataPage filter bar', () => {
     expect(fetchSeries).toHaveBeenCalledWith('chart=headcount')
   })
 
-  it('narrows every chart with a filter, shows it as a chip, and clears it', async () => {
+  it('narrows every chart to one group, shows it as a chip, and clears it', async () => {
     await ready()
-    fireEvent.change(screen.getByLabelText('Gender'), { target: { value: 'female' } })
+    const students = screen.getByLabelText('Students') as HTMLSelectElement
+    expect(students.querySelectorAll('optgroup')).toHaveLength(2)
+    fireEvent.change(students, { target: { value: 'gender=female' } })
     await waitFor(() => expect(fetchSeries).toHaveBeenCalledWith('chart=headcount&gender=female'))
     const chip = screen.getByRole('button', { name: 'Remove Gender: Women' })
     expect(chip.textContent).toContain('Women')
-    // A filtered attribute is not offered as a comparison.
-    const compare = screen.getByLabelText('Compare by') as HTMLSelectElement
-    expect([...compare.options].map((o) => o.value)).toEqual(['', 'pell'])
-    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    // One group at a time: choosing another replaces it.
+    fireEvent.change(students, { target: { value: 'pell=pell' } })
+    await waitFor(() => expect(fetchSeries).toHaveBeenCalledWith('chart=headcount&pell=pell'))
     expect(screen.queryByRole('button', { name: /Remove Gender/ })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Show all students' }))
+    expect(screen.queryByRole('button', { name: /Remove Pell/ })).toBeNull()
+    expect(students.value).toBe('')
+  })
+
+  it('never narrows and compares at once: choosing one clears the other', async () => {
+    await ready()
+    fireEvent.change(screen.getByLabelText('Students'), { target: { value: 'gender=male' } })
+    fireEvent.change(screen.getByLabelText('Compare by'), { target: { value: 'pell' } })
+    await waitFor(() => expect(fetchSeries).toHaveBeenCalledWith('chart=headcount&compare=pell'))
+    expect((screen.getByLabelText('Students') as HTMLSelectElement).value).toBe('')
+    fireEvent.change(screen.getByLabelText('Students'), { target: { value: 'gender=female' } })
+    expect((screen.getByLabelText('Compare by') as HTMLSelectElement).value).toBe('')
+    for (const [query] of fetchSeries.mock.calls) {
+      expect(query.includes('compare=') && /&(gender|pell)=/.test(query)).toBe(false)
+    }
+    expect(screen.getByText(/Not both at once/)).toBeTruthy()
   })
 
   it('splits a chart by the comparison, and a group click narrows to it', async () => {
@@ -185,14 +203,22 @@ describe('DataPage filter bar', () => {
   it('remembers the choices per account and drops ones the catalog does not offer', async () => {
     window.localStorage.setItem(
       'campuslens.data-page.v1:president@demo.test',
-      JSON.stringify({ dashboard: 'finances', from: '', to: '', compare: 'major', filters: { pell: 'pell', gpa: 'x' } }),
+      JSON.stringify({
+        dashboard: 'finances',
+        from: '',
+        to: '',
+        compare: 'gender',
+        filters: { pell: 'pell', gender: 'male', gpa: 'x' },
+      }),
     )
     render(<DataPage account="president@demo.test" />)
-    await waitFor(() => expect(fetchSeries).toHaveBeenCalledWith('chart=financial_hold_rate&pell=pell'))
+    // Saved from an older page: one group survives, the comparison does not.
+    await waitFor(() => expect(fetchSeries).toHaveBeenCalledWith('chart=financial_hold_rate&gender=male'))
     expect(screen.getByRole('button', { name: 'Student finances', pressed: true })).toBeTruthy()
-    fireEvent.change(screen.getByLabelText('Gender'), { target: { value: 'male' } })
+    fireEvent.change(screen.getByLabelText('Students'), { target: { value: 'pell=no_pell' } })
     const saved = JSON.parse(window.localStorage.getItem('campuslens.data-page.v1:president@demo.test') ?? '{}')
-    expect(saved.filters).toEqual({ pell: 'pell', gender: 'male' })
+    expect(saved.filters).toEqual({ pell: 'no_pell' })
+    expect(saved.compare).toBe('')
     expect(window.localStorage.getItem('campuslens.data-page.v1:aid@demo.test')).toBeNull()
   })
 
@@ -264,5 +290,25 @@ describe('DataChart gaps', () => {
     render(<DataPage account="president@demo.test" />)
     expect(await screen.findByText(/Every figure here is withheld/)).toBeTruthy()
     expect(screen.queryByRole('img')).toBeNull()
+  })
+
+  it('marks a value axis that does not start at zero', async () => {
+    fetchSeries.mockResolvedValue(
+      chart({
+        kind: 'gpa',
+        value_label: 'Average cumulative GPA',
+        series: [
+          {
+            key: 'all',
+            label: 'All students',
+            slot: 0,
+            points: X.map((x, i) => ({ x: x.key, value: 3.04 + i * 0.01, status: 'ok' as const, students: 900 })),
+          },
+        ],
+      }),
+    )
+    render(<DataPage account="president@demo.test" />)
+    const svg = await screen.findByRole('img', { name: /not zero/ })
+    expect(svg.querySelector('.chart-break')).not.toBeNull()
   })
 })

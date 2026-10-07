@@ -64,6 +64,9 @@ export function DataChart({ data, onPick }: DataChartProps) {
   const ticks = niceTicks(lo, hi, plotH < 160 ? 4 : 5).filter((t) => t >= lo - 1e-9)
   const top = Math.max(hi, ticks[ticks.length - 1] ?? hi)
   const bottom = Math.min(lo, ticks[0] ?? lo)
+  // A value axis that does not start at zero (an average such as GPA) is
+  // marked with a break, so a small change is never read as a large one.
+  const broken = bottom > 0
   const y = (v: number) => MARGIN.top + plotH - ((v - bottom) / (top - bottom || 1)) * plotH
   const band = plotW / Math.max(n, 1)
   const xCenter = (i: number) =>
@@ -135,7 +138,7 @@ export function DataChart({ data, onPick }: DataChartProps) {
         height={HEIGHT}
         viewBox={`0 0 ${width} ${HEIGHT}`}
         role="img"
-        aria-label={`${data.title}: ${data.value_label} by ${data.x_label.toLowerCase()}, ${data.x[0]?.label ?? ''} to ${data.x[n - 1]?.label ?? ''}. Use the arrow keys to read each value.`}
+        aria-label={`${data.title}: ${data.value_label} by ${data.x_label.toLowerCase()}, ${data.x[0]?.label ?? ''} to ${data.x[n - 1]?.label ?? ''}. ${broken ? ` The value axis starts at ${formatTick(bottom, data.kind)}, not zero.` : ''} Use the arrow keys to read each value.`}
         aria-describedby={active !== null ? tipId : undefined}
         tabIndex={0}
         onPointerMove={onMove}
@@ -231,6 +234,15 @@ export function DataChart({ data, onPick }: DataChartProps) {
             ) : null,
           )}
         <line className="chart-axis" x1={MARGIN.left} x2={MARGIN.left + plotW} y1={y(bottom)} y2={y(bottom)} />
+        {broken && (
+          <g className="chart-break" aria-hidden="true">
+            <title>The value axis does not start at zero</title>
+            <rect x={MARGIN.left - 6} y={y(bottom) - 9} width={12} height={8} />
+            <path
+              d={`M${MARGIN.left - 6},${y(bottom) - 3} l4,-4 l4,4 l4,-4 M${MARGIN.left - 6},${y(bottom) - 7} l4,-4 l4,4 l4,-4`}
+            />
+          </g>
+        )}
       </svg>
       {activeX !== undefined && active !== null && (
         <div

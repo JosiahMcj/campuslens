@@ -24,12 +24,15 @@ describe('dataPage helpers', () => {
     expect(formatTick(15000, 'count')).toBe('15k')
   })
 
-  it('starts counts and bars at zero and keeps rates from looking steep', () => {
+  it('starts counts, rates and bars at zero and keeps averages from looking steep', () => {
     expect(valueDomain([12000, 16000], 'count', 'line')[0]).toBe(0)
     expect(valueDomain([80, 82], 'pct', 'bar')[0]).toBe(0)
-    const [lo, hi] = valueDomain([81, 82], 'pct', 'line')
-    expect(hi - lo).toBeGreaterThanOrEqual(10)
-    expect(valueDomain([97, 99], 'pct', 'line')[1]).toBeLessThanOrEqual(100)
+    // Rates start at 0% too; averages fit the data with a minimum span.
+    expect(valueDomain([81, 82], 'pct', 'line')[0]).toBe(0)
+    const [lo, hi] = valueDomain([3.04, 3.08], 'gpa', 'line')
+    expect(lo).toBeGreaterThan(0)
+    expect(hi - lo).toBeGreaterThanOrEqual(0.5)
+    expect(hi).toBeLessThanOrEqual(4)
     expect(niceTicks(0, 100)).toEqual([0, 25, 50, 75, 100])
   })
 

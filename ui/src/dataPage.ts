@@ -13,7 +13,16 @@ import { apiFetch, type Role } from './auth'
 /** Which roles have a Data page. Mirrors ROLE_DASHBOARDS in
  * backend/src/cabinet/data_roles.py, which the API enforces; the catalog
  * the page reads names the dashboards themselves. */
-export const DATA_PAGE_ROLES: readonly string[] = ['executive', 'aid', 'staff', 'reviewer']
+export const DATA_PAGE_ROLES: readonly string[] = [
+  'executive',
+  'aid',
+  'staff',
+  'reviewer',
+  // The department roles (role-logins branch): inert until those roles exist.
+  'finance',
+  'registrar',
+  'studentlife',
+]
 
 export function canSeeDataPage(role: Role | string | null): boolean {
   return role !== null && DATA_PAGE_ROLES.includes(role)
@@ -182,10 +191,14 @@ export function saveChoices(account: string, choices: DataChoices): void {
  * offers (another role, a changed list) is dropped, never sent. */
 export function validChoices(choices: DataChoices, catalog: DataCatalog): DataChoices {
   const dashboards = catalog.dashboards.map((d) => d.id)
+  // At most one group (a chart narrows to one group or compares groups,
+  // never both; the API refuses anything more).
   const filters: Record<string, string> = {}
   for (const spec of catalog.filters) {
     const value = choices.filters[spec.key]
-    if (value !== undefined && spec.options.some((o) => o.value === value)) filters[spec.key] = value
+    if (Object.keys(filters).length === 0 && value !== undefined && spec.options.some((o) => o.value === value)) {
+      filters[spec.key] = value
+    }
   }
   const year = (value: string) => (catalog.years.includes(value) ? value : '')
   let from = year(choices.from)
@@ -199,7 +212,7 @@ export function validChoices(choices: DataChoices, catalog: DataCatalog): DataCh
     to,
     // A comparison by an attribute that is also narrowed to one value is no comparison.
     compare:
-      catalog.compare.some((c) => c.key === choices.compare) && filters[choices.compare] === undefined
+      catalog.compare.some((c) => c.key === choices.compare) && Object.keys(filters).length === 0
         ? choices.compare
         : '',
     filters,
@@ -281,23 +294,23 @@ export function niceTicks(min: number, max: number, count = 5): number[] {
   return ticks
 }
 
-/** The value axis for the visible points: counts, money and bars start at
- * zero; rates and averages fit the data with a minimum span so a flat line
- * is not drawn as a steep one. */
+/** The value axis for the visible points: counts, money, rates and bars
+ * start at zero; averages (a GPA) fit the data with a minimum span so a flat
+ * line is not drawn as a steep one, and the chart marks the broken axis. */
 export function valueDomain(values: number[], kind: ValueKind, form: 'line' | 'bar'): [number, number] {
   if (values.length === 0) return [0, 1]
   const lo = Math.min(...values)
   const hi = Math.max(...values)
-  if (form === 'bar' || kind === 'count' || kind === 'dollars') {
+  if (form === 'bar' || kind === 'count' || kind === 'dollars' || kind === 'pct') {
     return [0, hi > 0 ? hi : 1]
   }
-  const minimumSpan = kind === 'pct' ? 10 : kind === 'gpa' ? 0.5 : Math.max(Math.abs(hi) * 0.1, 1)
+  const minimumSpan = kind === 'gpa' ? 0.5 : Math.max(Math.abs(hi) * 0.1, 1)
   const span = Math.max(hi - lo, minimumSpan)
   const middle = (hi + lo) / 2
   let low = middle - span / 2
   let high = middle + span / 2
   const floor = 0
-  const ceiling = kind === 'pct' ? 100 : kind === 'gpa' ? 4 : Infinity
+  const ceiling = kind === 'gpa' ? 4 : Infinity
   if (low < floor) {
     high += floor - low
     low = floor

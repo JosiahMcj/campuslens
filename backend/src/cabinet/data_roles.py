@@ -9,9 +9,12 @@ To give a new role dashboards, add one entry, e.g. for a finance office::
 
     "finance": ("finances",),
 
-and that role gets the Data page with the Student finances dashboard; the
-route table, the catalog the page reads, and the per-chart check all follow
-from this dict. Dashboard ids are the keys of ``cabinet.dashboards.DASHBOARDS``.
+(and, to let it narrow or compare by Pell status, add it to
+RESTRICTED_ATTRIBUTES). That role then gets the Data page with the Student
+finances dashboard; the route table, the catalog the page reads, and the
+per-chart check all follow from these dicts. The UI's sidebar row reads
+DATA_PAGE_ROLES in ui/src/dataPage.ts, which mirrors this table. Dashboard
+ids are the keys of ``cabinet.dashboards.DASHBOARDS``.
 """
 
 from __future__ import annotations
@@ -38,7 +41,26 @@ ROLE_DASHBOARDS: dict[str, tuple[str, ...]] = {
     ROLE_REVIEWER: (STUDENTS,),
     # The administrator manages the system, not the figures.
     ROLE_ADMIN: (),
+    # The department roles (added on the role-logins branch; inert until
+    # those roles exist): finance sees student finances, the registrar and
+    # student life see students, IT sees none.
+    "finance": (FINANCES,),
+    "registrar": (STUDENTS,),
+    "studentlife": (STUDENTS,),
+    "it": (),
 }
+
+# Attributes that say something about a student's finances: only these
+# roles may narrow or split a chart by them (any chart, not only the
+# finance dashboard). Every other attribute is open to every Data role.
+RESTRICTED_ATTRIBUTES: dict[str, tuple[str, ...]] = {
+    "pell": (ROLE_EXECUTIVE, ROLE_AID, "finance"),
+}
+
+
+def attribute_allowed(role: str, key: str) -> bool:
+    roles = RESTRICTED_ATTRIBUTES.get(key)
+    return roles is None or role in roles
 
 
 def dashboards_for(role: str) -> tuple[str, ...]:

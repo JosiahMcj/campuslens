@@ -123,13 +123,15 @@ export function DataPage({ account }: DataPageProps) {
   }, [])
 
   const update = (patch: Partial<DataChoices>) => setChoices((current) => ({ ...current, ...patch }))
-  const setFilter = (key: string, value: string) =>
-    setChoices((current) => {
-      const filters = { ...current.filters }
-      if (value === '') delete filters[key]
-      else filters[key] = value
-      return { ...current, filters, compare: current.compare === key && value !== '' ? '' : current.compare }
-    })
+  // One group OR one comparison, never both: choosing either clears the other.
+  const setGroup = (key: string, value: string) =>
+    setChoices((current) => ({
+      ...current,
+      filters: key === '' || value === '' ? {} : { [key]: value },
+      compare: key === '' || value === '' ? current.compare : '',
+    }))
+  const setCompare = (key: string) =>
+    setChoices((current) => ({ ...current, compare: key, filters: key === '' ? current.filters : {} }))
 
   if (catalog.kind === 'loading') {
     return (
@@ -157,7 +159,7 @@ export function DataPage({ account }: DataPageProps) {
       </div>
     )
   }
-  const filterCount = Object.keys(choices.filters).length
+  const group = Object.entries(choices.filters)[0] ?? null
   const labelOf = (key: string, value: string) => {
     const spec = data.filters.find((f) => f.key === key)
     return {
@@ -226,67 +228,59 @@ export function DataPage({ account }: DataPageProps) {
               ))}
             </select>
           </label>
-          <label className="data-field">
-            <span>Compare by</span>
-            <select className="field" value={choices.compare} onChange={(e) => update({ compare: e.target.value })}>
-              <option value="">No comparison</option>
-              {data.compare
-                .filter((c) => choices.filters[c.key] === undefined)
-                .map((c) => (
-                  <option key={c.key} value={c.key}>
-                    {c.label}
-                  </option>
-                ))}
-            </select>
-          </label>
-        </div>
-
-        <details className="fold data-narrow">
-          <summary>Narrow to a group of students{filterCount > 0 ? ` (${filterCount} set)` : ''}</summary>
-          <div className="data-filter-grid">
-            {data.filters.map((spec) => (
-              <label key={spec.key} className="data-field">
-                <span>{spec.label}</span>
-                <select
-                  className="field"
-                  value={choices.filters[spec.key] ?? ''}
-                  onChange={(e) => setFilter(spec.key, e.target.value)}
-                >
-                  <option value="">All</option>
+          <label className="data-field data-field-wide">
+            <span>Students</span>
+            <select
+              className="field"
+              value={group === null ? '' : `${group[0]}=${group[1]}`}
+              onChange={(e) => {
+                const [key = '', value = ''] = e.target.value.split('=')
+                setGroup(key, value)
+              }}
+            >
+              <option value="">All students</option>
+              {data.filters.map((spec) => (
+                <optgroup key={spec.key} label={spec.label}>
                   {spec.options.map((o) => (
-                    <option key={o.value} value={o.value}>
+                    <option key={o.value} value={`${spec.key}=${o.value}`}>
                       {o.label}
                     </option>
                   ))}
-                </select>
-              </label>
-            ))}
-          </div>
-        </details>
+                </optgroup>
+              ))}
+            </select>
+          </label>
+          <label className="data-field">
+            <span>Compare by</span>
+            <select className="field" value={choices.compare} onChange={(e) => setCompare(e.target.value)}>
+              <option value="">No comparison</option>
+              {data.compare.map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <p className="data-hint">
+          Show one group of students, or compare groups. Not both at once: choosing one clears the
+          other, so a group of fewer than {data.minimum_cell_size} students can never be worked out.
+        </p>
 
-        {filterCount > 0 && (
+        {group !== null && (
           <div className="data-chips">
             <span className="data-chips-label">Showing only</span>
-            <ul>
-              {Object.entries(choices.filters).map(([key, value]) => {
-                const label = labelOf(key, value)
-                return (
-                  <li key={key}>
-                    <button
-                      type="button"
-                      className="data-chip"
-                      aria-label={`Remove ${label.key}: ${label.value}`}
-                      onClick={() => setFilter(key, '')}
-                    >
-                      {label.value}
-                      <span aria-hidden="true"> ×</span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-            <button type="button" className="btn-secondary" onClick={() => update({ filters: {} })}>
-              Clear filters
+            <button
+              type="button"
+              className="data-chip"
+              aria-label={`Remove ${labelOf(group[0], group[1]).key}: ${labelOf(group[0], group[1]).value}`}
+              onClick={() => setGroup('', '')}
+            >
+              {labelOf(group[0], group[1]).value}
+              <span aria-hidden="true"> ×</span>
+            </button>
+            <button type="button" className="btn-secondary" onClick={() => setGroup('', '')}>
+              Show all students
             </button>
           </div>
         )}
@@ -303,7 +297,7 @@ export function DataPage({ account }: DataPageProps) {
             from={choices.from}
             to={choices.to}
             onRetry={() => retryChart(query)}
-            onPick={(split, series) => setFilter(split, series.key)}
+            onPick={(split, series) => setGroup(split, series.key)}
           />
         ))}
       </div>
