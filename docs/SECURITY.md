@@ -78,6 +78,17 @@ it cannot ask, sign off on a decision, prepare or send a message, or read the au
 | `reviewer` | no | yes | yes | no | yes | no | no |
 | `aid` | no | yes | no | no | yes | yes | no |
 
+**Student ids in the findings.** `GET /findings` is open to every role, but the
+pseudonymous student ids behind each figure (every `row_ids` list, M5's per-office
+`hold_row_ids`, and M8's per-student `row_rules`) go to the `executive` and `admin`
+roles only (`ROW_ROLES` in `cabinet/security.py`), because their work acts on the
+records. For `staff`, `reviewer`, and `aid` the server empties every list in its usual
+shape, removes the per-student indicator map, and adds `rows_withheld: true` and
+`row_counts`, the number of records behind the figure. Those roles keep every figure
+and every per-office and per-indicator count, and the evidence drawer tells them the
+list is shown to executives and administrators only. The cached findings are never
+modified, so the executive's and admin's view stays whole.
+
 Every route except `GET /health`, `GET /ready`, and `POST
 /auth/login` requires a session, and each route has an explicit role allow-list
 in `cabinet/security.py` (`ROUTE_ROLES`). No session is a 401, and the wrong

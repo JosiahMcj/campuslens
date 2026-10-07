@@ -203,6 +203,7 @@ from cabinet.permissions import (
     ROLE_TASK_FIELDS,
     ROLES,
     FieldRequestRefused,
+    findings_without_rows,
     request_fields,
 )
 from cabinet.provider import (
@@ -225,6 +226,7 @@ from cabinet.questions import DEMO_DECISION_ID as DEMO_DECISION_ID
 from cabinet.questions import OUT_OF_SCOPE_REFUSAL as OUT_OF_SCOPE_REFUSAL
 from cabinet.security import (
     GENERIC_LOGIN_ERROR,
+    ROW_ROLES,
     CabinetSecurityMiddleware,
     LoginLockout,
 )
@@ -736,8 +738,14 @@ def create_app(
     @app.get("/findings")
     def get_findings(request: Request) -> dict[str, Any]:
         """The findings computed from the caller's institution's active
-        dataset (row IDs included, for the evidence drawer)."""
-        return runtime_for(request_institution(request)).findings
+        dataset. The student ids behind each figure (the evidence drawer's
+        records) go to the executive and admin roles only (``ROW_ROLES``);
+        staff, reviewer, and aid get the figures and counts with every id
+        removed (``permissions.findings_without_rows``)."""
+        findings_obj = runtime_for(request_institution(request)).findings
+        if request.scope["cabinet_user"]["role"] in ROW_ROLES:
+            return findings_obj
+        return findings_without_rows(findings_obj)
 
     @app.get("/events")
     def get_events(

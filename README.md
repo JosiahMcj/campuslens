@@ -55,8 +55,9 @@ for an unresolved financial hold under $1,000, no advising appointment this term
 unresolved holds at more than one office, or registration closing within 14 days.
 A student has indicators when at least one rule fires. The rules never combine
 into a weighting or sum, no model ever sees the per-student detail, and the
-evidence drawer shows exactly which rules fired for each pseudonymous id, with the
-rule's reason.
+evidence drawer shows executives and administrators exactly which rules fired for
+each pseudonymous id, with the rule's reason. Staff, reviewers, and Financial Aid
+staff see the per-rule counts only.
 
 Explore answers specific questions over Demonstration University, the synthetic school
 in `data/school/` ("Which major has the lowest GPA? In that major, what is historically
@@ -312,8 +313,10 @@ record/replay path are provider-agnostic.
 We validate every analyst output before it is shown. Each claim must carry a finding ID
 the role received (`[M2]` style), and every numeral in the text must equal a value,
 `display`, or comparison number in the received findings
-(`backend/src/cabinet/analysts.py`). The model never receives row IDs, and the
-evidence drawer reads those from `GET /findings`. A failure is logged and returned as
+(`backend/src/cabinet/analysts.py`). The model never receives row IDs. The
+evidence drawer reads those from `GET /findings`, which carries them for the
+executive and admin roles only; for every other role the server empties each list
+and sends `rows_withheld: true` with the record count instead. A failure is logged and returned as
 unavailable, never rendered.
 
 `POST /ask` accepts only the approved questions. The question registry
