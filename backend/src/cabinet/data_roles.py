@@ -7,7 +7,7 @@ refused the Data routes (403) and has no Data page.
 
 To give a new role dashboards, add one entry, e.g. for a finance office::
 
-    "finance": ("finances",),
+    "registrar": ("students",),
 
 (and, to let it narrow or compare by Pell status, add it to
 RESTRICTED_ATTRIBUTES). That role then gets the Data page with the Student
