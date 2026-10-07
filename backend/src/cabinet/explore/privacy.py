@@ -11,8 +11,10 @@ code, before the planner (rule or model) sees them, and each is recorded as
   answer.
 - ``individual_student``: one named or numbered student, or a list of
   students. The restricted data is never answered; the API answers the
-  nearest totals for students like that from the rule planner only (a typed
-  name or id never reaches a model), or suggests questions.
+  nearest totals for students like that from the rule planner only (the
+  question is not sent to the model planner), or suggests questions. Names
+  are found by ``mask_names``, an allow list: every word that is not a
+  catalog name, campus phrase, acronym or common word is treated as one.
 - ``prediction``: what one student will do, a risk score, or a flag on
   students. Answered like an individual question.
 
@@ -29,6 +31,7 @@ totals, while a leaked individual answer cannot be taken back.
 
 from __future__ import annotations
 
+import functools
 import re
 import unicodedata
 
@@ -207,204 +210,239 @@ _PERSON_RES = (
     ),
 )
 # Words that are never a person's name in these patterns.
-_NOT_NAMES = frozenset(
-    [
-        "a",
-        "an",
-        "the",
-        "our",
-        "my",
-        "your",
-        "their",
-        "his",
-        "her",
-        "its",
-        "this",
-        "that",
-        "these",
-        "those",
-        "any",
-        "all",
-        "some",
-        "each",
-        "every",
-        "many",
-        "most",
-        "more",
-        "less",
-        "fewer",
-        "few",
-        "much",
-        "no",
-        "none",
-        "other",
-        "others",
-        "such",
-        "same",
-        "student",
-        "students",
-        "student's",
-        "learners",
-        "pupils",
-        "people",
-        "person",
-        "persons",
-        "kids",
-        "anyone",
-        "anybody",
-        "someone",
-        "somebody",
-        "everyone",
-        "everybody",
-        "nobody",
-        "one",
-        "we",
-        "they",
-        "he",
-        "she",
-        "it",
-        "i",
-        "you",
-        "me",
-        "us",
-        "them",
-        "him",
-        "who",
-        "what",
-        "which",
-        "whom",
-        "whose",
-        "there",
-        "here",
-        "enrollment",
-        "enrolment",
-        "retention",
-        "headcount",
-        "gpa",
-        "gpas",
-        "grades",
-        "rate",
-        "rates",
-        "average",
-        "overall",
-        "total",
-        "number",
-        "freshman",
-        "freshmen",
-        "sophomore",
-        "sophomores",
-        "junior",
-        "juniors",
-        "senior",
-        "seniors",
-        "first",
-        "second",
-        "third",
-        "fourth",
-        "first-gen",
-        "first-generation",
-        "transfer",
-        "transfers",
-        "international",
-        "online",
-        "in-person",
-        "hybrid",
-        "part-time",
-        "full-time",
-        "pell",
-        "athletes",
-        "athlete",
-        "honors",
-        "women",
-        "men",
-        "female",
-        "male",
-        "major",
-        "majors",
-        "class",
-        "classes",
-        "course",
-        "courses",
-        "college",
-        "colleges",
-        "program",
-        "programs",
-        "department",
-        "departments",
-        "faculty",
-        "instructor",
-        "instructors",
-        "professor",
-        "professors",
-        "campus",
-        "university",
-        "school",
-        "fall",
-        "spring",
-        "summer",
-        "term",
-        "terms",
-        "semester",
-        "semesters",
-        "year",
-        "years",
-        "cohort",
-        "cohorts",
-        "graduates",
-        "graduation",
-        "dropout",
-        "dropouts",
-        "not",
-        "also",
-        "still",
-        "ever",
-        "already",
-        "really",
-        "actually",
-        "just",
-        "even",
-        "likely",
-        "going",
-        "expected",
-        "able",
-        "enough",
-        "to",
-        "be",
-        "been",
-        "being",
-        "do",
-        "does",
-        "did",
-        "doing",
-        "of",
-        "in",
-        "on",
-        "at",
-        "for",
-        "with",
-        "by",
-        "from",
-        "as",
-        "and",
-        "or",
-        "nor",
-        "but",
-        "if",
-        "so",
-        "well",
-        "highest",
-        "lowest",
-        "best",
-        "worst",
-        "most",
-        "least",
-        "top",
-        "bottom",
-        "hardest",
-        "easiest",
-    ]
-)
+_NOT_NAMES_TEXT = """
+    a an the our my your their his her its this that these those any all some each
+    every many most more less fewer few much no none other others such same student
+    students student's learners pupils people person persons kids anyone anybody
+    someone somebody everyone everybody nobody one we they he she it i you me us
+    them him who what which whom whose there here enrollment enrolment retention
+    headcount gpa gpas grades rate rates average overall total number freshman
+    freshmen sophomore sophomores junior juniors senior seniors first second third
+    fourth first-gen first-generation transfer transfers international online in-
+    person hybrid part-time full-time pell athletes athlete honors women men female
+    male major majors class classes course courses college colleges program programs
+    department departments faculty instructor instructors professor professors
+    campus university school fall spring summer term terms semester semesters year
+    years cohort cohorts graduates graduation dropout dropouts not also still ever
+    already really actually just even likely going expected able enough to be been
+    being do does did doing of in on at for with by from as and or nor but if so
+    well highest lowest best worst most least top bottom hardest easiest
+"""
+_NOT_NAMES = frozenset(_NOT_NAMES_TEXT.split())
 _STOP_INITIALS = frozenset({"What", "Which", "How", "Who", "Why", "When", "Where"})
+
+
+# --- allow-list masking -------------------------------------------------------
+#
+# A pattern cannot list every way to ask about a person ("Tell me about Kenji
+# Watanabe in Nursing", "I'm advising Hannah Lee; ..."), so every capitalized
+# word that is not on an allow list is treated as a name: catalog names
+# (majors, colleges, subjects, course codes and titles, instructors, terms),
+# campus phrases (hold offices, ...), acronyms, and the common English and
+# campus words below. A lowercase word is a name only in a name position
+# ("mary jane watson's gpa", "did jane doe pass").
+
+# Common words a question may capitalize (a sentence start, a title, emphasis).
+_COMMON_WORDS_TEXT = """
+    a about above across after again against all almost along also although always
+    am among an and another any anyone anything are aren't around as ask at average
+    away back based be because been before behind being below best better between
+    both but by can can't cannot change changed changes check compare compared
+    comparison could couldn't count counts data day days did didn't difference do
+    does doesn't doing don't down during each either else enough even ever every
+    everyone exactly explain fall few fewer find first for from full get give given
+    go going good great had has hasn't have haven't having he help her here hers him
+    his how however i i'd i'll i'm i've if in include including instead into is
+    isn't it it's its just know last least less let let's like likely list lot low
+    lower lowest make many may maybe me might more most much must my need new next
+    no none nor not now number of off often old on once one only or other others our
+    ours out over overall own part past per percent percentage please plus pull
+    quick quickly rank ranked rate rates rather really recent recently right same
+    say see she should show showing since so some something sorry still such summary
+    take tell than thank thanks that that's the their theirs them then there there's
+    these they this those though through to today together too top total totals
+    trend true under until up us use used very was wasn't way we we're well were
+    weren't what what's whats when where whether which while who who's whom whose
+    why will with within without won't would wouldn't year years yes yet you your
+    yours actually also already anyway approximately around basically currently
+    especially hey hi hello ok okay so well yeah sure great cool monday tuesday
+    wednesday thursday friday saturday sunday january february march april may june
+    july august september october november december fall spring summer winter autumn
+    zero two three four five six seven eight nine ten hundred thousand student
+    students learner learners pupil pupils people person kids alumni university
+    college colleges campus school department departments office offices program
+    programs major majors minor minors course courses class classes section sections
+    term terms semester semesters cohort cohorts faculty instructor instructors
+    professor professors advisor advisors adviser dean provost president registrar
+    library bursar admissions housing dining athletics athlete athletes team teams
+    club clubs honors gpa gpas grade grades credit credits hour hours enrollment
+    enrolled enroll retention retained graduation graduate graduates graduated
+    dropout dropouts withdrawal withdrawals probation suspension standing hold holds
+    advising financial aid pell scholarship scholarships tuition fees transfer
+    transfers freshman freshmen sophomore sophomores junior juniors senior seniors
+    undergraduate undergraduates graduate first-generation first-gen international
+    domestic in-state out-of-state online hybrid in-person part-time full-time women
+    men female male gender race ethnicity hispanic latino latina latinx black white
+    asian american native pacific islander alaska hawaiian nonresident multiracial
+    veteran veterans accounts life main academic student-life headcount yield
+    applicants applications admitted admit accepted acceptance deposits dfw stem
+"""
+# Short and common names of subjects people type ("failed Calc").
+_ABBREVIATIONS_TEXT = """
+    calc precalc trig chem ochem orgo bio biochem psych econ stats comp sci eng lit
+    phys gen ed intro algebra calculus chemistry biology physics nursing math
+"""
+COMMON_WORDS = frozenset((_COMMON_WORDS_TEXT + _ABBREVIATIONS_TEXT).split())
+# Multi-word campus names the catalog does not list.
+CAMPUS_PHRASES = (
+    "Student Accounts",
+    "Academic Advising",
+    "Student Life",
+    "Main Campus",
+    "Financial Aid",
+    "Dean of Students",
+    "Office of the Registrar",
+    "Institutional Research",
+)
+_WORD_TOKEN_RE = re.compile(r"[^\W\d_][\w'’-]*")
+_POSSESSIVE_TAIL_RE = re.compile(r"(?:'s|’s|'|’)$")
+# A lowercase run that ends in a possessive before a record word ("mary jane
+# watson's gpa", "jane's transcript").
+_LOW_POSSESSIVE_RE = re.compile(
+    r"((?:[^\W\d_][\w'’-]*\s+){0,2}[^\W\d_][\w-]*)(?:'s|’s)\s+(?:gpa|grades?|"
+    r"transcripts?|records?|schedules?|holds?|standing|major|classes|courses|file|"
+    r"profile|roommates?|advisors?|chances?|odds|status|credits?|balance)\b",
+    re.IGNORECASE,
+)
+
+
+@functools.lru_cache(maxsize=8)
+def _allowed_words(names: tuple[str, ...]) -> frozenset[str]:
+    """Words of catalog names (lowercase) that may appear capitalized. Person
+    names in the catalog (instructors) are protected only as whole names."""
+    words: set[str] = set()
+    for name in names:
+        if " (fictional)" in name or _looks_like_person(name):
+            continue
+        words.update(w.lower() for w in _WORD_TOKEN_RE.findall(name))
+    return frozenset(words)
+
+
+def _looks_like_person(name: str) -> bool:
+    """An instructor's "First Last": two or three capitalized words, none of
+    them a common or campus word."""
+    parts = name.split()
+    return (
+        2 <= len(parts) <= 3
+        and all(p[:1].isupper() and p.isalpha() for p in parts)
+        and not any(p.lower() in COMMON_WORDS for p in parts)
+    )
+
+
+def _protected_spans(text: str, names: tuple[str, ...]) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    pattern = _names_re((*names, *CAMPUS_PHRASES), True)
+    if pattern is not None:
+        spans.extend(match.span() for match in pattern.finditer(text))
+    # Course codes ("MEEN 3310") and term names ("Fall 2025").
+    for match in re.finditer(
+        r"\b[A-Z]{2,4}\s?-?\d{4}\b|\b(?:fall|spring|summer)\s+20\d\d\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        spans.append(match.span())
+    return spans
+
+
+def _is_allowed(token: str, allowed: frozenset[str]) -> bool:
+    base = _POSSESSIVE_TAIL_RE.sub("", token)
+    low = base.lower()
+    if low in COMMON_WORDS or low in allowed or low in _NOT_NAMES:
+        return True
+    if base.isupper() and len(base) <= 5:  # an acronym: GPA, DFW, CS, STEM
+        return True
+    if any(ch.isdigit() for ch in base):  # a code: I-0003, MATH1314
+        return True
+    if _CAMPUS_WORDS_RE.fullmatch(low):
+        return True
+    # A hyphenated campus word ("first-generation", "Spring-to-spring").
+    return "-" in low and all(
+        part in COMMON_WORDS or part in allowed or not part or part == "to"
+        for part in low.split("-")
+    )
+
+
+def mask_names(question: str, names: tuple[str, ...] = ()) -> tuple[str, list[str]]:
+    """(the question with every word that may be a person's name replaced by
+    "[name]", the words replaced). Catalog names, campus phrases, acronyms
+    and common words are kept; a capitalized word starting a sentence is kept
+    unless the next word is another unknown capitalized word."""
+    text = fold(question)
+    allowed = _allowed_words(names)
+    spans = _protected_spans(text, names)
+
+    def protected(start: int, end: int) -> bool:
+        return any(a <= start and end <= b for a, b in spans)
+
+    tokens = [
+        m for m in _WORD_TOKEN_RE.finditer(text) if not protected(m.start(), m.end())
+    ]
+    # Without the catalog (a caller with no names) only the name patterns
+    # below apply: every major and course would read as unknown.
+    unknown = {
+        m.start()
+        for m in tokens
+        if names
+        if any(ch.isupper() for ch in m.group(0))
+        and not _is_allowed(m.group(0), allowed)
+    }
+    hide: list[tuple[int, int]] = []
+    for i, m in enumerate(tokens):
+        if m.start() not in unknown:
+            continue
+        before = text[: m.start()].rstrip()
+        starts_sentence = not before or before[-1] in ".?!;:"
+        if starts_sentence:
+            nxt = tokens[i + 1] if i + 1 < len(tokens) else None
+            followed = (
+                nxt is not None
+                and nxt.start() in unknown
+                and (text[m.end() : nxt.start()].strip() == "")
+            )
+            possessive = _POSSESSIVE_TAIL_RE.search(m.group(0)) is not None
+            if not (followed or possessive):
+                continue
+        hide.append(m.span())
+    # Lowercase names in a name position.
+    for match in _LOW_POSSESSIVE_RE.finditer(text):
+        for part in _WORD_TOKEN_RE.finditer(match.group(1)):
+            start = match.start(1) + part.start()
+            token = part.group(0)
+            if not _is_allowed(token, allowed) and not protected(
+                start, start + len(token)
+            ):
+                hide.append((start, start + len(token)))
+    for name in person_names(text, names):
+        for word in name.split():
+            for hit in re.finditer(rf"(?<![\w'’-]){re.escape(word)}(?![\w-])", text):
+                if not protected(*hit.span()):
+                    hide.append(hit.span())
+    if not hide:
+        return text, []
+    hidden: list[str] = []
+    out = []
+    last = 0
+    for start, end in sorted(set(hide)):
+        if start < last:
+            continue
+        out.append(text[last:start])
+        token = text[start:end]
+        hidden.append(_POSSESSIVE_TAIL_RE.sub("", token))
+        out.append("[name]" + ("'s" if _POSSESSIVE_TAIL_RE.search(token) else ""))
+        last = end
+    out.append(text[last:])
+    masked = re.sub(r"\[name\](?:\s+\[name\])+", "[name]", "".join(out))
+    return masked, hidden
 
 
 def person_names(question: str, names: tuple[str, ...] = ()) -> list[str]:
@@ -416,6 +454,16 @@ def person_names(question: str, names: tuple[str, ...] = ()) -> list[str]:
         for match in pattern.finditer(masked):
             for one in re.split(r"\s*(?:,|\band\b|\bor\b|&)\s*", match.group("name")):
                 _add_name(one.split(), found)
+    allowed = _allowed_words(names)
+    # A run of catalog or campus words ("Does Engineering have ...", "Does
+    # Student Accounts have ...") is not a person.
+    found = [
+        name
+        for name in found
+        if not all(_is_allowed(word, allowed) for word in name.split())
+        or name.islower()
+        and not all(word.lower() in COMMON_WORDS for word in name.split())
+    ]
     return sorted(set(found), key=len, reverse=True)
 
 
@@ -434,22 +482,13 @@ def _add_name(words: list[str], found: list[str]) -> None:
 
 
 def strip_names(question: str, names: tuple[str, ...] = ()) -> str:
-    """The question with every person name and student id replaced by
-    "[name withheld]" / "[number withheld]": what the audit log stores."""
+    """The question with every student id replaced by "[number withheld]"
+    and every word that may be a person's name by "[name withheld]"
+    (``mask_names``): what the audit log stores."""
     text = _REDACT_RE.sub("[number withheld]", question)
-    for _ in range(5):  # several names ("Jane Doe and John Smith")
-        found = person_names(text, names)
-        if not found:
-            break
-        for name in found:
-            for word in name.split():
-                text = re.sub(
-                    rf"(?<![\w'’-]){re.escape(word)}(?:'s|’s)?(?![\w-])",
-                    "[name withheld]",
-                    text,
-                )
-        text = re.sub(r"(?:\[name withheld\]\s*)+", "[name withheld] ", text)
-    return " ".join(text.split())
+    masked, _ = mask_names(text, names)
+    masked = masked.replace("[name]", "[name withheld]")
+    return " ".join(masked.split())
 
 
 _INDIVIDUAL_RE = re.compile(
@@ -539,7 +578,9 @@ _CAMPUS_WORDS_RE = re.compile(
     r"freshm[ae]n|sophomores?|juniors?|seniors?|alumni|campus|universit\w*|"
     r"dfw|cohorts?|transfer\w*|athlet\w*|honors|housing|registration|regist\w*|"
     r"pass\s+rates?|fail\w*\s+rates?|departments?|applicants?|applications?|"
-    r"admissions?|admit\w*|people|kids|undergrad\w*|grad\s+students?|"
+    r"admissions?|admit\w*|people|kids|undergrad\w*|grad\s+students?|yield|"
+    r"acceptance\s+rates?|deposits?|scholarships?|financial\s+aid|endowment|"
+    r"alumni|staff|library|dining|clubs?|dorms?|residence\s+halls?|parking|"
     r"[A-Z]{2,4}\s?-?\d{4})\b",
     re.IGNORECASE,
 )
@@ -617,14 +658,24 @@ def fold(question: str) -> str:
     return re.sub(r"[\w@]+", word, text)
 
 
+@functools.lru_cache(maxsize=8)
+def _names_re(names: tuple[str, ...], bounded: bool) -> re.Pattern[str] | None:
+    """One pattern for every catalog name of 4 or more characters, longest
+    first (compiled once per catalog)."""
+    parts = sorted({n for n in names if len(n) >= 4}, key=len, reverse=True)
+    if not parts:
+        return None
+    body = "|".join(re.escape(n) for n in parts)
+    if bounded:
+        body = rf"(?<![\w-])(?:{body})(?![\w-])"
+    return re.compile(body, re.IGNORECASE)
+
+
 def _mask(question: str, names: tuple[str, ...]) -> str:
     """The question with catalog names (course titles, majors) blanked, so a
     title like "Theories of Counseling" is not read as a counseling question."""
-    masked = question
-    for name in sorted(names, key=len, reverse=True):
-        if len(name) >= 4:
-            masked = re.sub(re.escape(name), " ", masked, flags=re.IGNORECASE)
-    return masked
+    pattern = _names_re(names, False)
+    return question if pattern is None else pattern.sub(" ", question)
 
 
 def refusal_for(question: str, names: tuple[str, ...] = ()) -> tuple[str, str] | None:
@@ -648,7 +699,7 @@ def refusal_for(question: str, names: tuple[str, ...] = ()) -> tuple[str, str] |
         or _INDIVIDUAL_EXTRA_RE.search(folded)
     ):
         return "individual_student", INDIVIDUAL_REFUSAL
-    if person_names(question, names):
+    if mask_names(question, names)[1]:
         # One named person: a prediction when the question asks what they
         # will do ("Will Jane drop out?").
         if is_forward_looking(question):
@@ -694,6 +745,8 @@ _FUTURE = (
     r"(?:will|would|might|may|could|gonna|(?:are|is)\s+(?:likely|going|expected)\s+to|"
     r"(?:likely|going|expected|projected)\s+to)"
 )
+# The words between "will" and the verb, kept ("will Pell students graduate").
+_MID = r"(?P<mid>(?:[\w-]+\s+){0,3}?)"
 # (future phrase, the historical measure words the rule planner reads).
 _FORWARD_REWRITES: tuple[tuple[str, str], ...] = (
     (
@@ -704,33 +757,39 @@ _FORWARD_REWRITES: tuple[tuple[str, str], ...] = (
         " enrollment over time ",
     ),
     (
-        rf"\b{_FUTURE}\s+(?:\w+\s+)?stop\s*[- ]?out\b",
+        rf"\b{_FUTURE}\s+{_MID}stop\s*[- ]?out\b",
         " stop-out rate ",
     ),
     (
-        rf"\b{_FUTURE}\s+(?:\w+\s+)?(?:drop\s*[- ]?out|drop|leave|quit|not\s+"
+        rf"\b{_FUTURE}\s+{_MID}(?:drop\s*[- ]?out|drop|leave|quit|not\s+"
         r"(?:come\s+back|return|finish)|be\s+lost)\b(?:\s+(?:of\s+)?(?:school|"
         r"college|the\s+university))?",
         " dropout rate ",
     ),
     (
-        rf"\b{_FUTURE}\s+(?:\w+\s+)?(?:graduate|finish|complete\s+(?:a|their)\s+"
+        rf"\b{_FUTURE}\s+{_MID}(?:graduate|finish|complete\s+(?:a|their)\s+"
         r"degree|get\s+(?:a|their)\s+degree)\b(?:\s+on\s+time)?",
         " graduation rate ",
     ),
     (
-        rf"\b{_FUTURE}\s+(?:\w+\s+)?(?:return|come\s+back|stay|persist|be\s+retained)"
+        rf"\b{_FUTURE}\s+{_MID}(?:return|come\s+back|stay|persist|be\s+retained)"
         r"\b(?:\s+for\s+(?:a|their)\s+second\s+year)?",
         " retention ",
     ),
-    (rf"\b{_FUTURE}\s+(?:\w+\s+)?fail\b", " DFW rate "),
-    (rf"\b{_FUTURE}\s+(?:\w+\s+)?withdraw\b", " withdrawal rate "),
+    (rf"\b{_FUTURE}\s+{_MID}fail\b", " DFW rate "),
+    (rf"\b{_FUTURE}\s+{_MID}withdraw\b", " withdrawal rate "),
     (
-        rf"\b{_FUTURE}\s+(?:\w+\s+)?(?:be\s+)?(?:put\s+)?on\s+probation\b",
+        rf"\b{_FUTURE}\s+{_MID}(?:be\s+)?(?:put\s+)?on\s+probation\b",
         " probation rate ",
     ),
-    (rf"\b{_FUTURE}\s+(?:\w+\s+)?be\s+suspended\b", " suspension rate "),
-    (rf"\b{_FUTURE}\s+(?:\w+\s+)?transfer(?:\s+out)?\b", " transfer-out rate "),
+    (
+        rf"\b{_FUTURE}\s+{_MID}be\s+suspended\b",
+        " suspension rate ",
+    ),
+    (
+        rf"\b{_FUTURE}\s+{_MID}transfer(?:\s+out)?\b",
+        " transfer-out rate ",
+    ),
     (
         r"\bat[- ]risk\s+of\s+(?:failing|a\s+dfw)\b",
         " DFW rate ",
@@ -751,9 +810,16 @@ _FUTURE_WORDS_RE = re.compile(
 # The outcome a forward question asks about, so a count question ("how many
 # students have holds and will drop") can also be read as a count now.
 _OUTCOME_RE = re.compile(
-    "|".join(f"(?:{pattern})" for pattern, _ in _FORWARD_REWRITES[1:]),
+    "|".join(
+        "(?:" + pattern.replace("(?P<mid>", "(?:") + ")"
+        for pattern, _ in _FORWARD_REWRITES[1:]
+    ),
     re.IGNORECASE,
 )
+
+
+def _keep_mid(words: str, match: re.Match[str]) -> str:
+    return " " + (match.groupdict().get("mid") or "") + words
 
 
 def historical_form(question: str) -> str:
@@ -762,7 +828,14 @@ def historical_form(question: str) -> str:
     "will enrollment fall next year" -> "enrollment over time"."""
     text = fold(question)
     for pattern, words in _FORWARD_REWRITES:
-        text = re.sub(pattern, words, text, flags=re.IGNORECASE)
+        # Keep the group named between "will" and the verb ("will Pell
+        # students graduate" -> "Pell students graduation rate").
+        text = re.sub(
+            pattern,
+            functools.partial(_keep_mid, words),
+            text,
+            flags=re.IGNORECASE,
+        )
     text = _FUTURE_WORDS_RE.sub(" ", text)
     return " ".join(text.split())
 
@@ -831,22 +904,19 @@ def aggregate_form(question: str, names: tuple[str, ...] = ()) -> tuple[str, boo
     if _STUDENT_ID_RE.search(text):
         named = True
         text = _STUDENT_ID_RE.sub(" students ", text)
-    for _ in range(5):  # every name, however many
-        found = person_names(text, names)
-        if not found:
-            break
+    masked, hidden = mask_names(text, names)
+    if hidden:
         named = True
-        for name in found:
-            for word in name.split():
-                text = re.sub(
-                    rf"(?<![\w'’-]){re.escape(word)}(?:'s|’s)?(?![\w-])", " ", text
-                )
+        text = re.sub(r"\[name\](?:'s|’s)?", " ", masked)
+        # "Jane and John pass" -> "pass"; "student named Ravi" -> "students".
         text = re.sub(
-            r"\s+(?:and|or|&)\s+(?=\s*(?:pass|fail|get|got|have|has|do|did))",
+            r"(?<=\s)(?:and|or|&|,)(?=\s+(?:and|or|&|,)?\s*(?:pass|fail|get|got|have|"
+            r"has|do|did|been|on|in)\b)",
             " ",
             text,
             flags=re.IGNORECASE,
         )
+        text = re.sub(r"\b(?:student|learner)\s+named\b", "students", text, flags=re.I)
         text = " ".join(text.split())
     if named:
         text = re.sub(
@@ -863,7 +933,7 @@ def aggregate_form(question: str, names: tuple[str, ...] = ()) -> tuple[str, boo
         )
     # "Did students pass MEEN 3310?": the course's D, F or withdrawal rate.
     text = re.sub(
-        r"\b(?:how\s+)?(?:did|does|do|has|have)\s+students\s+(?:(?:pass|fail|do|"
+        r"\b(?:how\s+)?(?:did|does|do|has|have)\s+(?:the\s+)?students\s+(?:(?:pass|fail|do|"
         r"perform)\b(?:\s+(?:in|at|on))?|(?:get|got)\s+(?:in|at|on)\b)",
         "the DFW rate in",
         text,

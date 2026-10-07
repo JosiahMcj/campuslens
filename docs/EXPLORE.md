@@ -334,11 +334,20 @@ events:
   "What is the DFW rate in Theories of Counseling?" is answered. Questions that rank or
   list students, name an id in any form, or ask who will do something are treated as
   questions about individuals (answered only with totals for students like that), and any
-  id or long number a person types is replaced before the question is recorded. A
-  person's name asked about ("Did Jane Doe pass MEEN 3310?", "will jane drop out", "Is
-  José Núñez on probation?", several names in one question) is caught in any case or
-  script, recorded as "[name withheld]", answered only with group totals from the rule
-  planner, and never sent to a model.
+  id or long number a person types is replaced before the question is recorded.
+- **Names are masked by an allow list** (`mask_names` in `explore/privacy.py`). Every
+  capitalized word that is not a catalog name (major, college, subject, course code or
+  title, instructor, term), a campus phrase (Student Accounts, Main Campus, ...), an
+  acronym or a common English or campus word is treated as a person's name, and so are
+  lowercase words in a name position ("mary jane watson's gpa", "did jane doe pass").
+  A question with a masked word takes the guarded path: it is audited as
+  `individual_student` (or `prediction`), answered only with group totals from the rule
+  planner or with suggestions, and recorded in the audit log with "[name withheld]".
+  Because such a question is answered by the rules, the model planner does not receive
+  it; the tests check this for every adversarial phrasing we have
+  (`tests/test_explore_name_mask.py`, `tests/test_explore_review_fixes.py`). The
+  masking is an allow list, not proof: a name that is also a catalog or common word
+  ("Lee" in a course title, a student named "May") can still pass unmasked.
 - **Instructor identities are for the executive and admin roles.** Staff and
   reviewers never see an instructor's id or name, not even in the parameters under "How
   this was answered", and the model planner receives the instructor list only for those
