@@ -4,6 +4,7 @@
 // Every call goes through apiFetch (ui/src/auth.ts): state-changing requests
 // carry the session's X-CSRF-Token, and a 401 anywhere signs the UI out.
 
+import { followUpFrom, type FollowUpResponse } from './followup'
 import type { AidQueueSummary } from './aid'
 import { ApiError, SessionEndedError, apiDetail, apiFetch, retryAfterFrom } from './auth'
 import {
@@ -518,6 +519,20 @@ export function refreshStudentSuccessBriefing(flags: UiFlags): Promise<AnalystBr
 // POST /explore answers from tables reviewed code computed; GET
 // /explore/catalog lists the example questions. The aid role gets a 403 on
 // both, so the page never calls them for that role (canExplore).
+
+/** POST /briefing/follow-up: a question about the registration briefing,
+ * answered in code (no model). ``hasBriefing`` says the conversation already
+ * shows one, so "the change" or "this plan" can lean on it. */
+export async function postFollowUp(
+  question: string,
+  hasBriefing: boolean,
+  flags: UiFlags,
+): Promise<FollowUpResponse> {
+  await maybeSlow(flags)
+  return followUpFrom(
+    await apiPost<unknown>('/briefing/follow-up', { question, has_briefing: hasBriefing }),
+  )
+}
 
 export async function postExplore(question: string, flags: UiFlags): Promise<ExploreResponse> {
   await maybeSlow(flags)
