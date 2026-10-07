@@ -65,7 +65,6 @@ from cabinet.explore.planner import (
     uses_model,
 )
 from cabinet.explore.privacy import (
-    COUNSELING_MESSAGE,
     COUNSELING_SUGGESTIONS,
     FORWARD_LEAD,
     INDIVIDUAL_LEAD,
@@ -74,6 +73,7 @@ from cabinet.explore.privacy import (
     OFF_TOPIC_REFUSAL,
     PREDICTION_LEAD,
     aggregate_form,
+    counseling_message,
     is_forward_looking,
     is_off_topic,
     mentions_campus_data,
@@ -417,7 +417,9 @@ def _explore(
                     content={
                         "refused": False,
                         "redirect": category,
-                        "message": COUNSELING_MESSAGE,
+                        # Explore answers as the Chief of Staff (the
+                        # audit actor), so the denial names it.
+                        "message": counseling_message(EXPLORE_ACTOR),
                         "answer": [],
                         "steps": [],
                         "suggestions": list(COUNSELING_SUGGESTIONS),

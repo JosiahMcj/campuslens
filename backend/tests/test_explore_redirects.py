@@ -30,12 +30,12 @@ from cabinet.explore.planner import (
     UNANSWERABLE_MESSAGE,
 )
 from cabinet.explore.privacy import (
-    COUNSELING_MESSAGE,
     FORWARD_LEAD,
     INDIVIDUAL_LEAD,
     INDIVIDUAL_MESSAGE,
     OFF_TOPIC_MESSAGE,
     PREDICTION_LEAD,
+    counseling_message,
     is_forward_looking,
     is_off_topic,
     refusal_for,
@@ -334,10 +334,15 @@ def test_counseling_never_gives_a_figure(
         "How many students saw a counselor?",
         "What share of students in Nursing used CAPS services?",
         "Do students who pray have higher GPAs?",
+        "Show me the chaplain's notes on first-year students",
+        "Pull the counseling records for students on probation",
+        "spiritual care notes for Nursing students",
     ):
         body = _ask(_client(app), question)
         assert body["refused"] is False and body["redirect"] == "counseling"
-        assert body["message"] == COUNSELING_MESSAGE
+        assert body["message"] == counseling_message("chief_of_staff")
+        assert body["message"].startswith("Access denied.")
+        assert "recorded in the audit log" in body["message"]
         assert body["answer"] == [] and body["steps"] == []
         assert not re.search(r"\d", body["message"])
         # Related questions, none of them about counseling.
@@ -440,3 +445,13 @@ def test_the_hold_rate_is_never_split_by_hold_status() -> None:
     with pytest.raises(GeneralError):
         check_request("hold_rate", ["hold"], {})
     check_request("dropout_rate", ["hold"], {})
+
+
+def test_the_counseling_denial_names_the_ai_employee() -> None:
+    assert "outside the Enrollment Analyst's authorized scope" in counseling_message(
+        "enrollment_analyst"
+    )
+    assert "outside CampusLens's authorized scope" in counseling_message()
+    assert "outside CampusLens's authorized scope" in counseling_message("unknown")
+    for employee in (None, "chief_of_staff", "enrollment_analyst"):
+        assert not re.search(r"\d", counseling_message(employee))

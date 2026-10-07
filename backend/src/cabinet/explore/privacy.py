@@ -53,11 +53,31 @@ OFF_TOPIC_REFUSAL = (
 # What the person reads: calm, plain lines that lead into an answer or into
 # questions CampusLens can answer. The counseling line refuses the topic,
 # totals included (the one authorized counseling count appears only in the
-# briefing, never as an answer to a typed question).
-COUNSELING_MESSAGE = (
-    "CampusLens keeps counseling and spiritual care out of its answers, even as "
-    "totals. It can help with related questions."
-)
+# briefing, never as an answer to a typed question; ``counseling_message``
+# below).
+# The AI employees, as a denial names them ("outside the Enrollment
+# Analyst's authorized scope").
+EMPLOYEE_NAMES = {
+    "chief_of_staff": "the Chief of Staff",
+    "enrollment_analyst": "the Enrollment Analyst",
+    "student_success_analyst": "the Student Success Analyst",
+}
+
+
+def counseling_message(employee: str | None = None) -> str:
+    """The calm, explicit denial for a counseling, chaplain or spiritual-care
+    request (notes, records or totals), naming the answering AI employee when
+    known. It carries no figure."""
+    name = EMPLOYEE_NAMES.get(employee or "")
+    scope = f"{name}'s" if name else "CampusLens's"
+    return (
+        "Access denied. Counseling and chaplain notes are outside "
+        f"{scope} authorized scope, and they aren't needed to answer registration "
+        "questions. This request has been recorded in the audit log."
+    )
+
+
+COUNSELING_MESSAGE = counseling_message()
 INDIVIDUAL_LEAD = (
     "CampusLens can't look up one student, but here are totals for students "
     "like that."

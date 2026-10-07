@@ -73,8 +73,8 @@ from cabinet.explore.planner import (
     validate_plan,
 )
 from cabinet.explore.privacy import (
-    COUNSELING_MESSAGE,
     COUNSELING_REFUSAL,
+    counseling_message,
     refusal_for,
 )
 from cabinet.provider import (
@@ -1459,7 +1459,9 @@ def test_counseling_question_gets_no_figure_and_related_questions(
 ) -> None:
     body = _ask(_client(app, "executive"), "How many students saw a counselor?")
     assert body["refused"] is False and body["redirect"] == "counseling"
-    assert body["message"] == COUNSELING_MESSAGE
+    assert body["message"] == counseling_message("chief_of_staff")
+    assert body["message"].startswith("Access denied.")
+    assert "the Chief of Staff's authorized scope" in body["message"]
     assert body["answer"] == [] and body["steps"] == []
     assert "not in this data" not in body["message"]
     assert not re.search(r"\d", body["message"])

@@ -188,10 +188,15 @@ in one plain sentence.
    `data.refused` (categories `counseling`, `individual_student`, `prediction`) before
    anything else runs. None of them is answered with the protected data, and none gets
    a dead-end card:
-   - **Counseling**: no figure at all, not even a total. The reply is "CampusLens keeps
-     counseling and spiritual care out of its answers, even as totals. It can help with
-     related questions like these." with three related questions (retention, holds,
-     advising). The briefing may still show its one authorized aggregate count.
+   - **Counseling, chaplain and spiritual care** (notes, records or totals): no figure
+     at all, not even a total. The reply is a calm, explicit denial, shown as a normal
+     answer (not the off-topic card): "Access denied. Counseling and chaplain notes are
+     outside the Chief of Staff's authorized scope, and they aren't needed to answer
+     registration questions. This request has been recorded in the audit log." Explore
+     answers as the Chief of Staff, so the denial names it (`counseling_message` names
+     any AI employee, such as the Enrollment Analyst, and says "CampusLens's" when none is
+     known). Three related questions follow (retention, holds, advising). The briefing
+     may still show its one authorized aggregate count.
    - **One student or a list of students**: the question is rewritten as a question about
      totals (`aggregate_form`: ids and names removed, "which students" read as "how
      many students") and planned by the **rule planner only**, so a typed name or id never
