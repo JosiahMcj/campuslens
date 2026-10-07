@@ -402,6 +402,58 @@ def test_unmappable_question_suggests_three_examples(app: FastAPI) -> None:
     assert answered["answered"] is False
 
 
+def test_greetings_get_examples_at_once_without_planning(app: FastAPI) -> None:
+    from cabinet.explore.planner import GREETING_MESSAGE
+
+    client = _client(app, "executive")
+    for text in ("hi", "Hello!", "hey there", "thanks", "What can you do?", "help"):
+        body = _ask(client, text)
+        assert body["refused"] is False, text
+        assert body["message"] == GREETING_MESSAGE, text
+        assert len(body["suggestions"]) == 3, text
+        assert body["answer"] == [], text
+    answered = _events(app, "explore.answered")[-1]["payload"]
+    assert answered["planner"] == "greeting"
+
+
+def test_small_talk_does_not_swallow_real_questions() -> None:
+    from cabinet.explore.planner import is_small_talk
+
+    for text in ("hi", "Good morning", "thank you", "who are you?"):
+        assert is_small_talk(text), text
+    for text in (
+        "hi, what majors have the highest dropout rate?",
+        "help me find the hardest class in Nursing",
+        "What is the average GPA by college?",
+    ):
+        assert not is_small_talk(text), text
+
+
+def test_rules_only_never_asks_a_model(
+    catalog: Catalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cabinet.explore import planner as planner_module
+
+    class Live:
+        name = "chat"
+
+        def explain(self, *args: object, **kwargs: object) -> object:
+            raise AssertionError("the model must not be asked to plan")
+
+    monkeypatch.setenv("CABINET_EXPLORE_PLANNER", "rules-only")
+    def no_model(*args: object, **kwargs: object) -> object:
+        raise AssertionError("model planner called")
+
+    monkeypatch.setattr(planner_module, "_try_model", no_model)
+    live = Live()
+    weather = "What is the weather on campus?"
+    outcome = planner_module.plan_question(weather, catalog, live)  # type: ignore[arg-type]
+    assert outcome.steps is None
+    gpa = "Which major has the lowest GPA?"
+    mapped = planner_module.plan_question(gpa, catalog, live)  # type: ignore[arg-type]
+    assert mapped.steps is not None
+
+
 def test_catalog_route(app: FastAPI) -> None:
     body = _client(app, "staff").get("/explore/catalog").json()
     assert len(body["analyses"]) == 18
