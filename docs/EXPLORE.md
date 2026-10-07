@@ -156,8 +156,8 @@ in one plain sentence.
    a numbered student, a request for individual students, and predictions about students
    are refused here. The API records `question.asked` and `data.refused`, and nothing else
    runs. The screen shows a refusal as a calm note headed "Not something CampusLens
-   answers", not as an error: "Individual counseling and spiritual-care records are never
-   disclosed." for counseling (the briefing may still show an authorized aggregate count),
+   answers", not as an error: "CampusLens does not answer questions about counseling or
+   spiritual care, even as totals." for counseling (the briefing may still show an authorized aggregate count),
    and a line about totals only for a single student or a prediction.
 2. **Plan** (`explore/planner.py`). The question becomes a list of steps, each an analysis
    id with parameters. A later step can take a parameter from an earlier step's top row, so
@@ -316,7 +316,7 @@ institution chain.
 
 While a question is answered the screen shows what is really happening, line by line,
 under "Thinking": "Understood: Dropout rate by major", "Chose 1 approved analysis",
-"Reading the student records (Ellucian format, fictional data): 6,225 students, Fall
+"Reading six years of student records (fictional data): 6,225 students, Fall
 2020 to Spring 2026", "Computing: Dropout rate by major", "Withheld 2 small groups
 (fewer than 10 students) to protect privacy", "Writing the answer from the tables",
 "Checked 5 numbers against the tables". When the answer arrives the trace folds into
