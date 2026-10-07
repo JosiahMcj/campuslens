@@ -88,6 +88,19 @@ BILLING_COLUMNS: dict[str, list[str]] = {
     "payment_plans": ["student_id", "term_code", "installments", "enrolled_on"],
 }
 
+# The university finance tables (budget.py, written after billing). Like the
+# billing tables they are outside EXPECTED_COLUMNS, so the canonical hash and
+# the JSON counts keep the 24 simulated tables.
+BUDGET_COLUMNS: dict[str, list[str]] = {
+    "fiscal_years": ["fiscal_year", "academic_year", "start_date", "end_date", "status"],
+    "cost_centers": ["cost_center_id", "name", "division", "college_code", "subject_code"],
+    "budget_lines": ["fiscal_year", "cost_center_id", "fund", "category", "budget_amount",
+                     "actual_amount"],
+    "revenue_lines": ["fiscal_year", "source", "fund", "budget_amount", "actual_amount"],
+    "tuition_revenue": ["fiscal_year", "student_terms", "credit_hours", "gross_tuition",
+                        "institutional_aid", "net_tuition", "discount_rate"],
+}
+
 POINTS10 = {"A": 40, "A-": 37, "B+": 33, "B": 30, "B-": 27, "C+": 23, "C": 20, "C-": 17,
             "D+": 13, "D": 10, "F": 0}
 PASSING = {"A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "P"}
@@ -161,16 +174,17 @@ class Checker:
     # ------------------------------------------------------------ schema
     def check_schema(self) -> None:
         problems = []
-        for table, cols in {**EXPECTED_COLUMNS, **BILLING_COLUMNS}.items():
+        for table, cols in {**EXPECTED_COLUMNS, **BILLING_COLUMNS, **BUDGET_COLUMNS}.items():
             got = [r[1] for r in self.q(f'PRAGMA table_info("{table}")')]
             if got != cols:
                 problems.append(f"{table}: {got}")
         extra = sorted({r[0] for r in self.q("SELECT name FROM sqlite_master WHERE type='table'")}
-                       - set(EXPECTED_COLUMNS) - set(BILLING_COLUMNS))
+                       - set(EXPECTED_COLUMNS) - set(BILLING_COLUMNS) - set(BUDGET_COLUMNS))
         if extra:
             problems.append(f"unexpected tables {extra}")
         self.record("schema", not problems, "; ".join(problems) or
-                    f"{len(EXPECTED_COLUMNS)} core and {len(BILLING_COLUMNS)} billing tables, "
+                    f"{len(EXPECTED_COLUMNS)} core, {len(BILLING_COLUMNS)} billing and "
+                    f"{len(BUDGET_COLUMNS)} finance tables, "
                     "columns as documented")
         fk = self.q("PRAGMA foreign_key_check")
         self.record("foreign_keys", not fk, f"{len(fk)} dangling references")
@@ -546,6 +560,51 @@ class Checker:
                     f"charges {counts['student_charges']}, payments {counts['student_payments']}, "
                     f"plans {counts['payment_plans']}: references, amounts, dates ok")
 
+    def check_budget(self) -> None:
+        """University finance tables (budget.py): net tuition is gross less aid,
+        the tuition rows agree with the revenue lines and with the tuition
+        billed to students, and every amount is a whole, non-negative dollar."""
+        problems: list[str] = []
+        bad_net = self.q("SELECT COUNT(*) FROM tuition_revenue"
+                         " WHERE net_tuition != gross_tuition - institutional_aid"
+                         " OR discount_rate != ROUND(1.0 * institutional_aid / gross_tuition, 4)")[0][0]
+        if bad_net:
+            problems.append(f"{bad_net} fiscal years where net != gross - aid")
+        disagree = self.q("""SELECT COUNT(*) FROM tuition_revenue t WHERE
+            gross_tuition != (SELECT actual_amount FROM revenue_lines r WHERE r.fiscal_year =
+                t.fiscal_year AND r.source = 'gross_tuition')
+            OR institutional_aid != (SELECT actual_amount FROM revenue_lines r WHERE
+                r.fiscal_year = t.fiscal_year AND r.source = 'institutional_aid')""")[0][0]
+        if disagree:
+            problems.append(f"{disagree} fiscal years where tuition_revenue != revenue_lines")
+        have = {r[0] for r in self.q("SELECT name FROM sqlite_master WHERE type='table'")}
+        billed = 0 if "student_charges" not in have else self.q(
+            """SELECT COUNT(*) FROM tuition_revenue t JOIN fiscal_years f
+            USING (fiscal_year) WHERE t.gross_tuition < (SELECT ROUND(COALESCE(SUM(c.amount), 0))
+                FROM student_charges c JOIN academic_periods p USING (term_code)
+                WHERE p.academic_year = f.academic_year AND c.category = 'tuition') - 1""")[0][0]
+        if billed:
+            problems.append(f"{billed} fiscal years with less gross tuition than billed")
+        negative = self.q("""SELECT (SELECT COUNT(*) FROM budget_lines WHERE budget_amount < 0
+            OR actual_amount < 0 OR typeof(budget_amount) != 'integer'
+            OR typeof(actual_amount) != 'integer')
+            + (SELECT COUNT(*) FROM revenue_lines WHERE budget_amount < 0 OR actual_amount < 0)""")[0][0]
+        if negative:
+            problems.append(f"{negative} negative or fractional amounts")
+        rates = [r[0] for r in self.q("SELECT discount_rate FROM tuition_revenue"
+                                       " ORDER BY fiscal_year")]
+        if not rates or rates[-1] <= rates[0]:
+            problems.append(f"planted: the discount rate does not rise ({rates})")
+        over = self.q("""SELECT b.fiscal_year FROM budget_lines b JOIN cost_centers c
+            USING (cost_center_id) WHERE c.division = 'Athletics'
+            GROUP BY b.fiscal_year HAVING SUM(actual_amount) > SUM(budget_amount)""")
+        if not {"FY2025", "FY2026"} <= {r[0] for r in over}:
+            problems.append("planted: Athletics is not over budget in FY2025 and FY2026")
+        years = self.q("SELECT COUNT(*) FROM fiscal_years")[0][0]
+        self.record("budget", not problems and years == 6, "; ".join(problems) or
+                    f"{years} fiscal years: net tuition = gross - aid, ties to revenue lines and "
+                    "billed tuition, whole non-negative dollars")
+
     def planted(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
         # 1. Major with the lowest average cumulative GPA.
@@ -796,6 +855,7 @@ class Checker:
         self.check_distributions()
         self.check_enrollment_history()
         self.check_billing()
+        self.check_budget()
         values = self.planted()
         digest = canonical_hash(self.con)
         self.check_planted_exact(values, digest)

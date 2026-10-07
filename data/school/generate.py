@@ -38,6 +38,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import billing as B  # noqa: E402
+import budget as BUD  # noqa: E402
 import catalog as C  # noqa: E402
 
 SEED = 20261005
@@ -1564,7 +1566,8 @@ def write_db(g: Generator, out: Path) -> None:
     con.executemany("INSERT INTO student_profiles VALUES (?,?,?,?,?,?)", profiles)
     con.executemany("INSERT INTO student_term_enrollment VALUES (?,?,?,?,?,?)", term_rows)
     con.executemany("INSERT INTO subsequent_enrollment VALUES (?,?,?)", elsewhere)
-    import billing; billing.build_billing(con, SEED)
+    B.build_billing(con, SEED)  # student billing (billing.py), its own stream
+    BUD.write_tables(con, SEED)  # university finances (budget.py), its own stream
     con.commit()
     con.execute("VACUUM")
     con.close()

@@ -1,7 +1,7 @@
 # Demonstration University database schema
 
 `data/school/generate.py` writes one SQLite file (default `var/school/school.db`) with the
-24 tables below. The shape follows Ellucian's Ethos data model, flattened into relational
+24 tables below, then the student billing and university finance tables. The shape follows Ellucian's Ethos data model, flattened into relational
 tables a question engine can join. Each table names the Ethos resource it stands in for.
 Where Ethos has no exact resource we say so instead of inventing one.
 
@@ -410,6 +410,91 @@ starts and sum to the term's billed amount.
 | `student_id`, `term_code` | The pair; at most one plan per billed term |
 | `installments` | Number of installments (4 or 5) |
 | `enrolled_on` | Date the plan was enrolled, shortly before the term starts |
+
+## University finances
+
+These five tables are the university's own books, not student data. They are written by
+`data/school/budget.py` after the billing tables, from their own seeded random stream
+(seed + 9101), and only read the tables above, so every existing row and the canonical hash
+are unchanged. They stand in for a Colleague or Banner Finance general ledger and budget,
+which Ellucian Ethos serves as `fiscal-years`, `accounting-string-component-values` (cost
+centers), `budget-phase-line-items` (the adopted budget) and `ledger-activities` (actuals,
+summed here to one figure per line). Amounts are whole dollars.
+
+How they tie to the school: gross tuition is the tuition billed in the fiscal year's fall
+and spring terms (`student_charges`) plus summer credit hours at a per-hour rate ($590 in
+FY2021, +3 % a year), so it moves with enrollment; housing and dining revenue is the housing
+and meal-plan charges, so it moves with the students living on campus; and each academic
+department's salaries follow the instructors employed in its subject that fall, by rank.
+Without the billing tables the same figures come from enrollment at billing's average rates.
+
+Planted stories: the tuition discount rate creeps up from 46.4 % (FY2021) to 48.2 % (FY2025)
+and jumps to 51.5 % in FY2026 as enrollment softens, so FY2026 net tuition falls about $27
+million short of budget and the year ends in deficit; and Athletics spends over budget two
+years running (FY2025 +5.6 %, FY2026 +8.9 % at full scale). `check.py` checks both.
+
+### `fiscal_years`
+**Ethos: `fiscal-years`.** FY2021 to FY2026, July to June.
+
+| Column | Meaning |
+|---|---|
+| `fiscal_year` | `FY2021` (July 2020 to June 2021) |
+| `academic_year` | The academic year it covers, `2020-2021` (its fall, spring and summer terms) |
+| `start_date`, `end_date` | `2020-07-01`, `2021-06-30` |
+| `status` | `closed`, or `preliminary` for FY2026 (the records end in May 2026; June is estimated) |
+
+### `cost_centers`
+**Ethos: `accounting-string-component-values`** (the cost center component). 65 cost centers.
+
+| Column | Meaning |
+|---|---|
+| `cost_center_id` | `CC-100` to `CC-106` the seven deans' offices, `CC-200` onward one academic department per subject, `CC-300` and up the library and offices |
+| `name` | `Department of Nursing`, `Athletics`, `Chapel and Spiritual Life` |
+| `division` | `Academic Affairs` (deans, departments, library), `Student Life`, `Spiritual Life`, `Athletics`, `Enrollment Management` (Admissions, Financial Aid), `Facilities`, `Information Technology`, `Advancement`, `Administration`, `Auxiliary Services` (Housing, Dining) |
+| `college_code`, `subject_code` | The college and subject of an academic cost center, else null |
+
+### `budget_lines`
+**Ethos: `budget-phase-line-items`** (budget) with **`ledger-activities`** (actual). One row
+per fiscal year, cost center, fund and expense category.
+
+| Column | Meaning |
+|---|---|
+| `fiscal_year`, `cost_center_id` | The pair |
+| `fund` | `operating` (unrestricted), `auxiliary` (Housing, Dining), `restricted` (spent as donors and grantors direct: funded scholarships, athletic scholarships from boosters, grant work in science, nursing, education and psychology, restricted chapel programs) |
+| `category` | `salaries_benefits`, `operations`, `scholarships` (funded scholarships paid from gifts and the endowment; the unfunded tuition discount is `institutional_aid` revenue, never an expense), `facilities`, `technology`, `travel` |
+| `budget_amount` | The adopted budget, whole thousands of dollars |
+| `actual_amount` | The year's actual spending, whole dollars. Over budget when actual > budget. |
+
+The operating budget spends the year's budgeted unrestricted revenue less a planned 1.5 %
+surplus; restricted spending is 97 % of restricted revenue.
+
+### `revenue_lines`
+**Ethos: `ledger-activities`** (revenue accounts) with the revenue lines of
+**`budget-phase-line-items`**. One row per fiscal year, source and fund.
+
+| Column | Meaning |
+|---|---|
+| `fiscal_year` | The year |
+| `source` | `gross_tuition`, `institutional_aid` (the tuition discount, a positive amount that reduces gross tuition), `fees`, `housing`, `dining`, `gifts` (operating annual fund and restricted gifts), `grants`, `endowment_draw`, `other` (athletics tickets, conferences, rentals) |
+| `fund` | `operating`, `auxiliary`, or `restricted` |
+| `budget_amount` | Budgeted before the year: student revenue at last year's actual plus 1 %, aid at last year's discount rate plus 0.3 points; whole thousands |
+| `actual_amount` | Whole dollars |
+
+Net revenue is the sum of the actuals with `institutional_aid` subtracted.
+
+### `tuition_revenue`
+**Ethos: none** (an institutional research summary of the tuition accounts). One row per
+fiscal year; the same figures as the tuition rows of `revenue_lines` (checked).
+
+| Column | Meaning |
+|---|---|
+| `fiscal_year` | The year |
+| `student_terms` | Students enrolled in its fall and spring terms (a student counts once per term) |
+| `credit_hours` | Census credit hours of those terms plus summer credit hours attempted |
+| `gross_tuition` | Billed tuition at the published rate |
+| `institutional_aid` | The university's own grants and scholarships against tuition (the discount) |
+| `net_tuition` | `gross_tuition - institutional_aid` exactly (checked) |
+| `discount_rate` | `institutional_aid / gross_tuition`, rounded to 4 decimals (0.5151 is 51.5 %) |
 
 ## Deliberately absent
 
