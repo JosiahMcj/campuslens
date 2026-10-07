@@ -28,8 +28,12 @@ export function Thinking({
   steps = EXPLORE_STEPS,
   detail,
   trace,
+  mark = true,
 }: {
   steps?: readonly string[]
+  /** Draws the animated mark beside the text. Off inside a chat reply, where
+   * the reply's own mark plays the thinking motion instead. */
+  mark?: boolean
   /** Replaces the step line when the caller knows more (the live task list). */
   detail?: React.ReactNode
   /** The live trace: shown in place of the timed steps once it has a line. */
@@ -62,9 +66,11 @@ export function Thinking({
 
   return (
     <div className="thinking" role="status" aria-busy="true">
-      <span ref={markRef} className="thinking-mark-wrap">
-        <LensMark className="thinking-mark" thinking />
-      </span>
+      {mark && (
+        <span ref={markRef} className="thinking-mark-wrap">
+          <LensMark className="thinking-mark" thinking />
+        </span>
+      )}
       <div className="thinking-text">
         <p className="thinking-title">
           <span className="thinking-shimmer">Thinking</span>

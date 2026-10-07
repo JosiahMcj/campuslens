@@ -1707,7 +1707,7 @@ function BriefingPage({
 
   const reply = (item: Exchange) => {
     const state = item.state
-    if (state.kind === 'explore-sending') return <ExploreWorking trace={state.trace} />
+    if (state.kind === 'explore-sending') return <ExploreWorking trace={state.trace} mark={false} />
     if (state.kind === 'explore-error') {
       return (
         <>
@@ -1759,6 +1759,7 @@ function BriefingPage({
     if (state.kind === 'sending' || state.kind === 'idle' || state.kind === 'error') {
       return (
         <Thinking
+          mark={false}
           detail={
             <div className="work-text">
               <p className="thinking-step">
@@ -2076,7 +2077,10 @@ function BriefingPage({
                       <p>{item.question}</p>
                     </div>
                     <div className="msg msg-cabinet">
-                      <LensMark className="msg-avatar" />
+                      <LensMark
+                        className="msg-avatar"
+                        thinking={item.state.kind === 'sending' || item.state.kind === 'explore-sending'}
+                      />
                       <div className="msg-body">
                         <p className="msg-author">CampusLens</p>
                         {reply(item)}
