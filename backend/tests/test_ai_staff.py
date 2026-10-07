@@ -60,8 +60,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_PATH = REPO_ROOT / "data" / "fixture.json"
 GENERATE = REPO_ROOT / "data" / "school" / "generate.py"
 
-NO_DATA = ("career_outcomes_analyst", "advancement_analyst")
-NO_STUDENT_DATA = (*NO_DATA, "it_data_steward")
+# Alumni outcomes and giving: school-record areas, but no briefing fields.
+ALUMNI = ("career_outcomes_analyst", "advancement_analyst")
+NO_STUDENT_DATA = ("it_data_steward",)
 
 
 @pytest.fixture(scope="module")
@@ -125,6 +126,9 @@ def test_department_employees_get_aggregates_only_and_no_student_id(
     if role in NO_STUDENT_DATA:
         assert allowed == [] and ROLE_FINDINGS[role] == ()
         assert ROLE_SCHOOL_AREAS[role] == ()
+    elif role in ALUMNI:
+        assert allowed == [] and ROLE_FINDINGS[role] == ()
+        assert ROLE_SCHOOL_AREAS[role]
     else:
         # A real allow-list: something, never everything.
         assert 0 < len(allowed) < len(row) - 2
@@ -514,8 +518,9 @@ def test_staff_route_lists_everyone_own_department_first_with_todays_counts(
         )
     assert "Pell status" in by_role["student_accounts_analyst"]["outside_scope"]
     assert by_role["it_data_steward"]["never_reads"][0] == "Any student record"
-    for role in NO_DATA:
-        assert by_role[role]["no_data"] is True and by_role[role]["may_read"] == []
+    for role in ALUMNI:
+        assert by_role[role]["no_data"] is False and by_role[role]["may_read"]
+    assert "Alumni giving" in by_role["advancement_analyst"]["may_read"]
     assert by_role["student_accounts_analyst"]["may_read"][1] == (
         "Holds and balances owed, by office"
     )

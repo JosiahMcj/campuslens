@@ -714,6 +714,7 @@ SCHOOL_AREAS: dict[str, tuple[str, ...]] = {
         "colleges.name",
         "academic_periods.season",
         "academic_periods.academic_year",
+        "academic_periods.end_date",
     ),
     "course_sections": (
         "sections.course_id",
@@ -740,6 +741,7 @@ SCHOOL_AREAS: dict[str, tuple[str, ...]] = {
         "student_term_records.cumulative_gpa",
         "sections.modality",
         "student_profiles.honors",
+        "student_term_records.cumulative_gpa (at graduation)",
     ),
     # Instructor-level rows: granted only when the person asking may see
     # them (cabinet.explore.catalog.INSTRUCTOR_ROLES), never by the area alone.
@@ -779,6 +781,17 @@ SCHOOL_AREAS: dict[str, tuple[str, ...]] = {
     ),
     "advising": ("student_appointments.status", "student_appointments.term_code"),
     "campus_life": ("student_term_enrollment.housing", "student_profiles.athlete"),
+    # Graduates' first destinations, graduate school and medical school
+    # (counted ids only: whether a graduate answered, never who).
+    "career_outcomes": (
+        "first_destination.student_id (answered or not)",
+        "first_destination.outcome",
+        "first_destination.starting_salary",
+        "graduate_enrollment.enrollment_begin_date",
+        "medical_school_applications.accepted",
+    ),
+    # Alumni giving (counted ids only: whether a graduate gave, never who).
+    "giving": ("alumni_gifts.student_id (gave or not)", "alumni_gifts.amount"),
 }
 
 INSTRUCTOR_AREA = "instructors"
@@ -820,8 +833,8 @@ ROLE_SCHOOL_AREAS: dict[str, tuple[str, ...]] = {
         "demographics",
     ),
     "admissions_analyst": ("structure", "entry", "demographics"),
-    "career_outcomes_analyst": (),
-    "advancement_analyst": (),
+    "career_outcomes_analyst": ("structure", "programs", "career_outcomes"),
+    "advancement_analyst": ("structure", "programs", "giving"),
     "it_data_steward": (),
 }
 

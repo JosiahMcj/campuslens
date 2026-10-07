@@ -148,18 +148,15 @@ EMPLOYEES: dict[str, Employee] = {
         Employee(
             "career_outcomes_analyst",
             "Career & Alumni Outcomes Analyst",
-            "Will report graduates' job and graduate-school outcomes once that "
-            "data is connected.",
+            "Reports graduates' first destinations: employment, starting "
+            "salary, graduate and medical school.",
             "Career Services & Alumni Relations",
-            no_data=True,
         ),
         Employee(
             "advancement_analyst",
             "Advancement Analyst",
-            "Will report giving and alumni engagement once that data is "
-            "connected.",
+            "Reports alumni giving: participation, average gift and totals.",
             "Advancement",
-            no_data=True,
         ),
         Employee(
             "it_data_steward",
@@ -203,6 +200,9 @@ AREA_LABELS: dict[str, str] = {
     "holds": "Holds and balances owed, by office",
     "advising": "Advising appointments",
     "campus_life": "Housing and athletics",
+    "career_outcomes": "Graduates' first destinations, salaries, graduate and "
+    "medical school",
+    "giving": "Alumni giving",
 }
 
 # What no AI employee ever reads, whatever its job.
@@ -284,6 +284,8 @@ AREA_OWNER: dict[str, str] = {
     "holds": "student_accounts_analyst",
     "advising": "advising_analyst",
     "campus_life": "student_life_analyst",
+    "career_outcomes": "career_outcomes_analyst",
+    "giving": "advancement_analyst",
 }
 
 # Each reviewed measure of the general analysis, by owning department.
@@ -313,6 +315,14 @@ MEASURE_OWNER: dict[str, str] = {
     "graduates": "institutional_research_analyst",
     "dfw_rate": "academic_affairs_analyst",
     "withdrawal_rate": "academic_affairs_analyst",
+    "knowledge_rate": "career_outcomes_analyst",
+    "employment_rate": "career_outcomes_analyst",
+    "median_salary": "career_outcomes_analyst",
+    "grad_school_rate": "career_outcomes_analyst",
+    "med_acceptance_rate": "career_outcomes_analyst",
+    "giving_rate": "advancement_analyst",
+    "avg_gift": "advancement_analyst",
+    "total_giving": "advancement_analyst",
 }
 
 # Each grouping (and filter) of the general analysis, by owning department.
@@ -337,6 +347,7 @@ GROUPING_OWNER: dict[str, str] = {
     "honors": "academic_affairs_analyst",
     "modality": "academic_affairs_analyst",
     "hold": "student_accounts_analyst",
+    "gpa_band": "academic_affairs_analyst",
 }
 
 # Each approved analysis, by owning department (the general analysis is

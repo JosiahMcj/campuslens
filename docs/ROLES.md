@@ -186,8 +186,8 @@ and once for the school-record areas Explore reads (`ROLE_SCHOOL_AREAS`).
 | Academic Affairs Analyst | Academic Affairs (Provost) | structure, course sections, grades; instructor rows only when the president or the admin asks | M7 |
 | Institutional Research Analyst | Institutional Research | structure, registration, programs, outcomes, entry, student groups | M1, M2, M7 |
 | Admissions Analyst | Admissions | structure, entry term and admit type, student groups | none |
-| Career & Alumni Outcomes Analyst | Career Services & Alumni Relations | nothing: no data connected yet | none |
-| Advancement Analyst | Advancement | nothing: no data connected yet | none |
+| Career & Alumni Outcomes Analyst | Career Services & Alumni Relations | structure, program status, first destinations (employment, salary), graduate and medical school | none |
+| Advancement Analyst | Advancement | structure, program status, alumni giving | none |
 | IT & Data Steward | IT | no student data (connections and the data-access audit) | none |
 
 Never, for any of them: student names, counseling and chaplain notes,
