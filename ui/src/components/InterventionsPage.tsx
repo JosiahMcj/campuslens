@@ -229,7 +229,7 @@ function OutcomePanel({ outcome: o }: { outcome: OutcomeImpact }) {
                 <span className="iv-cmp-values">Withheld: a group is under 10 students.</span>
               ) : (
                 <span className="iv-cmp-values">
-                  {c.a.label} {formatValue(c.a.value, o.kind)} vs {c.b.label.toLowerCase()}{' '}
+                  {c.a.label} {formatValue(c.a.value, o.kind)} vs {lowerFirst(c.b.label)}{' '}
                   {formatValue(c.b.value, o.kind)}:{' '}
                   <strong>{formatDifference(c.difference, o.kind)}</strong>
                   <span className="iv-range">
@@ -473,4 +473,8 @@ function factText(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return '—'
   if (typeof value === 'number') return Number.isInteger(value) ? value.toLocaleString('en-US') : value.toFixed(2)
   return value
+}
+
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1)
 }
