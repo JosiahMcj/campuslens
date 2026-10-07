@@ -888,7 +888,7 @@ def _decision(ctx: Context, d: Derived) -> dict[str, Any]:
     now = [f"{row[0]}: {row[1]}" for row in rows if row[0] != "Financial Aid"]
     blocks: list[dict[str, Any]] = [
         bullets(
-            LABEL_FACT,
+            LABEL_RECOMMENDATION,
             "Staff can begin now (operational work within each office's authority)",
             now,
         ),
@@ -1289,32 +1289,32 @@ def _employees(ctx: Context, d: Derived) -> dict[str, Any]:
         [
             "Executive summary",
             "Chief of Staff (AI)",
-            ", ".join(ROLE_FINDINGS[CHIEF_OF_STAFF]),
+            figure_names(ROLE_FINDINGS[CHIEF_OF_STAFF]),
             source("1"),
         ],
         [
             "Enrollment section",
             "Enrollment Analyst (AI)",
-            ", ".join(ROLE_FINDINGS[ENROLLMENT_ANALYST]),
+            figure_names(ROLE_FINDINGS[ENROLLMENT_ANALYST]),
             source("2"),
         ],
         [
             "Student success section",
             "Student Success Analyst (AI)",
-            ", ".join(ROLE_FINDINGS[STUDENT_SUCCESS_ANALYST]),
+            figure_names(ROLE_FINDINGS[STUDENT_SUCCESS_ANALYST]),
             source("3"),
         ],
-        ["Figures", "Code (no AI)", "M1 to M8", "computed from the records"],
+        ["Figures", "Code (no AI)", "every figure", "computed from the records"],
         [
             "Staff actions and decision",
             "Code (no AI)",
-            "M2 to M5",
+            "not yet registered, holds, advising",
             "templates filled from the figures",
         ],
         [
             "Limitations",
             "Chief of Staff (AI)",
-            ", ".join(ROLE_FINDINGS[CHIEF_OF_STAFF]),
+            figure_names(ROLE_FINDINGS[CHIEF_OF_STAFF]),
             source("7"),
         ],
     ]
@@ -1380,6 +1380,36 @@ _GROUP_WORDS = {
 }
 
 
+# Short plain names for the figures (the screen never shows the bare
+# M-codes; the UI's findingLabels.ts has the long forms).
+FIGURE_NAMES = {
+    "M1": "registration vs. last year",
+    "M2": "not yet registered",
+    "M3": "holds under $1,000",
+    "M4": "no advising this term",
+    "M5": "holds by office",
+    "M6": "days until registration closes",
+    "M7": "credit hours vs. last year",
+    "M8": "support indicators",
+}
+
+FIGURE_TITLES = {
+    "M1": "Spring registration vs. same point last year",
+    "M2": "Continuing students not yet registered",
+    "M3": "Not yet registered, with a hold under $1,000",
+    "M4": "Not yet registered, no advising appointment this term",
+    "M6": "Days until registration closes",
+}
+
+
+def figure_names(ids: Any) -> str:
+    return "; ".join(FIGURE_NAMES.get(str(i), str(i)) for i in (ids or []))
+
+
+def _plain_definition(text: str) -> str:
+    return re.sub(r"\bM(\d)\b", lambda m: f"({FIGURE_NAMES.get(m.group(0), m.group(0))})", text)
+
+
 def field_label(path: str) -> str:
     key = path.replace("[]", "")
     return FIELD_LABELS.get(key, key)
@@ -1415,7 +1445,7 @@ def _permissions(ctx: Context, d: Derived) -> dict[str, Any]:
             [
                 EMPLOYEE_TITLES[role],
                 allowed,
-                ", ".join(ROLE_FINDINGS[role]),
+                figure_names(ROLE_FINDINGS[role]),
                 _refused_words(role),
             ]
         )
@@ -1484,9 +1514,9 @@ def _evidence_audit(ctx: Context, d: Derived) -> dict[str, Any]:
         ["Figure", "Value", "How it is computed"],
         [
             [
-                str((f.get(k) or {}).get("title", k)),
+                FIGURE_TITLES.get(k, str((f.get(k) or {}).get("title", k))),
                 str((f.get(k) or {}).get("display", "not available")),
-                str((f.get(k) or {}).get("definition", "")),
+                _plain_definition(str((f.get(k) or {}).get("definition", ""))),
             ]
             for k in ("M1", "M2", "M3", "M6")
         ],
@@ -1495,8 +1525,8 @@ def _evidence_audit(ctx: Context, d: Derived) -> dict[str, Any]:
     )
     trail_rows = [
         [
-            str(e.get("id")),
-            str(e.get("ts", ""))[:19].replace("T", " "),
+            f"#{e.get('id')}",
+            str(e.get("ts", ""))[11:19],
             _actor(str(e.get("actor"))),
             _event_words(e),
         ]
@@ -1550,7 +1580,7 @@ def _event_words(event: dict[str, Any]) -> str:
     if kind == "task.assigned":
         role = EMPLOYEE_TITLES.get(str(payload.get("role")), "an AI employee")
         return (
-            f"Task assigned to the {role} ({', '.join(payload.get('findings') or [])})"
+            f"Task assigned to the {role} ({len(payload.get('findings') or [])} figures, totals only)"
         )
     if kind == "data.granted":
         fields = (

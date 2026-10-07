@@ -25,6 +25,7 @@ from cabinet.api import APPROVED_QUESTION, create_app
 from cabinet.fixture import parse_fixture
 from cabinet.followup import classify
 from cabinet.metrics import findings as compute_findings
+from cabinet.permissions import ROLE_FINDINGS
 from cabinet.questions import DEFAULT_QUESTION, match_question
 from conftest import make_authenticated_client
 
@@ -107,7 +108,8 @@ def _strings(node: Any) -> list[str]:
     if isinstance(node, str):
         return [node]
     if isinstance(node, dict):
-        return [s for value in node.values() for s in _strings(value)]
+        hidden = ("finding_ids", "row_findings", "decision_id", "type", "label")
+        return [s for k, v in node.items() if k not in hidden for s in _strings(v)]
     if isinstance(node, list):
         return [s for value in node for s in _strings(value)]
     return []
@@ -128,6 +130,8 @@ _DATES = re.compile(
     r"|\b\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2}(?::\d{2})?)?(?: UTC)?"
     r"|\b(?:Spring|Summer|Fall) \d{4}"
     r"|\(\d+ days\)"
+    r"|\b\d{2}:\d{2}:\d{2}\b"  # audit times
+    r"|#\d+"  # audit event numbers
 )
 _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
@@ -191,6 +195,7 @@ def _allowed_numbers() -> set[str]:
         ).values()
     }
     allowed.add(str(len({current[i]["profile"]["program"] for i in unregistered})))
+    allowed |= {str(len(ids)) for ids in ROLE_FINDINGS.values()}
     allowed |= {"10", "1000", "1"}  # the suppression floor, the threshold, "1 hold"
     return allowed
 
@@ -286,6 +291,7 @@ def test_every_answer_is_labelled_named_free_and_numbers_match(
     for block in body["blocks"]:
         assert block["label"] in ("fact", "interpretation", "recommendation", "note")
     shown = _shown_text(body)
+    assert not re.search(r"\bM\d\b", shown), "a bare figure code reached the screen"
     extra = _numbers(shown) - _allowed_numbers()
     assert not extra, f"numbers not computed from the records: {sorted(extra)}"
 
