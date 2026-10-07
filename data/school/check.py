@@ -797,7 +797,7 @@ class Checker:
             WHERE ap.award_level IS NOT 'Bachelor'
                OR m.entering_year <= CAST(substr(p.end_date, 1, 4) AS INTEGER)
                OR m.entering_year > CAST(substr(?, 1, 4) AS INTEGER)
-               OR (ge.program_type = 'medical') != (m.accepted = 1
+               OR (COALESCE(ge.program_type, '') = 'medical') != (m.accepted = 1
                    AND m.entering_year || '-08-01' <= ?)""", (end, end))[0][0]
         med_orphans = q("""SELECT COUNT(*) FROM graduate_enrollment ge
             WHERE ge.program_type = 'medical' AND NOT EXISTS (
