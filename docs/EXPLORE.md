@@ -334,7 +334,11 @@ events:
   "What is the DFW rate in Theories of Counseling?" is answered. Questions that rank or
   list students, name an id in any form, or ask who will do something are treated as
   questions about individuals (answered only with totals for students like that), and any
-  id or long number a person types is replaced before the question is recorded.
+  id or long number a person types is replaced before the question is recorded. A
+  person's name asked about ("Did Jane Doe pass MEEN 3310?", "will jane drop out", "Is
+  José Núñez on probation?", several names in one question) is caught in any case or
+  script, recorded as "[name withheld]", answered only with group totals from the rule
+  planner, and never sent to a model.
 - **Instructor identities are for the executive and admin roles.** Staff and
   reviewers never see an instructor's id or name, not even in the parameters under "How
   this was answered", and the model planner receives the instructor list only for those
