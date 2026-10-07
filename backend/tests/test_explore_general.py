@@ -463,9 +463,9 @@ def test_the_model_planner_can_emit_the_general_analysis(
     assert outcome.planner == "model"
     assert outcome.steps is not None
     assert outcome.steps[0].params == {"measure": "grad_rate_6yr", "group_by": "honors"}
-    spec = stub.calls[0][1]["catalog"]
-    ids = [a["id"] for a in spec["analyses"]]
-    assert "measure_by_group" in ids
+    prompt = stub.calls[0][1]["catalog"]
+    assert "- measure_by_group:" in prompt
+    assert "- grad_rate_6yr:" in prompt and "- honors: honors|non_honors" in prompt
 
 
 # --- the analysis: aggregates only, small cells withheld --------------------------
@@ -889,16 +889,19 @@ def test_the_model_planner_gets_the_redacted_question_and_no_roster_for_staff(
     monkeypatch.setenv("CABINET_EXPLORE_PLANNER", "model-first")
     plan = {"steps": [{"analysis_id": "holds_by_office", "params": {}}]}
     stub = StubProvider({"explore_planner": json.dumps(plan)})
-    plan_question("Which offices have hold #4521 open?", catalog, stub, "staff")
-    payload = stub.calls[-1][1]
-    assert "4521" not in payload["question"]
-    assert "instructor" not in payload["catalog"]["value_lists"]
-    assert not any(
-        name in json.dumps(payload)
-        for name in list(catalog.vocab.instructors.values())[:50]
-    )
-    plan_question("Which offices have hold #4521 open?", catalog, stub, "executive")
-    assert "instructor" in stub.calls[-1][1]["catalog"]["value_lists"]
+    for role in ("staff", "reviewer", "executive", "admin"):
+        plan_question("Which offices have hold #4521 open?", catalog, stub, role)
+        payload = stub.calls[-1][1]
+        assert "4521" not in payload["question"]
+        # No role's planner prompt carries an instructor, a course title, or
+        # a student: the compact catalog lists analyses, majors and colleges.
+        text = json.dumps(payload)
+        assert not any(
+            name in text for name in catalog.vocab.instructors.values()
+        ), role
+        assert not any(
+            iid in text for iid in catalog.vocab.instructors
+        ), role
 
 
 def test_no_student_id_or_row_reaches_the_model_input(

@@ -753,11 +753,14 @@ reviewers get the course as a whole, and the API records a `data.refused`).
 Questions about counseling or spiritual care, about one student, or about what a
 student will do next are refused before planning, and the refusal is recorded.
 
-The reviewed rule planner maps every question it can, and the live model plans only
-the rest (`CABINET_EXPLORE_PLANNER=model-first` asks the model first), because
-reading the whole catalog can take a slow endpoint longer than the 55 s request
-budget, while the rules map all forty test wordings of the planted questions. The
-live model is configured in the gitignored `cabinet.local.env` (a hosted https
+With a live model, the model plans first from the compact catalog (about 1 s a
+question on a local 14-billion-parameter model once the catalog is read, about 7 s
+for the first question after a restart), and the reviewed rule planner answers
+whenever the model's plan cannot be used or takes longer than
+`CABINET_EXPLORE_PLANNER_TIMEOUT` (default 20 s). `CABINET_EXPLORE_PLANNER=rules-first`
+asks the model only for what the rules cannot map, and `rules-only` never asks it.
+`docs/EXPLORE-EVAL.md` has the evaluation and how to re-run it
+(`python -m cabinet.explore.evalset`). The live model is configured in the gitignored `cabinet.local.env` (a hosted https
 chat-completions endpoint, set up as in "The three providers"), and it may reword the answer,
 which is checked number by number or replaced by the template.
 

@@ -960,6 +960,46 @@ class Cell:
     den: float
 
 
+@dataclass(frozen=True)
+class TermWindow:
+    """The terms a measure is actually read over."""
+
+    term_from: str
+    term_to: str
+    default: bool  # the measure's own default window
+    regular_only: int  # 1: fall and spring terms only
+    applies: bool  # False when the measure ignores named terms
+
+
+def term_window(
+    m: Measure,
+    per_term: bool,
+    term_from: str | None,
+    term_to: str | None,
+    v: Vocab,
+) -> TermWindow:
+    """The window ``run`` reads for a measure and the requested terms. A
+    term measure without a term grouping reads ONE term: the end of a
+    requested range (or its start when only that is named), by default the
+    latest fall or spring. Fixed-scope and cohort measures ignore terms."""
+    terms = list(v.terms)
+    regular = [t for t in terms if v.term_season[t] != "Summer"]
+    if m.scope == "term":
+        chosen = term_to or term_from
+        if per_term:
+            start, end = term_from or regular[0], term_to or regular[-1]
+            return TermWindow(start, end, True, 1, True)
+        if chosen:
+            return TermWindow(chosen, chosen, chosen == regular[-1], 0, True)
+        return TermWindow(regular[-1], regular[-1], True, 1, True)
+    if m.scope in ("latest", "cohort"):
+        return TermWindow(terms[0], terms[-1], True, 0, False)
+    start, end = term_from or terms[0], term_to or terms[-1]
+    if start > end:
+        start, end = end, start
+    return TermWindow(start, end, (start, end) == (terms[0], terms[-1]), 0, True)
+
+
 class _Runner:
     def __init__(self, con: sqlite3.Connection, req: Request, v: Vocab) -> None:
         self.con = con
@@ -971,33 +1011,15 @@ class _Runner:
         self.notes: list[str] = []
         self.default_scope = True
         per_term = "term" in req.groups
-        if m.scope == "term":
-            chosen = req.term_to or req.term_from
-            if chosen and not per_term:
-                self.term_from = self.term_to = chosen
-                self.default_scope = chosen == regular[-1]
-            elif per_term:
-                self.term_from = req.term_from or regular[0]
-                self.term_to = req.term_to or regular[-1]
-                self.default_scope = True  # each term is its own population
-            else:
-                self.term_from = self.term_to = regular[-1]
-            self.regular_only = 1 if per_term or not chosen else 0
-        elif m.scope in ("latest", "cohort"):
-            if req.term_from or req.term_to:
-                self.notes.append(
-                    f"The {m.label} is read over all the records, so the named terms "
-                    "were not applied."
-                )
-            self.term_from, self.term_to = terms[0], terms[-1]
-            self.regular_only = 0
-        else:  # window
-            self.term_from = req.term_from or terms[0]
-            self.term_to = req.term_to or terms[-1]
-            if self.term_from > self.term_to:
-                self.term_from, self.term_to = self.term_to, self.term_from
-            self.default_scope = (self.term_from, self.term_to) == (terms[0], terms[-1])
-            self.regular_only = 0
+        window = term_window(m, per_term, req.term_from, req.term_to, v)
+        self.term_from, self.term_to = window.term_from, window.term_to
+        self.default_scope = window.default
+        self.regular_only = window.regular_only
+        if m.scope in ("latest", "cohort") and (req.term_from or req.term_to):
+            self.notes.append(
+                f"The {m.label} is read over all the records, so the named terms "
+                "were not applied."
+            )
         self.per_term = 1 if per_term else 0
         # Cohort measures read first-time students only unless admit type
         # is asked about.

@@ -55,6 +55,7 @@ from cabinet.explore.catalog import (
     catalog_for,
     connect_readonly,
 )
+from cabinet.explore.compact import compact_catalog
 from cabinet.explore.execute import StepResult, execute
 from cabinet.explore.planner import (
     EXAMPLE_QUESTIONS,
@@ -685,7 +686,7 @@ def test_model_planner_receives_only_the_catalog_and_the_question(
     role, payload = stub.calls[0]
     assert role == "explore_planner"
     assert set(payload) == {"question", "catalog"}
-    assert set(payload["catalog"]) == {"analyses", "value_lists"}
+    assert payload["catalog"] == compact_catalog(catalog)
     assert not STUDENT_ID.search(json.dumps(payload))
 
 
@@ -718,7 +719,6 @@ def test_model_planner_receives_only_the_catalog_and_the_question(
                 ]
             }
         ),
-        json.dumps({"steps": []}),
         json.dumps(
             {
                 "steps": [{"analysis_id": "gpa_by_major", "params": {}}],
@@ -769,10 +769,28 @@ def test_clause_splitting_edge_cases(catalog: Catalog) -> None:
     assert "major" not in steps[0]["params"]
 
 
-def test_rules_first_is_the_default_and_asks_the_model_only_when_rules_cannot(
+def test_model_first_is_the_default_with_a_live_model(
     catalog: Catalog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("CABINET_EXPLORE_PLANNER", raising=False)
+    plan = {"steps": [{"analysis_id": "gpa_by_college", "params": {}}]}
+    stub = StubProvider({"explore_planner": json.dumps(plan)})
+    # The model plans even a question the rules map.
+    outcome = plan_question(OWNER_SHORT, catalog, stub)
+    assert outcome.planner == "model"
+    assert outcome.steps == [Step("gpa_by_college", {})]
+    assert len(stub.calls) == 1
+    # An unknown setting reads as the default.
+    monkeypatch.setenv("CABINET_EXPLORE_PLANNER", "sometimes")
+    assert plan_question(OWNER_SHORT, catalog, stub).planner == "model"
+    # Replay and fake modes never ask a model.
+    assert plan_question(OWNER_SHORT, catalog, FakeProvider()).planner == "rule"
+
+
+def test_rules_first_asks_the_model_only_when_rules_cannot(
+    catalog: Catalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CABINET_EXPLORE_PLANNER", "rules-first")
     plan = {"steps": [{"analysis_id": "gpa_by_college", "params": {}}]}
     stub = StubProvider({"explore_planner": json.dumps(plan)})
     # A question the rules map never reaches the model.
@@ -796,9 +814,6 @@ def test_rules_first_is_the_default_and_asks_the_model_only_when_rules_cannot(
     outcome = plan_question(unmapped, catalog, bad)
     assert outcome.steps is None
     assert outcome.fallback_reason and "rejected" in outcome.fallback_reason
-    # An unknown setting reads as the default.
-    monkeypatch.setenv("CABINET_EXPLORE_PLANNER", "sometimes")
-    assert plan_question(OWNER_SHORT, catalog, stub).planner == "rule"
 
 
 def test_validate_plan_accepts_references_and_checks_kinds(catalog: Catalog) -> None:

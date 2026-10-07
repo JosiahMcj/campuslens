@@ -2,8 +2,13 @@
 
 ``analysts.build_prompt`` hands these roles here, so the chat provider (and
 any provider behind the same interface) needs no change. The planner prompt
-carries only the catalog spec and the question; the writer prompt carries
-only the computed tables.
+carries only the compact catalog (``cabinet.explore.compact``) and the
+question; the writer prompt carries only the computed tables.
+
+The planner's system message is the compact catalog, the same text for
+every question, and the user message is the question alone, so a server
+that keeps the processed start of the last prompt answers the next question
+without reading the catalog again.
 """
 
 from __future__ import annotations
@@ -12,25 +17,9 @@ import json
 from typing import Any
 
 from cabinet.explore.answer import MAX_SENTENCES, WRITER_ROLE
-from cabinet.explore.planner import MAX_STEPS, PLANNER_ROLE
+from cabinet.explore.planner import PLANNER_ROLE
 
 EXPLORE_ROLES = (PLANNER_ROLE, WRITER_ROLE)
-
-PLANNER_SYSTEM = (
-    "You plan answers to a university leader's question using only the approved "
-    "analyses in the catalog you are given. You never compute numbers and you never "
-    "see data. Answer with a JSON object only, of the form "
-    '{"steps": [{"analysis_id": "...", "params": {"name": value}}]}, with 1 to '
-    f"{MAX_STEPS} steps and no markdown, code fences, other keys, or other text. "
-    "Use only analysis ids, parameter names, and allowed values from the catalog. "
-    "A parameter with allowed_list takes a key of that value list. Leave out a "
-    "parameter to use its default. A later step may take a parameter from an "
-    "earlier step's top row. Write "
-    '{"from_step": <earlier step index, from 0>, "column": "<column>"} '
-    "with one of that analysis's chainable_columns whose kind matches the "
-    "parameter. If no approved analysis answers the question, answer "
-    '{"steps": []}.'
-)
 
 WRITER_SYSTEM = (
     "You write the answer to a university leader's question from computed tables. "
@@ -46,12 +35,7 @@ WRITER_SYSTEM = (
 
 def build_explore_prompt(payload: dict[str, Any], role: str) -> tuple[str, str]:
     if role == PLANNER_ROLE:
-        user = (
-            f"Question: {payload['question']}\n"
-            "Catalog of approved analyses:\n"
-            + json.dumps(payload["catalog"], ensure_ascii=False, separators=(",", ":"))
-        )
-        return PLANNER_SYSTEM, user
+        return str(payload["catalog"]), f"Q: {payload['question']}"
     if role == WRITER_ROLE:
         user = "Computed tables:\n" + json.dumps(
             payload["tables"], ensure_ascii=False, indent=1

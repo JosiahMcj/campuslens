@@ -126,6 +126,29 @@ def _signed_int(value: int) -> str:
     return f"−{abs(value):,}" if value < 0 else f"{value:,}"
 
 
+# Count columns that count people, where a withheld cell reads "fewer than 10".
+_PEOPLE_COUNTS = frozenset(
+    {
+        "students",
+        "continuing",
+        "prior_continuing",
+        "new_students",
+        "graduates",
+        "start_headcount",
+        "end_headcount",
+        "online_students",
+        "probation",
+        "suspension",
+        "advised",
+        "records",
+    }
+)
+
+
+# A withheld count of people not marked as itself under 10.
+_WITHHELD_COUNT = "a withheld number of"
+
+
 class _Builder:
     """Builds one sentence and records a claim for every cell it inserts that
     carries a digit."""
@@ -143,7 +166,20 @@ class _Builder:
         column = next(col for col in step.columns if col.key == key)
         value = step.cell(row, key)
         if value == SUPPRESSED_DISPLAY:
-            text = f"withheld ({SUPPRESSED_DISPLAY} students)"
+            # A withheld count of people reads "fewer than 10" only when the
+            # analysis marked that cell itself as under 10; a cell withheld
+            # to protect a neighbour (complementary suppression) may hold
+            # any number, so it reads "a withheld number of". Any other
+            # withheld cell (a rate, an average, sections, hours) says it
+            # is withheld.
+            if column.kind == "count" and key in _PEOPLE_COUNTS:
+                text = (
+                    SUPPRESSED_DISPLAY
+                    if (row, key) in step.small_cells
+                    else _WITHHELD_COUNT
+                )
+            else:
+                text = f"withheld ({SUPPRESSED_DISPLAY} students)"
         else:
             text = _fmt(value, column.kind)
         self.parts.append(text)
@@ -154,10 +190,48 @@ class _Builder:
         return self
 
     def done(self) -> Sentence:
-        return Sentence("".join(self.parts), self.claims)
+        text = "".join(self.parts)
+        # "against a withheld number of for Spring 2025" -> "... number for".
+        text = re.sub(
+            re.escape(_WITHHELD_COUNT)
+            + r"(?= (?:for|in|to|of|against|and|on)\b|[.,;:)])",
+            _WITHHELD_COUNT.removesuffix(" of"),
+            text,
+        )
+        if text[:1].islower():
+            text = text[:1].upper() + text[1:]
+        return Sentence(text, self.claims)
 
 
 # --- the template answer -----------------------------------------------------
+
+
+def _enrollment_sentence(step: StepResult, b: _Builder) -> Sentence:
+    """The latest term's enrollment against the first term's. A term whose
+    count is withheld is named as withheld, never written as a count: the
+    row is withheld when any part of it (new or continuing students), or a
+    sibling it could be subtracted from, is under 10, so the total itself
+    may be large."""
+    shown = [
+        i for i, row in enumerate(step.rows) if isinstance(row.get("students"), int)
+    ]
+    last = len(step.rows) - 1
+    if not shown:
+        return Sentence(
+            "Every term's count is withheld: each would reveal a group too small "
+            "to show without risking identifying someone."
+        )
+    if shown[-1] != last:
+        b.t("The ").c(step, last, "term_name").t(
+            " count is withheld: it would reveal a group too small to show "
+            "without risking identifying someone. "
+        )
+    b.t("In ").c(step, shown[-1], "term_name").t(", ").c(step, shown[-1], "students")
+    b.t(" students were enrolled")
+    if shown[0] != shown[-1]:
+        b.t(", against ").c(step, shown[0], "students").t(" in ")
+        b.c(step, shown[0], "term_name")
+    return b.t(".").done()
 
 
 def _primary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
@@ -345,10 +419,7 @@ def _primary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
         b.t(" to ").c(step, 0, "end_headcount").t(" in ").c(step, 0, "end_term")
         return b.t(", a change of ").c(step, 0, "growth").t(".").done()
     if a == "enrollment_by_term":
-        last = len(step.rows) - 1
-        b.t("In ").c(step, last, "term_name").t(", ").c(step, last, "students")
-        b.t(" students were enrolled, against ").c(step, 0, "students").t(" in ")
-        return b.c(step, 0, "term_name").t(".").done()
+        return _enrollment_sentence(step, b)
     if a == "continuing_registration_change":
         b.c(step, 0, "continuing").t(" continuing students registered for ")
         b.c(step, 0, "term_name").t(" against ").c(step, 0, "prior_continuing").t(

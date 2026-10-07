@@ -170,17 +170,36 @@ in one plain sentence.
      lowest GPA, what is its hardest class, and who has taught it?" is three chained
      steps, and it corrects common typos ("teh") first. Replay and fake modes use it,
      and so do the tests.
-   - The **model planner** runs only with a live provider, and by default only for a
-     question the rules cannot map (`CABINET_EXPLORE_PLANNER`, `rules-first` by default;
-     `model-first` asks the model every time and falls back to the rules). We chose
-     rules first because they are fast, reviewed, and map every planted question, while
-     planning from the full catalog can take a model longer than the 55 s request
-     budget. It receives only the catalog (analysis ids, titles, parameter names, and
-     allowed values) and the question, and it must answer with a JSON plan. The question
-     reaches it with any typed id or long number replaced (`redact_question`), and the
-     list of instructors is in its catalog only when an executive or admin asks. The plan is checked against the catalog: every id, parameter, value, and
-     reference. Invalid JSON, a value outside the catalog, a bad reference, or an
-     unavailable provider is never used, and the response says so in `fallbacks`.
+   - The **model planner** runs only with a live provider, and plans first by default
+     (`CABINET_EXPLORE_PLANNER`: `model-first` by default; `rules-first` asks the model
+     only for a question the rules cannot map; `rules-only` never asks it). It reads the
+     **compact catalog** (`explore/compact.py`, under 3,000 tokens): each analysis with a
+     one-line purpose and its parameters' choices or value types, the measures and
+     groupings of the general analysis, the majors and colleges, the term range and the
+     current term, short synonyms ("CS" is Computer Science), the planning rules, and six
+     worked examples. It lists no course, subject, instructor, or student. The system
+     message is that catalog and the user message is the question alone, so a server
+     that keeps the processed start of the last prompt does not read the catalog again.
+     The model writes one short `reasoning` sentence and then the plan; the sentence is
+     discarded, never shown, logged, or recorded. Courses, subjects, terms and
+     instructors are free text ("Organic Chemistry 1", "Fall 2024", "Alicia Shelby"), and
+     code resolves each to a catalog value (codes, names, titles, synonyms, close
+     spellings) before the plan is checked against the catalog: every id, parameter,
+     value, and reference. A close spelling must match word for word, with the same
+     numbers ("Calculus IV" is never Calculus I), and a title several subjects share
+     stays unresolved. Code also repairs three shapes a small model writes: a ranking
+     with no grouping ranks majors (or the column a later step takes from it), the
+     same table asked twice in two orders is asked once unless a later step reads
+     from it, and a row count the catalog does not offer becomes the next one it
+     does. The model's explicit empty plan means no analysis answers the question,
+     and the rules are not asked. The model has its own time
+     budget (`CABINET_EXPLORE_PLANNER_TIMEOUT`, default 20 s, one deadline that a retry
+     shares; every other call has 55 s).
+     A timeout, invalid JSON, a value that resolves to nothing, a value outside the
+     catalog, a bad reference, or an unavailable provider sends the question to the
+     rule planner, and the response says why in `fallbacks`. The question reaches the
+     model with any typed id or long number replaced (`redact_question`). The measured
+     accuracy and latency of each order are in `docs/EXPLORE-EVAL.md`.
    - Validated model plans are recorded under `var/replay/explore/` when `CABINET_RECORD=1`
      (`CABINET_REPLAY_DIR` overrides the place), keyed by the question and the catalog's
      hash. Replay reads each replay directory's `explore/` folder, including

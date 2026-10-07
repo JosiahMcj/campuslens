@@ -7,17 +7,23 @@ the second analysis on whatever major the first one ranked lowest.
 
 Two planners sit behind ``plan_question``:
 
-- the rule planner (keywords, synonyms, and patterns over the catalog's
-  allowed values), used in replay and fake modes, in tests, and with a live
-  provider for every question it can map (``CABINET_EXPLORE_PLANNER``,
-  default ``rules-first``);
 - the model planner (through the provider interface, role
-  ``explore_planner``), which receives ONLY the catalog spec (analysis ids,
-  titles, parameter names and allowed values) and the question, and must
-  return JSON that ``validate_plan`` accepts. It plans the questions the
-  rules cannot map, or every question with ``model-first``. Invalid JSON, an
-  unknown id, a value outside the catalog, a bad reference, or an
-  unavailable provider all fall back to the rule planner.
+  ``explore_planner``), which receives ONLY the compact catalog
+  (``cabinet.explore.compact``: analysis ids with a one-line purpose, their
+  parameters and value types, the measures and groupings, the majors and
+  colleges, the term range) and the question with any typed id or long
+  number replaced. It writes a short reasoning sentence (discarded) and a
+  plan; courses, subjects, terms and instructors are free text that code
+  resolves to catalog values before ``validate_plan`` checks the plan. With
+  a live provider it plans first (``CABINET_EXPLORE_PLANNER``, default
+  ``model-first``), within its own time budget
+  (``CABINET_EXPLORE_PLANNER_TIMEOUT``, default 20 s);
+- the rule planner (keywords, synonyms, and patterns over the catalog's
+  allowed values), used in replay and fake modes, in tests, and whenever the
+  model's plan cannot be used: a timeout, an unavailable provider, invalid
+  JSON, an unknown id, a value that resolves to nothing in the catalog, or a
+  bad reference. ``rules-first`` asks the model only for questions the rules
+  cannot map, and ``rules-only`` never asks it.
 
 Validated model plans are recorded like golden runs, keyed by the question
 and the catalog hash, so replay serves them offline: written to
@@ -49,6 +55,7 @@ from cabinet.explore.catalog import (
     Param,
     Vocab,
 )
+from cabinet.explore.compact import Unresolved, compact_catalog, resolve_plan
 from cabinet.explore.privacy import redact_question
 from cabinet.provider import (
     ENV_RECORD,
@@ -157,6 +164,9 @@ RULE_PHRASINGS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Which major grew fastest from Fall 2020 to Fall 2025?", ("headcount_growth",)),
     ("Which majors shrank the most since 2020?", ("headcount_growth",)),
     ("How has Computer Science headcount grown?", ("headcount_growth",)),
+    ("How many CS students are enrolled?", ("measure_by_group",)),
+    ("How many students are enrolled this semester?", ("measure_by_group",)),
+    ("What's our biggest major?", ("measure_by_group",)),
     ("What was enrollment by term?", ("enrollment_by_term",)),
     ("How many students were enrolled in Nursing each fall?", ("enrollment_by_term",)),
     (
@@ -223,6 +233,11 @@ RULE_PHRASINGS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 class PlanInvalid(ValueError):
     """A plan that does not validate against the catalog."""
+
+
+class PlanDeclined(Exception):
+    """The model answered, validly, that no approved analysis answers the
+    question (``{"steps": []}``)."""
 
 
 @dataclass(frozen=True)
@@ -434,14 +449,34 @@ def uses_model(provider: Provider) -> bool:
 
 
 def parse_model_plan(text: str, catalog: Catalog) -> list[Step]:
+    """The model's answer -> validated steps, or PlanInvalid. Takes the one
+    JSON object in the text (a code fence or a lead-in line around it is
+    ignored), drops the ``reasoning`` sentence, resolves free-text values to
+    catalog values, and validates the plan."""
     stripped = text.strip()
     fence = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", stripped, re.DOTALL)
     if fence:
         stripped = fence.group(1)
+    start, end = stripped.find("{"), stripped.rfind("}")
+    if start >= 0 and end > start:
+        stripped = stripped[start : end + 1]
     try:
         raw = json.loads(stripped)
     except ValueError as exc:
         raise PlanInvalid(f"the model's plan is not JSON: {exc}") from None
+    if isinstance(raw, dict) and raw.get("steps") == [] and set(raw) <= {
+        "steps",
+        "reasoning",
+    }:
+        raise PlanDeclined()
+    try:
+        raw = resolve_plan(raw, catalog)
+    except (TypeError, AttributeError, KeyError) as exc:  # an odd shape
+        raise PlanInvalid(f"the model's plan has an unexpected shape: {exc}") from None
+    except Unresolved as exc:
+        raise PlanInvalid(
+            f"the model's plan names something we cannot find: {exc}"
+        ) from None
     return validate_plan(raw, catalog)
 
 
@@ -450,10 +485,13 @@ def model_plan(
 ) -> list[Step]:
     """The model planner. Raises PlanInvalid or ProviderUnavailable. The model
     receives the question with any typed id or long number replaced, and the
-    catalog; the instructor list only for the executive and admin roles."""
+    compact catalog, the same for every role: it lists no instructor, course,
+    or student. ``role`` is kept for callers; it changes nothing the model
+    sees."""
+    del role
     payload = {
         "question": redact_question(question),
-        "catalog": catalog.spec(instructors=role in INSTRUCTOR_ROLES),
+        "catalog": compact_catalog(catalog),
     }
     explanation = provider.explain(payload, PLANNER_ROLE)
     steps = parse_model_plan(explanation.text, catalog)
@@ -469,27 +507,28 @@ RULES_ONLY = "rules-only"
 
 
 def planner_order_from_env() -> str:
-    """``CABINET_EXPLORE_PLANNER``: ``rules-first`` (the default) asks the model
-    only for a question the rule planner cannot map; ``model-first`` asks the
-    model every time and falls back to the rules; ``rules-only`` never asks
-    the model to plan. Anything else is logged and
-    read as the default."""
+    """``CABINET_EXPLORE_PLANNER``: ``model-first`` (the default with a live
+    model) asks the model every time and falls back to the rules;
+    ``rules-first`` asks the model only for a question the rule planner
+    cannot map; ``rules-only`` never asks the model to plan. Anything else is
+    logged and read as the default."""
     raw = os.environ.get(ENV_PLANNER_ORDER, "").strip().lower()
-    if raw in ("", RULES_FIRST):
-        return RULES_FIRST
-    if raw == MODEL_FIRST:
+    if raw in ("", MODEL_FIRST):
         return MODEL_FIRST
+    if raw == RULES_FIRST:
+        return RULES_FIRST
     if raw == RULES_ONLY:
         return RULES_ONLY
     logger.warning(
-        "%s=%r is not %s or %s; using %s",
+        "%s=%r is not %s, %s or %s; using %s",
         ENV_PLANNER_ORDER,
         raw,
-        RULES_FIRST,
         MODEL_FIRST,
         RULES_FIRST,
+        RULES_ONLY,
+        MODEL_FIRST,
     )
-    return RULES_FIRST
+    return MODEL_FIRST
 
 
 def _try_model(
@@ -512,12 +551,11 @@ def plan_question(
     """The plan for one question (call only after the refusal check).
 
     Replay serves a recorded plan first. With a live provider the default
-    order is rules first: the reviewed rule planner answers every question
-    it can map, and the model plans only the rest (we measured a local model
-    taking longer than the request budget to read the catalog, and the rules
-    reach every planted fact). ``CABINET_EXPLORE_PLANNER=model-first`` asks
-    the model first and falls back to the rules. Fake and replay modes never
-    call a model."""
+    order is model first: the model reads the compact catalog and plans,
+    and the rule planner answers whenever the model's plan cannot be used
+    (docs/EXPLORE-EVAL.md has the measurements behind this order).
+    ``rules-first`` and ``rules-only`` keep the earlier orders. Fake and
+    replay modes never call a model."""
     if provider.name == "replay":
         recorded = load_recorded_plan(question, catalog)
         if recorded is not None:
@@ -535,11 +573,19 @@ def plan_question(
         steps, notes = rule_plan_detail(question, catalog)
         if steps is not None:
             return PlanOutcome(steps, "rule", None, notes)
-        model_steps, reason = _try_model(question, catalog, provider, role)
+        try:
+            model_steps, reason = _try_model(question, catalog, provider, role)
+        except PlanDeclined:
+            return PlanOutcome(None, "model")
         if model_steps is not None:
             return PlanOutcome(model_steps, "model")
         return PlanOutcome(None, "rule", reason, ())
-    model_steps, reason = _try_model(question, catalog, provider, role)
+    try:
+        model_steps, reason = _try_model(question, catalog, provider, role)
+    except PlanDeclined:
+        # The model read the catalog and found no analysis for the question;
+        # the rules are not asked to stretch one onto it.
+        return PlanOutcome(None, "model")
     if model_steps is not None:
         return PlanOutcome(model_steps, "model")
     steps, notes = rule_plan_detail(question, catalog)
@@ -551,7 +597,6 @@ def plan_question(
 _MAJOR_SYNONYMS = {
     "comp sci": "CSCI",
     "cs": "CSCI",
-    "computer engineering": "CSCI",
     "mechanical": "MEEN",
     "mech e": "MEEN",
     "mechanical engineers": "MEEN",
@@ -815,11 +860,29 @@ _TYPOS = {
     "lowets": "lowest",
     "majro": "major",
     "gpa's": "GPAs",
+    "hw": "how",
+    "grads": "graduates",
 }
 _TYPO_RE = re.compile(r"\b(" + "|".join(map(re.escape, _TYPOS)) + r")\b", re.I)
 
 
+# A conversational lead-in before the question itself ("no, how many ...",
+# "actually, ..."), dropped before planning.
+_LEAD_IN_WORDS = (
+    r"no(?!\.)|nope|nah|actually|sorry|ok|okay|well|wait|hmm|i mean|i meant|so"
+)
+_LEAD_IN_RE = re.compile(
+    # Only before a comma, a question word, or another lead-in: "no, how
+    # many ...", "actually what ..."; never "No students on probation?".
+    rf"^\s*(?:(?:{_LEAD_IN_WORDS})(?:\s*[,.!:;]+\s*|\s+(?=(?:{_LEAD_IN_WORDS}|how|"
+    r"what|whats|what's|which|who|where|when|why|is|are|do|does|did|can|could|"
+    r"show|list|tell|give)\b)))+",
+    re.I,
+)
+
+
 def _fix_typos(question: str) -> str:
+    question = _LEAD_IN_RE.sub("", question) or question
     return _TYPO_RE.sub(lambda m: _TYPOS[m.group(1).lower()], question)
 
 
@@ -1125,7 +1188,8 @@ class _ClausePlanner:
             return Step("credit_hours_by_term", p)
 
         if _has(
-            r"\bgr[eo]w|growth|growing|shr[ai]nk|shrinking|declin|lost the most|gained",
+            r"\bgr[eo]w|growth|growing|shr[aiu]nk|shrinking|declin|lost the most|"
+            r"gained",
             text,
         ) and (e.majors or _has(r"\bmajors?\b|programs?|departments?|headcount", text)):
             if e.majors:
@@ -1137,13 +1201,21 @@ class _ClausePlanner:
                 p["start_term"] = start
             if end:
                 p["end_term"] = end
-            if _has(r"slowest|shr[ai]nk|shrinking|declin|lost", text):
+            if _has(r"slowest|shr[aiu]nk|shrinking|declin|lost", text):
                 p["order"] = "slowest_first"
             return Step("headcount_growth", p)
 
-        if _has(
-            r"enrol|headcount|how many students|student count|number of students", text
-        ):
+        if _has(_HEADCOUNT_WORDS, text):
+            if not _has(_TREND_WORDS, text) and not e.seasons:
+                # "How many CS students are enrolled?", "total enrollment":
+                # a count now (the latest fall or spring term), or in the
+                # one term named.
+                counts = self._headcount(e, text)
+                # Two or more terms ("Fall 2024 vs Fall 2025", "last year"):
+                # one count per term, each its own step.
+                for params in counts[:-1]:
+                    self.steps.append(Step(general.ANALYSIS_ID, params))
+                return Step(general.ANALYSIS_ID, counts[-1])
             self._scope(p, e, text, term=False)
             if e.seasons:
                 p["season"] = e.seasons[0]
@@ -1172,6 +1244,42 @@ class _ClausePlanner:
             return Step("gpa_by_major", p)
         return None
 
+    def _headcount(self, e: _Entities, text: str) -> list[dict[str, Any]]:
+        p: dict[str, Any] = {"measure": "headcount"}
+        ranked = re.search(_BIGGEST_WORDS, text, re.I)
+        if ranked:
+            ranks_colleges = "college" in ranked.group(0).lower()
+            p["group_by"] = "college" if ranks_colleges else "major"
+        else:
+            for key in ("major", "college"):
+                if _has(_GROUPING_WORDS[key], text):
+                    p["group_by"] = key
+                    break
+        if ranked:
+            p["order"] = "lowest_first" if _has(r"smallest|fewest", text) else (
+                "highest_first"
+            )
+        if e.majors and p.get("group_by") != "major":
+            p["major"] = e.majors[0]
+        if e.colleges and p.get("group_by") != "college":
+            p["college"] = e.colleges[0]
+        v = self.m.vocab
+        terms = sorted(set(e.terms))
+        if _has(_LAST_YEAR_WORDS, text) and not terms:
+            current_year = v.term_year[_current_regular_term_of(v)]
+            years = list(v.academic_years)
+            if years.index(current_year) > 0:
+                last = years[years.index(current_year) - 1]
+                terms = [
+                    t
+                    for t, y in v.term_year.items()
+                    if y == last and v.term_season[t] != "Summer"
+                ]
+        if not terms:
+            return [p]
+        room = MAX_STEPS - len(self.steps)
+        return [{**p, "term_from": t, "term_to": t} for t in terms[-room:]]
+
     def _scope(self, p: dict[str, Any], e: _Entities, text: str, *, term: bool) -> None:
         if e.majors and not _has(
             r"\bwhich\s+majors?\b|\bwhat\s+majors?\b|\bby major\b", text
@@ -1182,6 +1290,31 @@ class _ClausePlanner:
         if term and e.terms:
             p["term"] = e.terms[0]
 
+
+# A count of students ("how many CS students are there", "total enrollment",
+# "what's our biggest major"), and the words that make it a trend over terms.
+_HEADCOUNT_WORDS = (
+    r"enrol|headcount|student count|"
+    r"\b(?:how many|number of|count of)\b(?:\s+[\w-]+){0,4}?\s+"
+    r"(?:students|majors|undergrads|undergraduates|kids|people)\b|"
+    r"(?:biggest|largest|smallest|most popular)\s+(?:majors?|programs?|colleges?)|"
+    r"\b(?:which|what)\s+(?:majors?|programs?|colleges?)\s+(?:has|have|is|are)\s+"
+    r"(?:the\s+)?(?:most|fewest|biggest|largest|smallest)\s+"
+    r"(?:students|majors|people|enrollment)\b"
+)
+_TREND_WORDS = (
+    r"\b(?:each|every|per|by)\s+(?:term|semester|year|fall|spring|summer)s?\b|"
+    r"over time|over the years|\btrend|histor|\bchang|\bsince\b|term[- ]by[- ]term|"
+    r"year over year|\bgr[eo]w"
+)
+_BIGGEST_WORDS = (
+    r"(?:biggest|largest|smallest|most popular)\s+(?:majors?|programs?|colleges?)|"
+    r"\b(?:which|what)\s+(?:majors?|programs?|colleges?)\s+(?:has|have|is|are)\s+"
+    r"(?:the\s+)?(?:most|fewest|biggest|largest|smallest)\s+"
+    r"(?:students|majors|people|enrollment)\b"
+)
+# Two terms, or last year: a count per term, never one term alone.
+_LAST_YEAR_WORDS = r"\b(?:last|previous|prior)\s+(?:academic\s+)?year\b"
 
 # --- the general analysis: measure words, grouping words, filter words ------
 
@@ -1687,3 +1820,138 @@ def describe_analysis(analysis: Analysis) -> dict[str, str]:
         "title": analysis.title,
         "description": analysis.description,
     }
+
+
+# --- what the question was taken to ask ----------------------------------------
+
+_REF_WORDS = {
+    "major": "that major",
+    "college": "that college",
+    "course": "that course",
+    "term": "that term",
+    "instructor": "that instructor",
+}
+
+
+def _current_regular_term(catalog: Catalog) -> str:
+    return _current_regular_term_of(catalog.vocab)
+
+
+def _current_regular_term_of(v: Vocab) -> str:
+    regular = [t for t, s in v.term_season.items() if s != "Summer"]
+    return regular[-1] if regular else next(reversed(v.terms))
+
+
+def _value_words(param: Param, value: Any, catalog: Catalog) -> str:
+    if isinstance(value, Ref):
+        return _REF_WORDS.get(param.kind, "the earlier result")
+    v = catalog.vocab
+    if param.kind == "major":
+        return v.majors.get(value, str(value))
+    if param.kind == "college":
+        return v.colleges.get(value, str(value))
+    if param.kind == "subject":
+        return f"{v.subjects.get(value, value)} courses"
+    if param.kind == "course":
+        return v.course_label(value)
+    if param.kind in ("term", "advising_term"):
+        return v.terms.get(value, str(value))
+    return catalog.plain(param, value)
+
+
+def _general_understood(step: Step, catalog: Catalog) -> str:
+    p = step.params
+    measure = general.MEASURES[str(p.get("measure"))]
+    labels = [
+        general.GROUPINGS[key].values.get(str(p[key]), str(p[key]))
+        for key in general.GROUPING_KEYS
+        if key not in ("major", "college", "term", "entry_cohort") and key in p
+    ]
+    places = [
+        _value_words(ANALYSIS_BY_ID[step.analysis_id].param(key), p[key], catalog)  # type: ignore[arg-type]
+        for key in ("major", "college")
+        if key in p
+    ]
+    if "entry_cohort" in p and not isinstance(p["entry_cohort"], Ref):
+        labels.append(f"students who entered in {p['entry_cohort']}")
+    groups = [
+        general.GROUPINGS[str(g)].noun
+        for g in (p.get("group_by"), p.get("then_by"))
+        if isinstance(g, str)
+    ]
+    # The window the analysis really reads (general.term_window), never
+    # the one the plan named: a term measure reads one term, and a fixed or
+    # cohort measure reads all the records.
+    terms = catalog.vocab.terms
+    start, end = p.get("term_from"), p.get("term_to")
+    window = general.term_window(
+        measure,
+        "term" in (p.get("group_by"), p.get("then_by")),
+        start if isinstance(start, str) else None,
+        end if isinstance(end, str) else None,
+        catalog.vocab,
+    )
+    if not window.applies:
+        when = "over all the records" if (start or end) else ""
+    elif window.term_from == window.term_to:
+        when = f"in {terms[window.term_from]}"
+        if window.term_from == _current_regular_term(catalog) and not (start or end):
+            when += ", the current term"
+    elif window.default and measure.scope != "term":
+        when = ""
+    else:
+        when = f"from {terms[window.term_from]} to {terms[window.term_to]}"
+    if measure.id == "headcount":
+        who = " and ".join(labels) if labels else "Students"
+        if places and not labels:
+            who = f"{places[0]} students"
+        elif places:
+            who = f"{who} in {places[0]}"
+        text = f"{who[:1].upper()}{who[1:]} enrolled"
+    else:
+        text = measure.label[:1].upper() + measure.label[1:]
+        scope = labels + places
+        if scope:
+            text += " for " + ", ".join(scope)
+    if groups:
+        text += " by " + " and ".join(groups)
+    if when:
+        text += " " + when
+    return text
+
+
+def understood(steps: list[Step], catalog: Catalog, role: str = "staff") -> str:
+    """What the plan answers, in plain words, built from the validated plan
+    (never from the model's own text): "Computer Science students enrolled in
+    Spring 2026, the current term". Several steps read "...; then ..."."""
+    parts: list[str] = []
+    for step in steps:
+        analysis = ANALYSIS_BY_ID[step.analysis_id]
+        if analysis.id == general.ANALYSIS_ID:
+            parts.append(_general_understood(step, catalog))
+            continue
+        text = analysis.title
+        order = step.params.get("order")
+        if order in ("lowest_first", "highest_first"):
+            text += ", " + (
+                "lowest first" if order == "lowest_first" else "highest first"
+            )
+        scope = []
+        for param in analysis.params:
+            if param.name not in step.params or param.kind == "choice":
+                continue
+            if param.kind == "instructor" and role not in INSTRUCTOR_ROLES:
+                continue
+            words = _value_words(param, step.params[param.name], catalog)
+            if param.name == "major_required":
+                words = f"courses {words} requires"
+            scope.append(words)
+        if scope:
+            text += " (" + "; ".join(scope) + ")"
+        parts.append(text)
+    # "...; then students enrolled in Fall 2025" (a name stays capitalized).
+    later = [
+        "students" + part[len("Students") :] if part.startswith("Students ") else part
+        for part in parts[1:]
+    ]
+    return "; then ".join(parts[:1] + later)

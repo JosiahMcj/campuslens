@@ -30,6 +30,10 @@ endpoint works. Implementations:
     ``max_tokens`` (default 2048, a whole number from 256 to 32768). A
     thinking model's hidden reasoning counts against it, and running out is
     ``finish_reason 'length'``, which is unavailability, never a half answer.
+  - ``CABINET_EXPLORE_PLANNER_TIMEOUT`` — seconds the explore planner waits
+    for its plan (default 20, a number from 3 to 55). Explore falls back to
+    its rule planner when the model does not answer in time, so this call
+    gets a shorter budget than the 55 s every other call has.
   - ``CABINET_LLM_LABEL`` — what the UI shows as the source (default
     ``"live model"``).
   - ``CABINET_LLM_API_KEY`` — the key; or ``CABINET_LLM_API_KEY_FILE`` +
@@ -107,6 +111,11 @@ LOCAL_ENV_PATH = REPO_ROOT / "cabinet.local.env"
 # so it is never retried and one explain stays within ~60 s of wall time.
 CHAT_TIMEOUT_SECONDS = 55
 RETRY_DELAY_SECONDS = 2
+# The explore planner's own budget: a plan the model has not written in this
+# time is abandoned for the rule planner, so the person is not kept waiting.
+ENV_EXPLORE_PLANNER_TIMEOUT = "CABINET_EXPLORE_PLANNER_TIMEOUT"
+DEFAULT_PLANNER_TIMEOUT_SECONDS = 20.0
+MIN_PLANNER_TIMEOUT_SECONDS = 3.0
 
 ENV_PROVIDER = "CABINET_PROVIDER"
 ENV_RECORD = "CABINET_RECORD"
@@ -239,6 +248,32 @@ def _reasoning_effort_field() -> dict[str, str]:
     can consume the entire output budget as hidden reasoning."""
     value = os.environ.get(ENV_LLM_REASONING_EFFORT, DEFAULT_REASONING_EFFORT).strip()
     return {"reasoning_effort": value} if value else {}
+
+
+def timeout_for_role(role: str) -> float:
+    """Seconds one attempt may take: ``CABINET_EXPLORE_PLANNER_TIMEOUT``
+    (default 20) for the explore planner, 55 for every other role. A value
+    that is not a number from 3 to 55 is logged and read as the default."""
+    if role != "explore_planner":
+        return float(CHAT_TIMEOUT_SECONDS)
+    raw = os.environ.get(ENV_EXPLORE_PLANNER_TIMEOUT, "").strip()
+    if not raw:
+        return DEFAULT_PLANNER_TIMEOUT_SECONDS
+    try:
+        value = float(raw)
+    except ValueError:
+        value = -1.0
+    if not MIN_PLANNER_TIMEOUT_SECONDS <= value <= CHAT_TIMEOUT_SECONDS:
+        logger.warning(
+            "%s=%r is not a number from %g to %d; using %g",
+            ENV_EXPLORE_PLANNER_TIMEOUT,
+            raw,
+            MIN_PLANNER_TIMEOUT_SECONDS,
+            CHAT_TIMEOUT_SECONDS,
+            DEFAULT_PLANNER_TIMEOUT_SECONDS,
+        )
+        return DEFAULT_PLANNER_TIMEOUT_SECONDS
+    return value
 
 
 def max_tokens_from_env() -> int:
@@ -435,7 +470,7 @@ class ChatProvider:
             "max_tokens": max_tokens_from_env(),
         }
         url = base_url.rstrip("/") + "/chat/completions"
-        data = self._post_with_retry(url, key, payload)
+        data = self._post_with_retry(url, key, payload, timeout_for_role(role))
 
         choices = data.get("choices")
         if not choices:
@@ -497,7 +532,11 @@ class ChatProvider:
         return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
     def _post_with_retry(
-        self, url: str, key: str, payload: dict[str, Any]
+        self,
+        url: str,
+        key: str,
+        payload: dict[str, Any],
+        timeout: float = CHAT_TIMEOUT_SECONDS,
     ) -> dict[str, Any]:
         """One POST plus at most one retry, after a 2 s pause.
 
@@ -506,10 +545,16 @@ class ChatProvider:
         spends the wall-time budget — and a 200 whose body is not a JSON
         object (a gateway's HTML error page, a connection dropped mid-body),
         which is typed unavailability with a plain reason, never a 500.
+
+        ``timeout`` is one deadline for the whole call: a retry gets only
+        the time left after the first attempt and the pause, and is skipped
+        when under a second would remain.
         """
         body = json.dumps(payload).encode("utf-8")
+        deadline = time.monotonic() + timeout
         for attempt in (0, 1):
             retryable = False
+            remaining = timeout if attempt == 0 else deadline - time.monotonic()
             try:
                 request = urllib.request.Request(
                     url,
@@ -520,7 +565,7 @@ class ChatProvider:
                     },
                     method="POST",
                 )
-                with _urlopen(request, timeout=CHAT_TIMEOUT_SECONDS) as response:
+                with _urlopen(request, timeout=remaining) as response:
                     try:
                         parsed: Any = json.loads(response.read().decode("utf-8"))
                     # ValueError covers JSONDecodeError and UnicodeDecodeError;
@@ -552,8 +597,7 @@ class ChatProvider:
                 retryable = exc.code == 429 or exc.code >= 500
             except TimeoutError as exc:
                 raise ProviderUnavailable(
-                    f"the chat endpoint did not answer within "
-                    f"{CHAT_TIMEOUT_SECONDS} s",
+                    f"the chat endpoint did not answer within {timeout:g} s",
                     provider=self.name,
                 ) from exc
             except urllib.error.URLError as exc:
@@ -563,7 +607,8 @@ class ChatProvider:
                 # A connect-phase timeout surfaces as URLError(reason=
                 # TimeoutError) and, like a read timeout, is never retried.
                 retryable = not isinstance(exc.reason, TimeoutError)
-            if not retryable or attempt == 1:
+            left = deadline - time.monotonic() - RETRY_DELAY_SECONDS
+            if not retryable or attempt == 1 or left < 1:
                 raise ProviderUnavailable(reason, provider=self.name)
             time.sleep(RETRY_DELAY_SECONDS)
         raise AssertionError("unreachable")  # pragma: no cover
