@@ -80,6 +80,12 @@ _CABINET_TABLES = (
     "briefings",
     "decisions",
     "recordings",
+    "dispatches",
+    "office_contacts",
+    "aid_reviews",
+    "staff_actions",
+    "staff_action_notes",
+    "staff_action_history",
 )
 
 

@@ -65,6 +65,13 @@ Endpoints:
   required (422 without it), and a save against a row that changed since it
   was opened is a 409. Logs ``aid.updated`` with the acting
   user, the row id, and the status transition, never the student id.
+- ``GET /staff-actions``, ``PATCH /staff-actions/{id}``, ``POST
+  /staff-actions/{id}/notes`` and ``/send`` — the staff action worklist
+  (``cabinet.staffactions_api``): status, owner, due date, notes, history,
+  and Send to office. Logs ``action.*`` events, never a note or a student id.
+- ``GET  /admin/connections`` (admin role) — whether the Ellucian import is
+  configured and its last import, and where office messages go
+  (``cabinet.connections``); never a credential.
 - ``GET  /admin/offices`` / ``PUT /admin/offices`` (admin role) — the
   institution's office address book, the only source of dispatch
   recipients. Offices, never student addresses.
@@ -186,6 +193,7 @@ from cabinet.auth import (
     session_ttl,
     sign_session_id,
 )
+from cabinet.connections import router as connections_router
 from cabinet.counseling import M9_ID, authorization_block, m9_finding
 from cabinet.datasets import UploadError, validate_upload
 from cabinet.explore.api import router as explore_router
@@ -232,6 +240,7 @@ from cabinet.security import (
     CabinetSecurityMiddleware,
     LoginLockout,
 )
+from cabinet.staffactions_api import router as staff_actions_router
 from cabinet.store import AidReviewConflict, CabinetStore, StoreError
 from cabinet.webui import ApiPrefixMiddleware, SpaStaticFiles, ui_dist_from_env
 
@@ -777,6 +786,7 @@ def create_app(
     # app.state for tests.
     app.state.runtime_for = runtime_for
     app.state.ask_lock_for = ask_lock_for
+    app.state.production = production
 
     def analyst_task_id(role: str, runtime: InstitutionRuntime) -> str:
         """The task this briefing run's events belong to.
@@ -2555,6 +2565,9 @@ def create_app(
         return JSONResponse(content={"user": admin_user_body(updated), "changed": True})
 
     app.include_router(explore_router)  # POST /explore, GET /explore/catalog
+    # GET /staff-actions, PATCH /staff-actions/{id}, POST .../notes, .../send
+    app.include_router(staff_actions_router)
+    app.include_router(connections_router)  # GET /admin/connections
 
     # The built UI, served by the same process. Mounted after every API
     # route so an API path always wins over the static mount; a missing

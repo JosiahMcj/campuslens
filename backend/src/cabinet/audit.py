@@ -87,6 +87,18 @@ EVENT_TYPES: tuple[str, ...] = (
     # school data. Payload: task_id, question_event_id, the analysis ids of
     # the steps, their row counts, the planner and writer used. Never a value.
     "explore.answered",
+    # The staff action worklist (cabinet.staffactions). action.updated: a
+    # person changed an action's status, owner or due date (payload:
+    # action_id, office, finding_id, fields, status_from, status_to).
+    # action.noted: a person added a note (payload: action_id, office; never
+    # the note text). action.sent / action.send_failed: a named staff member
+    # or admin sent the action to the office mailbox (payload: action_id,
+    # office, dispatch_id, provider, provider_ref or error). Never a
+    # student id: an action is an office and a count.
+    "action.updated",
+    "action.noted",
+    "action.sent",
+    "action.send_failed",
 )
 
 ENV_VAR = "CABINET_AUDIT_PATH"

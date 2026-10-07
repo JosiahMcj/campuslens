@@ -79,6 +79,8 @@ interface StubOptions {
   uploadErrors?: string[]
   /** The datasets GET /api/admin/datasets lists. */
   datasets?: unknown[]
+  /** The offices GET /api/staff-actions names. */
+  actionOffices?: string[]
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -132,6 +134,25 @@ function stubApi(options: StubOptions = {}) {
           follow_up: { office, description: 'Follow up.' },
           approved: false,
         })),
+      })
+    }
+    if (url === '/api/staff-actions' && method === 'GET') {
+      return jsonResponse({
+        items: (options.actionOffices ?? []).map((office, index) => ({ id: index + 1, office })),
+      })
+    }
+    if (url === '/api/admin/connections' && method === 'GET') {
+      return jsonResponse({
+        ellucian: {
+          configured: false,
+          settings: [
+            { label: 'Ellucian Ethos address', set: true },
+            { label: 'Ethos access key', set: false },
+            { label: 'Student pseudonym key', set: false },
+          ],
+          last_import: null,
+        },
+        outbound: { provider: 'outbox' },
       })
     }
     if (url === '/api/admin/users' && method === 'GET') {
@@ -290,7 +311,7 @@ describe('Institution Offices — loading, empty, error', () => {
     )
     expect(
       screen.getByText(
-        'Where approved follow-ups are sent. Each office gets one mailbox. Nothing is sent until a staff member presses Send.',
+        'Where approved follow-ups and staff actions are sent. Each office gets one mailbox. Nothing is sent until a staff member presses Send.',
       ),
     ).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Add an office' })).toBeTruthy()
@@ -543,7 +564,7 @@ const INACTIVE_DATASET = {
 }
 
 describe('Institution — layout', () => {
-  it('opens with a short section list and four section cards', async () => {
+  it('opens with a short section list and five section cards', async () => {
     stubApi()
     renderInstitution()
     await waitFor(() => screen.getByText('staff@example.edu'))
@@ -554,6 +575,7 @@ describe('Institution — layout', () => {
       'Offices',
       'Counseling',
       'Data',
+      'Connections',
     ])
     for (const link of within(nav).getAllByRole('link')) {
       const target = document.getElementById(link.getAttribute('href')!.slice(1))
@@ -887,5 +909,24 @@ describe('Institution Data — upload, activate, failures', () => {
     expect(screen.queryByText(/Nothing has been uploaded yet/)).toBeNull()
     expect(screen.queryByText('Loading the uploads…')).toBeNull()
     expect(screen.getAllByRole('button', { name: 'Retry' }).length).toBe(1)
+  })
+})
+
+describe('Institution — connections', () => {
+  it('says what is configured, setting by setting, and never a value', async () => {
+    stubApi()
+    renderInstitution()
+    await waitFor(() => screen.getByText('Not configured'))
+    expect(screen.getByText('Ellucian Ethos address: set')).toBeTruthy()
+    expect(screen.getByText('Ethos access key: not set')).toBeTruthy()
+    expect(screen.getByText(/No import has arrived from Ellucian yet/)).toBeTruthy()
+    expect(screen.getByText('Kept on this server')).toBeTruthy()
+  })
+
+  it('lists the staff action offices so each can get a mailbox', async () => {
+    stubApi({ actionOffices: ['Library', 'Registrar'] })
+    renderInstitution()
+    await waitFor(() => screen.getByLabelText('Mailbox for Library'))
+    expect(screen.getByLabelText('Mailbox for Registrar')).toBeTruthy()
   })
 })

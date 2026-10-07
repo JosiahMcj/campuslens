@@ -15,6 +15,7 @@ const ROLE_ABILITIES: Record<Role, string[]> = {
     'Approve leadership decisions',
     'Read the audit log',
     'Manage datasets and users in Institution settings',
+    'Track the staff actions and send them to their offices',
     'Work the Financial Aid review queue',
   ],
   executive: [
@@ -22,17 +23,25 @@ const ROLE_ABILITIES: Record<Role, string[]> = {
     ASK_ANYTHING,
     'Approve leadership decisions',
     'Read the audit log',
+    'Follow the staff actions and add notes to them',
     'Read the Financial Aid review queue',
   ],
-  staff: ['Read the briefing, the figures and their evidence', ASK_ANYTHING],
+  staff: [
+    'Read the briefing, the figures and their evidence',
+    ASK_ANYTHING,
+    'Track the staff actions: status, owner, due date and notes',
+    'Send a staff action to its office',
+  ],
   reviewer: [
     'Read the briefing, the figures and their evidence',
     ASK_ANYTHING,
     'Read the audit log',
+    'Follow the staff actions (read only)',
     'Read the Financial Aid review queue',
   ],
   aid: [
     'Read the briefing, the figures and their evidence',
+    'Follow the Financial Aid staff action',
     'Work the Financial Aid review queue, with a status and a note for each student',
   ],
 }
