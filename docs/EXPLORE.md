@@ -370,11 +370,42 @@ events:
 - **Instructor names are fictional.** Every instructor in the school database is generated
   and marked fictional, and every answer and table labels the names so.
 
+## Finance: the university budget and student accounts
+
+Two kinds of finance question are answered (data in `data/school/SCHEMA.md`, "Student
+billing" and "University finances"):
+
+- **The university's own budget**, three analyses in `cabinet/explore/finance.py`:
+  `budget_vs_actual` (expense budget against actual for a fiscal year, by division,
+  department or office, expense category or fund; optionally only those over budget),
+  `revenue_by_source` (revenue by source against budget, institutional aid subtracted,
+  net revenue) and `tuition_discount` (gross tuition, institutional aid, net tuition with
+  its budget, and the discount rate, each fiscal year or one). Fiscal years run July to
+  June; "this year" is FY2026 (preliminary), "last year" FY2025, and "FY25", "fiscal
+  2025" and "2024-25" all read FY2025. These are institutional figures, so no small-group
+  rule applies, but only the president, finance and the admin may run them: another role
+  is refused with a 403 and a `data.refused` event (docs/ROLES.md).
+- **Student accounts**, seven measures of `measure_by_group` over the billing tables:
+  `past_due_balance` (rounded to $100), `past_due_students`, `past_due_90_students`,
+  `avg_balance_owed` (rounded to $10), `on_time_payment_rate`, `payment_plan_share` and
+  `collection_rate`, with every grouping (major, college, Pell, first generation, class
+  level, term, ...) and a new one, `aging` (days past due: 1 to 30, 31 to 60, 61 to 90,
+  over 90). Past due means unpaid after the term's due date as of the end of the records
+  (May 8, 2026), not on a payment plan; nothing is written off, so old balances stay
+  past due. The three rates read one term (the latest fall or spring by default); the
+  past-due figures read every term. Small groups are withheld as for every measure. A
+  database without the billing tables answers "not in this school database yet".
+
+The rule planner maps the finance office's questions ("What is our budget vs actual this
+year?", "Which departments are over budget?", "How much is past due?", "How many students
+are on payment plans?"), and in the model-first order those questions go to the rules
+first (docs/EXPLORE-EVAL.md, "Finance").
+
 ## Routes and roles
 
 | Route | Roles | Notes |
 |---|---|---|
-| `POST /explore {question}` | executive, admin, staff, reviewer | CSRF, the ask rate bucket (5 per minute per session and per IP by default), at most 500 characters |
+| `POST /explore {question}` | executive, admin, staff, reviewer (and the department accounts); the budget analyses: executive, admin, finance | CSRF, the ask rate bucket (5 per minute per session and per IP by default), at most 500 characters |
 | `POST /explore/stream {question}` | executive, admin, staff, reviewer | the same answer as `POST /explore`, streamed (below); same CSRF, rate bucket, refusals, and audit |
 | `GET /explore/catalog` | executive, admin, staff, reviewer | the analyses (title, description) and 17 example questions |
 

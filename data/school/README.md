@@ -22,6 +22,12 @@ the schema has associate and bachelor's programs only.
 | Services | Holds (financial, registrar, advising, library, student life) with amounts and dates, advisor relationships, advising appointments |
 | Profiles and history | Gender, IPEDS race and ethnicity, age band at entry, athletes, honors; each student's status in every fall and spring term (enrolled, stopped out, withdrew, transferred out, suspended, dismissed, graduated) with full or part time and housing; transfer-out matches |
 
+Two modules add tables after the simulation, each from its own seeded stream, so every
+table above and the canonical hash are unchanged: `billing.py` (student charges, payments
+and payment plans) and `budget.py` (the university's own books: fiscal years FY2021 to
+FY2026, 65 cost centers, budget against actual by fund and category, revenue by source, and
+tuition with the discount rate, tied to the billed tuition and to enrollment).
+
 Every table and column is documented in `SCHEMA.md`, with the Ellucian Ethos resource it
 stands in for. Eight planted facts with exact expected values are in `VERIFY.md`.
 

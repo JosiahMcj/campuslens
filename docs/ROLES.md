@@ -68,6 +68,15 @@ four headline figures and two tables for the current term:
 - **Finance — Student Accounts.** Students with an open account hold, the
   open balance, the average balance per student, holds placed this term,
   open holds by office, and students by balance owed.
+  Two more sections follow. **University budget** (the university's own
+  books for the current fiscal year, July to June): spending against budget
+  by division with the variance, revenue by source against budget, net
+  tuition and the tuition discount rate by fiscal year. **Student accounts**
+  (the billing ledger: charges, payments, payment plans): the past-due
+  balance and the students who owe it, past-due balances by days past due,
+  the on-time payment rate and the payment-plan share by college. The
+  budget figures are institutional, not student data, so no small-group
+  rule applies to them; the student-account figures keep it.
 - **Registrar.** Students enrolled this term, the share enrolled full time,
   open Registrar holds, students not in good standing, enrollment by class
   level, and academic standing.
@@ -150,6 +159,28 @@ seen. It never shows a session id or a token.
 | `GET /events` (audit log) | admin, executive, reviewer, and now it |
 | `POST /explore`, `/explore/stream`, `GET /explore/catalog` | admin, executive, staff, reviewer, and now finance, registrar, studentlife |
 | `GET /findings`, `/briefing`, `/decisions`, `/questions`, `/staff-actions` | every role except it |
+
+## The university budget
+
+The university's own budget (`data/school/budget.py`: budget against
+actual, revenue, the tuition discount) is shown to the president
+(`executive`), the finance office (`finance`) and the administrator
+(`admin`) only (`BUDGET_ROLES` in `cabinet/explore/finance.py`):
+
+- **Explore.** A question another role asks that plans one of the three
+  budget analyses (`budget_vs_actual`, `revenue_by_source`,
+  `tuition_discount`) is a 403 with "The university budget is shown to the
+  president, the finance office and the administrator only." and a
+  `data.refused` event (category `institutional_budget`) before anything is
+  read. The executor refuses such a step as well. Student-account totals
+  (past due, on-time payment, payment plans) are aggregate student data and
+  answer for every Explore role, with the usual small-group rules.
+- **Data page.** The University budget dashboard is on the president's and
+  the finance office's Data page (`data_roles.py`). Any other role asking for
+  one of its charts gets a 403 and a `data.refused` event. Its charts take no
+  student filter or comparison (422).
+- **Finance overview.** Read by finance, the president and the admin, as
+  before; other department accounts get a 403.
 
 ## Creating the demonstration sign-ins
 
