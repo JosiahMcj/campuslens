@@ -54,9 +54,7 @@ class RequestLogMiddleware:
             if message["type"] == "http.response.start":
                 status = int(message["status"])
                 headers = list(message.get("headers", []))
-                headers.append(
-                    (REQUEST_ID_HEADER.encode(), request_id.encode("ascii"))
-                )
+                headers.append((REQUEST_ID_HEADER.encode(), request_id.encode("ascii")))
                 message = {**message, "headers": headers}
             await send(message)
 

@@ -71,7 +71,9 @@ DISCOUNT_BASE = 0.462
 DISCOUNT_DRIFT = 0.004
 DISCOUNT_SOFTENING = 1.2
 
-# Revenue not driven by students, in dollars at scale 1.0, by fiscal year.
+# Revenue not driven by students, in dollars at scale 1.0, by fiscal year
+# (GIFTS: gifts from friends, churches and foundations; alumni gifts are added
+# from alumni_gifts).
 GIFTS = (14_200_000, 15_800_000, 21_400_000, 17_100_000, 17_900_000, 16_500_000)
 GIFTS_RESTRICTED_SHARE = 0.6
 GRANTS = (9_400_000, 9_700_000, 10_100_000, 10_300_000, 10_700_000, 10_900_000)
@@ -286,6 +288,14 @@ def budget_rows(con: sqlite3.Connection, seed: int) -> Dict[str, List[tuple]]:
     meta = dict(con.execute("SELECT key, value FROM meta").fetchall())
     scale = float(meta.get("scale", "1.0"))
     drivers = _drivers(con)
+    # Gifts: every alumni gift of the fiscal year (alumni_gifts, when the
+    # outcomes tables exist) plus gifts from friends, churches and
+    # foundations (GIFTS, the larger part).
+    alumni: Dict[str, float] = {}
+    if _has_table(con, "alumni_gifts"):
+        alumni = {f"FY{int(fy)}": float(total) for fy, total in con.execute(
+            "SELECT fiscal_year, SUM(amount) FROM alumni_gifts GROUP BY fiscal_year"
+            " ORDER BY fiscal_year")}
     faculty = _faculty_cost(con)
     colleges = [r[0] for r in con.execute("SELECT college_code FROM colleges ORDER BY 1")]
     college_names = dict(con.execute("SELECT college_code, name FROM colleges"))
@@ -327,7 +337,7 @@ def budget_rows(con: sqlite3.Connection, seed: int) -> Dict[str, List[tuple]]:
         net = gross - aid
         tuition.append((fy, d.student_terms, d.credit_hours, gross, aid, net,
                         round(aid / gross, 4) if gross else 0.0))
-        gifts = GIFTS[i] * scale
+        gifts = GIFTS[i] * scale + alumni.get(fy, 0.0)
         endow = ENDOWMENT_DRAW[i] * scale
         actual = {
             ("gross_tuition", "operating"): float(gross),

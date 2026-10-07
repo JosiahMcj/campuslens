@@ -22,6 +22,7 @@ import sys
 from collections import defaultdict
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
+from statistics import median
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
@@ -75,7 +76,19 @@ EXPECTED_COLUMNS: dict[str, list[str]] = {
     "student_term_enrollment": ["student_id", "term_code", "status", "academic_load",
                                 "census_hours", "housing"],
     "subsequent_enrollment": ["student_id", "found_term", "sector"],
+    "first_destination": ["student_id", "graduation_term", "collected_date", "outcome",
+                          "employer_sector", "starting_salary"],
+    "graduate_enrollment": ["student_id", "enrollment_begin_date", "program_type",
+                            "institution_control"],
+    "medical_school_applications": ["student_id", "entering_year", "applied_to", "accepted"],
+    "alumni_gifts": ["gift_id", "student_id", "gift_date", "fiscal_year", "amount",
+                     "designation"],
 }
+# The tables before graduate outcomes were added. Their canonical hash is the
+# whole-database hash the earlier VERIFY.md recorded, so it proves those rows
+# are unchanged.
+ORIGINAL_TABLES = tuple(list(EXPECTED_COLUMNS)[:24])
+OUTCOME_TABLES = tuple(list(EXPECTED_COLUMNS)[24:])
 
 # The student billing tables (billing.py, applied at the end of generation).
 # Kept apart from EXPECTED_COLUMNS so the JSON counts keep the 24 simulated
@@ -135,19 +148,29 @@ def standing_for(prev: str | None, cum: float | None, term_gpa: float | None) ->
     return "Continued Probation"
 
 
+def median_of(values: list[int]) -> float | int | None:
+    """The median, as a whole number when it is one (None for no values)."""
+    if not values:
+        return None
+    m = median(values)
+    return int(m) if m == int(m) else float(m)
+
+
 def pct(n: int, d: int) -> float:
     return round(100.0 * n / d, 1) if d else 0.0
 
 
-def canonical_hash(con: sqlite3.Connection) -> str:
-    """sha256 over the simulated tables' rows in a fixed order (file bytes may
-    differ). The billing tables written on top (BILLING_COLUMNS) have their own
-    seeded determinism and are not part of the hash recorded in VERIFY.md."""
+def canonical_hash(con: sqlite3.Connection, only: tuple[str, ...] | None = None) -> str:
+    """sha256 over every table's rows (or the tables in ``only``) in a fixed
+    order (file bytes may differ). Every table includes the billing and
+    finance tables written on top; ``ORIGINAL_TABLES`` are the 24 simulated
+    ones."""
     h = hashlib.sha256()
     tables = [r[0] for r in con.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-        if r[0] in EXPECTED_COLUMNS]
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
     for t in tables:
+        if only is not None and t not in only:
+            continue
         cols = [r[1] for r in con.execute(f'PRAGMA table_info("{t}")')]
         order = ", ".join(f'"{c}"' for c in cols)
         h.update(f"#{t}:{','.join(cols)}\n".encode())
@@ -600,6 +623,13 @@ class Checker:
             GROUP BY b.fiscal_year HAVING SUM(actual_amount) > SUM(budget_amount)""")
         if not {"FY2025", "FY2026"} <= {r[0] for r in over}:
             problems.append("planted: Athletics is not over budget in FY2025 and FY2026")
+        if "alumni_gifts" in have:
+            short = self.q("""SELECT COUNT(*) FROM (SELECT 'FY' || fiscal_year AS fy,
+                    SUM(amount) AS alumni FROM alumni_gifts GROUP BY fiscal_year) a
+                WHERE a.alumni > (SELECT COALESCE(SUM(actual_amount), 0) FROM revenue_lines r
+                                  WHERE r.fiscal_year = a.fy AND r.source = 'gifts')""")[0][0]
+            if short:
+                problems.append(f"{short} fiscal years whose alumni gifts exceed gift revenue")
         years = self.q("SELECT COUNT(*) FROM fiscal_years")[0][0]
         self.record("budget", not problems and years == 6, "; ".join(problems) or
                     f"{years} fiscal years: net tuition = gross - aid, ties to revenue lines and "
@@ -819,7 +849,297 @@ class Checker:
                     f"Spring 2021 W rate online {t and pct(*t.get('online', (0, 0)))} % vs in person "
                     f"{t and pct(*t.get('in_person', (0, 0)))} %")
 
-    def check_planted_exact(self, values: dict[str, Any], digest: str) -> None:
+    # ------------------------------------------------------------ graduate outcomes
+    def _graduates(self) -> list[dict[str, Any]]:
+        """Every graduate once: major and award of the graduated program, the
+        graduation date (last day of the term), final cumulative GPA, and the
+        profile flags the outcome patterns use."""
+        if getattr(self, "_grads", None) is None:
+            rows = self.q("""
+                SELECT st.student_id, sap.end_term, p.end_date, ap.major_code, ap.name,
+                       ap.award_level, t.cumulative_gpa, pr.athlete, pr.honors
+                FROM students st
+                JOIN student_academic_programs sap
+                    ON sap.student_id = st.student_id AND sap.status = 'graduated'
+                JOIN academic_programs ap ON ap.program_code = sap.program_code
+                JOIN academic_periods p ON p.term_code = sap.end_term
+                JOIN student_term_records t
+                    ON t.student_id = st.student_id AND t.term_code = sap.end_term
+                JOIN student_profiles pr ON pr.student_id = st.student_id
+                ORDER BY st.student_id""")
+            self._grads = [
+                {"sid": r[0], "term": r[1], "date": r[2], "major": r[3], "name": r[4],
+                 "bachelor": r[5] == "Bachelor", "gpa": r[6], "athlete": r[7], "honors": r[8]}
+                for r in rows]
+        return self._grads
+
+    def _data_end(self) -> str:
+        return str(self.q("SELECT MAX(end_date) FROM academic_periods")[0][0])
+
+    def check_outcomes(self) -> None:
+        """The four outcome tables agree with the graduates and with each other."""
+        q = self.q
+        end = self._data_end()
+        fd_bad = q("""SELECT COUNT(*) FROM first_destination fd
+            LEFT JOIN students st ON st.student_id = fd.student_id
+            LEFT JOIN student_academic_programs sap
+                ON sap.student_id = fd.student_id AND sap.status = 'graduated'
+            LEFT JOIN academic_programs ap ON ap.program_code = sap.program_code
+            LEFT JOIN academic_periods p ON p.term_code = fd.graduation_term
+            WHERE st.enrollment_status IS NOT 'graduated' OR ap.award_level IS NOT 'Bachelor'
+               OR fd.graduation_term IS NOT st.exit_term
+               OR fd.collected_date != date(p.end_date, '+183 days')
+               OR fd.collected_date > ?""", (end,))[0][0]
+        self.record("survey_only_eligible_graduates", fd_bad == 0,
+                    f"{fd_bad} first-destination rows for someone who is not a bachelor's "
+                    "graduate surveyed six months after graduating, by the data end")
+        salary_bad = q("""SELECT COUNT(*) FROM first_destination WHERE
+            (starting_salary IS NOT NULL AND (outcome != 'employed_full_time'
+                OR starting_salary NOT BETWEEN 15000 AND 250000))
+            OR ((employer_sector IS NOT NULL) != (outcome IN ('employed_full_time',
+                'employed_part_time', 'military_service')))""")[0][0]
+        self.record("salary_only_for_full_time", salary_bad == 0,
+                    f"{salary_bad} salaries for someone not employed full time (or outside "
+                    "$15,000 to $250,000), or sectors that do not match the outcome")
+        ge_bad = q("""SELECT COUNT(*) FROM graduate_enrollment ge
+            LEFT JOIN students st ON st.student_id = ge.student_id
+            LEFT JOIN student_academic_programs sap
+                ON sap.student_id = ge.student_id AND sap.status = 'graduated'
+            LEFT JOIN academic_programs ap ON ap.program_code = sap.program_code
+            LEFT JOIN academic_periods p ON p.term_code = st.exit_term
+            WHERE st.enrollment_status IS NOT 'graduated' OR ap.award_level IS NOT 'Bachelor'
+               OR ge.enrollment_begin_date <= p.end_date OR ge.enrollment_begin_date > ?""",
+                   (end,))[0][0]
+        fd_grad = q("""SELECT COUNT(*) FROM first_destination fd
+            WHERE fd.outcome = 'graduate_school' AND NOT EXISTS (
+                SELECT 1 FROM graduate_enrollment ge WHERE ge.student_id = fd.student_id
+                  AND ge.enrollment_begin_date <= fd.collected_date)""")[0][0]
+        self.record("graduate_school_consistent", ge_bad == 0 and fd_grad == 0,
+                    f"{ge_bad} enrollments not after a bachelor's degree or after the data end, "
+                    f"{fd_grad} survey answers of graduate school without a matching enrollment")
+        med_bad = q("""SELECT COUNT(*) FROM medical_school_applications m
+            LEFT JOIN students st ON st.student_id = m.student_id
+            LEFT JOIN student_academic_programs sap
+                ON sap.student_id = m.student_id AND sap.status = 'graduated'
+            LEFT JOIN academic_programs ap ON ap.program_code = sap.program_code
+            LEFT JOIN academic_periods p ON p.term_code = st.exit_term
+            LEFT JOIN graduate_enrollment ge ON ge.student_id = m.student_id
+            WHERE ap.award_level IS NOT 'Bachelor'
+               OR m.entering_year <= CAST(substr(p.end_date, 1, 4) AS INTEGER)
+               OR m.entering_year > CAST(substr(?, 1, 4) AS INTEGER)
+               OR (COALESCE(ge.program_type, '') = 'medical') != (m.accepted = 1
+                   AND m.entering_year || '-08-01' <= ?)""", (end, end))[0][0]
+        med_orphans = q("""SELECT COUNT(*) FROM graduate_enrollment ge
+            WHERE ge.program_type = 'medical' AND NOT EXISTS (
+                SELECT 1 FROM medical_school_applications m
+                WHERE m.student_id = ge.student_id AND m.accepted = 1
+                  AND m.entering_year || '-08-01' = ge.enrollment_begin_date)""")[0][0]
+        self.record("medical_school_consistent", med_bad == 0 and med_orphans == 0,
+                    f"{med_bad} applications not from a bachelor's graduate, outside the "
+                    f"decided cycles, or disagreeing with enrollment; {med_orphans} medical "
+                    "enrollments without an acceptance")
+        gift_bad = q("""SELECT COUNT(*) FROM alumni_gifts g
+            LEFT JOIN students st ON st.student_id = g.student_id
+            LEFT JOIN academic_periods p ON p.term_code = st.exit_term
+            WHERE st.enrollment_status IS NOT 'graduated' OR g.gift_date <= p.end_date
+               OR g.gift_date > ? OR g.amount <= 0
+               OR g.fiscal_year != CAST(substr(g.gift_date, 1, 4) AS INTEGER)
+                   + (CAST(substr(g.gift_date, 6, 2) AS INTEGER) >= 7)""", (end,))[0][0]
+        self.record("gifts_from_alumni", gift_bad == 0,
+                    f"{gift_bad} gifts not from a graduate after graduating, after the data "
+                    "end, not positive, or in the wrong fiscal year")
+        # Plausible rates (bands from NACE, Clearinghouse, AAMC and CASE
+        # benchmarks; wider at reduced scale, where the counts are small).
+        grads = self._graduates()
+        eligible = [g for g in grads if g["bachelor"] and q(
+            "SELECT date(?, '+183 days') <= ?", (g["date"], end))[0][0]]
+        respondents = q("SELECT COUNT(*) FROM first_destination")[0][0]
+        knowledge = respondents / len(eligible) if eligible else 0.0
+        apps, accepted = q("SELECT COUNT(*), COALESCE(SUM(accepted), 0) FROM "
+                           "medical_school_applications")[0]
+        donors = q("SELECT COUNT(DISTINCT student_id) FROM alumni_gifts")[0][0]
+        participation = donors / len(grads) if grads else 0.0
+        acceptance = accepted / apps if apps else None
+        wide = not self.full
+        ok = ((0.50 if wide else 0.60) <= knowledge <= (0.80 if wide else 0.70)
+              and (0.03 if wide else 0.05) <= participation <= (0.20 if wide else 0.12)
+              and (acceptance is None or apps < 30
+                   or (0.25 if wide else 0.40) <= acceptance <= (0.65 if wide else 0.50)))
+        self.record("outcome_tables_plausible", ok,
+                    f"survey knowledge rate {knowledge:.1%} of {len(eligible)} eligible "
+                    f"graduates, medical school acceptance "
+                    f"{'n/a' if acceptance is None else f'{acceptance:.1%}'} of {apps} "
+                    f"applicants, alumni giving participation {participation:.1%} of "
+                    f"{len(grads)} graduates",
+                    {"knowledge_rate": round(knowledge, 3), "med_acceptance":
+                     None if acceptance is None else round(acceptance, 3),
+                     "participation": round(participation, 3)})
+
+    @staticmethod
+    def _band(gpa: float | None) -> str:
+        g = gpa or 0.0
+        return ("2.00-2.49" if g < 2.5 else "2.50-2.99" if g < 3.0
+                else "3.00-3.49" if g < 3.5 else "3.50-4.00")
+
+    def planted_outcomes(self) -> dict[str, Any]:
+        """Planted graduate-outcome facts, with the definitions in VERIFY.md."""
+        q = self.q
+        end = self._data_end()
+        grads = self._graduates()
+        by_sid = {g["sid"]: g for g in grads}
+        # Rows for someone who is not a graduate fail the integrity checks
+        # above; the planted values read graduates only.
+        fd = {r[0]: r for r in q("SELECT student_id, outcome, starting_salary "
+                                 "FROM first_destination") if r[0] in by_sid}
+        eligible = [g for g in grads if g["bachelor"] and q(
+            "SELECT date(?, '+183 days') <= ?", (g["date"], end))[0][0]]
+        out: dict[str, Any] = {}
+        # Starting salary (full-time employed respondents who reported one).
+        salaries: dict[str, list[int]] = defaultdict(list)
+        all_salaries: list[int] = []
+        bands: dict[str, list[int]] = defaultdict(list)
+        for sid, (_s, _o, salary) in fd.items():
+            if salary is None:
+                continue
+            g = by_sid[sid]
+            salaries[g["major"]].append(salary)
+            all_salaries.append(salary)
+            bands[self._band(g["gpa"])].append(salary)
+        floor = 30 if self.full else 3
+        ranked = sorted(((median_of(v), m) for m, v in salaries.items() if len(v) >= floor),
+                        key=lambda x: (-x[0], x[1]))
+        names = {g["major"]: g["name"] for g in grads}
+        out["starting_salary"] = {
+            "eligible_graduates": len(eligible), "respondents": len(fd),
+            "knowledge_rate_pct": pct(len(fd), len(eligible)),
+            "salary_reporters": len(all_salaries),
+            "median_all": median_of(all_salaries),
+            "highest_major": ranked[0][1] if ranked else None,
+            "highest_name": names.get(ranked[0][1]) if ranked else None,
+            "highest_median": ranked[0][0] if ranked else None,
+            "highest_reporters": len(salaries[ranked[0][1]]) if ranked else None,
+            "next_major": ranked[1][1] if len(ranked) > 1 else None,
+            "next_median": ranked[1][0] if len(ranked) > 1 else None,
+            "lowest_major": ranked[-1][1] if ranked else None,
+            "lowest_median": ranked[-1][0] if ranked else None}
+        out["salary_by_gpa_band"] = {
+            band: {"reporters": len(bands[band]),
+                   "median": median_of(bands[band])}
+            for band in ("2.00-2.49", "2.50-2.99", "3.00-3.49", "3.50-4.00")}
+        employed = [s for s, r in fd.items() if r[1] in ("employed_full_time",
+                                                         "employed_part_time")]
+        nurs = [s for s in fd if by_sid[s]["major"] == "NURS"]
+        nurs_emp = [s for s in employed if by_sid[s]["major"] == "NURS"]
+        out["employment"] = {
+            "respondents": len(fd), "employed": len(employed),
+            "employment_rate_pct": pct(len(employed), len(fd)),
+            "nursing_respondents": len(nurs), "nursing_employed": len(nurs_emp),
+            "nursing_employment_rate_pct": pct(len(nurs_emp), len(nurs))}
+        # Graduate or professional school within one year (Clearinghouse).
+        begins = dict(q("SELECT student_id, enrollment_begin_date FROM graduate_enrollment"))
+        tracked = [g for g in grads if g["bachelor"] and q(
+            "SELECT date(?, '+1 year') <= ?", (g["date"], end))[0][0]]
+        within = [g for g in tracked if g["sid"] in begins and q(
+            "SELECT ? <= date(?, '+1 year')", (begins[g["sid"]], g["date"]))[0][0]]
+        out["graduate_school"] = {
+            "tracked_graduates": len(tracked), "enrolled_within_1yr": len(within),
+            "rate_pct": pct(len(within), len(tracked))}
+        # Medical school acceptance, of applicants.
+        apps = [r for r in q("SELECT student_id, accepted FROM medical_school_applications")
+                if r[0] in by_sid]
+
+        def acc(rows: list[Any]) -> dict[str, Any]:
+            n, a = len(rows), sum(r[1] for r in rows)
+            return {"applicants": n, "accepted": a, "rate_pct": pct(a, n)}
+
+        out["medical_school"] = {
+            **acc(apps),
+            "gpa_3_50_up": acc([r for r in apps if (by_sid[r[0]]["gpa"] or 0) >= 3.5]),
+            "gpa_below_3_50": acc([r for r in apps if (by_sid[r[0]]["gpa"] or 0) < 3.5]),
+            "biology": acc([r for r in apps if by_sid[r[0]]["major"] == "BIOL"])}
+        # Alumni giving participation (gave at least once after graduating).
+        donor_set = {r[0] for r in q("SELECT DISTINCT student_id FROM alumni_gifts")}
+        gifts, dollars = q("SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM alumni_gifts")[0]
+        per_major: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+        for g in grads:
+            per_major[g["major"]][0] += 1
+            per_major[g["major"]][1] += g["sid"] in donor_set
+        give_floor = 100 if self.full else 10
+        give_rank = sorted(((pct(d, n), m) for m, (n, d) in per_major.items()
+                            if n >= give_floor), key=lambda x: (-x[0], x[1]))
+        ath = [g for g in grads if g["athlete"]]
+        non = [g for g in grads if not g["athlete"]]
+        out["alumni_giving"] = {
+            "alumni": len(grads), "donors": len(donor_set),
+            "participation_pct": pct(len(donor_set), len(grads)),
+            "gifts": gifts, "dollars": dollars,
+            "highest_major": give_rank[0][1] if give_rank else None,
+            "highest_name": names.get(give_rank[0][1]) if give_rank else None,
+            "highest_alumni": per_major[give_rank[0][1]][0] if give_rank else None,
+            "highest_participation_pct": give_rank[0][0] if give_rank else None,
+            "next_major": give_rank[1][1] if len(give_rank) > 1 else None,
+            "next_participation_pct": give_rank[1][0] if len(give_rank) > 1 else None,
+            "athletes": len(ath),
+            "athletes_participation_pct": pct(sum(g["sid"] in donor_set for g in ath), len(ath)),
+            "non_athletes_participation_pct": pct(sum(g["sid"] in donor_set for g in non),
+                                                  len(non))}
+        self._directional_outcomes(out, salaries, bands, per_major)
+        return out
+
+    def _directional_outcomes(self, out: dict[str, Any], salaries: dict[str, list[int]],
+                              bands: dict[str, list[int]],
+                              per_major: dict[str, list[int]]) -> None:
+        """Direction-only versions of the outcome patterns (used at any scale).
+        A pattern over too few people at a small scale passes as too few."""
+        high = [s for m in ("CSCI", "DATA", "SWDV", "ELEN", "MEEN", "CVEN", "CYBR")
+                for s in salaries.get(m, [])]
+        low = [s for m in ("EDEL", "EDEC", "BIBL", "THEO", "MINS", "YFMN", "MUSC", "WRSP",
+                           "ARTS", "THEA") for s in salaries.get(m, [])]
+        ok = bool(high) and bool(low) and median(high) > median(low) * 1.3
+        self.record("pattern_salary_by_major", ok,
+                    f"median starting salary, computing and engineering "
+                    f"{median(high) if high else None} vs education, ministry and the arts "
+                    f"{median(low) if low else None}")
+        lo_band = bands.get("2.00-2.49", []) + bands.get("2.50-2.99", [])
+        hi_band = bands.get("3.50-4.00", [])
+        if min(len(lo_band), len(hi_band)) < 100:
+            self.record("pattern_salary_rises_with_gpa", True,
+                        f"too few salaries at this scale ({len(lo_band)} and {len(hi_band)})")
+        else:
+            self.record("pattern_salary_rises_with_gpa", median(hi_band) > median(lo_band),
+                        f"median starting salary, final GPA 3.50 and up {median(hi_band)} vs "
+                        f"under 3.00 {median(lo_band)}")
+        med = out["medical_school"]
+        hi, lo = med["gpa_3_50_up"], med["gpa_below_3_50"]
+        if min(hi["applicants"], lo["applicants"]) < 20:
+            self.record("pattern_med_acceptance_gpa", True,
+                        f"too few applicants at this scale ({hi['applicants']} and "
+                        f"{lo['applicants']})")
+        else:
+            self.record("pattern_med_acceptance_gpa", hi["rate_pct"] > lo["rate_pct"] + 10,
+                        f"medical school acceptance, GPA 3.50 and up {hi['rate_pct']} % vs "
+                        f"below {lo['rate_pct']} %")
+        giving = out["alumni_giving"]
+        mins = per_major.get("MINS", [0, 0])
+        if mins[0] < 50:
+            self.record("pattern_ministry_gives_most", True,
+                        f"too few Christian Ministry alumni at this scale ({mins[0]})")
+        else:
+            self.record("pattern_ministry_gives_most",
+                        pct(mins[1], mins[0]) > giving["participation_pct"] * 1.5,
+                        f"Christian Ministry participation {pct(mins[1], mins[0])} % vs all "
+                        f"alumni {giving['participation_pct']} %")
+        if giving["athletes"] < 50:
+            self.record("pattern_athletes_give_more", True,
+                        f"too few athlete alumni at this scale ({giving['athletes']})")
+        else:
+            self.record("pattern_athletes_give_more",
+                        giving["athletes_participation_pct"]
+                        > giving["non_athletes_participation_pct"],
+                        f"participation, athletes {giving['athletes_participation_pct']} % vs "
+                        f"non-athletes {giving['non_athletes_participation_pct']} %")
+
+    def check_planted_exact(self, values: dict[str, Any], digest: str, original: str) -> None:
         if not self.full:
             self.record("planted_exact", True, "reduced scale: exact planted values not compared "
                         "(direction checks above)")
@@ -834,6 +1154,9 @@ class Checker:
         exp_hash = expected.pop("canonical_sha256", None)
         if exp_hash != digest:
             diffs.append(f"canonical_sha256: expected {exp_hash}, got {digest}")
+        exp_original = expected.pop("original_tables_sha256", None)
+        if exp_original != original:
+            diffs.append(f"original_tables_sha256: expected {exp_original}, got {original}")
         for key, exp in expected.items():
             got = values.get(key)
             if got != exp:
@@ -854,14 +1177,18 @@ class Checker:
         self.check_graduation()
         self.check_distributions()
         self.check_enrollment_history()
+        self.check_outcomes()
         self.check_billing()
         self.check_budget()
         values = self.planted()
+        values.update(self.planted_outcomes())
         digest = canonical_hash(self.con)
-        self.check_planted_exact(values, digest)
+        original = canonical_hash(self.con, ORIGINAL_TABLES)
+        self.check_planted_exact(values, digest, original)
         counts = {t: self.q(f'SELECT COUNT(*) FROM "{t}"')[0][0] for t in EXPECTED_COLUMNS}
         return {"meta": self.meta, "counts": counts, "checks": self.results, "planted": values,
-                "canonical_sha256": digest, "ok": all(r["ok"] for r in self.results)}
+                "canonical_sha256": digest, "original_tables_sha256": original,
+                "ok": all(r["ok"] for r in self.results)}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -883,6 +1210,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{'PASS' if r['ok'] else 'FAIL'}  {r['name']:34s} {r['detail']}")
         print(f"scale {report['meta'].get('scale')}, seed {report['meta'].get('seed')}, "
               f"canonical sha256 {report['canonical_sha256']}")
+        print(f"original 24 tables sha256 {report['original_tables_sha256']}")
         print("planted values:")
         print(json.dumps(report["planted"], indent=2))
     failed = [r["name"] for r in report["checks"] if not r["ok"]]

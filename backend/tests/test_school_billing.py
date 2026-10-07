@@ -266,4 +266,4 @@ def test_checker_accepts_billing(tmp_path: Path) -> None:
     checks = {c["name"]: c for c in report["checks"]}
     assert checks["billing"]["ok"], checks["billing"]["detail"]
     assert checks["schema"]["ok"], checks["schema"]["detail"]
-    assert len(report["counts"]) == 24
+    assert len(report["counts"]) == 28  # the 24 simulated and 4 outcome tables

@@ -32,6 +32,7 @@ from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import parse_qsl, urlencode
 
 from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
@@ -1424,6 +1425,127 @@ def _series(request: Request) -> JSONResponse:
         },
     )
     return JSONResponse(content=result)
+
+
+# --- a chart sent in an inbox alert ---------------------------------------------------
+#
+# An alert can point at one chart (and optionally one term and one group on
+# it). Only the reference is stored, written like the series query
+# ("chart=retention&college=ENG&at=2024-2025"); whenever the message is
+# shown, the series is computed again for the person reading it, after the
+# same role checks the series route makes. Nothing is frozen at send time.
+
+CHART_REF_MAX_CHARS = 300
+
+
+@dataclass(frozen=True)
+class ChartRef:
+    chart: Chart
+    filters: dict[str, str]
+    compare: str | None
+    at: str | None
+    series: str | None
+
+    def text(self) -> str:
+        """The canonical stored form: chart, compare, filters (sorted), at, series."""
+        parts = [("chart", self.chart.id)]
+        if self.compare:
+            parts.append(("compare", self.compare))
+        parts.extend(sorted(self.filters.items()))
+        if self.at:
+            parts.append(("at", self.at))
+        if self.series:
+            parts.append(("series", self.series))
+        return urlencode(parts)
+
+
+def parse_chart_ref(ref: str) -> ChartRef | None:
+    """The reference's structure (no data read): None when it names no
+    chart, repeats a key, uses an unknown key, or narrows and compares at
+    once (the series route's one-attribute rule)."""
+    if not ref or len(ref) > CHART_REF_MAX_CHARS:
+        return None
+    pairs = parse_qsl(ref, keep_blank_values=False)
+    keys = [k for k, _ in pairs]
+    if len(keys) != len(set(keys)):
+        return None
+    given = dict(pairs)
+    allowed = {"chart", "compare", "at", "series", *FILTER_KEYS}
+    if any(k not in allowed for k in given):
+        return None
+    chart = CHARTS_BY_ID.get(given.get("chart", ""))
+    if chart is None:
+        return None
+    compare = given.get("compare") or None
+    if compare is not None and compare not in COMPARE_KEYS:
+        return None
+    filters = {k: v for k, v in given.items() if k in FILTER_KEYS}
+    if len(filters) + (1 if compare else 0) > 1:
+        return None
+    return ChartRef(
+        chart=chart,
+        filters=filters,
+        compare=compare,
+        at=given.get("at") or None,
+        series=given.get("series") or None,
+    )
+
+
+def chart_readable(ref: str, role: str) -> bool:
+    """Whether ``role`` may read this chart as the series route would serve
+    it: the chart is on one of the role's dashboards and every attribute it
+    narrows or splits by is open to the role (Pell status is not, for most)."""
+    parsed = parse_chart_ref(ref)
+    if parsed is None or parsed.chart.dashboard not in dashboards_for(role):
+        return False
+    split = parsed.chart.split or parsed.compare
+    keys = [*parsed.filters, *([split] if split else [])]
+    return all(attribute_allowed(role, key) for key in keys)
+
+
+def chart_attachment(ref: str) -> dict[str, Any] | None:
+    """The chart a reference points at, computed now: the series exactly as
+    ``GET /data/series`` returns them (withheld points stay withheld), plus
+    the chosen term and group. None when the reference no longer resolves
+    (an unknown value, a term or group the chart does not have, or a choice
+    the chart cannot take). The caller checks the reader's role first
+    (``chart_readable``). Raises SchoolDataMissing without the school data."""
+    parsed = parse_chart_ref(ref)
+    if parsed is None:
+        return None
+    con = connect_readonly()
+    try:
+        v = catalog_for(con).vocab
+    finally:
+        con.close()
+    for key, value in parsed.filters.items():
+        if value not in domain(key, v):
+            return None
+    try:
+        result = cached_series(parsed.chart, parsed.filters, parsed.compare)
+    except NotApplicable:
+        return None
+    if parsed.at is not None and parsed.at not in [x["key"] for x in result["x"]]:
+        return None
+    if parsed.series is not None and parsed.series not in [
+        s["key"] for s in result["series"]
+    ]:
+        return None
+    group = None
+    if parsed.filters:
+        key, value = next(iter(parsed.filters.items()))
+        group = {
+            "key": key,
+            "label": key_label(key),
+            "value": value_label(key, value, v),
+        }
+    return {
+        **result,
+        "ref": parsed.text(),
+        "group": group,
+        "at": parsed.at,
+        "focus_series": parsed.series,
+    }
 
 
 def _budget_chart(

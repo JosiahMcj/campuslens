@@ -543,7 +543,8 @@ def _row_name(step: StepResult, row: int) -> str:
 
 
 def _is_total(step: StepResult, row: int) -> bool:
-    return "All students" in _row_name(step, row)
+    name = _row_name(step, row)
+    return "All students" in name or "All graduates" in name
 
 
 def _subject(step: StepResult) -> tuple[str, str]:
@@ -560,7 +561,10 @@ def _subject(step: StepResult) -> tuple[str, str]:
             who.append(grouping.values.get(str(p[key]), str(p[key])))
         else:
             who.append(grouping.values.get(str(p[key]), str(p[key])))
-    subject = who[0] if who else "Students"
+    measure = general.MEASURES.get(str(p.get("measure")))
+    alumni = measure is not None and measure.unit == "alumni"
+    everyone = "Graduates" if alumni else "Students"
+    subject = who[0] if who else everyone
     for extra in who[1:]:
         subject += f" ({extra.lower()})"
     where = ""
@@ -698,6 +702,14 @@ def _general_primary(step: StepResult, steps: list[StepResult]) -> Sentence:
             b.t(f"The {m.label}{whose}{where} is ")
             _value_phrase(b, step, 0)
             return b.t(".").done()
+        if m.id == "total_giving":
+            b.t(f"{subject}{where} gave a total of ").c(step, 0, "value")
+            b.t(" after graduating (").c(step, 0, "students").t(" donors)")
+            return b.t(".").done()
+        if m.id == "avg_gift":
+            b.t(f"The average gift from {_lower_first(subject)}{where} is ")
+            b.c(step, 0, "value").t(" (").c(step, 0, "students").t(" donors)")
+            return b.t(".").done()
         b.t(f"{subject}{where} have {_a(m.label)} of ")
         _value_phrase(b, step, 0)
         if has_scope:
@@ -713,7 +725,7 @@ def _general_primary(step: StepResult, steps: list[StepResult]) -> Sentence:
     )
     scope_text = (
         f" for {_lower_first(subject)}{where}"
-        if (subject != "Students" or where)
+        if (subject not in ("Students", "Graduates") or where)
         else ""
     )
     if natural and len(ranked) >= 2:

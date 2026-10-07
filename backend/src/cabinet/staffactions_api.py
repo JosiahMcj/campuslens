@@ -402,8 +402,7 @@ def post_staff_action_send(action_id: int, request: Request) -> JSONResponse:
         return _refused(
             request,
             403,
-            "only a staff member or an administrator can send an action to "
-            "an office",
+            "only a staff member or an administrator can send an action to an office",
         )
     _row_id(action_id)
     with request.app.state.ask_lock_for(institution_id):
@@ -449,9 +448,7 @@ def post_staff_action_send(action_id: int, request: Request) -> JSONResponse:
                 int(existing["id"]),
                 subject=composed["subject"],
                 body=composed["body"],
-            ) or store.dispatch_for_task(
-                institution_id, task_id, dataset_id=dataset_id
-            )
+            ) or store.dispatch_for_task(institution_id, task_id, dataset_id=dataset_id)
             assert existing is not None
         else:
             existing = store.create_dispatch(
@@ -463,9 +460,7 @@ def post_staff_action_send(action_id: int, request: Request) -> JSONResponse:
                 subject=composed["subject"],
                 body=composed["body"],
                 created_by=str(user["email"]),
-            ) or store.dispatch_for_task(
-                institution_id, task_id, dataset_id=dataset_id
-            )
+            ) or store.dispatch_for_task(institution_id, task_id, dataset_id=dataset_id)
             assert existing is not None
         dispatch_id = int(existing["id"])
 

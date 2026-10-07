@@ -1848,13 +1848,15 @@ MEASURE_BY_GROUP = Analysis(
     "One reviewed measure (headcount, average GPA, dropout, stop-out, first-year "
     "retention, 4- and 6-year graduation, time to degree, D, F or withdrawal and "
     "withdrawal rates, probation, credits, major changes, advising, holds, Pell, "
-    "first-generation, international, part-time and on-campus shares; student "
+    "first-generation, international, part-time and on-campus shares; for "
+    "graduates the survey knowledge rate, employment, median starting salary, "
+    "graduate school, medical school acceptance, and alumni giving; student "
     "accounts: past-due balances and students, on-time payment, payment plans, "
     "collection) by up to two "
     "groupings (major, college, class level, term, entry cohort, residency, "
     "first-generation, Pell, gender, race and ethnicity, age at entry, admit type, "
-    "full or part time, housing, athletes, honors, modality), with filters on any "
-    "grouping value and the term window.",
+    "full or part time, housing, athletes, honors, modality, final GPA band), with "
+    "filters on any grouping value and the term window.",
     (
         Param(
             "measure",
@@ -1909,6 +1911,10 @@ MEASURE_BY_GROUP = Analysis(
         "student_charges (amount, due date)",
         "student_payments (amount, date paid)",
         "payment_plans.term_code",
+        "first_destination (outcome, starting salary)",
+        "graduate_enrollment.enrollment_begin_date",
+        "medical_school_applications.accepted",
+        "alumni_gifts (amount)",
     ),
     (
         Column("major", "Major code", entity="major"),

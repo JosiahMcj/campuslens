@@ -1132,6 +1132,8 @@ class _ClausePlanner:
         budget = _budget_step(text, self.m.vocab)
         if budget is not None:
             return budget
+        if _has(_NOT_IN_RECORDS, text):
+            return None  # employers and loans are not in the records
         e = self.m.extract(text)
         low = _LOW_RE.search(text) is not None
         high = _HIGH_RE.search(text) is not None
@@ -1568,6 +1570,67 @@ def _budget_step(text: str, v: Vocab) -> Step | None:
     return None
 
 
+# Graduate outcomes, tried before every other measure: "grad school" is not
+# a graduation rate, and "do grades matter for earning potential" is about
+# salaries, not GPA.
+_OUTCOME_MEASURES: tuple[tuple[str, str], ...] = (
+    (
+        "med_acceptance_rate",
+        r"\bmed(?:ical)?[- ]?schools?\b|\bpre[- ]?med\b|\binto med\b|\bmd or do\b",
+    ),
+    (
+        "grad_school_rate",
+        r"\bgrad(?:uate)?[- ]?schools?\b|graduate or professional|"
+        r"professional (?:school|program)s?|\blaw schools?\b|"
+        r"\bgraduate (?:programs?|study|studies|degrees?)\b|"
+        r"master'?s (?:programs?|degrees?)|further (?:study|education)",
+    ),
+    (
+        "avg_gift",
+        r"average (?:gift|donation)|typical (?:gift|donation)|(?:gift|donation) size|"
+        r"how much (?:do|does|did) (?:\w+ ){1,3}(?:give|donate)\b",
+    ),
+    (
+        "total_giving",
+        r"total (?:alumni )?(?:giving|gifts|donations)|"
+        r"how much (?:money )?(?:have|has|did) (?:\w+ ){1,3}(?:given|donated|raised)|"
+        r"dollars (?:given|raised|donated)",
+    ),
+    (
+        "giving_rate",
+        r"\bg(?:i|a)v(?:e|es|ing|en) back\b|\bdonat|alumni giving|"
+        r"giving (?:rate|participation)|\bdonors?\b|\bphilanthrop|"
+        r"\b(?:give|gave|given|giving) (?:money )?to (?:the |our )?"
+        r"(?:school|university|college|alma mater)",
+    ),
+    (
+        "median_salary",
+        r"salar|\bearn(?:s|ing|ings)?\b(?! (?:the |their )?credits)|starting pay|"
+        r"\bincome\b|\bwages?\b|\bpaid\b|"
+        r"how much (?:money )?(?:do|does|did|will|can) (?:\w+ ){1,4}make\b|"
+        r"\bmake\b(?: \w+){0,3} after (?:graduat|college|school)|"
+        r"\bmake (?:more|less|the most|the least)(?: money)?\b(?! (?:of|up)\b)",
+    ),
+    (
+        "employment_rate",
+        r"\bemployed\b|employment rate|\bunemploy|\bjob placement|\bplacement rate|"
+        r"\b(?:get|got|find|found|land|landed)(?:ting)? (?:a |full[- ]time )?jobs?\b|"
+        r"\bhave jobs\b",
+    ),
+    (
+        "knowledge_rate",
+        r"knowledge rate|first[- ]destination|survey response|response rate",
+    ),
+)
+
+# Things about graduates the records do not hold: which employers hired them,
+# and what they borrowed. A question about them is not answerable, rather
+# than a count of graduates.
+_NOT_IN_RECORDS = (
+    r"\b(?:compan(?:y|ies)|employers?|hir(?:e|es|ed|ing)|"
+    r"(?:student )?loans?|debt)\b"
+)
+
 # Measures only the general analysis computes, in the order they are tried.
 _NEW_MEASURES: tuple[tuple[str, str], ...] = (
     # Student accounts (the billing tables), before any word they share.
@@ -1601,6 +1664,7 @@ _NEW_MEASURES: tuple[tuple[str, str], ...] = (
         r"past[- ]due|overdue|delinquen|outstanding balances?|receivables?\b|"
         r"\baging\b",
     ),
+    *_OUTCOME_MEASURES,
     (
         "time_to_degree",
         r"time[- ]to[- ](?:degree|graduat)|years? to (?:a )?(?:degree|"
@@ -1716,6 +1780,7 @@ _HOLD_GROUP_WORDS = (
 # Grouping words: (grouping, as a grouping, as filter values).
 _GROUPING_WORDS: dict[str, str] = {
     "major": r"\b(?:which|what)\s+(?:\w+\s+)?(?:majors?|programs?)\b|"
+    r"\b(?:various|different|all the|all our)\s+majors\b|"
     r"\b(?:status|by\s+\w+)\s+and\s+(?:by\s+)?majors?\b|"
     r"\b(?:by|per|each|every|across|among)\s+(?:the\s+)?(?:majors?|programs?)\b|"
     r"\bmajors? (?:have|has|with|had)\b",
@@ -1759,6 +1824,8 @@ _GROUPING_WORDS: dict[str, str] = {
     r"how (?:long|far) past[- ]due|days past[- ]due (?:buckets?|bands?|groups?)",
     "hold": r"hold status|by holds?\b|with (?:and|or|vs\.?|versus) without "
     r"(?:a |any )?holds?|holds? (?:vs\.?|versus|and|or) (?:no|without) holds?",
+    # Graduates' final GPA (outcome measures only): "do grades matter".
+    "gpa_band": r"\bgrades?\b|\bgpas?\b|grade point|academic (?:performance|record)",
 }
 # Filter words: grouping -> [(pattern, value)], tried in order.
 _FILTER_WORDS: dict[str, tuple[tuple[str, str], ...]] = {

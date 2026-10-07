@@ -1214,9 +1214,7 @@ def create_app(
             "question": question.text,
             "question_event_id": question_event_id,
             "sections": sections,
-            "aggregates": (
-                {M9_ID: findings_obj[M9_ID]} if m9_in_briefing else {}
-            ),
+            "aggregates": ({M9_ID: findings_obj[M9_ID]} if m9_in_briefing else {}),
             "meta": {
                 "fictional": runtime.fictional,
                 "dataset": {
@@ -1849,9 +1847,7 @@ def create_app(
                 "dispatch": dispatch_body(row) if row is not None else None,
                 "delivery": delivery_mode(),
                 "proposed_due": proposed_due(runtime),
-                "aid_queue": aid_queue_summary(
-                    institution_id, decision_id, dataset_id
-                ),
+                "aid_queue": aid_queue_summary(institution_id, decision_id, dataset_id),
             }
         )
 

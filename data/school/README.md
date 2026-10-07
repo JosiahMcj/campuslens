@@ -21,6 +21,7 @@ the schema has associate and bachelor's programs only.
 | Outcomes | About 920,000 registrations with final grades, term and cumulative GPA, credits earned, class level, academic standing, graduations, withdrawals, and stop-outs |
 | Services | Holds (financial, registrar, advising, library, student life) with amounts and dates, advisor relationships, advising appointments |
 | Profiles and history | Gender, IPEDS race and ethnicity, age band at entry, athletes, honors; each student's status in every fall and spring term (enrolled, stopped out, withdrew, transferred out, suspended, dismissed, graduated) with full or part time and housing; transfer-out matches |
+| Graduate outcomes | A first-destination survey six months after graduating (outcome, sector, starting salary; about 64 % answered), a Clearinghouse-style graduate school match, medical school applications and acceptances, and alumni gifts by fiscal year (about 10 % of alumni have given) |
 
 Two modules add tables after the simulation, each from its own seeded stream, so every
 table above and the canonical hash are unchanged: `billing.py` (student charges, payments
@@ -29,7 +30,7 @@ FY2026, 65 cost centers, budget against actual by fund and category, revenue by 
 tuition with the discount rate, tied to the billed tuition and to enrollment).
 
 Every table and column is documented in `SCHEMA.md`, with the Ellucian Ethos resource it
-stands in for. Eight planted facts with exact expected values are in `VERIFY.md`.
+stands in for. Fourteen planted facts with exact expected values are in `VERIFY.md`.
 
 ## Generate and check
 
@@ -51,6 +52,12 @@ Python 3.9). The database is about 245 MB at scale 1.0 and lives in `var/school/
 never committed. Scale 1.0 is the documented university; `--scale` (0.01 to 2.0) shrinks or
 grows every cohort and the faculty together, and the tests use 0.01 and 0.02. Delete it and run `make school-data` to rebuild it.
 
+A database generated before graduate outcomes were added has 24 tables and no outcome
+tables; Explore's outcome measures (salaries, graduate school, medical school, giving) say
+so instead of answering. Run `make school-data` to regenerate it with all 28: the 24
+original tables come out byte for byte identical, and only the four outcome tables are
+new.
+
 **Deterministic.** The seed is `20261005`. The same seed and scale always produce the same
 rows, on any machine and any Python version we tried. `check.py` prints a canonical
 SHA-256 over every table's rows in a fixed order, and `VERIFY.md` records the full-scale
@@ -60,7 +67,7 @@ hash, so a rebuilt database proves it is the documented one.
 
 `check.py` recomputes everything from raw rows and exits non-zero on any failure.
 
-- **Schema.** The 24 tables and their columns are exactly as documented, and every foreign
+- **Schema.** The 28 tables and their columns are exactly as documented, and every foreign
   key resolves.
 - **Privacy.** Student ids are pseudonymous (`S-` plus digits), there are no personal
   columns, and every instructor is marked fictional.
@@ -85,8 +92,15 @@ hash, so a rebuilt database proves it is the documented one.
   graduation, and the part-time share are inside plausible bands (at full scale: 81.4 %
   retention, 61.8 % six-year graduation for the Fall 2020 entrants, 12.2 % of enrolled
   terms part time).
-- **Planted facts.** At full scale every value in `VERIFY.md` must match exactly. At any
-  other scale each planted pattern is checked for direction.
+- **Graduate outcomes.** Survey rows only for bachelor's graduates past their six-month
+  point, salaries only for full-time employment, a graduate school answer always matched
+  by an enrollment, medical enrollments only for accepted applicants, gifts only from
+  graduates after graduating and in the right fiscal year, and the knowledge rate (60 to
+  70 %), medical school acceptance (40 to 50 %), and giving participation (5 to 12 %)
+  inside plausible bands at full scale.
+- **Planted facts.** At full scale every value in `VERIFY.md` must match exactly, and the
+  24 tables that existed before graduate outcomes must hash to the value recorded before
+  outcomes were added. At any other scale each planted pattern is checked for direction.
 
 ## How the university is simulated
 

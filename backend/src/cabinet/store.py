@@ -761,8 +761,7 @@ class CabinetStore:
         dataset = self.dataset_row(institution_id, dataset_id)
         if dataset is None:
             raise StoreError(
-                f"dataset {dataset_id} does not exist in institution "
-                f"{institution_id}"
+                f"dataset {dataset_id} does not exist in institution {institution_id}"
             )
         # Fail loudly now, not as a 500 on the next request, when the
         # document is gone or tampered.
@@ -784,8 +783,7 @@ class CabinetStore:
         )
         if cursor.rowcount != 1:
             raise StoreError(
-                f"dataset {dataset_id} does not exist in institution "
-                f"{institution_id}"
+                f"dataset {dataset_id} does not exist in institution {institution_id}"
             )
         if not verified:
             dataset = self.dataset_row(institution_id, dataset_id)
@@ -995,15 +993,12 @@ class CabinetStore:
         exactly its own events without reading the whole table."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT MAX(id) AS max_id FROM audit_events"
-                " WHERE institution_id = ?",
+                "SELECT MAX(id) AS max_id FROM audit_events WHERE institution_id = ?",
                 (institution_id,),
             ).fetchone()
         return int(row["max_id"]) if row["max_id"] is not None else 0
 
-    def audit_event_ids_after(
-        self, institution_id: int, after_id: int
-    ) -> list[int]:
+    def audit_event_ids_after(self, institution_id: int, after_id: int) -> list[int]:
         """The ids of one institution's events with id > ``after_id``, in
         order — exactly the events appended since ``after_id`` was read."""
         with self._lock:
@@ -1174,10 +1169,7 @@ class CabinetStore:
         (institution, decision, dataset) since migration 3, so with
         ``dataset_id`` the row for that dataset is returned — the one the
         caller just failed to insert."""
-        sql = (
-            "SELECT task FROM decisions WHERE institution_id = ?"
-            " AND decision_id = ?"
-        )
+        sql = "SELECT task FROM decisions WHERE institution_id = ? AND decision_id = ?"
         params: list[Any] = [institution_id, decision_id]
         if dataset_id is not None:
             sql += " AND dataset_id = ?"
