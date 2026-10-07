@@ -56,7 +56,7 @@ from cabinet.explore.catalog import (
     Vocab,
 )
 from cabinet.explore.compact import Unresolved, compact_catalog, resolve_plan
-from cabinet.explore.privacy import redact_question
+from cabinet.explore.privacy import count_form, historical_form, redact_question
 from cabinet.provider import (
     ENV_RECORD,
     Provider,
@@ -280,6 +280,18 @@ class PlanOutcome:
     # term or college the chosen analysis does not filter by, or a part of
     # the question no analysis answered.
     notes: tuple[str, ...] = ()
+    # The model read the catalog and planned nothing (``{"steps": []}``).
+    declined: bool = False
+
+
+# The instruction the model planner gets with a forward-looking question
+# (in the user message, after the question; the catalog stays the same).
+FORWARD_HINT = (
+    "CampusLens does not forecast. Plan the closest measures from the historical "
+    "records for the group the question names: for example a past dropout, "
+    "stop-out, retention or graduation rate, a headcount now, or enrollment by "
+    "term. Never plan anything per student."
+)
 
 
 # --- validation --------------------------------------------------------------
@@ -481,7 +493,11 @@ def parse_model_plan(text: str, catalog: Catalog) -> list[Step]:
 
 
 def model_plan(
-    question: str, catalog: Catalog, provider: Provider, role: str = "staff"
+    question: str,
+    catalog: Catalog,
+    provider: Provider,
+    role: str = "staff",
+    hint: str | None = None,
 ) -> list[Step]:
     """The model planner. Raises PlanInvalid or ProviderUnavailable. The model
     receives the question with any typed id or long number replaced, and the
@@ -493,6 +509,8 @@ def model_plan(
         "question": redact_question(question),
         "catalog": compact_catalog(catalog),
     }
+    if hint:
+        payload["hint"] = hint
     explanation = provider.explain(payload, PLANNER_ROLE)
     steps = parse_model_plan(explanation.text, catalog)
     if isinstance(provider, RecordingProvider):
@@ -532,11 +550,15 @@ def planner_order_from_env() -> str:
 
 
 def _try_model(
-    question: str, catalog: Catalog, provider: Provider, role: str = "staff"
+    question: str,
+    catalog: Catalog,
+    provider: Provider,
+    role: str = "staff",
+    hint: str | None = None,
 ) -> tuple[list[Step] | None, str | None]:
     """(model steps, None), or (None, the plain reason the model was not used)."""
     try:
-        return model_plan(question, catalog, provider, role), None
+        return model_plan(question, catalog, provider, role, hint), None
     except ProviderUnavailable as exc:
         reason = f"the model planner was unavailable: {exc.reason}"
     except PlanInvalid as exc:
@@ -546,50 +568,119 @@ def _try_model(
 
 
 def plan_question(
-    question: str, catalog: Catalog, provider: Provider, role: str = "staff"
+    question: str,
+    catalog: Catalog,
+    provider: Provider,
+    role: str = "staff",
+    *,
+    forward: bool = False,
 ) -> PlanOutcome:
-    """The plan for one question (call only after the refusal check).
+    """The plan for one question (call only after the privacy check).
 
     Replay serves a recorded plan first. With a live provider the default
     order is model first: the model reads the compact catalog and plans,
     and the rule planner answers whenever the model's plan cannot be used
     (docs/EXPLORE-EVAL.md has the measurements behind this order).
     ``rules-first`` and ``rules-only`` keep the earlier orders. Fake and
-    replay modes never call a model."""
+    replay modes never call a model.
+
+    ``forward``: the question asks what will happen. The model gets the
+    question with ``FORWARD_HINT``; the rules read ``historical_form`` of it
+    (``forward_rule_plan_detail``)."""
+    rules = forward_rule_plan_detail if forward else rule_plan_detail
+    hint = FORWARD_HINT if forward else None
     if provider.name == "replay":
         recorded = load_recorded_plan(question, catalog)
         if recorded is not None:
             return PlanOutcome(recorded, "recorded")
     if not uses_model(provider):
-        steps, notes = rule_plan_detail(question, catalog)
+        steps, notes = rules(question, catalog)
         return PlanOutcome(steps, "rule", None, notes)
     order = planner_order_from_env()
     if order == RULES_ONLY:
         # Never ask a model to plan: a question the rules cannot map gets
         # the example questions at once (a live demo on a slow model).
-        steps, notes = rule_plan_detail(question, catalog)
+        steps, notes = rules(question, catalog)
         return PlanOutcome(steps, "rule", None, notes)
     if order == RULES_FIRST:
-        steps, notes = rule_plan_detail(question, catalog)
+        steps, notes = rules(question, catalog)
         if steps is not None:
             return PlanOutcome(steps, "rule", None, notes)
         try:
-            model_steps, reason = _try_model(question, catalog, provider, role)
+            model_steps, reason = _try_model(question, catalog, provider, role, hint)
         except PlanDeclined:
-            return PlanOutcome(None, "model")
+            return PlanOutcome(None, "model", declined=True)
         if model_steps is not None:
             return PlanOutcome(model_steps, "model")
         return PlanOutcome(None, "rule", reason, ())
     try:
-        model_steps, reason = _try_model(question, catalog, provider, role)
+        model_steps, reason = _try_model(question, catalog, provider, role, hint)
     except PlanDeclined:
         # The model read the catalog and found no analysis for the question;
         # the rules are not asked to stretch one onto it.
-        return PlanOutcome(None, "model")
+        return PlanOutcome(None, "model", declined=True)
     if model_steps is not None:
         return PlanOutcome(model_steps, "model")
-    steps, notes = rule_plan_detail(question, catalog)
+    steps, notes = rules(question, catalog)
     return PlanOutcome(steps, "rule", reason, notes)
+
+
+_SCOPE_PARAMS = frozenset(
+    {"major", "college", "course", "subject", "major_required", "level"}
+    | {k for k in general.GROUPING_KEYS if k != "term"}
+)
+
+
+def scoped_to_a_group(steps: list[Step]) -> bool:
+    """Every step names a group of students (a major, a course, first-gen
+    students, ...), not the whole school: the totals for "students like" one
+    student the question named."""
+    return all(
+        any(key in _SCOPE_PARAMS for key in step.params if key not in ("group_by",))
+        for step in steps
+    )
+
+
+def forward_rule_plan_detail(
+    question: str, catalog: Catalog
+) -> tuple[list[Step] | None, tuple[str, ...]]:
+    """The rule plan for a forward-looking question, read as history: the
+    historical measure ("will drop" is the dropout rate, with the stop-out
+    rate beside it), after a count now when the question asks how many
+    ("how many students have holds and will drop" also counts the students
+    with a hold this term)."""
+    steps, notes = rule_plan_detail(historical_form(question), catalog)
+    if steps is None:
+        return None, notes
+    chained = any(isinstance(v, Ref) for s in steps for v in s.params.values())
+    count = count_form(question)
+    if count and not chained:
+        counted, _ = rule_plan_detail(count, catalog)
+        if (
+            counted is not None
+            and len(counted) == 1
+            and counted[0].analysis_id == general.ANALYSIS_ID
+            and counted[0].params.get("measure") == "headcount"
+            and counted[0] not in steps
+        ):
+            steps = counted + steps
+    extra: list[Step] = []
+    for step in steps:
+        if (
+            step.analysis_id != general.ANALYSIS_ID
+            or step.params.get("measure") != "dropout_rate"
+        ):
+            continue
+        params = {**step.params, "measure": "stop_out_rate"}
+        try:
+            stop_out = validate_plan(
+                {"steps": [Step(general.ANALYSIS_ID, params).to_json()]}, catalog
+            )
+        except PlanInvalid:
+            continue
+        if stop_out[0] not in steps:
+            extra.extend(stop_out)
+    return (steps + extra)[:MAX_STEPS], notes
 
 
 # --- the rule planner --------------------------------------------------------
@@ -1417,6 +1508,14 @@ _OLD_MEASURES: tuple[tuple[str, str], ...] = (
     ),
 )
 
+# Students with a hold ("how many students have holds", "students with an
+# active hold"): the hold grouping's filter, never the hold-rate measure.
+_HOLD_FILTER = (
+    r"\b(?:with|have|has|having|had|carry(?:ing)?)\s+(?:an?\s+|any\s+)?"
+    r"(?:active\s+|current\s+|open\s+|outstanding\s+|unresolved\s+)?holds?\b"
+    r"|\b(?:on|under)\s+(?:an?\s+)?(?:active\s+)?hold\b"
+)
+
 # Grouping words: (grouping, as a grouping, as filter values).
 _GROUPING_WORDS: dict[str, str] = {
     "major": r"\b(?:which|what)\s+(?:\w+\s+)?(?:majors?|programs?)\b|"
@@ -1458,6 +1557,8 @@ _GROUPING_WORDS: dict[str, str] = {
     r"(?:non|other|regular)|non[- ]?honors|honors status|by honors",
     "modality": r"modalit|in[- ]person (?:vs\.?|versus|and|or) online|"
     r"online (?:vs\.?|versus|and|or) in[- ]person|delivery mode",
+    "hold": r"hold status|by holds?\b|with (?:and|or|vs\.?|versus) without "
+    r"(?:a |any )?holds?|holds? (?:vs\.?|versus|and|or) (?:no|without) holds?",
 }
 # Filter words: grouping -> [(pattern, value)], tried in order.
 _FILTER_WORDS: dict[str, tuple[tuple[str, str], ...]] = {
@@ -1527,6 +1628,10 @@ _FILTER_WORDS: dict[str, tuple[tuple[str, str], ...]] = {
         (r"\bhybrid\b", "hybrid"),
         (r"in[- ]person", "in_person"),
     ),
+    "hold": (
+        (r"without (?:a |any )?holds?|\bno holds?\b", "no_hold"),
+        (_HOLD_FILTER, "hold"),
+    ),
 }
 # Groupings existing analyses already answer for D, F or withdrawal rates
 # in a course or a major (the equity gap).
@@ -1535,6 +1640,7 @@ _EQUITY_GROUPS = {"first_generation", "pell", "residency", "entry_cohort", "admi
 
 def _detect_measure(text: str) -> tuple[str | None, bool]:
     """(measure id, whether only the general analysis computes it)."""
+    text = re.sub(_HOLD_FILTER, " ", text, flags=re.I)
     for measure, pattern in _NEW_MEASURES:
         if _has(pattern, text):
             return measure, True
@@ -1584,6 +1690,7 @@ def _general_params(text: str, e: _Entities, v: Vocab) -> dict[str, Any] | None:
         "international_share": "residency",
         "part_time_share": "load",
         "on_campus_share": "housing",
+        "hold_rate": "hold",
     }.get(measure_id)
     for key, words in _FILTER_WORDS.items():
         if key not in allowed or key == share_attr:
@@ -1652,6 +1759,7 @@ def _general_params(text: str, e: _Entities, v: Vocab) -> dict[str, Any] | None:
                 "admit_type",
                 "load",
                 "housing",
+                "hold",
             )
         ]
         if compare and not e.majors and not e.colleges:

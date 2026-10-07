@@ -1,15 +1,30 @@
-"""Questions Explore refuses before any planning or model call.
+"""What Explore protects before any planning or model call, and how it
+redirects instead of refusing.
 
 The school database holds no counseling or spiritual-care data, and Explore
-answers in aggregates only. A question about counseling or spiritual care,
-about one named or numbered student, or asking to predict what an individual
-student will do is refused here, in code, before the planner (rule or model)
-sees it. The API records the refusal as ``data.refused``.
+answers in aggregates only. Three kinds of question are caught here, in
+code, before the planner (rule or model) sees them, and each is recorded as
+``data.refused`` in the audit log:
 
-The checks are deliberately broad: a refused question can be rephrased as an
-aggregate question ("What is the DFW rate in College Algebra by
-first-generation status?"), while a leaked individual answer cannot be taken
-back.
+- ``counseling``: counseling or spiritual care. No figure is ever given,
+  not even a total; the reply is a gentle line and related questions it can
+  answer.
+- ``individual_student``: one named or numbered student, or a list of
+  students. The restricted data is never answered; the API answers the
+  nearest totals for students like that from the rule planner only (a typed
+  name or id never reaches a model), or suggests questions.
+- ``prediction``: what one student will do, a risk score, or a flag on
+  students. Answered like an individual question.
+
+A forward-looking question about a group ("how many will drop out", "will
+enrollment fall") is not refused: ``is_forward_looking`` marks it, and it is
+answered with the closest historical totals (``historical_form`` rewrites it
+for the rule planner). ``is_off_topic`` catches requests that have nothing to
+do with the university's student data ("code me a website"), the only
+questions shown as "not something CampusLens answers".
+
+The individual checks are deliberately broad: a caught question still gets
+totals, while a leaked individual answer cannot be taken back.
 """
 
 from __future__ import annotations
@@ -17,12 +32,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
-# Calm, plain lines: a refusal is CampusLens working as designed, not an
-# error. The counseling line refuses the topic, totals included, because the
-# questions it catches are mostly aggregate ("How many students visited the
-# counseling center?"). It does not say the data is absent: the one
-# authorized counseling count (M9) appears only in the briefing, never as an
-# answer to a typed question.
+# The reasons recorded in the audit log (``data.refused``).
 COUNSELING_REFUSAL = (
     "CampusLens does not answer questions about counseling or spiritual care, "
     "even as totals."
@@ -32,8 +42,46 @@ INDIVIDUAL_REFUSAL = (
     "by description."
 )
 PREDICTION_REFUSAL = (
-    "CampusLens does not predict what an individual student will do. It can show "
-    "totals, such as withdrawal or probation rates by major."
+    "CampusLens does not predict what an individual student will do or score "
+    "students. It answers with totals from the records."
+)
+OFF_TOPIC_REFUSAL = (
+    "The request is not about the university's student records, so no analysis "
+    "was run."
+)
+
+# What the person reads: calm, plain lines that lead into an answer or into
+# questions CampusLens can answer. The counseling line refuses the topic,
+# totals included (the one authorized counseling count appears only in the
+# briefing, never as an answer to a typed question).
+COUNSELING_MESSAGE = (
+    "CampusLens keeps counseling and spiritual care out of its answers, even as "
+    "totals. It can help with related questions like these."
+)
+INDIVIDUAL_LEAD = (
+    "CampusLens can't look up one student, but here are totals for students "
+    "like that."
+)
+INDIVIDUAL_MESSAGE = (
+    "CampusLens can't look up one student, but it can answer for groups of "
+    "students. Try one of these."
+)
+PREDICTION_LEAD = (
+    "CampusLens doesn't forecast or name students, so here's what the records "
+    "show for the group."
+)
+FORWARD_LEAD = "CampusLens doesn't forecast, so here's what the records show."
+OFF_TOPIC_MESSAGE = (
+    "CampusLens answers questions about your students, courses and majors from "
+    "the records, so it can't help with this one."
+)
+
+# Related questions for a counseling question: none of them reads or names
+# counseling data.
+COUNSELING_SUGGESTIONS = (
+    "What is first-year retention by first-generation status?",
+    "How many students have a hold?",
+    "Which majors have the lowest advising coverage?",
 )
 
 _COUNSELING_RE = re.compile(
@@ -116,17 +164,60 @@ _INDIVIDUAL_RE = re.compile(
     r"|\bstudent\s+(?:records?|transcripts?|names?|ids?|rows?)\b",
     re.IGNORECASE,
 )
+# A prediction about one student, a risk score, or flagging students: the
+# individual protection applies ("Who will be suspended next term?").
 _PREDICTION_RE = re.compile(
-    r"\b(?:predict\w*|forecast\w*|will\s+(?:\w+\s+)?(?:drop|fail|leave|withdraw|stop|quit|"
-    r"graduate|transfer|return|be\s+suspended|be\s+dismissed|be\s+on\s+probation)|"
-    r"likely\s+to\s+(?:drop\w*|fail|leave|withdraw|stop|quit|graduate|transfer|return)|"
-    r"at[- ]risk\s+of\s+\w+|"
-    r"going\s+to\s+(?:drop|fail|leave|withdraw|quit)|"
-    r"at[- ]risk\s+students?|students?\s+(?:who\s+are\s+)?at[- ]risk|"
-    r"risk\s+scores?|early\s+warning|flag\s+students?)\b"
-    r"|\bwho\s+will\b",
+    r"\bwho\s+(?:will|might|may|could|would|(?:is|are)\s+(?:likely|going|expected)"
+    r"|(?:is|are)\s+(?:most\s+)?likely)\b"
+    r"|\brisk\s+(?:scores?|ratings?|levels?\s+(?:of|for)\s+(?:each|every))\b"
+    r"|\bscore\s+(?:each|every|the|all)\s+students?\b"
+    r"|\bflag(?:ged)?\s+(?:the\s+|any\s+|all\s+)?students?\b"
+    r"|\bearly[- ]warning\s+(?:list|flags?|scores?)\b"
+    r"|\b(?:predict|forecast)\w*\s+(?:whether|if)\s+(?:an?\s+|one\s+|this\s+|that\s+"
+    r"|the\s+)?(?:student|learner|pupil)\b",
     re.IGNORECASE,
 )
+# A forward-looking question about a group: answered from the records.
+_FORWARD_RE = re.compile(
+    r"\b(?:predict\w*|forecast\w*|projections?|projected|outlook)\b"
+    r"|\bwill\b|\bgonna\b"
+    r"|\b(?:likely|going|expected|projected)\s+to\b"
+    r"|\bat[- ]risk\b(?!\s+(?:courses?|class(?:es)?|sections?))"
+    r"|\bnext\s+(?:year|term|semester|fall|spring|summer|academic\s+year)\b"
+    r"|\bin\s+the\s+(?:future|coming\s+(?:years?|terms?|semesters?))\b"
+    r"|\bgoing\s+forward\b|\bupcoming\s+(?:term|semester|year)\b",
+    re.IGNORECASE,
+)
+# Requests that have nothing to do with the university's student data.
+_OFF_TOPIC_RE = re.compile(
+    r"\b(?:code|build|make|create|write|design|generate|draft|compose|develop|program)"
+    r"\s+(?:me\s+|us\s+)?(?:an?\s+|the\s+|some\s+|my\s+)?(?:[\w-]+\s+){0,2}?"
+    r"(?:websites?|web\s*sites?|web\s*pages?|landing\s+pages?|apps?|applications?|"
+    r"programs?|scripts?|functions?|games?|poems?|songs?|stor(?:y|ies)|essays?|jokes?|"
+    r"haikus?|limericks?|raps?|novels?|recipes?|cover\s+letters?|resumes?|"
+    r"logos?|slogans?|tweets?)\b"
+    r"|\b(?:website|web\s*page|html|css|javascript|python|java|sql\s+query)\b"
+    r"|\b(?:poem|haiku|limerick|joke|riddle|recipe|lyrics)\b"
+    r"|\bweather\b|\btemperature\s+(?:today|tomorrow|outside)\b"
+    r"|\btranslate\b|\bstock\s+(?:price|market)\b|\bbitcoin\b|\bcrypto\w*\b"
+    r"|\b(?:movie|film|tv\s+show|netflix)\b|\bsports?\s+scores?\b"
+    r"|\bcapital\s+of\b|\bmeaning\s+of\s+life\b|\bwho\s+won\s+the\b"
+    r"|\b(?:solve|calculate)\s+(?:this\s+)?(?:equation|integral|math\s+problem)\b",
+    re.IGNORECASE,
+)
+# Words that make a question about the university's own records; a model's
+# empty plan for such a question is "not answerable yet", not off-topic.
+_CAMPUS_WORDS_RE = re.compile(
+    r"\b(?:students?|learners?|majors?|minors?|courses?|class(?:es)?|sections?|"
+    r"gpas?|grades?|enrol\w*|enrollment|retention|retain\w*|graduat\w*|dropout\w*|"
+    r"drop\s*outs?|stop\s*outs?|withdr\w*|probation|suspen\w*|holds?|advis\w*|"
+    r"credits?|terms?|semesters?|fall|spring|summer|college|colleges|faculty|"
+    r"instructors?|professors?|teach\w*|taught|tuition|aid|pell|first[- ]gen\w*|"
+    r"freshm[ae]n|sophomores?|juniors?|seniors?|alumni|campus|universit\w*|"
+    r"dfw|cohorts?|transfer\w*|athlet\w*|honors|housing|registration|regist\w*)\b",
+    re.IGNORECASE,
+)
+
 # What the audit log never stores: S- ids in any dash form, and any run of
 # five or more digits that is not a term code (202620).
 _REDACT_RE = re.compile(
@@ -211,11 +302,14 @@ def _mask(question: str, names: tuple[str, ...]) -> str:
 
 
 def refusal_for(question: str, names: tuple[str, ...] = ()) -> tuple[str, str] | None:
-    """(category, message) when the question must be refused, else None.
+    """(category, audit reason) when the question touches protected data,
+    else None.
 
-    Categories: ``counseling``, ``individual_student``, ``prediction``.
-    ``names`` are catalog names (course titles) masked out before the
-    counseling check only.
+    Categories: ``counseling``, ``individual_student``, ``prediction`` (about
+    one student, or scoring students). ``names`` are catalog names (course
+    titles) masked out before the counseling and named-person checks. A
+    forward-looking question about a group is not caught here (see
+    ``is_forward_looking``).
     """
     folded = fold(question)
     masked = _mask(folded, names)
@@ -232,6 +326,197 @@ def refusal_for(question: str, names: tuple[str, ...] = ()) -> tuple[str, str] |
     if _PREDICTION_RE.search(folded):
         return "prediction", PREDICTION_REFUSAL
     return None
+
+
+def is_forward_looking(question: str) -> bool:
+    """A question about what will happen ("how many will drop out", "will
+    enrollment fall next year"), answered from the records."""
+    return _FORWARD_RE.search(fold(question)) is not None
+
+
+def is_off_topic(question: str) -> bool:
+    """A request with nothing to do with the university's student data
+    ("code me a website", "write a poem", "what's the weather")."""
+    return _OFF_TOPIC_RE.search(fold(question)) is not None
+
+
+def mentions_campus_data(question: str) -> bool:
+    """The question names something in the university's records (students,
+    majors, courses, GPA, enrollment, ...)."""
+    return _CAMPUS_WORDS_RE.search(fold(question)) is not None
+
+
+# --- forward-looking questions, read as history ---------------------------------
+
+_FUTURE = (
+    r"(?:will|would|might|may|could|gonna|(?:are|is)\s+(?:likely|going|expected)\s+to|"
+    r"(?:likely|going|expected|projected)\s+to)"
+)
+# (future phrase, the historical measure words the rule planner reads).
+_FORWARD_REWRITES: tuple[tuple[str, str], ...] = (
+    (
+        r"\b(?:will|would|is|are)?\s*(?:the\s+)?(?:our\s+)?(?:total\s+)?"
+        r"(?:enrol(?:l)?ment|headcount)\s+(?:\w+\s+){0,2}?(?:be\s+)?(?:fall|drop|"
+        r"decline|shrink|grow|rise|increase|decrease|change|go\s+(?:up|down)|"
+        r"look\s+like)\b",
+        " enrollment over time ",
+    ),
+    (
+        rf"\b{_FUTURE}\s+(?:\w+\s+)?stop\s*[- ]?out\b",
+        " stop-out rate ",
+    ),
+    (
+        rf"\b{_FUTURE}\s+(?:\w+\s+)?(?:drop\s*[- ]?out|drop|leave|quit|not\s+"
+        r"(?:come\s+back|return|finish)|be\s+lost)\b(?:\s+(?:of\s+)?(?:school|"
+        r"college|the\s+university))?",
+        " dropout rate ",
+    ),
+    (
+        rf"\b{_FUTURE}\s+(?:\w+\s+)?(?:graduate|finish|complete\s+(?:a|their)\s+"
+        r"degree|get\s+(?:a|their)\s+degree)\b(?:\s+on\s+time)?",
+        " graduation rate ",
+    ),
+    (
+        rf"\b{_FUTURE}\s+(?:\w+\s+)?(?:return|come\s+back|stay|persist|be\s+retained)"
+        r"\b(?:\s+for\s+(?:a|their)\s+second\s+year)?",
+        " retention ",
+    ),
+    (rf"\b{_FUTURE}\s+(?:\w+\s+)?fail\b", " DFW rate "),
+    (rf"\b{_FUTURE}\s+(?:\w+\s+)?withdraw\b", " withdrawal rate "),
+    (
+        rf"\b{_FUTURE}\s+(?:\w+\s+)?(?:be\s+)?(?:put\s+)?on\s+probation\b",
+        " probation rate ",
+    ),
+    (rf"\b{_FUTURE}\s+(?:\w+\s+)?be\s+suspended\b", " suspension rate "),
+    (rf"\b{_FUTURE}\s+(?:\w+\s+)?transfer(?:\s+out)?\b", " transfer-out rate "),
+    (
+        r"\bat[- ]risk\s+of\s+(?:failing|a\s+dfw)\b",
+        " DFW rate ",
+    ),
+    (
+        r"\bat[- ]risk(?:\s+of\s+(?:dropping\s+out|leaving|not\s+returning|"
+        r"stopping\s+out|withdrawing))?\b(?!\s+(?:courses?|class(?:es)?|sections?))",
+        " dropout rate ",
+    ),
+)
+_FUTURE_WORDS_RE = re.compile(
+    r"\b(?:predict(?:ed|ion|ions|s)?|forecast(?:ed|s)?|projected|projections?|outlook"
+    r"\s+for|(?:in\s+the\s+)?(?:next|coming|upcoming)\s+(?:academic\s+)?(?:year|term|"
+    r"semester|fall|spring|summer)s?|in\s+the\s+future|going\s+forward|"
+    r"will|gonna|be\s+expected\s+to|likely\s+to|going\s+to|expected\s+to)\b",
+    re.IGNORECASE,
+)
+# The outcome a forward question asks about, so a count question ("how many
+# students have holds and will drop") can also be read as a count now.
+_OUTCOME_RE = re.compile(
+    "|".join(f"(?:{pattern})" for pattern, _ in _FORWARD_REWRITES[1:]),
+    re.IGNORECASE,
+)
+
+
+def historical_form(question: str) -> str:
+    """A forward-looking question as the closest question about the records,
+    for the rule planner: "what % will graduate" -> "what % graduation rate",
+    "will enrollment fall next year" -> "enrollment over time"."""
+    text = fold(question)
+    for pattern, words in _FORWARD_REWRITES:
+        text = re.sub(pattern, words, text, flags=re.IGNORECASE)
+    text = _FUTURE_WORDS_RE.sub(" ", text)
+    return " ".join(text.split())
+
+
+def count_form(question: str) -> str | None:
+    """A forward count question without its outcome ("how many students have
+    holds and will drop" -> "how many students have holds"), or None when the
+    question asks no count or names no outcome."""
+    text = fold(question)
+    if not re.search(r"\bhow\s+many\b|\bnumber\s+of\b", text, re.IGNORECASE):
+        return None
+    stripped = _OUTCOME_RE.sub(" ", text)
+    if stripped == text:
+        return None
+    stripped = re.sub(r"\b(?:and|or|but)\s*(?=[?.!]*\s*$)", " ", stripped.strip())
+    stripped = _FUTURE_WORDS_RE.sub(" ", stripped)
+    return " ".join(stripped.split())
+
+
+# --- individual questions, read as totals for students like that ----------------
+
+_AGGREGATE_REWRITES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(
+            r"\b(?:e-?mails?|email\s+addresses|phone\s+numbers?|home\s+address(?:es)?|"
+            r"contact\s+(?:info|information|details)|names?)\s+(?:of|for)\b",
+            re.IGNORECASE,
+        ),
+        "how many",
+    ),
+    (
+        re.compile(
+            r"\b(?:which|what|who|list|name|names\s+of|show(?:\s+me)?|identify|find|"
+            r"give(?:\s+me)?|tell\s+me\s+about|print|enumerate|rank(?:ing)?|dump|"
+            r"export|output)\b(?:\s+(?:the|all|any|every|each|specific|individual|"
+            r"me))*(?=\s|$)",
+            re.IGNORECASE,
+        ),
+        "how many",
+    ),
+    (
+        re.compile(
+            r"\b(?:the\s+)?(?:only|single|sole|lone|top|bottom|best|worst|"
+            r"highest[- ]\w+|lowest[- ]\w+)\s+(?:\d+\s+)?(?=(?:[\w-]+\s+){0,3}"
+            r"students?\b)",
+            re.IGNORECASE,
+        ),
+        "",
+    ),
+    (re.compile(r"\bwho(?:'s|s|\s+is|\s+are)\b", re.IGNORECASE), "how many are"),
+    (
+        re.compile(r"\b(?:this|that|a\s+specific|one|particular)\s+student\b", re.I),
+        "students",
+    ),
+)
+
+
+def aggregate_form(question: str, names: tuple[str, ...] = ()) -> tuple[str, bool]:
+    """(the question as a question about totals, whether it named one student
+    by id or name). Ids and names are removed, never passed on: "Did Jane Doe
+    pass MEEN 3310?" -> "Did students pass MEEN 3310?"."""
+    folded = fold(question)
+    named = False
+    text = folded
+    for match in list(_NAMED_PERSON_RE.finditer(_mask(folded, names))):
+        for group in (1, 2, 3, 4):
+            word = match.group(group)
+            if word:
+                named = True
+                text = re.sub(rf"\b{re.escape(word)}\b\s*", "", text, count=1)
+        text = text.replace("  ", " ")
+    if named:
+        text = re.sub(
+            r"\b(did|does|do|is|was|has|had|can|of|for)\s+(?=(?:pass|fail|get|got|"
+            r"do|did|take|took|graduat|withdr|drop|earn|score|enroll|regist|"
+            r"perform|\?|$))",
+            r"\1 students ",
+            text,
+            flags=re.IGNORECASE,
+        )
+    # "Did students pass MEEN 3310?": the course's D, F or withdrawal rate.
+    text = re.sub(
+        r"\b(?:how\s+)?(?:did|does|do|has|have)\s+students\s+(?:pass|fail|do|get|got|"
+        r"perform)\b(?:\s+(?:in|at|on))?",
+        "the DFW rate in",
+        text,
+        flags=re.IGNORECASE,
+    )
+    ids = _STUDENT_ID_RE.findall(text)
+    if ids:
+        named = True
+        text = _STUDENT_ID_RE.sub(" students ", text)
+    text = re.sub(r"\bstudents\s*(?:'s|’s|')", "students", text)
+    for pattern, words in _AGGREGATE_REWRITES:
+        text = pattern.sub(words, text)
+    return " ".join(text.split()), named
 
 
 def redact_question(question: str) -> str:
