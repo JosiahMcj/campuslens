@@ -69,6 +69,38 @@ const MESSAGE = {
   reviewed_at: null as string | null,
 }
 
+const STAFF_FOR_FINANCE = {
+  yours: ['student_accounts_analyst'],
+  employees: [
+    {
+      role: 'student_accounts_analyst',
+      title: 'Student Accounts Analyst',
+      job: 'Reports account holds and balances owed, by office.',
+      office: 'Finance — Student Accounts (Bursar)',
+      may_read: ['Holds and balances owed, by office'],
+      never_reads: ['Student names', 'Counseling and chaplain notes'],
+      outside_scope: ['Pell status'],
+      findings: ['M3', 'M5'],
+      no_data: false,
+      yours: true,
+      requests_today: 2,
+    },
+    {
+      role: 'chief_of_staff',
+      title: 'Chief of Staff',
+      job: 'Hands each question to the right department.',
+      office: "President's Office",
+      may_read: ['Majors, colleges, class levels and terms'],
+      never_reads: ['Student names'],
+      outside_scope: [],
+      findings: [],
+      no_data: false,
+      yours: false,
+      requests_today: 0,
+    },
+  ],
+}
+
 /** A healthy API for `role`; returns every URL requested. */
 function mockApi(role: string, overrides: Record<string, Handler> = {}) {
   const calls: string[] = []
@@ -96,6 +128,8 @@ function mockApi(role: string, overrides: Record<string, Handler> = {}) {
           return json({ examples: ['Which majors have the highest average GPA?'] })
         case '/inbox':
           return json({ received: [], sent: [], unread: 0 })
+        case '/staff':
+          return json(STAFF_FOR_FINANCE)
         default:
           return json({ detail: 'not found' }, 404)
       }
@@ -133,12 +167,30 @@ describe('navigation by role', () => {
     expect(screen.getAllByText('Finance — Student Accounts').length).toBeGreaterThan(0)
     expect(await screen.findByText('Which offices hold the most active holds?')).toBeTruthy()
     expect(screen.getByText('What is the 6-year graduation rate for Pell students by college?')).toBeTruthy()
+    // The home screen names the office's own AI employee.
+    expect(document.querySelector('.persona-employee')?.textContent).toBe(
+      'Your AI employee: Student Accounts Analyst',
+    )
     const rows = sidebarRows()
     expect(rows).toContain('Inbox')
     expect(rows).toContain('Department overview')
-    for (const hidden of ['Full briefing', 'Decision', 'Audit log', 'Staff actions', 'Data access']) {
+    expect(rows).toContain('Data access')
+    for (const hidden of ['Full briefing', 'Decision', 'Audit log', 'Staff actions']) {
       expect(rows).not.toContain(hidden)
     }
+  })
+
+  it('shows Finance its own AI employee first on the AI employees page, without the audit log', async () => {
+    const calls = mockApi('finance')
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Student Accounts Analyst' }))
+    const cards = await screen.findAllByRole('article')
+    expect(cards[0].getAttribute('aria-label')).toBe('Student Accounts Analyst')
+    expect(within(cards[0]).getByText('Your department')).toBeTruthy()
+    expect(within(cards[0]).getByText('Handled 2 requests today')).toBeTruthy()
+    expect(calls.some((call) => call.endsWith('/staff'))).toBe(true)
+    expect(calls.some((call) => call.includes('/events'))).toBe(false)
+    expect(screen.queryByText(/Ask a question to see exactly/)).toBeNull()
   })
 
   it('shows the president every page plus the inbox, the overviews and sign-in activity', async () => {

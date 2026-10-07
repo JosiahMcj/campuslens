@@ -53,6 +53,10 @@ export interface ExploreResponse {
   notes?: string[]
   fallbacks?: string[]
   suggestions?: string[]
+  /** The AI employees who worked the answer ("Answered by"), lead first. */
+  answered_by?: string[]
+  /** Who delegated the steps to them (the Chief of Staff). */
+  delegated_by?: string
 }
 
 /** GET /explore/catalog, the parts the screen uses. */
@@ -160,6 +164,8 @@ export function exploreResponseFrom(raw: unknown): ExploreResponse {
     notes: strings(body.notes),
     fallbacks: strings(body.fallbacks),
     ...(Array.isArray(body.suggestions) ? { suggestions: strings(body.suggestions) } : {}),
+    ...(Array.isArray(body.answered_by) ? { answered_by: strings(body.answered_by) } : {}),
+    ...(typeof body.delegated_by === 'string' ? { delegated_by: body.delegated_by } : {}),
   }
 }
 
@@ -559,6 +565,7 @@ export type ExploreTraceEvent =
   | { type: 'understood'; text: string }
   | { type: 'plan'; steps: string[]; planner: 'rules' | 'model' }
   | { type: 'reading'; text: string }
+  | { type: 'delegation'; text: string }
   | { type: 'step'; index: number; total: number; title: string }
   | { type: 'suppression'; count: number; text: string }
   | { type: 'writing'; text: string }
@@ -578,6 +585,7 @@ const TRACE_TYPES = new Set([
   'understood',
   'plan',
   'reading',
+  'delegation',
   'step',
   'suppression',
   'writing',

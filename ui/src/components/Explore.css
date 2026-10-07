@@ -669,3 +669,11 @@ button.finding-link:not(.stat-figure):not(.evidence-tag):active {
     transform: none;
   }
 }
+
+/* "Answered by: Student Accounts Analyst": the AI employee(s) the Chief of
+   Staff delegated the answer to, small and quiet under the source line. */
+.explore-answered-by {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--ink-soft);
+}

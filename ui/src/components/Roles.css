@@ -478,3 +478,20 @@
   margin: 0 0 var(--space-5);
   color: var(--ink-soft);
 }
+
+/* "Your AI employee: Student Accounts Analyst" under a department's
+   greeting; the name opens the AI employees page. */
+.persona-employee {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
+
+.persona-employee .link-button {
+  font-size: inherit;
+  font-weight: 600;
+}
+
+.persona-employee + h1 {
+  margin-top: var(--space-2);
+}

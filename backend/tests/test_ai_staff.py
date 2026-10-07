@@ -540,3 +540,13 @@ def test_existing_briefing_employees_keep_their_read_grants() -> None:
     # The two briefing analysts are unchanged by the new staff.
     assert ROLE_PERMISSIONS["enrollment_analyst"]["profile.continuing"] == READ
     assert ROLE_PERMISSIONS["student_success_analyst"]["holds.amount"] == READ
+
+
+def test_the_home_screens_name_the_same_employees_as_the_api() -> None:
+    """ui/src/personas.ts names each office's AI employee on its home screen;
+    it must match LOGIN_EMPLOYEES here."""
+    personas = (REPO_ROOT / "ui" / "src" / "personas.ts").read_text(encoding="utf-8")
+    for login, roles in staff.LOGIN_EMPLOYEES.items():
+        titles = ", ".join(f"'{staff.title(r)}'" for r in roles)
+        block = personas.split(f"  {login}: {{", 1)[1].split("\n  },", 1)[0]
+        assert f"employees: [{titles}]" in block, (login, titles)

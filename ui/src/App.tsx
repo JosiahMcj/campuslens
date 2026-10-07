@@ -56,12 +56,8 @@ import {
   ExecutiveSummary,
   Limitations,
 } from './components/Briefing'
-import {
-  DataAccessPanel,
-  ProfilePanel,
-  SettingsPanel,
-  type AccessGrant,
-} from './components/AccountPanels'
+import { ProfilePanel, SettingsPanel, type AccessGrant } from './components/AccountPanels'
+import { AiStaffPanel } from './components/AiStaffPanel'
 import { ChatComposer } from './components/ChatComposer'
 import { ChatSidebar, type HistoryItem, type PanelId } from './components/ChatSidebar'
 import { ExploreAnswer, ExploreWorking, Thought } from './components/ExploreAnswer'
@@ -75,6 +71,7 @@ import { ItWorkspace } from './components/ItWorkspace'
 import { SendAlertDialog } from './components/SendAlertDialog'
 import { useInboxUnread, type AlertSource } from './inbox'
 import { personaFor } from './personas'
+import { joinTitles } from './staff'
 import { Institution, type ActiveDatasetMeta } from './components/Institution'
 import { LoginScreen } from './components/LoginScreen'
 import { SidePanel } from './components/SidePanel'
@@ -265,7 +262,7 @@ function pageIntro(page: PanelId, role: Role, fictional: boolean): string | unde
         ? 'CampusLens advises. You decide. Nothing is sent on its own.'
         : 'Leadership decides. Nothing is sent on its own.'
     case 'access':
-      return "Each AI employee sees only the fields its task needs, and never a student's name or identifiers. A request outside those fields is refused before any AI employee is asked, and the refusal is logged."
+      return "One AI employee for each department. The Chief of Staff hands each question to the department that owns it. Each employee reads only its own fields, as totals, and never a student's name or identifiers. A request outside those fields is refused before anything is read, and the refusal is logged."
     case 'audit':
       return 'Every question, data request, refusal and decision is recorded here and can never be changed. Newest entries are first.'
     case 'students':
@@ -1392,7 +1389,7 @@ function BriefingPage({
   // else keeps the briefing pages, with the inbox (and, for the president
   // and the admin, every department's overview) added.
   const panels: PanelId[] = department
-    ? ['overview', 'inbox']
+    ? ['overview', 'inbox', 'access']
     : [
         'inbox',
         ...(overviewFor.length > 0 ? (['overview'] as PanelId[]) : []),
@@ -2136,6 +2133,14 @@ function BriefingPage({
             <div className="chat-empty">
               <LensMark className="empty-mark" />
               {persona !== null && <p className="persona-kicker">{persona.name}</p>}
+              {persona !== null && department && persona.employees.length > 0 && (
+                <p className="persona-employee">
+                  {persona.employees.length === 1 ? 'Your AI employee: ' : 'Your AI employees: '}
+                  <button type="button" className="link-button" onClick={() => openPanel('access')}>
+                    {joinTitles(persona.employees)}
+                  </button>
+                </p>
+              )}
               <h1>{asker ? 'What would you like to know?' : 'CampusLens briefings'}</h1>
               {(asker || briefingStatus.kind !== 'error') && (
                 <p className="empty-lede">
@@ -2279,10 +2284,13 @@ function BriefingPage({
           {shownPanel === 'decision' &&
             briefingGate(() => <div className="doc panel-solo">{decisionPanel(undefined, true)}</div>)}
           {shownPanel === 'access' &&
-            (lastAccepted === null && events === null && eventsStatus.kind === 'loading' ? (
+            (department ? (
+              // A department account reads the staff, not the audit log.
+              <AiStaffPanel />
+            ) : lastAccepted === null && events === null && eventsStatus.kind === 'loading' ? (
               notReady(eventsStatus, retryEvents, 'what each AI employee could see')
             ) : (
-              <DataAccessPanel
+              <AiStaffPanel
                 grants={grants}
                 error={
                   lastAccepted === null && events === null && eventsStatus.kind === 'error'

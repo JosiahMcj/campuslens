@@ -75,7 +75,7 @@ EMPLOYEES: dict[str, Employee] = {
             "chief_of_staff",
             "Chief of Staff",
             "Hands each question to the right department's analyst, then writes "
-            "the summary from their checked totals.",
+            "the summary and its limits from their checked totals.",
             "President's Office",
         ),
         Employee(

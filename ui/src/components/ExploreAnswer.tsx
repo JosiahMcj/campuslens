@@ -21,6 +21,7 @@ import {
   type ExploreStep,
 } from '../explore'
 import { FIELD_LABELS, fieldLabels, normalizeField } from '../fieldLabels'
+import { answeredByLine } from '../staff'
 import './Explore.css'
 import { SearchIcon } from './icons'
 import { LensMark } from './LensMark'
@@ -443,6 +444,7 @@ export function ExploreAnswer({
 
   const notes = answerNotes(response)
   const source = sourceLabel(response.source)
+  const answeredBy = answeredByLine(response.answered_by)
   const planned = plannerLabel(response.planner)
   const fellBack = (response.fallbacks ?? []).length > 0
 
@@ -472,6 +474,7 @@ export function ExploreAnswer({
       </div>
       {notes.length > 0 && <p className="explore-notes">{notes.join(' ')}</p>}
       {source !== null && <p className="explore-source">{source}</p>}
+      {answeredBy !== null && <p className="explore-answered-by">{answeredBy}</p>}
 
       <details
         className="fold explore-how"

@@ -70,6 +70,9 @@ describe('the trace helpers', () => {
       total: 3,
       title: 'X',
     })
+    expect(
+      traceEventFrom({ type: 'delegation', index: 0, employees: ['A'], text: 'Chief of Staff → A: X' }),
+    ).toEqual({ type: 'delegation', text: 'Chief of Staff → A: X' })
     expect(traceEventFrom({ type: 'students', rows: [] })).toBeNull()
     expect(traceEventFrom('nope')).toBeNull()
     expect(traceEventFrom({ type: 'reading' })).toBeNull()
@@ -92,6 +95,22 @@ describe('the trace helpers', () => {
     expect(
       traceLines([{ type: 'step', index: 1, total: 3, title: 'Hardest course' }])[0].text,
     ).toBe('Step 2 of 3: Hardest course')
+  })
+
+  it('shows the Chief of Staff handing each step to its department', () => {
+    const lines = traceLines([
+      {
+        type: 'delegation',
+        text: 'Chief of Staff → Student Accounts Analyst: Holds by office',
+      },
+      { type: 'step', index: 0, total: 1, title: 'Holds by office' },
+    ])
+    expect(lines.map((l) => l.text)).toEqual([
+      'Chief of Staff → Student Accounts Analyst: Holds by office',
+      'Computing: Holds by office',
+    ])
+    render(<Thinking trace={lines} />)
+    expect(screen.getByText('Chief of Staff → Student Accounts Analyst: Holds by office')).toBeTruthy()
   })
 
   it('summarises the finished trace in one line', () => {
