@@ -43,6 +43,9 @@ KNOWN_VARIABLES: tuple[str, ...] = (
     "CABINET_UI_DIST",
     "CABINET_LOCAL_ENV",
     "CABINET_TRUSTED_PROXY",
+    # the address people open CampusLens at (the sign-in link in messages
+    # sent to office mailboxes, cabinet.staffactions)
+    "CABINET_PUBLIC_URL",
     # provider
     "CABINET_PROVIDER",
     "CABINET_RECORD",

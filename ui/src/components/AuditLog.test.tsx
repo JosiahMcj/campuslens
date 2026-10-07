@@ -95,20 +95,85 @@ describe('AuditLog', () => {
     expect(details.some((d) => d.includes('Registration status'))).toBe(true)
   })
 
-  it('filters with a five-option Show select', () => {
+  it('filters by kind of entry, by who, and by date', () => {
     mount()
     const show = screen.getByLabelText('Show') as HTMLSelectElement
     expect([...show.options].map((o) => o.textContent)).toEqual([
       'Everything',
-      'Questions',
+      'Questions and answers',
       'Data access',
       'Decisions and messages',
+      'Staff actions',
+      'Data and people',
       'Refusals',
     ])
     fireEvent.change(show, { target: { value: 'refusals' } })
     expect(document.querySelectorAll('.event')).toHaveLength(1)
     fireEvent.change(show, { target: { value: 'decisions' } })
     expect(document.querySelectorAll('.event')).toHaveLength(2)
+    expect(screen.getByText('Showing 2 of 6 entries.')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    const who = screen.getByLabelText('Who') as HTMLSelectElement
+    // People and AI employees by name, never a raw role code.
+    const names = [...who.options].map((o) => o.textContent)
+    expect(names).toContain('The Enrollment Analyst')
+    expect(names).toContain('staff@example.edu')
+    expect(names.join(' ')).not.toContain('enrollment_analyst')
+    fireEvent.change(who, { target: { value: 'enrollment_analyst' } })
+    expect(document.querySelectorAll('.event')).toHaveLength(2)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-10-06' } })
+    expect(document.querySelectorAll('.event')).toHaveLength(0)
+    expect(screen.getByText(/No entries match these filters/)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-10-01' } })
+    expect(document.querySelectorAll('.event')).toHaveLength(6)
+  })
+
+  it('says every staff action entry in plain words, never a note or a code', () => {
+    mount({
+      events: [
+        event(1, 'action.updated', 'staff@example.edu', {
+          action_id: 3,
+          office: 'Bursar',
+          finding_id: 'M5',
+          fields: ['owner', 'status'],
+          status_from: 'todo',
+          status_to: 'in_progress',
+        }),
+        event(2, 'action.noted', 'president@example.edu', { action_id: 3, office: 'Bursar' }),
+        event(3, 'action.sent', 'staff@example.edu', {
+          action_id: 3,
+          office: 'Bursar',
+          dispatch_id: 4,
+          provider: 'outbox',
+          provider_ref: 'bootstrap/4.eml',
+        }),
+        event(4, 'action.send_failed', 'staff@example.edu', {
+          action_id: 3,
+          office: 'Library',
+          dispatch_id: 5,
+          error: 'the mail server did not answer',
+        }),
+        event(5, 'explore.answered', 'chief_of_staff', {
+          task_id: 'explore-9',
+          steps: ['majors_gpa', 'course_dfw'],
+          answered: true,
+        }),
+      ],
+    })
+    const text = document.body.textContent ?? ''
+    expect(text).toContain(
+      'staff@example.edu moved the Bursar action from to do to in progress and changed who has the Bursar action.',
+    )
+    expect(text).toContain('president@example.edu added a note to the Bursar action.')
+    expect(text).toContain("staff@example.edu sent the Bursar action to that office's mailbox.")
+    expect(text).toContain('tried to send the Library action to its office, and it did not go through.')
+    expect(text).toContain('The Chief of Staff answered a question from the records, in 2 steps.')
+    for (const raw of ['action.updated', 'action.sent', 'M5', 'outbox', 'majors_gpa', 'did not answer', 'recorded an entry']) {
+      expect(text).not.toContain(raw)
+    }
   })
 
   it('offers one "Test a refusal" button that runs the refusal test', () => {

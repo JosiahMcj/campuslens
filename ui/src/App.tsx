@@ -49,7 +49,6 @@ import {
   EvidenceSources,
   ExecutiveSummary,
   Limitations,
-  StaffActions,
 } from './components/Briefing'
 import {
   DataAccessPanel,
@@ -65,6 +64,7 @@ import { EvidenceDrawer } from './components/EvidenceDrawer'
 import { Institution, type ActiveDatasetMeta } from './components/Institution'
 import { LoginScreen } from './components/LoginScreen'
 import { SidePanel } from './components/SidePanel'
+import { StaffActionsPage } from './components/StaffActionsPage'
 import { LensMark } from './components/LensMark'
 import { Thinking } from './components/Thinking'
 import { MenuIcon } from './components/icons'
@@ -167,6 +167,29 @@ type AuthState =
   | { kind: 'signed-in'; session: Session }
 
 const SESSION_ENDED_NOTICE = 'Your session ended. Sign in again.'
+
+/** Pages of cards or rows, which use the wider column. */
+const WIDE_PAGES: ReadonlySet<PanelId> = new Set<PanelId>(['actions', 'audit', 'aid', 'figures'])
+
+/**
+ * The one sentence under a page's title saying what the page is for. Pages
+ * whose content opens with its own intro (it depends on the role or the
+ * state) return undefined here.
+ */
+function pageIntro(page: PanelId): string | undefined {
+  switch (page) {
+    case 'briefing':
+      return 'The whole briefing in one document: what is happening, the evidence behind every number, what staff can do now, and the decision for leadership.'
+    case 'figures':
+      return 'The five headline figures. Open any one to see how it is worked out and the records behind it.'
+    case 'profile':
+      return 'Who you are signed in as, and what your role lets you do.'
+    case 'settings':
+      return 'How CampusLens looks and moves in this browser.'
+    default:
+      return undefined
+  }
+}
 
 /** The approved question behind the full briefing and the decision. */
 const SPRING_QUESTION_ID = 'spring-registration'
@@ -420,14 +443,15 @@ function InstitutionPage({
   const institutionName = session.user.institution?.name ?? 'your institution'
   return (
     <div className="chat-center doc institution-doc">
-      {/* The top bar shows the page name; this h1 names it for screen
-          readers and is the focus target after navigation. */}
-      <h1 id="main-heading" className="visually-hidden" tabIndex={-1}>
+      {/* The page's title, in the same place and size as every other
+          page's; the focus target after navigation. */}
+      <h1 id="main-heading" className="page-title" tabIndex={-1}>
         Institution settings
       </h1>
       <p className="lede">
-        People, office mailboxes, counseling permission and the data the briefing
-        is computed from, for {institutionName}.
+        The people who can sign in, the office mailboxes, the counseling permission,
+        the data the briefing is computed from and the outside connections, for{' '}
+        {institutionName}.
       </p>
       {canSeeInstitution(session.user.role) ? (
         <Institution
@@ -1424,7 +1448,7 @@ function BriefingPage({
   const decisionStatus: ResourceStatus =
     dispatchLoadError !== null ? { kind: 'error', message: dispatchLoadError } : decisionsStatus
 
-  const decisionPanel = (title: string | undefined) =>
+  const decisionPanel = (title: string | undefined, progress = false) =>
     decisionStatus.kind === 'loading' ? (
       notReady(decisionStatus, retryDecisions, 'the decision')
     ) : (
@@ -1447,6 +1471,7 @@ function BriefingPage({
         aidQueues={aidQueues}
         onPrepareAidQueue={(id) => void prepareAidQueue(id)}
         onOpenAidQueue={aidQueue ? () => openPanel('aid') : null}
+        progress={progress}
       />
     )
 
@@ -1683,7 +1708,7 @@ function BriefingPage({
               <MenuIcon />
             </button>
             <span className="topbar-title">
-              {onInstitution ? 'Institution settings' : 'Student success briefing'}
+              {onInstitution ? 'Administration' : 'Student success briefing'}
             </span>
             {fictional && <span className="topbar-badge">Fictional data</span>}
           </header>
@@ -1773,6 +1798,8 @@ function BriefingPage({
           onClose={closePanel}
           closing={panelClosing}
           covered={evidenceOpen}
+          wide={WIDE_PAGES.has(shownPanel)}
+          intro={pageIntro(shownPanel)}
         >
           {shownPanel === 'briefing' &&
             briefingGate(() => findingsPanel(() =>
@@ -1808,10 +1835,6 @@ function BriefingPage({
             findingsPanel(() =>
               ready ? (
                 <div className="panel-figures">
-                  <p className="panel-intro">
-                    The five headline measures. Open any one to see how it is
-                    worked out and the records behind it.
-                  </p>
                   <StatRow findings={findingsState.data} onOpenEvidence={openEvidence} />
                 </div>
               ) : null,
@@ -1831,19 +1854,21 @@ function BriefingPage({
               ) : null,
             )}
           {shownPanel === 'actions' &&
-            briefingGate(() => findingsPanel(() =>
-              ready ? (
-                <div className="doc panel-solo">
-                  <StaffActions
-                    findings={findingsState.data}
-                    onOpenEvidence={openEvidence}
-                    headingId={null}
-                  />
-                </div>
-              ) : null,
+            findingsPanel(() => (
+              <StaffActionsPage
+                onOpenEvidence={openEvidence}
+                onOpenInstitution={
+                  canSeeInstitution(role)
+                    ? () => {
+                        setPanel(null)
+                        navigate('/institution')
+                      }
+                    : null
+                }
+              />
             ))}
           {shownPanel === 'decision' &&
-            briefingGate(() => <div className="doc panel-solo">{decisionPanel(undefined)}</div>)}
+            briefingGate(() => <div className="doc panel-solo">{decisionPanel(undefined, true)}</div>)}
           {shownPanel === 'access' &&
             (lastAccepted === null && events === null && eventsStatus.kind === 'loading' ? (
               notReady(eventsStatus, retryEvents, 'what each AI employee could see')
@@ -1858,7 +1883,9 @@ function BriefingPage({
                 onRetry={retryEvents}
               />
             ))}
-          {shownPanel === 'aid' && aidQueue && <AidQueuePanel canEdit={canEditAidQueue(role)} />}
+          {shownPanel === 'aid' && aidQueue && (
+            <AidQueuePanel canEdit={canEditAidQueue(role)} onOpenDecision={() => openPanel('decision')} />
+          )}
           {shownPanel === 'profile' && (
             <ProfilePanel session={session} datasetName={datasetName} onSignOut={onSignOut} />
           )}

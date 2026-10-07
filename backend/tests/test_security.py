@@ -430,6 +430,11 @@ def test_every_protected_route_is_in_the_role_table() -> None:
         ("POST", "/explore"),
         ("POST", "/explore/stream"),
         ("GET", "/explore/catalog"),
+        # The staff action worklist (its PATCH and POSTs carry an action id
+        # and live in ROUTE_ROLE_PREFIXES; tests/test_staff_actions.py).
+        ("GET", "/staff-actions"),
+        # Institution settings: the outside connections (admin only).
+        ("GET", "/admin/connections"),
     }
     assert set(ROUTE_ROLES) == expected
 
@@ -538,12 +543,18 @@ _PREFIX_SAMPLES: tuple[tuple[str, str], ...] = (
     ("POST", f"/decisions/{DEMO_DECISION_ID}/dispatch/send"),
     ("POST", f"/decisions/{DEMO_DECISION_ID}/aid-queue"),
     ("PATCH", "/aid-queue/999"),
+    ("PATCH", "/staff-actions/999"),
+    ("POST", "/staff-actions/999/notes"),
+    ("POST", "/staff-actions/999/send"),
 )
 
 # A route that is open to a role in the table but narrows itself inside
 # the handler: an executive's Send is a deliberate, logged 403.
 _HANDLER_NARROWED: frozenset[tuple[str, str, str]] = frozenset(
-    {("executive", "POST", f"/decisions/{DEMO_DECISION_ID}/dispatch/send")}
+    {
+        ("executive", "POST", f"/decisions/{DEMO_DECISION_ID}/dispatch/send"),
+        ("executive", "POST", "/staff-actions/999/send"),
+    }
 )
 
 

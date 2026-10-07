@@ -212,7 +212,7 @@ def _name(conn: sqlite3.Connection, slug: str = BOOTSTRAP_SLUG) -> str:
 
 
 def test_the_names() -> None:
-    assert SCHEMA_VERSION == 8
+    assert SCHEMA_VERSION == 9
     assert BOOTSTRAP_NAME == "Demonstration University"
     assert LEGACY_BOOTSTRAP_NAME == "Bootstrap Institution"
     assert BOOTSTRAP_SLUG == "bootstrap"
@@ -222,8 +222,8 @@ def test_migration_8_renames_the_old_name_and_keeps_the_slug(tmp_path: Path) -> 
     conn = _database_at_version_7(tmp_path / "cabinet.db", LEGACY_BOOTSTRAP_NAME)
     try:
         assert recorded_versions(conn) == [1, 2, 3, 4, 5, 6, 7]
-        assert migrate(conn) == [8]
-        assert recorded_versions(conn) == [1, 2, 3, 4, 5, 6, 7, 8]
+        assert migrate(conn) == [8, 9]
+        assert recorded_versions(conn) == [1, 2, 3, 4, 5, 6, 7, 8, 9]
         assert _name(conn) == "Demonstration University"
         assert migrate(conn) == []
         assert _name(conn) == "Demonstration University"
@@ -239,7 +239,7 @@ def test_migration_8_leaves_a_name_an_admin_chose(tmp_path: Path) -> None:
             " VALUES ('Bootstrap Institution', 'other', '2026-01-01')"
         )
         conn.commit()
-        assert migrate(conn) == [8]
+        assert migrate(conn) == [8, 9]
         assert _name(conn) == "Golden Eagle University"
         # Another institution that happens to carry the old name keeps it:
         # only the bootstrap slug is the demonstration institution.
@@ -254,7 +254,7 @@ def test_a_new_database_starts_with_the_new_name(tmp_path: Path) -> None:
     assert institution is not None
     assert institution["name"] == "Demonstration University"
     assert institution["slug"] == "bootstrap"
-    assert recorded_versions(store._conn)[-1] == 8
+    assert recorded_versions(store._conn)[-1] == 9
 
 
 def test_the_signed_in_user_sees_the_new_name() -> None:

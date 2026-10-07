@@ -48,6 +48,13 @@ Tables (created and versioned by ``cabinet.migrations``):
   constraint anchors it). ``facts_json`` holds the facts the office needs to
   start its own review (``cabinet.aidqueue``); ``status`` and ``note`` are
   set only by a person in the aid role. Purged with its dataset.
+- ``staff_actions(id, institution_id, dataset_id, action_key, office,
+  finding_id, count, status, owner, due_date, updated_by, updated_at,
+  created_at)`` with ``staff_action_notes`` and ``staff_action_history``
+  — the staff action worklist (migration 9): one row per operational
+  action per dataset, built from the findings (``cabinet.staffactions``),
+  with a status, an owner and a due date set by a person, a note thread and
+  a history of changes. No student column. Purged with its dataset.
 - ``recordings(institution_id, role, key, json)`` — validated model outputs
   per institution; the key is the sha256 of the canonical received findings
   (which covers the dataset content and the question).
@@ -88,6 +95,15 @@ PURGE_AFTER_DAYS = 30
 
 class StoreError(RuntimeError):
     """A storage-level failure (integrity, missing rows)."""
+
+
+class StaffActionConflict(Exception):
+    """A staff action changed since the person saving it opened it (the
+    API answers 409). ``current`` is the action as it stands."""
+
+    def __init__(self, current: dict[str, Any]) -> None:
+        super().__init__("the staff action changed")
+        self.current = current
 
 
 class AidReviewConflict(Exception):
@@ -818,6 +834,18 @@ class CabinetStore:
                     " AND institution_id = ?",
                     (row["id"], row["institution_id"]),
                 )
+                # The staff action worklist too: its counts were read from
+                # that dataset, and its notes and history belong to them.
+                for table in (
+                    "staff_action_notes",
+                    "staff_action_history",
+                    "staff_actions",
+                ):
+                    self._conn.execute(
+                        f"DELETE FROM {table} WHERE dataset_id = ?"
+                        " AND institution_id = ?",
+                        (row["id"], row["institution_id"]),
+                    )
                 self._conn.execute("DELETE FROM datasets WHERE id = ?", (row["id"],))
             self._conn.commit()
         return rows
@@ -1327,6 +1355,23 @@ class CabinetStore:
                 return None
         return self.dispatch_by_id(institution_id, dispatch_id)
 
+    def recompose_dispatch(
+        self, institution_id: int, dispatch_id: int, *, subject: str, body: str
+    ) -> dict[str, Any] | None:
+        """Replace an unsent message's subject and body (a retry after a
+        failure carries the action as it stands now). A sent row is never
+        changed: None then, as for no row at all."""
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "UPDATE dispatches SET subject = ?, body = ?"
+                " WHERE id = ? AND institution_id = ?"
+                " AND status IN ('draft', 'failed')",
+                (subject, body, dispatch_id, institution_id),
+            )
+            if cursor.rowcount != 1:
+                return None
+        return self.dispatch_by_id(institution_id, dispatch_id)
+
     def mark_dispatch_failed(
         self, institution_id: int, dispatch_id: int, *, error: str
     ) -> dict[str, Any] | None:
@@ -1470,6 +1515,259 @@ class CabinetStore:
             after = self._aid_review_dict(after_row)
         return before, after
 
+    # -- the staff action worklist -------------------------------------------------
+
+    def ensure_staff_actions(
+        self,
+        institution_id: int,
+        *,
+        dataset_id: int,
+        specs: list[tuple[str, str, str, int | None]],
+    ) -> int:
+        """Create the worklist for one dataset from ``(key, office,
+        finding_id, count)`` specs; existing actions are left untouched (the
+        UNIQUE constraint anchors it, so concurrent first loads create each
+        action once). Returns how many actions this call created."""
+        created_at = _now()
+        created = 0
+        with self._lock, self._conn:
+            for key, office, finding_id, count in specs:
+                cursor = self._conn.execute(
+                    "INSERT OR IGNORE INTO staff_actions (institution_id,"
+                    " dataset_id, action_key, office, finding_id, count,"
+                    " status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'todo', ?)",
+                    (
+                        institution_id,
+                        dataset_id,
+                        key,
+                        office,
+                        finding_id,
+                        count,
+                        created_at,
+                    ),
+                )
+                created += cursor.rowcount
+        return created
+
+    def staff_actions_for(
+        self, institution_id: int, *, dataset_id: int
+    ) -> list[dict[str, Any]]:
+        """One dataset's actions in creation order (the briefing's order),
+        each with its notes (oldest first) and history (oldest first)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM staff_actions WHERE institution_id = ?"
+                " AND dataset_id = ? ORDER BY id",
+                (institution_id, dataset_id),
+            ).fetchall()
+            notes = self._conn.execute(
+                "SELECT id, action_id, author, text, created_at"
+                " FROM staff_action_notes WHERE institution_id = ?"
+                " AND dataset_id = ? ORDER BY id",
+                (institution_id, dataset_id),
+            ).fetchall()
+            history = self._conn.execute(
+                "SELECT id, action_id, actor, at, change, from_value, to_value"
+                " FROM staff_action_history WHERE institution_id = ?"
+                " AND dataset_id = ? ORDER BY id",
+                (institution_id, dataset_id),
+            ).fetchall()
+        items = [dict(row) for row in rows]
+        by_id = {int(item["id"]): item for item in items}
+        for item in items:
+            item["notes"] = []
+            item["history"] = []
+        for note in notes:
+            target = by_id.get(int(note["action_id"]))
+            if target is not None:
+                target["notes"].append(dict(note))
+        for change in history:
+            target = by_id.get(int(change["action_id"]))
+            if target is not None:
+                target["history"].append(dict(change))
+        return items
+
+    def _active_staff_action_locked(
+        self, institution_id: int, action_id: int
+    ) -> dict[str, Any] | None:
+        """One action of the institution's ACTIVE dataset, or None (another
+        institution, an inactive or deleted dataset, or no such action)."""
+        row = self._conn.execute(
+            "SELECT * FROM staff_actions WHERE id = ? AND institution_id = ?"
+            " AND dataset_id IN (SELECT id FROM datasets"
+            " WHERE institution_id = ? AND is_active = 1"
+            " AND deleted_at IS NULL)",
+            (action_id, institution_id, institution_id),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def staff_action(
+        self, institution_id: int, action_id: int
+    ) -> dict[str, Any] | None:
+        """One action of the active dataset, without notes or history."""
+        with self._lock:
+            return self._active_staff_action_locked(institution_id, action_id)
+
+    def _history_locked(
+        self,
+        action: dict[str, Any],
+        *,
+        actor: str,
+        at: str,
+        change: str,
+        from_value: str | None,
+        to_value: str | None,
+    ) -> None:
+        self._conn.execute(
+            "INSERT INTO staff_action_history (institution_id, dataset_id,"
+            " action_id, actor, at, change, from_value, to_value)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                action["institution_id"],
+                action["dataset_id"],
+                action["id"],
+                actor,
+                at,
+                change,
+                from_value,
+                to_value,
+            ),
+        )
+
+    def update_staff_action(
+        self,
+        institution_id: int,
+        action_id: int,
+        *,
+        changes: dict[str, str | None],
+        updated_by: str,
+        expected_updated_at: str | None,
+    ) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        """Apply ``changes`` (any of status, owner, due_date; None clears
+        owner or due date) to one action of the active dataset, stamp who
+        and when, and write one history row per field that really changed.
+
+        The action's ``updated_at`` must equal ``expected_updated_at``
+        (None for an action nobody has saved yet), otherwise nothing is
+        written and :class:`StaffActionConflict` is raised. The read, the
+        check, the write and the read back share one transaction under the
+        store lock, so ``(before, after)`` is the true transition. None when
+        there is no such action in the active dataset."""
+        allowed = {"status", "owner", "due_date"}
+        unknown = set(changes) - allowed
+        if unknown:
+            raise ValueError(f"unknown staff action fields {sorted(unknown)}")
+        with self._lock, self._conn:
+            before = self._active_staff_action_locked(institution_id, action_id)
+            if before is None:
+                return None
+            if before["updated_at"] != expected_updated_at:
+                raise StaffActionConflict(before)
+            at = _now()
+            assignments = ["updated_by = ?", "updated_at = ?"]
+            params: list[Any] = [updated_by, at]
+            for field in ("status", "owner", "due_date"):
+                if field not in changes:
+                    continue
+                value = changes[field]
+                assignments.append(f"{field} = ?")
+                params.append(value)
+                if value != before[field]:
+                    self._history_locked(
+                        before,
+                        actor=updated_by,
+                        at=at,
+                        change=field,
+                        from_value=before[field],
+                        to_value=value,
+                    )
+            params.extend([action_id, institution_id])
+            self._conn.execute(
+                f"UPDATE staff_actions SET {', '.join(assignments)}"
+                " WHERE id = ? AND institution_id = ?",
+                params,
+            )
+            after = self._active_staff_action_locked(institution_id, action_id)
+            assert after is not None
+        return before, after
+
+    def add_staff_action_note(
+        self, institution_id: int, action_id: int, *, author: str, text: str
+    ) -> dict[str, Any] | None:
+        """Append one note to an action of the active dataset (a history row
+        records that a note was added, never its text). None when there is
+        no such action."""
+        with self._lock, self._conn:
+            action = self._active_staff_action_locked(institution_id, action_id)
+            if action is None:
+                return None
+            at = _now()
+            cursor = self._conn.execute(
+                "INSERT INTO staff_action_notes (institution_id, dataset_id,"
+                " action_id, author, text, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    institution_id,
+                    action["dataset_id"],
+                    action_id,
+                    author,
+                    text,
+                    at,
+                ),
+            )
+            self._history_locked(
+                action,
+                actor=author,
+                at=at,
+                change="note",
+                from_value=None,
+                to_value=None,
+            )
+            note_id = int(cursor.lastrowid)  # type: ignore[arg-type]
+        return {
+            "id": note_id,
+            "action_id": action_id,
+            "author": author,
+            "text": text,
+            "created_at": at,
+        }
+
+    def record_staff_action_send(
+        self,
+        institution_id: int,
+        action_id: int,
+        *,
+        actor: str,
+        sent: bool,
+        detail: str,
+    ) -> None:
+        """A history row for a Send: ``sent`` (detail: the office mailbox)
+        or ``send_failed`` (detail: the plain reason)."""
+        with self._lock, self._conn:
+            action = self._active_staff_action_locked(institution_id, action_id)
+            if action is None:
+                return
+            self._history_locked(
+                action,
+                actor=actor,
+                at=_now(),
+                change="sent" if sent else "send_failed",
+                from_value=None,
+                to_value=detail,
+            )
+
+    def dispatches_for_tasks(
+        self, institution_id: int, *, dataset_id: int, prefix: str
+    ) -> dict[str, dict[str, Any]]:
+        """Every dispatch of one dataset whose task id starts with
+        ``prefix``, keyed by task id (the staff actions' messages)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM dispatches WHERE institution_id = ?"
+                " AND dataset_id = ? AND substr(task_id, 1, ?) = ?",
+                (institution_id, dataset_id, len(prefix), prefix),
+            ).fetchall()
+        return {str(row["task_id"]): self._dispatch_dict(row) for row in rows}
+
     # -- recordings ---------------------------------------------------------------
 
     def save_recording(
@@ -1502,6 +1800,7 @@ class CabinetStore:
 __all__ = [
     "AidReviewConflict",
     "CabinetStore",
+    "StaffActionConflict",
     "ScopedAudit",
     "StoreError",
     "PLATFORM_INSTITUTION_ID",

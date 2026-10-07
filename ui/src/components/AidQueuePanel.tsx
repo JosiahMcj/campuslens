@@ -247,9 +247,12 @@ function EditableRow({
  */
 export function AidQueuePanel({
   canEdit,
+  onOpenDecision,
   viewerEmail = getSession()?.user.email ?? null,
 }: {
   canEdit: boolean
+  /** Opens the Decision page, where the queue is prepared after approval. */
+  onOpenDecision?: () => void
   /** Who is looking: their own updates read "you". */
   viewerEmail?: string | null
 }) {
@@ -326,10 +329,19 @@ export function AidQueuePanel({
       )}
 
       {state.kind === 'ready' && state.queue.rows.length === 0 && (
-        <p className="state-empty hint">
-          No students are queued yet. Once leadership approves the decision,
-          prepare the queue from the decision's Next steps.
-        </p>
+        <div className="state-empty">
+          <p>
+            No students are queued yet. Once leadership approves the decision,
+            the queue is prepared from the decision's next steps.
+          </p>
+          {onOpenDecision !== undefined && (
+            <div className="state-actions">
+              <button type="button" className="btn-primary primary-button" onClick={onOpenDecision}>
+                Go to the decision
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {state.kind === 'ready' && state.queue.rows.length > 0 && (
