@@ -98,13 +98,13 @@ MEASURE_LINES: dict[str, str] = {
     "graduates": "number of graduates",
     "dfw_rate": "D, F or withdrawal rate of course registrations",
     "withdrawal_rate": "course withdrawal rate",
-    "past_due_balance": "$ past due on student accounts",
+    "past_due_balance": "$ past due",
     "past_due_students": "students past due",
-    "past_due_90_students": "students over 90 days past due",
-    "on_time_payment_rate": "share paid on time",
-    "payment_plan_share": "share on a payment plan",
-    "collection_rate": "$ paid of $ billed",
-    "avg_balance_owed": "average past-due balance",
+    "past_due_90_students": "over 90 days",
+    "on_time_payment_rate": "paid on time",
+    "payment_plan_share": "on a plan",
+    "collection_rate": "$ paid/billed",
+    "avg_balance_owed": "avg $ past due",
 }
 
 # Short names people use, beyond the names in the lists.
@@ -113,7 +113,7 @@ SYNONYMS = (
     "Engineering; psych = Psychology; bio = Biology; chem = Chemistry; nurses = "
     "Nursing; business = Business Administration; engineering (the college) = "
     "College of Engineering and Computing; freshmen, first-years = class_level "
-    "Freshman; grads = graduates; kids = students; DFW = D, F or withdrawal; "
+    "Freshman; DFW = D, F or withdrawal; "
     "first gen = first_generation; this semester, now, currently = the current "
     "term"
 )
@@ -174,8 +174,8 @@ RULES = (
     "alone ranks nothing. A single group ('for Pell students', 'in Nursing') is "
     "a filter, not a grouping. To cover a college or several majors use one step "
     "with a college filter or group_by, never one step per major.\n"
-    "- order highest_first: highest first (hardest courses, most students); "
-    "lowest_first: lowest first.\n"
+    "- order highest_first puts the highest rate first (hardest courses, most "
+    "failing, most students); lowest_first the lowest (easiest).\n"
     "- A share or percent of students who are X uses the matching *_share "
     "measure.\n"
     "- 'Students with holds' is the filter hold: hold on the asked measure "
@@ -185,7 +185,7 @@ RULES = (
     "course_instructors.\n"
     "- Set a term only when the question names one. Name terms like "
     '"Fall 2024"; courses by code or title; majors and '
-    "colleges by name or code from the lists; instructors as written.\n"
+    "colleges by name from the lists; instructors as written.\n"
     "- A later step may use an earlier step's top row: "
     '{"from_step": <index from 0>, "column": "<column>"} (columns: major, '
     "college, course, term, instructor).\n"
@@ -258,11 +258,16 @@ def _build(catalog: Catalog) -> str:
     lines = [INTRO, "", "ANALYSES (id: purpose. params; * = required):"]
     filter_keys = set(general.GROUPING_KEYS) - {"term"}
     for analysis in ANALYSES:
-        # The general analysis's measures and groupings are listed once,
-        # below, not again as parameter choices.
+        # The student-account measures and their days-past-due grouping are
+        # listed below only (MEASURES, GROUPINGS), not again as choices.
         listed = {
-            "measure": "measure*: one of MEASURES",
-            "group_by": "group_by: one of GROUPINGS",
+            "measure": "measure*: "
+            + "|".join(
+                m for m in general.MEASURE_KEYS if m not in general.ACCOUNT_MEASURES
+            )
+            + "|...",
+            "group_by": "group_by: "
+            + "|".join(k for k in general.GROUPING_KEYS if k != "aging"),
             "then_by": "then_by: same as group_by",
         }
         params = [
@@ -275,6 +280,8 @@ def _build(catalog: Catalog) -> str:
         ]
         if analysis.id == general.ANALYSIS_ID:
             params.insert(3, "any grouping below as a filter: one of its values")
+        if analysis.id in ("budget_vs_actual", "revenue_by_source", "tuition_discount"):
+            params = [p for p in params if p.startswith(("fiscal_year", "by", "over"))]
         purpose = PURPOSE.get(analysis.id, analysis.title)
         lines.append(f"- {analysis.id}: {purpose}. " + "; ".join(params))
     lines.append("")
@@ -290,15 +297,15 @@ def _build(catalog: Catalog) -> str:
         elif key == "entry_cohort":
             values_text = "e.g. 2021-2022"
         else:
-            values_text = "|".join(values)
+            values_text = "days past due" if key == "aging" else "|".join(values)
         lines.append(f"- {key}: {values_text}")
     lines.append("")
     lines.append(
-        "MAJORS: " + "; ".join(f"{code} {name}" for code, name in v.majors.items())
+        # Names only: the model writes a major by name and code resolves it
+        # (``_major``), so the codes are not needed here.
+        "MAJORS: " + "; ".join(v.majors.values())
     )
-    lines.append(
-        "COLLEGES: " + "; ".join(f"{code} {name}" for code, name in v.colleges.items())
-    )
+    lines.append("COLLEGES: " + "; ".join(v.colleges.values()))
     terms = list(v.terms.values())
     current = v.terms[_current_term(catalog)]
     lines.append(
@@ -306,10 +313,7 @@ def _build(catalog: Catalog) -> str:
         f"term is {current}."
     )
     if v.fiscal_years:
-        lines.append(
-            f"FISCAL YEARS: {v.fiscal_years[0]}-{v.fiscal_years[-1]}; this year "
-            f"{v.fiscal_years[-1]}."
-        )
+        lines.append(f"FISCAL YEARS: {v.fiscal_years[0]}-{v.fiscal_years[-1]}.")
     lines.append("SYNONYMS: " + SYNONYMS)
     lines.append("")
     lines.append(RULES)
