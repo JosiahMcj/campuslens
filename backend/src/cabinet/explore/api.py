@@ -26,7 +26,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import queue
 import re
 import threading
@@ -38,6 +37,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
+from cabinet.analysts import OutputRejected
 from cabinet.counseling import SUPPRESSED_DISPLAY
 from cabinet.explore import general
 from cabinet.explore.answer import SOURCE_MODEL, Sentence, write_answer
@@ -81,7 +81,7 @@ from cabinet.explore.privacy import (
     refusal_for,
     strip_names,
 )
-from cabinet.provider import Provider, provider_from_env
+from cabinet.provider import Provider, ProviderUnavailable, provider_from_env
 
 logger = logging.getLogger(__name__)
 
@@ -253,7 +253,12 @@ async def post_explore_stream(
             if content.get("refused"):
                 events.put({"type": "refused", "response": content})
             elif response.status_code != 200 or "answer" not in content:
-                events.put({"type": "error", "message": UNFINISHED_MESSAGE})
+                events.put(
+                    {
+                        "type": "error",
+                        "message": content.get("message", UNFINISHED_MESSAGE),
+                    }
+                )
             else:
                 events.put({"type": "done", "response": content})
         except Exception:  # a defect: logged, never a stack trace on the wire
@@ -493,6 +498,24 @@ def _explore(
             forward = is_forward_looking(question)
             outcome = plan_question(question, catalog, provider, role, forward=forward)
             if outcome.steps is None:
+                if (
+                    outcome.fallback_reason
+                    and provider is not None
+                    and uses_model(provider)
+                ):
+                    not_answered("model unavailable")
+                    return JSONResponse(
+                        status_code=503,
+                        content={
+                            "available": False,
+                            "message": (
+                                "Gloo AI is unavailable or returned an unusable "
+                                "response. Check CABINET_PROVIDER, "
+                                "CABINET_LLM_BASE_URL, CABINET_LLM_MODEL, and "
+                                "CABINET_LLM_API_KEY, then try again."
+                            ),
+                        },
+                    )
                 if outcome.declined and not mentions_campus_data(
                     question, catalog.known_names
                 ):
@@ -586,11 +609,9 @@ def _explore(
             reword = (
                 provider is not None
                 and uses_model(provider)
-                and os.environ.get("CABINET_EXPLORE_WRITER", "").strip().lower()
-                != "template"
             )
             answer, source, writer_fallback = write_answer(
-                steps, provider if reword else None
+                steps, provider if reword else None, require_model=reword
             )
             if lead is not None:
                 # One plain line first, added after the writer so a model
@@ -606,7 +627,7 @@ def _explore(
                     f"{'number' if claims == 1 else 'numbers'} against the tables",
                 }
             )
-        except Exception:  # a defect: logged, recorded, never a 500 or a guess
+        except Exception as exc:  # logged, recorded, never a 500 or a guess
             logger.exception("explore could not finish task %s", task_id)
             audit.append(
                 "explore.answered",
@@ -621,10 +642,21 @@ def _explore(
                     "answered": False,
                 },
             )
+            provider_error = isinstance(
+                exc, (ProviderUnavailable, OutputRejected, ValueError)
+            )
             return JSONResponse(
+                status_code=503 if provider_error else 200,
                 content={
+                    "available": not provider_error,
                     "refused": False,
-                    "message": UNFINISHED_MESSAGE,
+                    "message": (
+                        "Gloo AI is unavailable or returned an unusable response. "
+                        "Check CABINET_PROVIDER, CABINET_LLM_BASE_URL, "
+                        "CABINET_LLM_MODEL, and CABINET_LLM_API_KEY, then try again."
+                        if provider_error
+                        else UNFINISHED_MESSAGE
+                    ),
                     "answer": [],
                     "steps": [],
                     "source": None,

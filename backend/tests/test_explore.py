@@ -485,6 +485,20 @@ def test_missing_school_database_reports_and_nothing_else(
     assert len(_events(app)) == before
 
 
+def test_malformed_school_database_is_unavailable(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    malformed = tmp_path / "not-a-school.db"
+    malformed.write_text("not a SQLite school database", encoding="utf-8")
+    monkeypatch.setenv("CABINET_SCHOOL_DB", str(malformed))
+    response = _client(app, "executive").get("/explore/catalog")
+    assert response.status_code == 503
+    assert response.json() == {
+        "available": False,
+        "message": NOT_INSTALLED_MESSAGE,
+    }
+
+
 # --- the planners ------------------------------------------------------------
 
 

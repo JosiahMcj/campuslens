@@ -2,8 +2,8 @@
 
 The template answer is deterministic: every number in it is a table cell,
 inserted as the cell's value, and each sentence carries claims
-``{table, row, column}`` pointing at the cells it used. It is what replay and
-fake modes show, and what a live run falls back to.
+``{table, row, column}`` pointing at the cells it used. It is used by replay
+and fake modes; a live Explore request requires a validated model rewrite.
 
 With a live provider the model may reword the answer. It receives only the
 tables (titles, column labels, and rows; never the parameters, never a
@@ -1097,7 +1097,7 @@ def _rows_named(text: str, steps: list[StepResult]) -> set[tuple[int, int]]:
 
 
 def write_answer(
-    steps: list[StepResult], provider: Provider | None
+    steps: list[StepResult], provider: Provider | None, *, require_model: bool = False
 ) -> tuple[list[Sentence], str, str | None]:
     """(sentences, source, fallback reason). The template answer is always
     built and checked; a live provider may replace it with a validated
@@ -1117,6 +1117,8 @@ def write_answer(
         require_complete(rewrite, template, steps)
         return rewrite, SOURCE_MODEL, None
     except (OutputRejected, ProviderUnavailable) as exc:
+        if require_model:
+            raise
         reason = exc.reason if isinstance(exc, ProviderUnavailable) else str(exc)
         logger.warning("explore writer fell back to the template: %s", reason)
         return template, SOURCE_TEMPLATE, reason

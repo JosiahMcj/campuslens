@@ -19,9 +19,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 import cabinet.provider as provider_module
+from cabinet.analysts import OutputRejected
 from cabinet.api import create_app
 from cabinet.explore import general
-from cabinet.explore.answer import template_answer
+from cabinet.explore.answer import template_answer, write_answer
 from cabinet.explore.catalog import ANALYSES, Catalog, catalog_for, connect_readonly
 from cabinet.explore.compact import compact_catalog, resolve_plan
 from cabinet.explore.evalset import EVAL_SET, REF
@@ -397,6 +398,26 @@ def test_the_owner_questions_count_computer_science_majors_now(
     assert "withheld (fewer than" not in text
 
 
+def test_live_explore_writer_does_not_fall_back_when_provider_fails(
+    catalog: Catalog, con: sqlite3.Connection
+) -> None:
+    results = execute(
+        [Step("gpa_by_major", {"order": "lowest_first"})],
+        con,
+        catalog,
+        "executive",
+    )
+    unavailable = StubProvider(
+        ProviderUnavailable("missing CABINET_LLM_API_KEY", provider="chat")
+    )
+    with pytest.raises(ProviderUnavailable):
+        write_answer(results, unavailable, require_model=True)
+
+    malformed = StubProvider("not JSON")
+    with pytest.raises(OutputRejected):
+        write_answer(results, malformed, require_model=True)
+
+
 HEADCOUNT_PHRASINGS: tuple[tuple[str, dict[str, str]], ...] = (
     ("how many students are in nursing", {"major": "NURS"}),
     ("how many students are enrolled this semester", {}),
@@ -483,7 +504,6 @@ def test_the_stream_says_what_was_understood_from_the_model_plan(
 
     stub = StubProvider(_model_text(HEADCOUNT_CSCI, "SECRET-REASONING-TEXT"))
     monkeypatch.setattr(explore_api, "provider_from_env", lambda: stub)
-    monkeypatch.setenv("CABINET_EXPLORE_WRITER", "template")
     client: TestClient = make_authenticated_client(create_app(), role="executive")
     response = client.post("/explore/stream", json={"question": OWNER_FIRST})
     assert response.status_code == 200
@@ -495,9 +515,35 @@ def test_the_stream_says_what_was_understood_from_the_model_plan(
     plan = next(e for e in events if e["type"] == "plan")
     assert plan["planner"] == "model"
     assert "SECRET-REASONING-TEXT" not in response.text
-    body = events[-1]["response"]
-    assert body["planner"] == "model"
-    assert body["steps"][0]["analysis_id"] == "measure_by_group"
+    error = next(e for e in events if e["type"] == "error")
+    assert "Gloo AI is unavailable" in error["message"]
+    assert events[-1]["type"] == "error"
+
+
+def test_explore_api_reports_missing_gloo_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import cabinet.explore.api as explore_api
+
+    for key in (
+        "CABINET_LLM_BASE_URL",
+        "CABINET_LLM_MODEL",
+        "CABINET_LLM_API_KEY",
+        "CABINET_LLM_API_KEY_FILE",
+        "CABINET_LLM_API_KEY_VAR",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(explore_api, "provider_from_env", ChatProvider)
+    client: TestClient = make_authenticated_client(create_app(), role="executive")
+
+    response = client.post(
+        "/explore", json={"question": "What is average cumulative GPA by college?"}
+    )
+
+    assert response.status_code == 503
+    assert response.json()["available"] is False
+    assert "Gloo AI is unavailable" in response.json()["message"]
+    assert "CABINET_LLM_API_KEY" in response.json()["message"]
 
 
 def test_the_plan_is_read_from_the_one_json_object_in_the_answer(

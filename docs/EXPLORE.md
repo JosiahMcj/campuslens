@@ -65,6 +65,29 @@ data is not installed. Run make school-data." and nothing else. `CABINET_SCHOOL_
 Explore at another copy (the tests use a reduced-scale copy in a temporary directory). The
 connection is read-only.
 
+The generated school database is not committed. This repository contains its deterministic
+generator and the complete SQLite schema, but a local `var/school/school.db` must be created
+with `make school-data` before the demo can answer from records. These records are fictional.
+The schema has registrations, grades, sections, and meeting times; it has no waitlist records
+or waitlist counts, so waitlist questions cannot be answered. Its generated registrations
+are constrained to avoid overlapping class meetings, which means the data cannot represent
+real scheduling conflicts. Do not infer a waitlist or conflict metric from the example
+response in `example.txt`.
+
+Explore requires a configured provider for both natural-language planning and response
+wording. If Gloo is unavailable, unconfigured, or returns an invalid answer, Explore returns
+a clear 503 error and does not substitute a locally composed answer. Configure the existing
+chat provider in the ignored root `cabinet.local.env` (or deployment secrets):
+
+```dotenv
+CABINET_PROVIDER=chat
+CABINET_LLM_BASE_URL=https://platform.ai.gloo.com/ai/v2/guarded
+CABINET_LLM_MODEL=PASTE_GLOO_MODEL_ID_HERE
+CABINET_LLM_API_KEY=PASTE_GLOO_API_KEY_HERE
+```
+
+Keep the real API key only in that ignored local file or the deployment secret store.
+
 ## What can be asked
 
 Explore runs only the eighteen reviewed analyses in
