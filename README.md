@@ -180,6 +180,38 @@ Any hosted chat-completions endpoint over https works (`CABINET_LLM_BASE_URL`,
 RUNBOOK.md). `docs/EXPLORE.md` has
 the analyses, the rules, and the routes.
 
+## Data page (trends over the years)
+
+The **Data** page in the sidebar draws the same school records as charts over the six
+years: enrollment by term and by college, new first-time and transfer students each
+fall, first-year retention and 4- and 6-year graduation by entering class, stop-out and
+dropout, average GPA; financial holds, balances owed and Pell recipients; housing,
+athletes, part-time study, D/F/W rates, probation and advising.
+
+- **Customizable.** Pick the years, then either narrow every chart to one group of
+  students (by college, major, class level, entry type, residency, first generation,
+  Pell, gender, race and ethnicity, age at entry, full or part time, housing, athlete,
+  or honors) or compare groups side by side, never both at once: two attributes
+  together would make a two-way table whose one-way charts solve its withheld cells.
+  Clicking a group in a chart narrows to it. Each person's choices are remembered on
+  their browser.
+- **Roles.** One table, `backend/src/cabinet/data_roles.py`: the executive sees every
+  dashboard, Financial Aid sees student finances, staff and reviewers see students, the
+  admin has no Data page; the finance, registrar, student life and IT roles are mapped
+  too. Pell status is a financial attribute: only the executive, Financial Aid and
+  finance may narrow or compare by it. A new role gets dashboards with one line there
+  (for example `"finance": ("finances",)`) plus one in `DATA_PAGE_ROLES`
+  (`ui/src/dataPage.ts`) for the sidebar row.
+- **Privacy.** Totals only, through Explore's measure machinery (`cabinet/explore/general.py`):
+  a point over fewer than 10 students, or one that would let a group that small be worked
+  out from a total, is withheld and drawn as a gap. A rate is also withheld when fewer
+  than 10 are counted either way, a median needs 20 students and is rounded to $100.
+  Every chart read is a `data.granted` entry in the audit log, every refused one a
+  `data.refused` entry.
+- **Routes.** `GET /api/data/dashboards` and `GET /api/data/series?chart=…` (filters as
+  query parameters, `compare=` to split). Each chart answers in under 2 s on the full
+  school and is cached after that.
+
 ## Institutions and datasets
 
 Every user belongs to an institution, and each institution's findings come from

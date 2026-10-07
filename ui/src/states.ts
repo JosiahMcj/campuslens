@@ -316,6 +316,7 @@ export const PAGE_SLUGS = {
   audit: 'audit-log',
   aid: 'financial-aid-review',
   students: 'find-a-student',
+  data: 'data',
   profile: 'profile',
   settings: 'settings',
   overview: 'department-overview',
