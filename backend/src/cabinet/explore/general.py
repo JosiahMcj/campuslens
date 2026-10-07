@@ -1065,6 +1065,12 @@ WITH b AS (
         EXISTS (SELECT 1 FROM person_holds h
                 WHERE h.student_id = t.student_id
                   AND h.term_code = t.term_code) AS held,
+        EXISTS (SELECT 1 FROM person_holds h
+                WHERE h.student_id = t.student_id AND h.term_code = t.term_code
+                  AND h.category = 'financial') AS fin_held,
+        (SELECT COALESCE(SUM(h.amount), 0) FROM person_holds h
+         WHERE h.student_id = t.student_id AND h.term_code = t.term_code
+           AND h.category = 'financial') AS fin_amount,
         CASE WHEN substr(t.term_code, 5, 2) = '30' THEN NULL
              WHEN nx.status IS NULL OR nx.status = 'graduated' THEN NULL
              WHEN nx.status = 'enrolled' THEN 0 ELSE 1 END AS stopped,

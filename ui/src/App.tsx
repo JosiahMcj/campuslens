@@ -11,6 +11,7 @@ import {
   getFinding,
   postApprove,
   postAsk,
+  postFollowUp,
   postComposeDispatch,
   askExplore,
   postGovernanceRequest,
@@ -35,7 +36,11 @@ import {
   canSeeAidQueue,
   canSeeAuditLog,
   canSeeInstitution,
+  canReadBriefing,
+  canSeeSessions,
   fetchMe,
+  isDepartment,
+  overviewDepartments,
   type Role,
   ApiError,
   logout,
@@ -61,11 +66,23 @@ import {
 import { ChatComposer } from './components/ChatComposer'
 import { ChatSidebar, type HistoryItem, type PanelId } from './components/ChatSidebar'
 import { ExploreAnswer, ExploreWorking, Thought } from './components/ExploreAnswer'
+import { BriefingFollowUp, FollowUpDeniedCard } from './components/BriefingFollowUp'
+import type { FollowUpAnswer, FollowUpDenied } from './followup'
 import { DecisionPanel, type DispatchUiState } from './components/DecisionPanel'
 import { EvidenceDrawer } from './components/EvidenceDrawer'
+// --- department accounts and the inbox (docs/ROLES.md) ---
+import { DepartmentOverview } from './components/DepartmentOverview'
+import { InboxPage } from './components/InboxPage'
+import { SessionsPage } from './components/ItPages'
+import { ItWorkspace } from './components/ItWorkspace'
+import { SendAlertDialog } from './components/SendAlertDialog'
+import { useInboxUnread, type AlertSource } from './inbox'
+import { personaFor } from './personas'
 import { Institution, type ActiveDatasetMeta } from './components/Institution'
 import { LoginScreen } from './components/LoginScreen'
 import { SidePanel } from './components/SidePanel'
+import { DataPage } from './components/DataPage'
+import { canSeeDataPage } from './dataPage'
 import { StaffActionsPage } from './components/StaffActionsPage'
 import { LensMark } from './components/LensMark'
 import { Thinking } from './components/Thinking'
@@ -215,7 +232,16 @@ function focusLater(id: string, delay = 0, fallback: string | null = 'main-conte
 }
 
 /** Pages of cards or rows, which use the wider column. */
-const WIDE_PAGES: ReadonlySet<PanelId> = new Set<PanelId>(['actions', 'audit', 'aid', 'figures'])
+const WIDE_PAGES: ReadonlySet<PanelId> = new Set<PanelId>([
+  'actions',
+  'audit',
+  'aid',
+  'figures',
+  'overview',
+  'inbox',
+  'sessions',
+  'data',
+])
 
 /**
  * The one sentence under a page's title saying what the page is for. Pages
@@ -248,8 +274,21 @@ function pageIntro(page: PanelId, role: Role, fictional: boolean): string | unde
       return "Each AI employee sees only the fields its task needs, and never a student's name or identifiers. A request outside those fields is refused before any AI employee is asked, and the refusal is logged."
     case 'audit':
       return 'Every question, data request, refusal and decision is recorded here and can never be changed. Newest entries are first.'
+    case 'data':
+      return 'How the student body has changed over the years, as charts of totals. Narrow every chart to one group of students, or compare groups side by side.'
     case 'students':
       return 'Look up one student by name to see their program, progress, GPA, holds and advisor.'
+    case 'overview':
+      return role === 'executive' || role === 'admin'
+        ? "Each department's headline figures for the current term, computed from the records. Groups of fewer than 10 students are withheld. Send any figure to the person who should look at it."
+        : "Your department's headline figures for the current term, computed from the records. Totals only: no student is named, and groups of fewer than 10 are withheld."
+    case 'inbox':
+      return 'Alerts other people sent you, with what they point at, and the alerts you sent. Mark an alert reviewed once you have looked.'
+    case 'sessions':
+      return 'Who is signed in right now and when each account was last seen. No session details are shown.'
+    case 'accounts':
+    case 'connections':
+      return undefined
     case 'aid':
       return canEditAidQueue(role)
         ? 'Facts for the Financial Aid office to start its own review. CampusLens decides nothing about any student; a person in the office sets each status and note.'
@@ -437,6 +476,11 @@ function App() {
     return <LoginScreen notice={auth.notice} onSignedIn={signedIn} />
   }
 
+  // IT reads no student analytics: its own workspace, no findings fetched.
+  if (!canReadBriefing(auth.session.user.role)) {
+    return <ItWorkspace session={auth.session} flags={flags} onSignOut={signOut} />
+  }
+
   return (
     <Shell
       session={auth.session}
@@ -583,6 +627,9 @@ function InstitutionPage({
 type ExchangeState =
   | AskState
   | { kind: 'restored' }
+  // A follow-up to the briefing, answered in code (POST /briefing/follow-up).
+  | { kind: 'followup'; response: FollowUpAnswer }
+  | { kind: 'followup-denied'; response: FollowUpDenied }
   | { kind: 'explore-sending'; trace?: ExploreTraceEvent[] }
   // The answer broke off part way (network, server): the question stays in
   // the thread with a plain sentence and Ask again, and any trace so far.
@@ -652,6 +699,12 @@ function BriefingPage({
   const aidQueue = canSeeAidQueue(role)
   // The directory is demonstration data: offered only with the fictional set.
   const studentSearch = canSearchStudents(role) && fictional
+  // Department accounts and the inbox (docs/ROLES.md).
+  const persona = personaFor(role)
+  const department = isDepartment(role)
+  const overviewFor = overviewDepartments(role)
+  const [alertSource, setAlertSource] = useState<AlertSource | null>(null)
+  const [inboxUnread, refreshInboxUnread] = useInboxUnread()
 
   const [events, setEventsState] = useState<AuditEvent[] | null>(audit ? null : [])
   const [eventsStatus, setEventsStatus] = useState<ResourceStatus>(
@@ -1062,15 +1115,62 @@ function BriefingPage({
     () => (questions !== null ? questions.map((q) => q.text) : [APPROVED_QUESTION]),
     [questions],
   )
+  // A follow-up to the briefing ("What is driving the gap?", "Create a
+  // seven-day action plan") is answered in code from the briefing's figures
+  // (POST /briefing/follow-up, no model and no rate-limited ask). The same
+  // route recognizes the briefing question in other words. Anything it does
+  // not handle goes on as before.
+  const hasBriefing =
+    cabinetBriefing !== null ||
+    thread.some((item) => item.state.kind === 'accepted' || item.state.kind === 'restored')
+  const followUp = useCallback(
+    async (question: string): Promise<boolean> => {
+      let response
+      try {
+        response = await postFollowUp(question, hasBriefing, flags)
+      } catch {
+        return false // an older server, or a hiccup: ask the usual way
+      }
+      if (!response.matched) return false
+      if (response.kind === 'approved') {
+        if (!act) return false
+        void ask(question)
+        return true
+      }
+      if (route !== '/') navigate('/')
+      if (restoredHidden && restoredId !== null) setViewFrom((current) => Math.max(current, restoredId + 1))
+      setRestoredSettled(true)
+      const exchangeId = nextExchangeId.current++
+      const state: ExchangeState =
+        response.kind === 'denied'
+          ? { kind: 'followup-denied', response }
+          : { kind: 'followup', response }
+      setThread((previous) => [...previous, { id: exchangeId, question, state }])
+      if (audit) void loadEvents()
+      return true
+    },
+    [hasBriefing, flags, act, ask, route, navigate, restoredHidden, restoredId, audit, loadEvents],
+  )
+  const [routing, setRouting] = useState(false)
   const submit = useCallback(
     (question: string) => {
-      if (act && (isApprovedQuestion(question, approvedTexts) || !explorer)) {
+      if (act && isApprovedQuestion(question, approvedTexts)) {
         void ask(question)
-      } else if (explorer) {
-        void explore(question)
+        return
       }
+      setRouting(true)
+      void followUp(question)
+        .then((handled) => {
+          if (handled) return
+          if (act && !explorer) {
+            void ask(question)
+          } else if (explorer) {
+            void explore(question)
+          }
+        })
+        .finally(() => setRouting(false))
     },
-    [act, explorer, approvedTexts, ask, explore],
+    [act, explorer, approvedTexts, ask, explore, followUp],
   )
 
   // "Check again" in a model-unavailable section re-runs the question that
@@ -1346,17 +1446,26 @@ function BriefingPage({
     }
     return null
   })()
-  const panels: PanelId[] = [
-    'briefing',
-    'figures',
-    'evidence',
-    'actions',
-    'decision',
-    'access',
-    ...(aidQueue ? (['aid'] as PanelId[]) : []),
-    ...(studentSearch ? (['students'] as PanelId[]) : []),
-    ...(audit ? (['audit'] as PanelId[]) : []),
-  ]
+  // A department account sees its own department's pages only; everyone
+  // else keeps the briefing pages, with the inbox (and, for the president
+  // and the admin, every department's overview) added.
+  const panels: PanelId[] = department
+    ? (['overview', 'inbox', ...(canSeeDataPage(role) ? ['data'] : [])] as PanelId[])
+    : [
+        'inbox',
+        ...(overviewFor.length > 0 ? (['overview'] as PanelId[]) : []),
+        'briefing',
+        'figures',
+        'evidence',
+        'actions',
+        'decision',
+        'access',
+        ...(aidQueue ? (['aid'] as PanelId[]) : []),
+        ...(studentSearch ? (['students'] as PanelId[]) : []),
+        ...(canSeeDataPage(role) ? (['data'] as PanelId[]) : []),
+        ...(audit ? (['audit'] as PanelId[]) : []),
+        ...(canSeeSessions(role) ? (['sessions'] as PanelId[]) : []),
+      ]
   // An address for a page this role does not have goes back to the conversation.
   const pageAllowed = panel === null || panel === 'profile' || panel === 'settings' || panels.includes(panel)
   useEffect(() => {
@@ -1413,6 +1522,7 @@ function BriefingPage({
       question: isExplore(item.state) ? redactQuestion(item.question) : item.question,
       refused:
         item.state.kind === 'refused' ||
+        item.state.kind === 'followup-denied' ||
         (item.state.kind === 'explore' && item.state.response.refused),
       restored: item.state.kind === 'restored',
       explore: isExplore(item.state),
@@ -1424,7 +1534,7 @@ function BriefingPage({
     (item, index) =>
       !allHistory.slice(index + 1).some((later) => later.question === item.question),
   )
-  const sending = askState.kind === 'sending'
+  const sending = askState.kind === 'sending' || routing
   const ready = findingsState.kind === 'ready'
   const onInstitution = route === '/institution'
 
@@ -1467,8 +1577,14 @@ function BriefingPage({
     audit: 'Audit log',
     aid: 'Financial Aid review',
     students: 'Find a student',
+    data: 'Data',
     profile: 'Profile',
     settings: 'Settings',
+    overview: department && persona !== null ? persona.name : 'Department overviews',
+    inbox: 'Inbox',
+    accounts: 'Accounts',
+    sessions: 'Sign-in activity',
+    connections: 'Connections',
   }
   const screenTitle =
     panel !== null ? panelTitle[panel] : onInstitution ? 'Institution settings' : 'Ask'
@@ -1738,8 +1854,44 @@ function BriefingPage({
         </>
       )
     }
+    if (state.kind === 'followup') {
+      return (
+        <BriefingFollowUp
+          response={state.response}
+          onOpenEvidence={openEvidence}
+          onAsk={submit}
+          busy={sending}
+          decisions={decisions}
+          canApprove={act}
+          approving={approving}
+          approveError={approveError}
+          onApprove={(id) => void approve(id)}
+          onSeeAuditLog={
+            audit
+              ? () => {
+                  openPanel('audit')
+                  void loadEvents()
+                }
+              : null
+          }
+        />
+      )
+    }
+    if (state.kind === 'followup-denied') {
+      return (
+        <FollowUpDeniedCard
+          response={state.response}
+          onSeeAuditLog={
+            audit
+              ? () => seeRefusal(state.response.event_ids.length > 0 ? Math.max(...state.response.event_ids) : null)
+              : null
+          }
+        />
+      )
+    }
     if (state.kind === 'explore') {
       return (
+        <>
         <ExploreAnswer
           answerKey={String(item.id)}
           response={state.response}
@@ -1758,6 +1910,24 @@ function BriefingPage({
               : null
           }
         />
+        {!state.response.refused && state.response.answer.length > 0 && (
+          <div className="alert-action">
+            <button
+              type="button"
+              className="link-button"
+              onClick={() =>
+                setAlertSource({
+                  kind: 'explore',
+                  question: item.question,
+                  answer: state.response.answer.slice(0, 6).map((sentence) => sentence.text),
+                })
+              }
+            >
+              Send alert about this answer
+            </button>
+          </div>
+        )}
+        </>
       )
     }
     if (state.kind === 'sending' || state.kind === 'idle' || state.kind === 'error') {
@@ -1875,7 +2045,7 @@ function BriefingPage({
         }
         questionsFailed={act && questionsFailed && questions === null}
         onRetryQuestions={() => void loadQuestions()}
-        examples={explorer ? examples : []}
+        examples={explorer ? (persona !== null && persona.examples.length > 0 ? persona.examples : examples) : []}
         examplesFailed={explorer && examplesFailed}
         onRetryExamples={retryExamples}
         quietNote={!starters}
@@ -1958,7 +2128,7 @@ function BriefingPage({
           panels={panels}
           activePanel={panel}
           open={sidebarOpen}
-          onNewQuestion={act ? newQuestion : null}
+          onNewQuestion={act || department ? newQuestion : null}
           onSelectHistory={selectHistory}
           onOpenPanel={openPanel}
           onNavigate={(path) => {
@@ -1968,6 +2138,7 @@ function BriefingPage({
           }}
           onSignOut={onSignOut}
           onClose={closeSidebar}
+          inboxUnread={inboxUnread}
         />
         {sidebarOpen && <div className="sidebar-backdrop" onClick={closeSidebar} />}
 
@@ -1992,7 +2163,7 @@ function BriefingPage({
               <MenuIcon />
             </button>
             <span className="topbar-title">
-              Student success briefing
+              {department && persona !== null ? persona.name : 'Student success briefing'}
             </span>
             {fictional && <span className="topbar-badge">Fictional data</span>}
             </div>
@@ -2060,10 +2231,13 @@ function BriefingPage({
           {!onInstitution && ready && visible.length === 0 && !restoredPending && (
             <div className="chat-empty">
               <LensMark className="empty-mark" />
+              {persona !== null && <p className="persona-kicker">{persona.name}</p>}
               <h1>{asker ? 'What would you like to know?' : 'CampusLens briefings'}</h1>
               {(asker || briefingStatus.kind !== 'error') && (
                 <p className="empty-lede">
-                  {act
+                  {persona !== null && !act
+                    ? persona.lede
+                    : act
                     ? "Ask an approved briefing question, or ask anything about Demonstration University's students, courses and majors. Every number is computed from the records."
                     : explorer
                       ? "Ask anything about Demonstration University's students, courses and majors. Every number is computed from the records."
@@ -2218,6 +2392,24 @@ function BriefingPage({
             <AidQueuePanel canEdit={canEditAidQueue(role)} onOpenDecision={() => openPanel('decision')} />
           )}
           {shownPanel === 'students' && studentSearch && <StudentLookup />}
+          {shownPanel === 'data' && canSeeDataPage(role) && <DataPage account={session.user.email} />}
+          {shownPanel === 'overview' && overviewFor.length > 0 && (
+            <DepartmentOverview departments={overviewFor} onSendAlert={setAlertSource} />
+          )}
+          {shownPanel === 'inbox' && (
+            <InboxPage
+              onChanged={refreshInboxUnread}
+              onAsk={
+                explorer
+                  ? (question) => {
+                      closePanel()
+                      submit(question)
+                    }
+                  : null
+              }
+            />
+          )}
+          {shownPanel === 'sessions' && canSeeSessions(role) && <SessionsPage />}
           {shownPanel === 'profile' && (
             <ProfilePanel session={session} datasetName={datasetName} onSignOut={onSignOut} />
           )}
@@ -2252,7 +2444,17 @@ function BriefingPage({
           fictional={fictional}
           onClose={closeEvidence}
           closing={evidenceClosing}
+          onSendAlert={() =>
+            setAlertSource({
+              kind: 'finding',
+              ref: shownEvidence.id,
+              label: `${shownEvidence.title}: ${shownEvidence.display}`,
+            })
+          }
         />
+      )}
+      {alertSource !== null && (
+        <SendAlertDialog source={alertSource} onClose={() => setAlertSource(null)} />
       )}
     </div>
   )

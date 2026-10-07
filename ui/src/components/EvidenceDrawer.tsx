@@ -15,6 +15,9 @@ interface EvidenceDrawerProps {
   onClose: () => void
   /** True while the panel plays its exit animation. */
   closing?: boolean
+  /** Send this figure to someone's inbox (the server re-reads it, without
+   * its records); absent where alerts are not offered. */
+  onSendAlert?: () => void
 }
 
 function isRatioRowIds(rowIds: Finding['row_ids']): rowIds is RatioRowIds {
@@ -74,6 +77,7 @@ export function EvidenceDrawer({
   fictional,
   onClose,
   closing = false,
+  onSendAlert,
 }: EvidenceDrawerProps) {
   const display = findingDisplay(finding)
   // M9: an authorized aggregate with no rows behind it, ever.
@@ -118,6 +122,13 @@ export function EvidenceDrawer({
           </span>
         </p>
         {withheld !== null && <p className="hint">{withheld}</p>}
+        {onSendAlert !== undefined && !display.missing && (
+          <p>
+            <button type="button" className="link-button" onClick={onSendAlert}>
+              Send alert about this figure
+            </button>
+          </p>
+        )}
         {display.missing && <p className="hint">This figure is not available for this data.</p>}
 
         {comparison.length > 0 && (

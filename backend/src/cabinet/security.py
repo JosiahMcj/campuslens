@@ -84,14 +84,17 @@ from starlette.responses import JSONResponse, Response
 from cabinet.auth import (
     COOKIE_NAME,
     CSRF_HEADER,
+    DEPARTMENT_ROLES,
     ROLE_ADMIN,
     ROLE_AID,
     ROLE_EXECUTIVE,
+    ROLE_IT,
     ROLE_REVIEWER,
     ROLE_STAFF,
     AuthStore,
     verify_session_cookie,
 )
+from cabinet.data_roles import DATA_ROLES
 
 MAX_BODY_BYTES = 256 * 1024
 UPLOAD_BODY_BYTES = 20 * 1024 * 1024
@@ -106,16 +109,50 @@ BODY_CAP_OVERRIDES: tuple[tuple[str, int], ...] = (
     ("/admin/datasets", UPLOAD_BODY_BYTES),
 )
 
-ALL_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF, ROLE_REVIEWER, ROLE_AID)
-READ_ROLES = ALL_ROLES  # every logged-in role may read
+# --- roles (docs/ROLES.md has the table of who sees what) --------------------
+# The department accounts: Finance / Student Accounts, the Registrar and
+# Student Life (cabinet.auth.DEPARTMENT_ROLES). Each reads the briefing's
+# aggregate figures, asks aggregate Explore questions and opens its own
+# department overview.
+# Every role that reads the briefing's aggregate figures: everyone but IT,
+# whose work is the accounts and the system, never students.
+READ_ROLES = (
+    ROLE_ADMIN,
+    ROLE_EXECUTIVE,
+    ROLE_STAFF,
+    ROLE_REVIEWER,
+    ROLE_AID,
+    *DEPARTMENT_ROLES,
+)
+ALL_ROLES = (*READ_ROLES, ROLE_IT)  # every logged-in role
 ACT_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE)  # ask / approve / refresh
 # The student ids behind a finding (GET /findings row lists, M5's per-office
 # holds, M8's per-student indicators): the executive and admin, whose work
 # acts on the records. Every other role reads the figures and counts only.
 ROW_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE)
-# The audit log itself: admin and reviewer, and the executive (the
-# president runs the Beat 6 audit walkthrough; staff still may not).
-AUDIT_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_REVIEWER)
+# The audit log itself: admin and reviewer, the executive (the president
+# runs the Beat 6 audit walkthrough; staff still may not), and IT.
+AUDIT_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_REVIEWER, ROLE_IT)
+# Explore: aggregate questions over the school data. The president, the
+# admin, staff, the reviewer and the department accounts; never the aid
+# office (its work is the queue) and never IT. Instructor-level rows stay
+# with the executive and admin (cabinet.explore.catalog.INSTRUCTOR_ROLES).
+EXPLORE_ROLES = (
+    ROLE_ADMIN,
+    ROLE_EXECUTIVE,
+    ROLE_STAFF,
+    ROLE_REVIEWER,
+    *DEPARTMENT_ROLES,
+)
+# Account management: the admin, and IT for the non-privileged accounts
+# (the user routes refuse IT on an admin, executive or IT account).
+USER_ADMIN_ROLES = (ROLE_ADMIN, ROLE_IT)
+# Sign-in activity (GET /admin/sessions): counts per account, never a
+# session id. IT and the admin run it; the president may look.
+SESSION_VIEW_ROLES = (ROLE_ADMIN, ROLE_IT, ROLE_EXECUTIVE)
+# The department overviews (cabinet.departments): each department account
+# reads its own; the president and the admin read every one.
+OVERVIEW_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, *DEPARTMENT_ROLES)
 # The Financial Aid review queue holds per-student rows, so it is narrower
 # than READ_ROLES: the aid office works it, the admin manages it, and the
 # executive and reviewer may watch it. Staff may create it from the decision
@@ -130,6 +167,10 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/findings"): READ_ROLES,
     ("GET", "/events"): AUDIT_ROLES,
     ("GET", "/briefing"): READ_ROLES,
+    # Follow-up questions about the briefing, answered in code (no model).
+    # Same readers as GET /briefing: the answers are its aggregates; the
+    # Approve card and the audit trail go only to the roles that may use them.
+    ("POST", "/briefing/follow-up"): READ_ROLES,
     ("GET", "/briefing/enrollment"): READ_ROLES,
     ("GET", "/briefing/student-success"): READ_ROLES,
     ("GET", "/decisions"): READ_ROLES,
@@ -151,29 +192,40 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     ("PUT", "/admin/institution/counseling-authorization"): (ROLE_ADMIN,),
     # Institution admins manage their own institution's users; the
     # institution always comes from the session, never from the client.
-    ("GET", "/admin/users"): (ROLE_ADMIN,),
-    ("POST", "/admin/users"): (ROLE_ADMIN,),
-    # Explore (cabinet.explore): aggregate questions over the school data;
-    # every role but aid.
-    ("POST", "/explore"): (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF, ROLE_REVIEWER),
-    ("POST", "/explore/stream"): (
-        ROLE_ADMIN,
-        ROLE_EXECUTIVE,
-        ROLE_STAFF,
-        ROLE_REVIEWER,
-    ),
-    ("GET", "/explore/catalog"): AUDIT_ROLES + (ROLE_STAFF,),
+    # IT manages the non-privileged accounts (the handlers narrow it).
+    ("GET", "/admin/users"): USER_ADMIN_ROLES,
+    ("POST", "/admin/users"): USER_ADMIN_ROLES,
+    # Explore (cabinet.explore): aggregate questions over the school data.
+    ("POST", "/explore"): EXPLORE_ROLES,
+    ("POST", "/explore/stream"): EXPLORE_ROLES,
+    ("GET", "/explore/catalog"): EXPLORE_ROLES,
     # The staff action worklist (cabinet.staffactions_api): every role reads
     # it (the aid role sees Financial Aid's actions only, filtered by the
     # route).
     ("GET", "/staff-actions"): READ_ROLES,
     # The outside connections (Ellucian import, outgoing mail): whether each
-    # is configured, never a credential. Admin only.
-    ("GET", "/admin/connections"): (ROLE_ADMIN,),
+    # is configured, never a credential. Admin and IT.
+    ("GET", "/admin/connections"): USER_ADMIN_ROLES,
     # The demonstration student directory (cabinet.roster): a name search
     # that returns named student records, so only the roles that may open
     # the records behind a figure. Every search is logged.
     ("GET", "/students/search"): ROW_ROLES,
+    # The Data page (cabinet.dashboards): aggregate time series only. The
+    # roles with at least one dashboard in cabinet.data_roles; the route
+    # itself narrows each chart to the role's dashboards.
+    ("GET", "/data/dashboards"): DATA_ROLES,
+    ("GET", "/data/series"): DATA_ROLES,
+    # --- department accounts and the inbox (docs/ROLES.md) ---
+    # Sign-in activity per account (cabinet.inbox): counts, no session ids.
+    ("GET", "/admin/sessions"): SESSION_VIEW_ROLES,
+    # One department's aggregate overview (cabinet.departments); the route
+    # narrows a department account to its own department.
+    ("GET", "/departments/overview"): OVERVIEW_ROLES,
+    # The per-account inbox (cabinet.inbox): every role has one. Sending
+    # is open to every role; what may be attached is checked per source.
+    ("GET", "/inbox"): ALL_ROLES,
+    ("GET", "/inbox/recipients"): ALL_ROLES,
+    ("POST", "/inbox"): ALL_ROLES,
 }
 
 # Prefix rules, checked when the exact table misses (routes with path
@@ -184,8 +236,8 @@ ROUTE_ROLE_PREFIXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("GET", "/admin/datasets", (ROLE_ADMIN,)),
     ("POST", "/admin/datasets", (ROLE_ADMIN,)),
     ("DELETE", "/admin/datasets", (ROLE_ADMIN,)),
-    ("POST", "/admin/users", (ROLE_ADMIN,)),
-    ("PATCH", "/admin/users", (ROLE_ADMIN,)),
+    ("POST", "/admin/users", USER_ADMIN_ROLES),
+    ("PATCH", "/admin/users", USER_ADMIN_ROLES),
     # The dispatch routes carry the decision id in the path. Reading the
     # draft is open to every role (the reviewer watches governance); both
     # composing and sending are POSTs, and the send route itself narrows
@@ -202,6 +254,9 @@ ROUTE_ROLE_PREFIXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     # 403, like the decision dispatch).
     ("PATCH", "/staff-actions/", (ROLE_ADMIN, ROLE_STAFF)),
     ("POST", "/staff-actions/", (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF)),
+    # One inbox message by id: mark it read or reviewed. Every role; the
+    # route answers 404 unless the caller is the message's recipient.
+    ("POST", "/inbox/", ALL_ROLES),
 )
 
 # No session needed: liveness, readiness, and login itself.
@@ -232,11 +287,13 @@ def is_api_route(method: str, path: str) -> bool:
 ENV_RATE_GENERAL = "CABINET_RATE_GENERAL_PER_MIN"
 ENV_RATE_SESSION = "CABINET_RATE_SESSION_PER_MIN"
 ENV_RATE_ASK = "CABINET_RATE_ASK_PER_MIN"
+ENV_RATE_INBOX = "CABINET_RATE_INBOX_PER_MIN"
 # Per client address. Everyone behind one campus address shares it, so it
 # is generous; the per-session bucket below is what paces one person.
 DEFAULT_RATE_GENERAL_PER_MIN = 600
 DEFAULT_RATE_SESSION_PER_MIN = 120
 DEFAULT_RATE_ASK_PER_MIN = 5
+DEFAULT_RATE_INBOX_PER_MIN = 10
 
 # The body of every rate-limit 429: plain words a person can act on. The
 # Retry-After header carries the seconds.
@@ -447,6 +504,7 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
         rate_general_per_min: int | None = None,
         rate_session_per_min: int | None = None,
         rate_ask_per_min: int | None = None,
+        rate_inbox_per_min: int | None = None,
     ) -> None:
         super().__init__(app)
         self.auth = auth
@@ -466,6 +524,11 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
             rate_ask_per_min
             if rate_ask_per_min is not None
             else _env_int(ENV_RATE_ASK, DEFAULT_RATE_ASK_PER_MIN)
+        )
+        self.inbox_bucket = TokenBucket(
+            rate_inbox_per_min
+            if rate_inbox_per_min is not None
+            else _env_int(ENV_RATE_INBOX, DEFAULT_RATE_INBOX_PER_MIN)
         )
 
     # -- helpers ------------------------------------------------------------
@@ -703,6 +766,19 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
         ):
             for key in (f"ask:session:{session['id']}", f"ask:ip:{client_ip}"):
                 allowed, retry_after = self.ask_bucket.allow(key)
+                if not allowed:
+                    return JSONResponse(
+                        status_code=429,
+                        content={"detail": RATE_LIMIT_MESSAGE},
+                        headers={"Retry-After": str(retry_after)},
+                    )
+
+        # An inbox alert puts a message in front of another person: its own
+        # bucket per session and per IP, so alerts and questions never spend
+        # each other's allowance.
+        if (method, path) == ("POST", "/inbox"):
+            for key in (f"inbox:session:{session['id']}", f"inbox:ip:{client_ip}"):
+                allowed, retry_after = self.inbox_bucket.allow(key)
                 if not allowed:
                     return JSONResponse(
                         status_code=429,
