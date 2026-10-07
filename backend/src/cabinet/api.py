@@ -186,6 +186,7 @@ from cabinet.auth import (
     session_ttl,
     sign_session_id,
 )
+from cabinet.connections import router as connections_router
 from cabinet.counseling import M9_ID, authorization_block, m9_finding
 from cabinet.datasets import UploadError, validate_upload
 from cabinet.explore.api import router as explore_router
@@ -2542,6 +2543,7 @@ def create_app(
     app.include_router(explore_router)  # POST /explore, GET /explore/catalog
     # GET /staff-actions, PATCH /staff-actions/{id}, POST .../notes, .../send
     app.include_router(staff_actions_router)
+    app.include_router(connections_router)  # GET /admin/connections
 
     # The built UI, served by the same process. Mounted after every API
     # route so an API path always wins over the static mount; a missing

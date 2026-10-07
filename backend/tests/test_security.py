@@ -432,6 +432,8 @@ def test_every_protected_route_is_in_the_role_table() -> None:
         # The staff action worklist (its PATCH and POSTs carry an action id
         # and live in ROUTE_ROLE_PREFIXES; tests/test_staff_actions.py).
         ("GET", "/staff-actions"),
+        # Institution settings: the outside connections (admin only).
+        ("GET", "/admin/connections"),
     }
     assert set(ROUTE_ROLES) == expected
 

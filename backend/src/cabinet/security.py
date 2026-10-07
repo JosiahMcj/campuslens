@@ -157,6 +157,9 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     # it (the aid role sees Financial Aid's actions only, filtered by the
     # route).
     ("GET", "/staff-actions"): READ_ROLES,
+    # The outside connections (Ellucian import, outgoing mail): whether each
+    # is configured, never a credential. Admin only.
+    ("GET", "/admin/connections"): (ROLE_ADMIN,),
 }
 
 # Prefix rules, checked when the exact table misses (routes with path

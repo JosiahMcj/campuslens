@@ -521,3 +521,39 @@ def test_the_worklist_is_purged_with_its_dataset() -> None:
             f"SELECT count(*) FROM {table} WHERE dataset_id = ?", (dataset_id,)
         ).fetchone()[0]
         assert left == 0, table
+
+
+# --- institution settings: the outside connections ---------------------------
+
+
+def test_connections_say_what_is_configured_never_a_credential(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    key = tmp_path / "ethos.key"
+    key.write_text("very-secret-ethos-key\n")
+    monkeypatch.setenv("CABINET_ETHOS_BASE_URL", "https://ethos.example.edu")
+    monkeypatch.setenv("CABINET_ETHOS_API_KEY_FILE", str(key))
+    monkeypatch.delenv("CABINET_PSEUDONYM_KEY_FILE", raising=False)
+    app = create_app()
+    admin = make_authenticated_client(app, role="admin")
+    body = admin.get("/admin/connections").json()
+    ellucian = body["ellucian"]
+    assert ellucian["configured"] is False
+    assert [s["set"] for s in ellucian["settings"]] == [True, True, False]
+    assert ellucian["last_import"] is None
+    assert body["outbound"] == {"provider": "outbox"}
+    dumped = json.dumps(body)
+    assert "very-secret" not in dumped
+    assert str(key) not in dumped
+    assert "ethos.example.edu" not in dumped
+
+    store = app.state.auth
+    store._conn.execute(
+        "UPDATE datasets SET uploaded_by = 'ethos-import' WHERE institution_id = 1"
+    )
+    store._conn.commit()
+    last = admin.get("/admin/connections").json()["ellucian"]["last_import"]
+    assert last is not None and last["in_use"] is True
+
+    staff = make_authenticated_client(app, role="staff")
+    assert staff.get("/admin/connections").status_code == 403
