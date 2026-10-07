@@ -252,6 +252,10 @@ function pageIntro(page: PanelId, role: Role, fictional: boolean): string | unde
   }
 }
 
+/** How long each live trace line stays on screen before the next one shows
+ * (none in tests, so they run at full speed). */
+const TRACE_STEP_MS = import.meta.env.MODE === 'test' ? 0 : 450
+
 /** The approved question behind the full briefing and the decision. */
 const SPRING_QUESTION_ID = 'spring-registration'
 
@@ -987,22 +991,36 @@ function BriefingPage({
         ...previous,
         { id: exchangeId, question, state: { kind: 'explore-sending' } },
       ])
-      // The live trace: each stage the server reports joins the reply.
+      // The live trace: each stage the server reports joins the reply, one at
+      // a time. The server often finishes several stages within a few
+      // milliseconds, so each line waits until the one before it has been on
+      // screen for TRACE_STEP_MS; the answer waits for the last line. The
+      // lines are the server's real stages, only their pace is set here.
       const startedAt = Date.now()
       let trace: ExploreTraceEvent[] = []
+      let lastShownAt = 0
+      let paced: Promise<void> = Promise.resolve()
+      const pause = (ms: number) =>
+        ms > 0 ? new Promise<void>((resolve) => window.setTimeout(resolve, ms)) : Promise.resolve()
       const onEvent = (event: ExploreTraceEvent) => {
-        trace = [...trace, event]
-        const current = trace
-        setThread((previous) =>
-          previous.map((item) =>
-            item.id === exchangeId && item.state.kind === 'explore-sending'
-              ? { ...item, state: { kind: 'explore-sending', trace: current } }
-              : item,
-          ),
-        )
+        paced = paced.then(async () => {
+          await pause(lastShownAt + TRACE_STEP_MS - Date.now())
+          lastShownAt = Date.now()
+          trace = [...trace, event]
+          const current = trace
+          setThread((previous) =>
+            previous.map((item) =>
+              item.id === exchangeId && item.state.kind === 'explore-sending'
+                ? { ...item, state: { kind: 'explore-sending', trace: current } }
+                : item,
+            ),
+          )
+        })
       }
       try {
         const response = await askExplore(question, flags, onEvent)
+        await paced
+        await pause(lastShownAt + TRACE_STEP_MS - Date.now())
         const elapsedMs = Date.now() - startedAt
         setThread((previous) =>
           previous.map((item) =>
