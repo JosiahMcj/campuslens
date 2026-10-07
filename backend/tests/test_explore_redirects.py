@@ -372,15 +372,32 @@ def test_off_topic_requests_get_the_card_and_no_analysis(
     assert _events(app, "data.refused")[-1]["payload"]["category"] == "off_topic"
 
 
-def test_off_topic_rules_spare_real_questions() -> None:
+def test_off_topic_rules_spare_real_questions(app: FastAPI) -> None:
+    from cabinet.explore.catalog import catalog_for, connect_readonly
+
+    con = connect_readonly()
+    try:
+        names = catalog_for(con).title_names
+    finally:
+        con.close()
     for question in (
         "How many computer science students are enrolled?",
         "What is the DFW rate in Programming I?",
         "Which majors have the highest dropout rate?",
+        "Should we develop a new nursing program?",
+        "Build a stronger advising program for freshmen",
         "hi",
         "What can you do?",
     ):
-        assert not is_off_topic(question), question
+        assert not is_off_topic(question, names), question
+    # Course titles are masked first ("Web Development", "Poetry Writing").
+    for title in ("Web Development", "Poetry Writing", "Web Application Development"):
+        if title in names:
+            question = f"What is the DFW rate in {title}?"
+            assert not is_off_topic(question, names), question
+            body = _ask(_client(app), question)
+            assert body["refused"] is False and body["steps"], question
+    assert not is_forward_looking("Will you show me enrollment by term?")
 
 
 def test_a_model_empty_plan_is_off_topic_only_without_campus_words(

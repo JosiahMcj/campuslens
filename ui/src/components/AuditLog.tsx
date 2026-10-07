@@ -160,7 +160,12 @@ function refusalWords(
           'A question asking to predict what a student will do was refused before any AI employee was asked.',
         reason: plain ?? 'CampusLens does not predict what an individual student will do.',
       }
-    case 'instructor_level': {
+    case 'off_topic':
+      return {
+        sentence: 'A request that was not about the student records was turned away before any analysis ran.',
+        reason: plain ?? 'CampusLens answers questions about students, courses and majors only.',
+      }
+        case 'instructor_level': {
       const role = SIGN_IN_ROLES[str(payload.role) ?? ''] ?? 'this person'
       return {
         sentence: `Instructor names were left out of an answer for ${role}.`,

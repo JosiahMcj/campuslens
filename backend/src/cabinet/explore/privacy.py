@@ -56,7 +56,7 @@ OFF_TOPIC_REFUSAL = (
 # briefing, never as an answer to a typed question).
 COUNSELING_MESSAGE = (
     "CampusLens keeps counseling and spiritual care out of its answers, even as "
-    "totals. It can help with related questions like these."
+    "totals. It can help with related questions."
 )
 INDIVIDUAL_LEAD = (
     "CampusLens can't look up one student, but here are totals for students "
@@ -64,7 +64,7 @@ INDIVIDUAL_LEAD = (
 )
 INDIVIDUAL_MESSAGE = (
     "CampusLens can't look up one student, but it can answer for groups of "
-    "students. Try one of these."
+    "students."
 )
 PREDICTION_LEAD = (
     "CampusLens doesn't forecast or name students, so here's what the records "
@@ -180,7 +180,7 @@ _PREDICTION_RE = re.compile(
 # A forward-looking question about a group: answered from the records.
 _FORWARD_RE = re.compile(
     r"\b(?:predict\w*|forecast\w*|projections?|projected|outlook)\b"
-    r"|\bwill\b|\bgonna\b"
+    r"|\bwill\b(?!\s+(?:you|it|this|that|campus\s*lens)\b)|\bgonna\b"
     r"|\b(?:likely|going|expected|projected)\s+to\b"
     r"|\bat[- ]risk\b(?!\s+(?:courses?|class(?:es)?|sections?))"
     r"|\bnext\s+(?:year|term|semester|fall|spring|summer|academic\s+year)\b"
@@ -192,8 +192,8 @@ _FORWARD_RE = re.compile(
 _OFF_TOPIC_RE = re.compile(
     r"\b(?:code|build|make|create|write|design|generate|draft|compose|develop|program)"
     r"\s+(?:me\s+|us\s+)?(?:an?\s+|the\s+|some\s+|my\s+)?(?:[\w-]+\s+){0,2}?"
-    r"(?:websites?|web\s*sites?|web\s*pages?|landing\s+pages?|apps?|applications?|"
-    r"programs?|scripts?|functions?|games?|poems?|songs?|stor(?:y|ies)|essays?|jokes?|"
+    r"(?:websites?|web\s*sites?|web\s*pages?|landing\s+pages?|apps?|"
+    r"scripts?|functions?|games?|poems?|songs?|stor(?:y|ies)|essays?|jokes?|"
     r"haikus?|limericks?|raps?|novels?|recipes?|cover\s+letters?|resumes?|"
     r"logos?|slogans?|tweets?)\b"
     r"|\b(?:website|web\s*page|html|css|javascript|python|java|sql\s+query)\b"
@@ -334,10 +334,12 @@ def is_forward_looking(question: str) -> bool:
     return _FORWARD_RE.search(fold(question)) is not None
 
 
-def is_off_topic(question: str) -> bool:
+def is_off_topic(question: str, names: tuple[str, ...] = ()) -> bool:
     """A request with nothing to do with the university's student data
-    ("code me a website", "write a poem", "what's the weather")."""
-    return _OFF_TOPIC_RE.search(fold(question)) is not None
+    ("code me a website", "write a poem", "what's the weather"). ``names``
+    are catalog names (course titles, majors) masked first, so "Web
+    Development" or "Poetry Writing" stays a question about a course."""
+    return _OFF_TOPIC_RE.search(_mask(fold(question), names)) is not None
 
 
 def mentions_campus_data(question: str) -> bool:

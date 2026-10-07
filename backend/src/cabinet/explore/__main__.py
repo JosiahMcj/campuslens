@@ -56,10 +56,10 @@ def main(argv: list[str] | None = None) -> int:
             # for students like that; this check tool only names the reason.
             print(f"Protected before planning ({refusal[0]}): {refusal[1]}")
             return 0
-        if is_off_topic(args.question):
+        catalog = catalog_for(con)
+        if is_off_topic(args.question, catalog.title_names):
             print(OFF_TOPIC_MESSAGE)
             return 0
-        catalog = catalog_for(con)
         forward = is_forward_looking(args.question)
         steps = (
             forward_rule_plan_detail(args.question, catalog)[0]

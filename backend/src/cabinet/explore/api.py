@@ -451,7 +451,7 @@ def _explore(
                 if category == "prediction" or forward
                 else INDIVIDUAL_LEAD
             )
-        elif is_off_topic(question):
+        elif is_off_topic(question, catalog.title_names):
             return off_topic()
         elif is_small_talk(question):
             not_answered("greeting")
