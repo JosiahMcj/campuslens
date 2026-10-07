@@ -4,7 +4,48 @@
 // state-changing request sends it back as X-CSRF-Token, and a 401 anywhere
 // ends the session in the UI and returns the app to the sign-in screen.
 
-export type Role = 'admin' | 'executive' | 'staff' | 'reviewer' | 'aid'
+export type Role =
+  | 'admin'
+  | 'executive'
+  | 'staff'
+  | 'reviewer'
+  | 'aid'
+  | 'finance'
+  | 'registrar'
+  | 'studentlife'
+  | 'it'
+
+/** Every role, in the order the account lists show them. */
+export const ALL_ROLES: readonly Role[] = [
+  'executive',
+  'admin',
+  'it',
+  'finance',
+  'aid',
+  'registrar',
+  'studentlife',
+  'staff',
+  'reviewer',
+]
+
+/** The department accounts (docs/ROLES.md): each has its own overview. */
+export type Department = 'finance' | 'registrar' | 'studentlife'
+export const DEPARTMENTS: readonly Department[] = ['finance', 'registrar', 'studentlife']
+
+export function isDepartment(role: Role): role is Department {
+  return role === 'finance' || role === 'registrar' || role === 'studentlife'
+}
+
+/** The accounts IT may create, enable, disable and re-role. Matches
+ * IT_MANAGED_ROLES in the API. */
+export const IT_MANAGED_ROLES: readonly Role[] = [
+  'finance',
+  'aid',
+  'registrar',
+  'studentlife',
+  'staff',
+  'reviewer',
+]
 
 export interface SessionUser {
   id: number
@@ -246,7 +287,30 @@ export function canAct(role: Role): boolean {
 /** The audit log: admin, reviewer, and executive (the president runs the
  * Beat 6 audit walkthrough) — staff may not. Matches AUDIT_ROLES in the API. */
 export function canSeeAuditLog(role: Role): boolean {
-  return role === 'admin' || role === 'reviewer' || role === 'executive'
+  return role === 'admin' || role === 'reviewer' || role === 'executive' || role === 'it'
+}
+
+/** The briefing's figures (GET /findings and the pages built on them):
+ * every role but IT. Matches READ_ROLES in the API. */
+export function canReadBriefing(role: Role): boolean {
+  return role !== 'it'
+}
+
+/** The department overviews: each department account reads its own; the
+ * president and the admin read every one. Matches OVERVIEW_ROLES. */
+export function overviewDepartments(role: Role): Department[] {
+  if (isDepartment(role)) return [role]
+  return role === 'executive' || role === 'admin' ? [...DEPARTMENTS] : []
+}
+
+/** Accounts and connections: the admin, and IT (department accounts only). */
+export function canManageAccounts(role: Role): boolean {
+  return role === 'admin' || role === 'it'
+}
+
+/** Sign-in activity: IT, the admin, and the president. */
+export function canSeeSessions(role: Role): boolean {
+  return role === 'admin' || role === 'it' || role === 'executive'
 }
 
 /** The Financial Aid review queue: the aid office works it, the admin
@@ -278,7 +342,15 @@ export function roleDisplayName(role: Role): string {
     case 'admin':
       return 'Admin'
     case 'executive':
-      return 'Executive'
+      return 'President'
+    case 'it':
+      return 'IT'
+    case 'finance':
+      return 'Finance — Student Accounts'
+    case 'registrar':
+      return 'Registrar'
+    case 'studentlife':
+      return 'Student Life'
     case 'staff':
       return 'Staff'
     case 'reviewer':

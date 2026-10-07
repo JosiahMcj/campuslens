@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 
-import { roleDisplayName, type Role } from '../auth'
+import { ALL_ROLES, roleDisplayName, type Role } from '../auth'
 import { ConnectionsSection, CONNECTIONS_SECTION_ID, SectionLoading } from './ConnectionsSection'
 import { CounselingAuthorizationSection, COUNSELING_SECTION_ID } from './CounselingAuthorization'
 import {
@@ -77,7 +77,7 @@ type OfficeSaveState =
   | { kind: 'refused'; errors: string[] }
   | { kind: 'failed'; message: string }
 
-const USER_ROLES: readonly Role[] = ['admin', 'executive', 'staff', 'reviewer', 'aid']
+const USER_ROLES: readonly Role[] = ALL_ROLES
 
 /** The section anchor the decision panel links to. */
 export const OFFICES_SECTION_ID = 'inst-offices'

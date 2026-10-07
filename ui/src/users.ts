@@ -7,7 +7,7 @@
 // empty (ui/src/adminErrors.ts); the screen words it with friendlyError.
 
 import { failureFrom, apiFailure, type KnownDetails } from './adminErrors'
-import { apiFetch, type Role } from './auth'
+import { ALL_ROLES, apiFetch, type Role } from './auth'
 
 export interface UserRow {
   id: number
@@ -24,7 +24,7 @@ export interface CreatedUser {
   one_time_password: string
 }
 
-const ROLES: readonly string[] = ['admin', 'executive', 'staff', 'reviewer', 'aid']
+const ROLES: readonly string[] = ALL_ROLES
 
 function userFrom(value: unknown): UserRow | null {
   if (typeof value !== 'object' || value === null) return null
@@ -44,6 +44,10 @@ function userFrom(value: unknown): UserRow | null {
 export const USER_REFUSALS: KnownDetails = [
   ['already exists', 'Someone with that email can already sign in.'],
   ['cannot disable their own account', "You can't disable your own account."],
+  [
+    'IT manages department',
+    'IT manages department and staff accounts. An administrator changes admin, executive and IT accounts.',
+  ],
   [
     'last enabled administrator',
     'This is the last active administrator. Make someone else an administrator first.',

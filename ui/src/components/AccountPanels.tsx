@@ -30,6 +30,7 @@ const ROLE_ABILITIES: Record<Role, string[]> = {
     FIND_STUDENT,
     'Follow the staff actions and add notes to them',
     'Read the Financial Aid review queue',
+    "Open every department's overview and send alerts to any office",
   ],
   staff: [
     'Read the briefing, the figures and their evidence',
@@ -48,6 +49,28 @@ const ROLE_ABILITIES: Record<Role, string[]> = {
     'Read the briefing, the figures and their evidence',
     'Follow the Financial Aid staff action',
     'Work the Financial Aid review queue, with a status and a note for each student',
+    'Receive and send inbox alerts',
+  ],
+  finance: [
+    'Open the Finance — Student Accounts overview: balances and holds, totals only',
+    ASK_ANYTHING,
+    'Receive and send inbox alerts',
+  ],
+  registrar: [
+    'Open the Registrar overview: enrollment and academic standing, totals only',
+    ASK_ANYTHING,
+    'Receive and send inbox alerts',
+  ],
+  studentlife: [
+    'Open the Student Life overview: retention, housing and advising, totals only',
+    ASK_ANYTHING,
+    'Receive and send inbox alerts',
+  ],
+  it: [
+    'Manage the department and staff accounts',
+    'See sign-in activity and the outside connections',
+    'Read the audit log',
+    'Nothing about students: no briefing, no figures, no questions',
   ],
 }
 
@@ -55,7 +78,17 @@ const ROLE_ABILITIES: Record<Role, string[]> = {
 export const INSTRUCTOR_NAMES_NOTE =
   'Instructor names are shown to the executive and admin only.'
 
-const ROLE_ORDER: Role[] = ['admin', 'executive', 'staff', 'reviewer', 'aid']
+const ROLE_ORDER: Role[] = [
+  'executive',
+  'admin',
+  'it',
+  'finance',
+  'aid',
+  'registrar',
+  'studentlife',
+  'staff',
+  'reviewer',
+]
 
 /**
  * The Profile panel: who is signed in, where, what their role allows, and

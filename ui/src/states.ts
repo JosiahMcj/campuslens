@@ -318,6 +318,11 @@ export const PAGE_SLUGS = {
   students: 'find-a-student',
   profile: 'profile',
   settings: 'settings',
+  overview: 'department-overview',
+  inbox: 'inbox',
+  accounts: 'accounts',
+  sessions: 'sign-in-activity',
+  connections: 'connections',
 } as const
 
 export type PageId = keyof typeof PAGE_SLUGS

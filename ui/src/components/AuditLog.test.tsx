@@ -107,6 +107,7 @@ describe('AuditLog', () => {
       'Decisions and messages',
       'Staff actions',
       'Data and people',
+      'Inbox alerts',
       'Refusals',
     ])
     fireEvent.change(show, { target: { value: 'refusals' } })
