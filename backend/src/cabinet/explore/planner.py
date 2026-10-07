@@ -56,7 +56,12 @@ from cabinet.explore.catalog import (
     Vocab,
 )
 from cabinet.explore.compact import Unresolved, compact_catalog, resolve_plan
-from cabinet.explore.privacy import count_form, historical_form, redact_question
+from cabinet.explore.privacy import (
+    count_form,
+    historical_form,
+    redact_question,
+    safe_text,
+)
 from cabinet.provider import (
     ENV_RECORD,
     Provider,
@@ -492,6 +497,22 @@ def parse_model_plan(text: str, catalog: Catalog) -> list[Step]:
     return validate_plan(raw, catalog)
 
 
+_VOCAB_CACHE: dict[str, frozenset[str]] = {}
+
+
+def planner_vocabulary(catalog: Catalog) -> frozenset[str]:
+    """Words the model planner already reads in the compact catalog and the
+    rule planner's vocabulary (measure, grouping and typo words): allowed in
+    the question the model receives."""
+    cached = _VOCAB_CACHE.get(catalog.hash)
+    if cached is None:
+        text = compact_catalog(catalog) + " " + " ".join(_TYPOS)
+        cached = frozenset(w.lower() for w in re.findall(r"[A-Za-z][A-Za-z'-]*", text))
+        _VOCAB_CACHE.clear()
+        _VOCAB_CACHE[catalog.hash] = cached
+    return cached
+
+
 def model_plan(
     question: str,
     catalog: Catalog,
@@ -506,7 +527,11 @@ def model_plan(
     sees."""
     del role
     payload = {
-        "question": redact_question(question),
+        # Only allow-listed words reach the model: any other word (a possible
+        # name) is "[name]", an email or handle "[id]" (privacy.safe_text).
+        "question": safe_text(
+            question, catalog.known_names, planner_vocabulary(catalog)
+        ),
         "catalog": compact_catalog(catalog),
     }
     if hint:

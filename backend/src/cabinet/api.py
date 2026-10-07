@@ -197,6 +197,7 @@ from cabinet.auth import (
 )
 from cabinet.connections import router as connections_router
 from cabinet.counseling import M9_ID, authorization_block, m9_finding
+from cabinet.dashboards import router as dashboards_router
 from cabinet.datasets import UploadError, validate_upload
 from cabinet.departments import router as departments_router
 from cabinet.explore.api import router as explore_router
@@ -2822,6 +2823,7 @@ def create_app(
     app.include_router(staff_actions_router)
     app.include_router(connections_router)  # GET /admin/connections
     app.include_router(roster_router)  # GET /students/search
+    app.include_router(dashboards_router)  # GET /data/dashboards, /data/series
     # GET /departments/overview (cabinet.departments)
     app.include_router(departments_router)
     # GET/POST /inbox, /inbox/recipients, /inbox/{id}/read|reviewed,

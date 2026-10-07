@@ -186,7 +186,8 @@ _PERSON_VERB = (
 _STRONG_VERB = (
     r"(?:pass(?:es|ed)?|fail(?:s|ed)?|flunk(?:s|ed)?|drop\s*out|drop(?:s|ped)?\s+out|"
     r"graduate[sd]?|withdr(?:aw|ew)|quit|get\s+(?:an?\s+)?[a-f][+-]?\b|"
-    r"(?:going|likely)\s+to|on\s+probation|be\s+suspended|have\s+a\s+hold)\b"
+    r"(?:going|likely)\s+to|on\s+probation|be\s+suspended|have\s+a\s+hold|"
+    r"register(?:ed)?|enrolled|been\s+suspended)\b"
 )
 _PERSON_RES = (
     re.compile(rf"{_PERSON_TRIGGER}\s+{_CAP_NAMES}\s+(?=(?i:{_PERSON_VERB})\b)"),
@@ -292,7 +293,99 @@ _ABBREVIATIONS_TEXT = """
     calc precalc trig chem ochem orgo bio biochem psych econ stats comp sci eng lit
     phys gen ed intro algebra calculus chemistry biology physics nursing math
 """
-COMMON_WORDS = frozenset((_COMMON_WORDS_TEXT + _ABBREVIATIONS_TEXT).split())
+# More ordinary English that questions use, chat shorthand, titles, and tool
+# names that are also course subjects ("Intro to Python").
+_GENERAL_WORDS_TEXT = """
+    ability able across act add added affect affected after age ago ahead already
+    analysis answer appear area areas attend attended attending available bad bar
+    become became begin big biggest bigger break bring broken build built busy call
+    came care case cases cause caused center chance chances choose chosen clear close
+    come coming common compare complete completed concern consider continue
+    continued continuing cost costs could cover current currently cut decide decline
+    declined declining deep define describe detail details differ different
+    difficult doing done drop dropped dropping during early easier easy effect else
+    end ended ending entering entire especially estimate even exist expect expected
+    explain face fact factor factors fail failed failing failure far fast faster
+    feel felt figure final finally fine finish finished follow following found free
+    gain gained gap gaps general generally grew grow growing grown growth happen
+    happened hard harder hardest have head hear heard high higher highest
+    historically history hold hope huge idea impact important improve improved
+    increase increased increasing indicate inside instead interest interested issue
+    issues keep kept kind kinds known large larger largest late later lead learn
+    leave left level levels lie likely line little live lived lives living long
+    longer look looked looking lose losing loss lost lots main mainly matter mean
+    means measure meet middle mind miss missed missing month months move moved
+    near nearly never non-athletes normal note nothing notice ones open order
+    outcome outcomes overall owe owed pass passed passing pay people perform
+    performance performing period place plan point points poor possible pretty
+    probably problem problems put question questions rather reach read ready real
+    reason reasons record records reduce reduced remain report reports require
+    required result results return returned returning rise rising risk role room run
+    running save saw second seem seen send sense serious set several share short
+    shrank shrink shrinking shrunk side significant similar simple single situation
+    status statuses transcript transcripts schedule schedules roommate advisee
+    advisees teaching taught history histories
+    size slow small smaller smallest sort spend spent stand start started state
+    stated stay step stop stopped story strong struggle struggling study subject
+    success successful suggest support switch switched system taking talk taught
+    teach teaches teaching tend tends test think thought time times tiny told took
+    tough toughest toward track trend trends try trying turn turned type types
+    understand unusual usually value various view want wanted watch week weeks went
+    whole wide wise work worked working worse worst write writing wrong
+    at-risk six-year four-year two-year stop-out transfer-out spring-to-spring
+    commuters commuter recipients recipient attrition entering differ coach
+    conference football basketball baseball soccer weather website poem
+    r u ur pls plz thx teh hw wat whats im dont doesnt cant wont isnt
+    dr prof mr mrs ms miss sir madam
+    python java javascript excel sql html css matlab spss tableau
+"""
+# US states and territories, for residency questions ("Texas residents").
+_STATES_TEXT = """
+    alabama alaska arizona arkansas california colorado connecticut delaware florida
+    georgia hawaii idaho illinois indiana iowa kansas kentucky louisiana maine
+    maryland massachusetts michigan minnesota mississippi missouri montana nebraska
+    nevada new hampshire jersey mexico york north carolina dakota ohio oklahoma
+    oregon pennsylvania rhode island south tennessee texas utah vermont virginia
+    washington west wisconsin wyoming puerto rico guam district columbia
+    residents resident states state usa u.s. us
+"""
+# Words that name a group of students, never one person ("Did Hispanic
+# students ...", "Texas residents").
+_GROUP_WORDS_TEXT = """
+    hispanic latino latina latinx black white asian american native pacific
+    islander alaska hawaiian nonresident multiracial veteran veterans domestic
+    international transfer transfers commuter commuters resident residents adult
+    adults returning continuing new incoming entering graduating women men female
+    male honors pell athletes athlete main accounts life academic advising
+    registrar library admissions housing
+"""
+# Acronyms kept in capitals; any other all-capitals word may be a name
+# ("JOHN SMITH", "KIM").
+_ACRONYMS_TEXT = """
+    gpa dfw stem cs it us usa fafsa sat act esl hbcu rotc ncaa ir ap ib ged ta ra
+    phd mba ba bs ms ma bsn rn ipeds fte ftic sap caps id ids ok faq pdf csv
+"""
+KNOWN_ACRONYMS = frozenset(_ACRONYMS_TEXT.split())
+COMMON_WORDS = frozenset(
+    (
+        _COMMON_WORDS_TEXT + _ABBREVIATIONS_TEXT + _GENERAL_WORDS_TEXT + _STATES_TEXT
+    ).split()
+)
+GROUP_WORDS = frozenset((_GROUP_WORDS_TEXT + _STATES_TEXT).split())
+# Counseling words that are also given names: "Will Faith graduate?" is about
+# a person, not about faith.
+_NAME_LIKE_COUNSELING = frozenset({"faith", "grace", "hope", "mercy", "charity"})
+# Emails, handles and quoted single tokens: ids.
+_ID_TOKEN_RE = re.compile(
+    r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+|(?<![\w@])@[A-Za-z_]\w*|"
+    r"[\"“”'‘’]([A-Za-z_][\w.-]*)[\"“”'‘’](?=\s|[?.!,;:]|$)"
+)
+# A sentence that starts with a name and a record verb ("Ravi failed MEEN
+# 3310", "Hunter and Brooklyn both dropped out").
+_RECORD_PAST = (
+    r"(?:failed|passed|flunked|withdrew|dropped(?:\s+out)?|graduated|registered|"
+    r"enrolled|transferred|quit|left|got|earned|scored|took|switched|changed)\b"
+)
 # Multi-word campus names the catalog does not list.
 CAMPUS_PHRASES = (
     "Student Accounts",
@@ -311,7 +404,8 @@ _POSSESSIVE_TAIL_RE = re.compile(r"(?:'s|’s|'|’)$")
 _LOW_POSSESSIVE_RE = re.compile(
     r"((?:[^\W\d_][\w'’-]*\s+){0,2}[^\W\d_][\w-]*)(?:'s|’s)\s+(?:gpa|grades?|"
     r"transcripts?|records?|schedules?|holds?|standing|major|classes|courses|file|"
-    r"profile|roommates?|advisors?|chances?|odds|status|credits?|balance)\b",
+    r"profile|roommates?|advisors?|advisees?|chances?|odds|status|credits?|balance|"
+    r"son|daughter|friend)\b",
     re.IGNORECASE,
 )
 
@@ -359,8 +453,11 @@ def _is_allowed(token: str, allowed: frozenset[str]) -> bool:
     low = base.lower()
     if low in COMMON_WORDS or low in allowed or low in _NOT_NAMES:
         return True
-    if base.isupper() and len(base) <= 5:  # an acronym: GPA, DFW, CS, STEM
+    if any(ch.isdigit() for ch in base):  # a code: I-0003, MATH1314
         return True
+    if base.isupper() and len(base) >= 2:
+        # Capitals: a known acronym (GPA, DFW, STEM) or a catalog code only.
+        return low in KNOWN_ACRONYMS or low in allowed
     if any(ch.isdigit() for ch in base):  # a code: I-0003, MATH1314
         return True
     if _CAMPUS_WORDS_RE.fullmatch(low):
@@ -410,7 +507,13 @@ def mask_names(question: str, names: tuple[str, ...] = ()) -> tuple[str, list[st
                 and (text[m.end() : nxt.start()].strip() == "")
             )
             possessive = _POSSESSIVE_TAIL_RE.search(m.group(0)) is not None
-            if not (followed or possessive):
+            verb = re.match(
+                r"\s+(?:(?:and|&|,)\s+[^\W\d_][\w'’-]*\s+)?(?:both\s+|all\s+)?"
+                + _RECORD_PAST,
+                text[m.end() :],
+                re.I,
+            )
+            if not (followed or possessive or verb):
                 continue
         hide.append(m.span())
     # Lowercase names in a name position.
@@ -427,18 +530,38 @@ def mask_names(question: str, names: tuple[str, ...] = ()) -> tuple[str, list[st
             for hit in re.finditer(rf"(?<![\w'’-]){re.escape(word)}(?![\w-])", text):
                 if not protected(*hit.span()):
                     hide.append(hit.span())
-    if not hide:
+    # A lowercase run right before a record verb ("sam failed calc", "has
+    # jose garcia registered").
+    for match in re.finditer(
+        r"((?:[^\W\d_][\w'’-]*\s+){1,3}?)(?=" + _RECORD_PAST + ")", text, re.I
+    ):
+        run = list(_WORD_TOKEN_RE.finditer(match.group(1)))
+        while run:
+            part = run.pop()
+            start = match.start(1) + part.start()
+            token = part.group(0)
+            if _is_allowed(token, allowed) or protected(start, start + len(token)):
+                break
+            if any(ch.isupper() for ch in token) and token.lower() in COMMON_WORDS:
+                break
+            hide.append((start, start + len(token)))
+    ids = [m.span() for m in _ID_TOKEN_RE.finditer(text)]
+    if not hide and not ids:
         return text, []
     hidden: list[str] = []
     out = []
     last = 0
-    for start, end in sorted(set(hide)):
+    marks = sorted(
+        {(a, b, "[name]") for a, b in hide} | {(a, b, "[id]") for a, b in ids}
+    )
+    for start, end, mark in marks:
         if start < last:
             continue
         out.append(text[last:start])
         token = text[start:end]
         hidden.append(_POSSESSIVE_TAIL_RE.sub("", token))
-        out.append("[name]" + ("'s" if _POSSESSIVE_TAIL_RE.search(token) else ""))
+        tail = "'s" if mark == "[name]" and _POSSESSIVE_TAIL_RE.search(token) else ""
+        out.append(mark + tail)
         last = end
     out.append(text[last:])
     masked = re.sub(r"\[name\](?:\s+\[name\])+", "[name]", "".join(out))
@@ -457,20 +580,35 @@ def person_names(question: str, names: tuple[str, ...] = ()) -> list[str]:
     allowed = _allowed_words(names)
     # A run of catalog or campus words ("Does Engineering have ...", "Does
     # Student Accounts have ...") is not a person.
+    del allowed
     found = [
         name
         for name in found
-        if not all(_is_allowed(word, allowed) for word in name.split())
-        or name.islower()
-        and not all(word.lower() in COMMON_WORDS for word in name.split())
+        if not all(_is_group_word(word) for word in name.split())
+        and not (name.islower() and all(w in COMMON_WORDS for w in name.split()))
     ]
     return sorted(set(found), key=len, reverse=True)
 
 
+def _is_group_word(word: str) -> bool:
+    """A word that names a group of students, an office or a campus thing,
+    never one person ("Hispanic", "Texas", "Student", "Accounts")."""
+    low = _POSSESSIVE_TAIL_RE.sub("", word).lower()
+    return (
+        low in GROUP_WORDS
+        or low in _NOT_NAMES
+        or _CAMPUS_WORDS_RE.fullmatch(low) is not None
+    )
+
+
 def _add_name(words: list[str], found: list[str]) -> None:
     """Add one candidate name unless it is made of ordinary words."""
-    # Drop ordinary words at either end ("Did the Jane ..." keeps Jane).
-    while words and words[0].lower() in _NOT_NAMES:
+    # Drop ordinary words at either end ("Did the Jane ..." keeps Jane,
+    # "What's Ricky's GPA" keeps Ricky).
+    while words and (
+        words[0].lower() in _NOT_NAMES
+        or _POSSESSIVE_TAIL_RE.sub("", words[0]) in _STOP_INITIALS
+    ):
         words.pop(0)
     while words and words[-1].lower() in _NOT_NAMES:
         words.pop()
@@ -481,14 +619,53 @@ def _add_name(words: list[str], found: list[str]) -> None:
     found.append(" ".join(words))
 
 
-def strip_names(question: str, names: tuple[str, ...] = ()) -> str:
-    """The question with every student id replaced by "[number withheld]"
-    and every word that may be a person's name by "[name withheld]"
-    (``mask_names``): what the audit log stores."""
+def safe_text(
+    question: str,
+    names: tuple[str, ...] = (),
+    extra: frozenset[str] = frozenset(),
+) -> str:
+    """The question as the model planner and the audit log receive it: every
+    word kept only if it is on the allow list (common English and campus
+    words, catalog names including instructors, course codes, term names,
+    known acronyms, ``extra``), in any case or position; every other word
+    becomes "[name]" (runs collapse to one). Emails, handles and quoted
+    single words become "[id]", and student ids and long numbers
+    "[number withheld]"."""
+    text = fold(question)
+    text = _ID_TOKEN_RE.sub("[id]", text)
+    text = _REDACT_RE.sub("[number withheld]", text)
+    allowed = _allowed_words(names) | extra
+    spans = _protected_spans(text, names)
+    # Placeholders already written ("[name]'s", "[number withheld]").
+    spans += [m.span() for m in re.finditer(r"\[[^\]]*\](?:'s|’s)?", text)]
+    out: list[str] = []
+    last = 0
+    for m in _WORD_TOKEN_RE.finditer(text):
+        start, end = m.span()
+        token = m.group(0)
+        inside = any(a <= start and end <= b for a, b in spans)
+        if inside or _is_allowed(token, allowed) or token.lower() in extra:
+            continue
+        out.append(text[last:start])
+        out.append("[name]" + ("'s" if _POSSESSIVE_TAIL_RE.search(token) else ""))
+        last = end
+    out.append(text[last:])
+    safe = re.sub(r"\[name\](?:'s)?(?:\s+\[name\](?:'s)?)+", "[name]", "".join(out))
+    return " ".join(safe.split())
+
+
+def strip_names(
+    question: str,
+    names: tuple[str, ...] = (),
+    extra: frozenset[str] = frozenset(),
+) -> str:
+    """What the audit log stores: the names the detector found masked first
+    (``mask_names``: a common word used as a name, "Did May pass"), then the
+    allow-list rewrite (``safe_text``), with "[name withheld]"."""
     text = _REDACT_RE.sub("[number withheld]", question)
     masked, _ = mask_names(text, names)
-    masked = masked.replace("[name]", "[name withheld]")
-    return " ".join(masked.split())
+    safe = safe_text(masked, names, extra)
+    return safe.replace("[name]", "[name withheld]")
 
 
 _INDIVIDUAL_RE = re.compile(
@@ -690,6 +867,10 @@ def refusal_for(question: str, names: tuple[str, ...] = ()) -> tuple[str, str] |
     """
     folded = fold(question)
     masked = _mask(folded, names)
+    # "Will Faith graduate?": a counseling word used as one person's name.
+    for name in person_names(question, names):
+        if name.lower() in _NAME_LIKE_COUNSELING:
+            masked = re.sub(rf"\b{re.escape(name)}\b", " ", masked)
     if _COUNSELING_RE.search(masked) or re.search(r"\bCAPS\b", folded):
         return "counseling", COUNSELING_REFUSAL
     if (

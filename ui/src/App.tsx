@@ -81,6 +81,8 @@ import { personaFor } from './personas'
 import { Institution, type ActiveDatasetMeta } from './components/Institution'
 import { LoginScreen } from './components/LoginScreen'
 import { SidePanel } from './components/SidePanel'
+import { DataPage } from './components/DataPage'
+import { canSeeDataPage } from './dataPage'
 import { StaffActionsPage } from './components/StaffActionsPage'
 import { LensMark } from './components/LensMark'
 import { Thinking } from './components/Thinking'
@@ -238,6 +240,7 @@ const WIDE_PAGES: ReadonlySet<PanelId> = new Set<PanelId>([
   'overview',
   'inbox',
   'sessions',
+  'data',
 ])
 
 /**
@@ -271,6 +274,8 @@ function pageIntro(page: PanelId, role: Role, fictional: boolean): string | unde
       return "Each AI employee sees only the fields its task needs, and never a student's name or identifiers. A request outside those fields is refused before any AI employee is asked, and the refusal is logged."
     case 'audit':
       return 'Every question, data request, refusal and decision is recorded here and can never be changed. Newest entries are first.'
+    case 'data':
+      return 'How the student body has changed over the years, as charts of totals. Narrow every chart to one group of students, or compare groups side by side.'
     case 'students':
       return 'Look up one student by name to see their program, progress, GPA, holds and advisor.'
     case 'overview':
@@ -1445,7 +1450,7 @@ function BriefingPage({
   // else keeps the briefing pages, with the inbox (and, for the president
   // and the admin, every department's overview) added.
   const panels: PanelId[] = department
-    ? ['overview', 'inbox']
+    ? (['overview', 'inbox', ...(canSeeDataPage(role) ? ['data'] : [])] as PanelId[])
     : [
         'inbox',
         ...(overviewFor.length > 0 ? (['overview'] as PanelId[]) : []),
@@ -1457,6 +1462,7 @@ function BriefingPage({
         'access',
         ...(aidQueue ? (['aid'] as PanelId[]) : []),
         ...(studentSearch ? (['students'] as PanelId[]) : []),
+        ...(canSeeDataPage(role) ? (['data'] as PanelId[]) : []),
         ...(audit ? (['audit'] as PanelId[]) : []),
         ...(canSeeSessions(role) ? (['sessions'] as PanelId[]) : []),
       ]
@@ -1571,6 +1577,7 @@ function BriefingPage({
     audit: 'Audit log',
     aid: 'Financial Aid review',
     students: 'Find a student',
+    data: 'Data',
     profile: 'Profile',
     settings: 'Settings',
     overview: department && persona !== null ? persona.name : 'Department overviews',
@@ -2385,6 +2392,7 @@ function BriefingPage({
             <AidQueuePanel canEdit={canEditAidQueue(role)} onOpenDecision={() => openPanel('decision')} />
           )}
           {shownPanel === 'students' && studentSearch && <StudentLookup />}
+          {shownPanel === 'data' && canSeeDataPage(role) && <DataPage account={session.user.email} />}
           {shownPanel === 'overview' && overviewFor.length > 0 && (
             <DepartmentOverview departments={overviewFor} onSendAlert={setAlertSource} />
           )}

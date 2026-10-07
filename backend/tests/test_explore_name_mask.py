@@ -12,6 +12,7 @@ never masked.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -30,8 +31,16 @@ from cabinet.explore.planner import (
     EXAMPLE_QUESTIONS,
     RULE_PHRASINGS,
     UNANSWERABLE_MESSAGE,
+    planner_vocabulary,
 )
-from cabinet.explore.privacy import mask_names, refusal_for
+from cabinet.explore.privacy import (
+    _allowed_words,
+    _is_allowed,
+    _protected_spans,
+    mask_names,
+    refusal_for,
+    safe_text,
+)
 from cabinet.provider import Explanation
 from conftest import make_authenticated_client
 from test_explore_general import GENERAL_PHRASINGS
@@ -56,11 +65,30 @@ ADVERSARIAL = [
     ),
     ("Did Jane Doe's roommate drop out?", ("Jane",)),
     ("Did the student named Ravi pass MEEN 3310?", ("Ravi",)),
+    # Third review: common words used as names, sentence-initial names,
+    # capitals, lowercase, titles, ids written as emails or handles.
+    ("Did May pass MEEN 3310?", ("May",)),
+    ("How did Christian do in Calculus I?", ("Christian",)),
+    ("Ravi failed MEEN 3310, right?", ("Ravi",)),
+    ("Jane withdrew from Calculus I last fall; how common is that?", ("Jane",)),
+    ("Jordan failed MEEN 3310.", ("Jordan",)),
+    ("Hunter and Brooklyn both dropped out of nursing", ("Hunter", "Brooklyn")),
+    ("JOHN SMITH failed MEEN 3310 - what is the DFW rate?", ("JOHN", "SMITH")),
+    ("Did KIM pass MEEN 3310?", ("KIM",)),
+    ("Has jose garcia registered for spring?", ("jose", "garcia")),
+    ("dr. patel's advisee sam failed calc, is that common?", ("patel", " sam ")),
+    ('Is "jdoe" on academic probation?', ("jdoe",)),
+    ("Did jdoe@demo.test pass MEEN 3310?", ("jdoe", "demo.test")),
+    ("Will Faith graduate this spring?", ("Faith",)),
+    ("What's Ricky's GPA?", ("Ricky",)),
 ]
 NOT_PEOPLE = [
     "Does Engineering have a high DFW rate?",
     "Does Student Accounts have the most holds?",
     "Does Main Campus have more holds?",
+    "How many Texas residents are enrolled?",
+    "How many students did Dr. Alicia Shelby teach?",
+    "What is the DFW rate in Intro to Python?",
 ]
 
 
@@ -142,6 +170,18 @@ def _events(app: FastAPI, event_type: str | None = None) -> list[dict[str, Any]]
     return store.audit_events(int(institution["id"]), event_type)
 
 
+def _assert_only_allowed(text: str, catalog: Catalog) -> None:
+    """Every word outside a placeholder or a catalog name is allow-listed."""
+    allowed = _allowed_words(catalog.known_names) | planner_vocabulary(catalog)
+    spans = _protected_spans(text, catalog.known_names)
+    spans += [m.span() for m in re.finditer(r"\[[^\]]*\](?:'s)?", text)]
+    for m in re.finditer(r"[^\W\d_][\w'’-]*", text):
+        if any(a <= m.start() and m.end() <= b for a, b in spans):
+            continue
+        token = m.group(0)
+        assert _is_allowed(token, allowed) or token.lower() in allowed, (token, text)
+
+
 @pytest.mark.parametrize(("question", "secrets"), ADVERSARIAL)
 def test_names_are_masked_before_the_model_and_the_audit_log(
     app: FastAPI,
@@ -154,6 +194,11 @@ def test_names_are_masked_before_the_model_and_the_audit_log(
     assert hidden, question
     for secret in secrets:
         assert secret not in masked
+    # What a model would receive keeps allow-listed words only.
+    _assert_only_allowed(
+        safe_text(question, catalog.known_names, planner_vocabulary(catalog)),
+        catalog,
+    )
     body = _ask(_client(app), question)
     assert body["refused"] is False
     assert body["redirect"] in ("individual_student", "prediction")
@@ -168,7 +213,8 @@ def test_names_are_masked_before_the_model_and_the_audit_log(
         for e in _events(app, "data.refused")
     )
     asked = _events(app, "question.asked")[-1]["payload"]["question"]
-    assert "[name withheld]" in asked
+    assert "[name withheld]" in asked or "[id]" in asked
+    _assert_only_allowed(asked, catalog)
 
 
 @pytest.mark.parametrize("question", NOT_PEOPLE)
@@ -206,7 +252,10 @@ def test_no_ordinary_question_is_masked(catalog: Catalog) -> None:
     assert len(questions) > 150
     for question in questions:
         masked, hidden = mask_names(question, catalog.known_names)
-        assert hidden == [], (question, hidden)
+        assert hidden == [] or question in protected, (question, hidden)
+        if question not in protected:
+            safe = safe_text(question, catalog.known_names, planner_vocabulary(catalog))
+            assert "[name]" not in safe, (question, safe)
         if question not in protected:
             assert refusal_for(question, catalog.known_names) is None, question
 
@@ -228,3 +277,18 @@ def test_group_measures_for_forward_and_list_questions(
         assert first[0] == "Measure: dropout rate", (question, first)
     body = _ask(client, "What is our yield?")
     assert body["refused"] is False and body["message"] == UNANSWERABLE_MESSAGE
+
+
+def test_the_model_receives_allow_listed_words_only(
+    app: FastAPI, model: RecordingModel, catalog: Catalog
+) -> None:
+    """An unknown lowercase word that is not in a name position is not
+    guarded, but the model still receives "[name]" for it."""
+    body = _ask(_client(app), "what is the dropout rate for blorft students")
+    assert "redirect" not in body
+    assert model.received, "the model planner was asked"
+    sent = json.loads(model.received[-1])["question"]
+    assert "blorft" not in sent and "[name]" in sent
+    _assert_only_allowed(sent, catalog)
+    asked = _events(app, "question.asked")[-1]["payload"]["question"]
+    assert "blorft" not in asked

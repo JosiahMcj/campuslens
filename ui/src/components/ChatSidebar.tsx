@@ -21,6 +21,7 @@ import {
   AidQueueNavIcon,
   AuditNavIcon,
   BriefingNavIcon,
+  DataNavIcon,
   DecisionNavIcon,
   EvidenceNavIcon,
   FiguresNavIcon,
@@ -48,6 +49,7 @@ export type PanelId =
   | 'audit'
   | 'aid'
   | 'students'
+  | 'data'
   | 'profile'
   | 'settings'
   // Department accounts, the inbox and the IT pages (docs/ROLES.md).
@@ -113,6 +115,7 @@ const PANEL_ROWS: Record<NavPanel, { label: string; icon: ReactNode }> = {
   audit: { label: 'Audit log', icon: <AuditNavIcon /> },
   aid: { label: 'Financial Aid review', icon: <AidQueueNavIcon /> },
   students: { label: 'Find a student', icon: <SearchIcon /> },
+  data: { label: 'Data', icon: <DataNavIcon /> },
   overview: { label: 'Department overview', icon: <FiguresNavIcon /> },
   inbox: { label: 'Inbox', icon: <MailIcon /> },
   accounts: { label: 'Accounts', icon: <AccountsNavIcon /> },
@@ -125,7 +128,7 @@ const PANEL_ROWS: Record<NavPanel, { label: string; icon: ReactNode }> = {
  * answer, the evidence opens from each number (and the Full briefing lists
  * it), and the employees are in "Data access". */
 const NAV_GROUPS: { label: string; panels: NavPanel[] }[] = [
-  { label: 'Your work', panels: ['inbox', 'overview'] },
+  { label: 'Your work', panels: ['inbox', 'overview', 'data'] },
   { label: 'Briefing', panels: ['briefing', 'actions', 'decision', 'students'] },
   { label: 'System', panels: ['accounts', 'sessions', 'connections'] },
   { label: 'Governance', panels: ['access', 'audit', 'aid'] },

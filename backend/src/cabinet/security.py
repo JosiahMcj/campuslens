@@ -94,6 +94,7 @@ from cabinet.auth import (
     AuthStore,
     verify_session_cookie,
 )
+from cabinet.data_roles import DATA_ROLES
 
 MAX_BODY_BYTES = 256 * 1024
 UPLOAD_BODY_BYTES = 20 * 1024 * 1024
@@ -209,6 +210,11 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     # that returns named student records, so only the roles that may open
     # the records behind a figure. Every search is logged.
     ("GET", "/students/search"): ROW_ROLES,
+    # The Data page (cabinet.dashboards): aggregate time series only. The
+    # roles with at least one dashboard in cabinet.data_roles; the route
+    # itself narrows each chart to the role's dashboards.
+    ("GET", "/data/dashboards"): DATA_ROLES,
+    ("GET", "/data/series"): DATA_ROLES,
     # --- department accounts and the inbox (docs/ROLES.md) ---
     # Sign-in activity per account (cabinet.inbox): counts, no session ids.
     ("GET", "/admin/sessions"): SESSION_VIEW_ROLES,

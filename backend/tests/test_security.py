@@ -439,6 +439,9 @@ def test_every_protected_route_is_in_the_role_table() -> None:
         ("GET", "/students/search"),
         # Briefing follow-ups, answered in code (tests/test_followup.py).
         ("POST", "/briefing/follow-up"),
+        # The Data page (tests/test_dashboards.py).
+        ("GET", "/data/dashboards"),
+        ("GET", "/data/series"),
         # Department accounts and the inbox (tests/test_roles_inbox.py).
         ("GET", "/admin/sessions"),
         ("GET", "/departments/overview"),
