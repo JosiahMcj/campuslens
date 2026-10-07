@@ -1,0 +1,23 @@
+{
+  "fluid": true,
+  "builds": [
+    {
+      "src": "index.py",
+      "use": "@vercel/python",
+      "config": {
+        "includeFiles": [
+          "backend/src/**",
+          "data/fixture.json",
+          "data/golden/**",
+          "ui/dist/**"
+        ]
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/index.py"
+    }
+  ]
+}

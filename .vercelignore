@@ -1,0 +1,7 @@
+docs/
+ui/node_modules/
+ui/src/
+.venv/
+var/
+deploy/
+backend/tests/
