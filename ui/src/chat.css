@@ -41,6 +41,19 @@
   text-decoration: underline;
   text-underline-offset: 0.18em;
   border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+/* A text link that acts as a button answers the pointer like one. */
+.link-button:hover:not(:disabled) {
+  color: var(--navy-hover);
+  background: var(--surface-hover);
+  text-decoration-thickness: 2px;
+}
+
+.link-button:active:not(:disabled) {
+  color: var(--navy-pressed);
+  background: var(--surface-pressed);
 }
 
 .chip {
@@ -90,12 +103,16 @@
   position: sticky;
   top: 0;
   z-index: 2;
+  padding: var(--space-3) var(--space-4);
+  /* Solid: the conversation never ghosts through it. */
+  background: var(--paper);
+}
+
+/* The bar's one line; a notice (.route-notice) sits under it. */
+.topbar-row {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  background: color-mix(in srgb, var(--paper) 92%, transparent);
-  backdrop-filter: blur(6px);
 }
 
 .menu-button {
@@ -103,6 +120,7 @@
 }
 
 .topbar-title {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -112,7 +130,11 @@
 }
 
 .topbar-badge {
-  flex: none;
+  /* Shrinks long before the title does (large text on a small phone). */
+  flex: 0 100 auto;
+  min-width: 2.5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   padding: 0 var(--space-2);
   border-radius: 999px;
@@ -203,49 +225,49 @@
   position: relative;
 }
 
-.composer input {
+/* The question box grows with the question (ChatComposer sets its height,
+   up to six lines; past that it scrolls). */
+.composer textarea {
   display: block;
   width: 100%;
   box-sizing: border-box;
+  min-height: calc(var(--tap) + 2 * var(--space-2) + 2px);
   padding: var(--space-4) calc(var(--tap) + var(--space-4)) var(--space-4) var(--space-4);
   font: inherit;
   font-size: var(--text-md);
+  line-height: 1.5;
   color: var(--ink);
   background: var(--paper);
-  border: 1px solid var(--rule-strong);
+  border: 1px solid var(--field-border, var(--rule-strong));
   border-radius: var(--radius-surface);
   box-shadow: var(--shadow);
+  resize: none;
+  overflow-y: hidden;
 }
 
-.composer input:focus {
+.composer textarea:focus {
   outline: 2px solid color-mix(in srgb, var(--navy) 45%, transparent);
   outline-offset: 0;
 }
 
-.composer input::placeholder {
+.composer textarea::placeholder {
   color: var(--ink-soft);
 }
 
-/* Phones: the whole placeholder ("Ask about students, courses or majors")
-   fits beside the send button. The text a person types stays at 16 px. */
+/* Phones: the placeholder ("Ask a question") fits beside the send button
+   even at 150% text on a 360 px screen. */
 @media (max-width: 899px) {
-  .composer input {
+  .composer textarea {
     padding-inline: var(--space-3) calc(var(--tap) + var(--space-3));
-  }
-}
-
-@media (max-width: 479px) {
-  .composer input::placeholder {
-    font-size: var(--text-sm);
   }
 }
 
 /* The send button is the composer's main button: the accent fill, round. */
 .send-button {
+  /* Pinned to the bottom corner, so it stays put as the box grows. */
   position: absolute;
-  top: 50%;
+  bottom: var(--space-2);
   right: var(--space-2);
-  transform: translateY(-50%);
   display: grid;
   place-items: center;
   width: var(--tap);
@@ -286,6 +308,18 @@
 
 .composer-note[role='note'] {
   color: var(--alert);
+}
+
+/* Small phones, once the conversation has started: the answer keeps the
+   room the note would take, and the top bar's title a little more room. */
+@media (max-width: 399px) {
+  .composer-note.is-quiet {
+    display: none;
+  }
+
+  .topbar-title {
+    font-size: var(--text-sm);
+  }
 }
 
 /* A failed question, above the composer. Opaque, so the sentence never sits
@@ -370,6 +404,31 @@
   margin-top: var(--space-3);
 }
 
+/* Narrow screens (and large text): the answer takes the full width; the
+   mark sits on the author line instead of indenting every line under it. */
+@media (max-width: 479px) {
+  .msg-cabinet {
+    position: relative;
+    display: block;
+  }
+
+  .msg-cabinet > .msg-avatar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1.6rem;
+    height: 1.6rem;
+  }
+
+  .msg-cabinet .msg-author {
+    display: flex;
+    align-items: center;
+    min-height: 1.6rem;
+    margin-top: 0;
+    padding-left: calc(1.6rem + var(--space-2));
+  }
+}
+
 .msg-body > section > h2 {
   margin: 0 0 var(--space-1);
   font-size: var(--text-xs);
@@ -399,6 +458,10 @@
   background: var(--surface-hover);
 }
 
+.work-line:active {
+  background: var(--surface-pressed);
+}
+
 .work-dot {
   flex: none;
   width: 8px;
@@ -416,9 +479,11 @@
   margin-top: var(--space-4);
 }
 
+/* Five figures do not fit the reading column side by side (their labels
+   wrapped to four or five lines): three per row, two on small screens. */
 @media (min-width: 720px) {
   .msg-body .stat-row {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .msg-body .stat-row > :last-child:nth-child(odd) {
@@ -564,18 +629,55 @@
 
 .side-panel-header {
   display: flex;
-  align-items: center;
+  /* Back stays on the first line when a long title wraps; on a narrow
+     screen (or large text) the title takes its own line under the controls
+     rather than breaking inside a word. */
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: var(--space-3);
   width: min(52rem, 100%);
+  /* The padding is inside the width, so Back lines up with the content. */
+  box-sizing: border-box;
   margin: 0 auto;
   padding: var(--space-4) var(--space-5) var(--space-3);
 }
 
 .side-panel-header h1 {
+  flex: 1 1 6em;
+  min-width: 0;
   margin: 0;
+  /* Centred on the 44 px controls' first line. */
+  padding-top: max(0px, calc((var(--tap) - 1.25em) / 2));
   font-size: var(--text-2xl);
   line-height: 1.25;
   text-wrap: balance;
+  overflow-wrap: break-word;
+}
+
+.page-header-controls {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The menu beside Back exists on phones only (the sidebar is a drawer). */
+.page-menu-button {
+  display: none;
+}
+
+/* The menu icons grow with the text. */
+.menu-button svg,
+.page-menu-button svg {
+  width: 1.25em;
+  height: 1.25em;
+}
+
+@media (max-width: 899px) {
+  .page-menu-button {
+    display: inline-grid;
+    border: 1px solid var(--rule-strong);
+  }
 }
 
 .page-back {
@@ -817,7 +919,14 @@
 .profile-facts dd {
   margin: var(--space-1) 0 0;
   font-size: var(--text-sm);
-  overflow-wrap: anywhere;
+  /* Whole words break only when a word alone is wider than the tile. */
+  overflow-wrap: break-word;
+}
+
+@media (max-width: 22rem) {
+  .profile-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .ability-list {
@@ -868,6 +977,15 @@
   font-weight: 500;
 }
 
+/* Narrow (a phone, or large text): the label above its choices. */
+@media (max-width: 30rem) {
+  .setting-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+}
+
 .segmented {
   display: inline-flex;
   flex-wrap: wrap;
@@ -888,9 +1006,26 @@
   font-weight: 500;
 }
 
+.segment {
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.segment:hover:not([aria-checked='true']) {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.segment:active:not([aria-checked='true']) {
+  background: var(--surface-pressed);
+}
+
+/* The chosen one: a fill AND a stronger border, so it reads in dark too. */
 .segment[aria-checked='true'] {
   background: var(--paper);
+  border-color: var(--rule-strong);
   color: var(--ink);
+  font-weight: 600;
   box-shadow: var(--shadow);
 }
 
@@ -1203,6 +1338,33 @@
   }
 }
 
+/* Narrow (a phone, or large text): id, status and chevron on the first
+   line, the hold on its own full-width line under them. */
+@media (max-width: 479px) {
+  .aid-row .aid-row-head {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'id status chevron'
+      'hold hold hold';
+  }
+
+  .aid-row-head .aid-row-id {
+    grid-area: id;
+  }
+
+  .aid-row-head .aid-row-hold {
+    grid-area: hold;
+  }
+
+  .aid-row-head .aid-status {
+    grid-area: status;
+  }
+
+  .aid-row-head .chevron {
+    grid-area: chevron;
+  }
+}
+
 /* --- Phones: every control answers a 44 x 44 px tap (DESIGN.md, Phones) -------
    Last in the file so it wins over each control's own size. */
 
@@ -1300,8 +1462,8 @@
         90deg,
         var(--ink-soft) 0%,
         var(--ink-soft) 35%,
-        var(--brand-mid) 50%,
-        var(--brand-teal) 55%,
+        var(--navy) 50%,
+        var(--navy) 55%,
         var(--ink-soft) 70%,
         var(--ink-soft) 100%
       )
@@ -1386,4 +1548,134 @@
 /* The page's one-sentence intro, right under the title. */
 .page-intro {
   margin-bottom: var(--space-4);
+}
+
+/* --- Pressed looks for the folds (DESIGN.md: every control that acts has
+   hover and pressed). The folds' own rules carry the hover. ------------------*/
+
+.fold > summary:active,
+.thought-toggle:active {
+  background: var(--surface-pressed);
+}
+
+/* --- Questions to try after a refusal: the same card and rows as the home
+   screen's "Try asking" (Explore.css .try-card / .try-row). --------------------*/
+
+.explore-suggestions .explore-chip-row {
+  display: block;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.explore-suggestions .explore-chip-row > li + li {
+  border-top: 1px solid var(--rule);
+}
+
+.explore-suggestions .chip.explore-chip {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  max-width: none;
+  min-height: var(--tap);
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  text-align: start;
+  cursor: pointer;
+}
+
+.explore-suggestions .chip.explore-chip:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.explore-suggestions .chip.explore-chip:active:not(:disabled) {
+  background: var(--surface-pressed);
+}
+
+.explore-suggestions .chip.explore-chip:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: -2px;
+}
+
+.explore-suggestions .chip.explore-chip:disabled {
+  color: var(--ink-soft);
+  cursor: default;
+}
+
+/* --- One-line notices in the conversation ---------------------------------------*/
+
+/* Why the address changed (a page this role cannot open). */
+.route-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  box-sizing: border-box;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  font-size: var(--text-sm);
+}
+
+.route-notice p {
+  margin: 0;
+}
+
+/* The last briefing failed to load, on the home screen (every role). */
+.chat-empty .home-load-error {
+  width: min(46rem, 100%);
+  box-sizing: border-box;
+  margin-top: var(--space-4);
+  text-align: start;
+}
+
+/* Answers are not kept across a reload; the questions are. */
+.reload-note {
+  max-width: 34rem;
+  margin: var(--space-3) auto 0;
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+  text-wrap: pretty;
+}
+
+/* An Explore answer that broke off part way. */
+.msg-body .interrupted {
+  margin-top: var(--space-2);
+}
+
+/* --- Institution settings: the shared page header and column ----------------
+   Back and the title sit where every page's do; the content keeps the same
+   left edge as a page body (52rem column, the same side padding). */
+.institution-page .institution-doc {
+  width: min(52rem, 100%);
+  box-sizing: border-box;
+  margin: var(--space-1) auto var(--space-7);
+  padding-inline: var(--space-5);
+}
+
+@media (max-width: 899px) {
+  .institution-page .side-panel-header {
+    padding: var(--space-3) var(--space-4) var(--space-2);
+  }
+
+  .institution-page .side-panel-header h1 {
+    font-size: var(--text-xl);
+  }
+
+  .institution-page .institution-doc {
+    padding-inline: var(--space-4);
+  }
+}
+
+#main-heading:focus:not(:focus-visible) {
+  outline: none;
 }

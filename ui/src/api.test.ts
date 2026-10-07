@@ -275,6 +275,16 @@ describe('fetchCabinetBriefingOnce — the produced briefing on reload', () => {
     expect(briefing?.sections[7]).toEqual({ kind: 'unavailable', reason: 'down' })
   })
 
+  it('throws on a server error instead of reporting "no briefing yet"', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(500, { detail: 'boom' })))
+    await expect(fetchCabinetBriefingOnce(flags)).rejects.toBeTruthy()
+  })
+
+  it('throws on a network failure instead of reporting "no briefing yet"', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+    await expect(fetchCabinetBriefingOnce(flags)).rejects.toBeTruthy()
+  })
+
   it('never fetches under ?model=down', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)

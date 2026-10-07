@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { prefersReducedMotion } from '../states'
 import { SidePanel } from './SidePanel'
 
 afterEach(() => {
@@ -150,5 +151,40 @@ describe('SidePanel reopened during its exit animation', () => {
     expect(document.activeElement).toBe(panel)
     fireEvent.keyDown(panel, { key: 'Escape' })
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the page header on phones', () => {
+  it('puts a menu button beside Back that opens the navigation', () => {
+    const onOpenMenu = vi.fn()
+    render(
+      <SidePanel title="Staff actions" onClose={() => {}} onOpenMenu={onOpenMenu}>
+        <p>Body</p>
+      </SidePanel>,
+    )
+    const menu = screen.getByRole('button', { name: 'Open menu' })
+    expect(menu.getAttribute('aria-controls')).toBe('cabinet-sidebar')
+    fireEvent.click(menu)
+    expect(onOpenMenu).toHaveBeenCalledTimes(1)
+  })
+
+  it('has no menu button where none is wired (the evidence layer)', () => {
+    render(
+      <SidePanel title="Evidence" onClose={() => {}} evidence>
+        <p>Body</p>
+      </SidePanel>,
+    )
+    expect(screen.queryByRole('button', { name: 'Open menu' })).toBeNull()
+  })
+})
+
+describe('reduced motion', () => {
+  it("honours Settings' Reduced motion (html.reduce-motion) as well as the system", () => {
+    document.documentElement.classList.add('reduce-motion')
+    try {
+      expect(prefersReducedMotion()).toBe(true)
+    } finally {
+      document.documentElement.classList.remove('reduce-motion')
+    }
   })
 })

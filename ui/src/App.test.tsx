@@ -338,7 +338,7 @@ describe('routes and titles', () => {
     render(<App />)
     await screen.findByText('What would you like to know?')
     expect(window.location.pathname).toBe('/')
-    expect(document.title).toBe('Briefing · CampusLens')
+    expect(document.title).toBe('Ask · CampusLens')
   })
 
   it('titles the sign-in screen and keeps the address at /login', async () => {
@@ -359,7 +359,7 @@ describe('routes and titles', () => {
       fireEvent.keyDown(dialog, { key: 'Escape' })
     })
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Staff actions' })).toBeNull())
-    expect(document.title).toBe('Briefing · CampusLens')
+    expect(document.title).toBe('Ask · CampusLens')
   })
 })
 
@@ -389,9 +389,9 @@ describe('Explore', () => {
     expect(calls.some((c) => c.endsWith('/api/ask'))).toBe(false)
     expect(screen.getByText('How this was answered')).toBeTruthy()
     expect(screen.getByText('Calculated directly from the records')).toBeTruthy()
-    // The sidebar lists the question with its Explore mark.
+    // The sidebar lists the question, with no "Explore" tag on it.
     const row = screen.getByTitle('Which major has the lowest GPA?')
-    expect(within(row).getByText('Explore')).toBeTruthy()
+    expect(within(row).queryByText('Explore')).toBeNull()
   })
 
   it('shows each AI employee’s progress inline while a briefing runs', async () => {
@@ -457,7 +457,7 @@ describe('Explore', () => {
     expect(window.sessionStorage.getItem('cabinet.explore.questions.2') ?? '[]').toBe('[]')
   })
 
-  it('drops a failed Explore question and offers Ask again, in plain words', async () => {
+  it('keeps a failed Explore question in the thread as interrupted, with Ask again', async () => {
     let fail = true
     mockApi({
       '/explore': () => {
@@ -468,11 +468,16 @@ describe('Explore', () => {
     render(<App />)
     await screen.findByText('What would you like to know?')
     await askQuestion('Which major has the lowest GPA?')
-    expect(await screen.findByText(NETWORK_MESSAGE)).toBeTruthy()
-    expect(document.querySelectorAll('.exchange').length).toBe(0)
+    const interrupted = await screen.findByText(/This answer was interrupted\./)
+    expect(interrupted.textContent).toContain(NETWORK_MESSAGE)
+    // The question stays where it was asked.
+    expect(document.querySelectorAll('.exchange').length).toBe(1)
     fail = false
     fireEvent.click(screen.getByRole('button', { name: 'Ask again' }))
     expect(await screen.findByRole('button', { name: '2.62' })).toBeTruthy()
+    // The answer takes the interrupted one's place.
+    expect(document.querySelectorAll('.exchange').length).toBe(1)
+    expect(screen.queryByText(/This answer was interrupted/)).toBeNull()
   })
 
   it('lists questions from before a reload and asks again when one is opened', async () => {
@@ -484,7 +489,10 @@ describe('Explore', () => {
     render(<App />)
     await screen.findByText('What would you like to know?')
     const row = screen.getByTitle('Which offices hold the most active holds?')
-    expect(within(row).getByText('Explore')).toBeTruthy()
+    // The answers were not kept; the empty screen says so in one line.
+    expect(
+      screen.getByText(/Answers from before you reloaded were not kept/),
+    ).toBeTruthy()
     fireEvent.click(row)
     expect(await screen.findByRole('button', { name: '2.62' })).toBeTruthy()
     expect(calls.filter((c) => c.endsWith('/api/explore')).length).toBe(1)
@@ -519,18 +527,18 @@ describe('Explore', () => {
 })
 
 describe('the sidebar clean-up', () => {
-  it('has one AI employees and data access row and no Key figures or Evidence rows', async () => {
+  it('has one Data access row (the page keeps its full title) and no Key figures or Evidence rows', async () => {
     mockApi()
     render(<App />)
     await screen.findByText('What would you like to know?')
     const nav = screen.getByRole('complementary', { name: 'CampusLens navigation' })
     const rows = within(nav)
-    expect(rows.getByRole('button', { name: 'AI employees and data access' })).toBeTruthy()
+    expect(rows.getByRole('button', { name: 'Data access' })).toBeTruthy()
     expect(rows.queryByRole('button', { name: 'Key figures' })).toBeNull()
     expect(rows.queryByRole('button', { name: 'Evidence & sources' })).toBeNull()
-    expect(rows.queryByRole('button', { name: 'Data access' })).toBeNull()
+    expect(rows.queryByRole('button', { name: 'AI employees and data access' })).toBeNull()
     expect(rows.queryByRole('button', { name: 'AI employees' })).toBeNull()
-    fireEvent.click(rows.getByRole('button', { name: 'AI employees and data access' }))
+    fireEvent.click(rows.getByRole('button', { name: 'Data access' }))
     expect(await screen.findByRole('region', { name: 'AI employees and data access' })).toBeTruthy()
   })
 
@@ -539,7 +547,7 @@ describe('the sidebar clean-up', () => {
     mockApi({ '/briefing': () => (fail ? json({ detail: 'boom' }, 500) : json({ detail: 'none' }, 404)) })
     render(<App />)
     const nav = await screen.findByRole('complementary', { name: 'CampusLens navigation' })
-    expect(await within(nav).findByText("Couldn't load your questions.")).toBeTruthy()
+    expect(await within(nav).findByText("We couldn't load your questions.")).toBeTruthy()
     expect(within(nav).queryByText('Questions you ask appear here.')).toBeNull()
     fail = false
     fireEvent.click(within(nav).getByRole('button', { name: 'Retry' }))
@@ -636,5 +644,131 @@ describe('the briefing before any question', () => {
     fireEvent.click(screen.getByRole('button', { name: /Showing the latest briefing/ }))
     const dialog = await screen.findByRole('region', { name: 'AI employees and data access' })
     expect(within(dialog).getByText(/writes the summary and its limits/)).toBeTruthy()
+  })
+})
+
+describe('history: Back on a page and the evidence', () => {
+  it('goes back to the conversation from a page it opened (the browser entry, not a new one)', async () => {
+    mockApi()
+    render(<App />)
+    await screen.findByText('What would you like to know?')
+    const before = window.history.length
+    fireEvent.click(screen.getByRole('button', { name: 'Staff actions' }))
+    await screen.findByRole('region', { name: 'Staff actions' })
+    expect(window.location.pathname).toBe('/view/staff-actions')
+    expect(window.history.length).toBe(before + 1)
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Staff actions' })).toBeNull())
+    // Back went back: Forward would reopen the page, and nothing new was pushed.
+    expect(window.history.length).toBe(before + 1)
+  })
+
+  it('replaces the entry when a page was opened straight from its address', async () => {
+    window.history.replaceState(null, '', '/view/staff-actions')
+    mockApi()
+    render(<App />)
+    await screen.findByRole('region', { name: 'Staff actions' })
+    const before = window.history.length
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    expect(window.history.length).toBe(before)
+  })
+
+  it('closes the evidence on the browser Back, keeping the page under it', async () => {
+    mockApi()
+    render(<App />)
+    await screen.findByText('What would you like to know?')
+    fireEvent.click(screen.getByRole('button', { name: 'Staff actions' }))
+    await screen.findByRole('region', { name: 'Staff actions' })
+    // The browser goes back from an evidence entry to the page's own entry.
+    act(() => {
+      window.history.pushState({ campuslens: true }, '', '/view/staff-actions?evidence=M1')
+      window.history.pushState({ campuslens: true }, '', '/view/staff-actions')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect(screen.getByRole('region', { name: 'Staff actions' })).toBeTruthy()
+    expect(window.location.search).toBe('')
+  })
+})
+
+describe('the last briefing failing to load', () => {
+  it('says so with Retry on the home screen, never "nothing yet"', async () => {
+    let fail = true
+    mockApi({
+      '/briefing': () => (fail ? json({ detail: 'boom' }, 500) : json({ detail: 'none' }, 404)),
+    })
+    render(<App />)
+    const line = await screen.findByText(/We couldn't load the last briefing\./)
+    const panel = line.closest('[role="alert"]') as HTMLElement
+    fail = false
+    fireEvent.click(within(panel).getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(screen.queryByText(/We couldn't load the last briefing/)).toBeNull())
+  })
+
+  it('says so on the Full briefing instead of offering "Ask it now"', async () => {
+    mockApi({ '/briefing': () => json({ detail: 'boom' }, 500) })
+    render(<App />)
+    await screen.findByText('What would you like to know?')
+    fireEvent.click(screen.getByRole('button', { name: 'Full briefing' }))
+    const dialog = await screen.findByRole('region', { name: 'Full briefing' })
+    await waitFor(() => expect(dialog.textContent).toContain("We couldn't load the last briefing."))
+    expect(within(dialog).queryByRole('button', { name: 'Ask it now' })).toBeNull()
+    expect(within(dialog).getByRole('button', { name: 'Retry' })).toBeTruthy()
+  })
+})
+
+describe('the decision when its message state fails to load', () => {
+  it('still shows the decision, with the error on the message step only', async () => {
+    mockApi({
+      '/briefing': () => json(BRIEFING),
+      '/decisions': () =>
+        json({
+          question_id: 'spring-registration',
+          decisions: [
+            {
+              id: 'D-1',
+              title: 'Emergency-aid eligibility review',
+              text: 'Decide whether to authorize a review.',
+              follow_up: { office: 'Financial Aid', description: 'Report back.' },
+              approved: true,
+              approved_by: 'president@demo.test',
+            },
+          ],
+        }),
+      '/decisions/D-1/dispatch': () => json({ detail: 'boom' }, 503),
+    })
+    render(<App />)
+    await screen.findByText('Student success briefing')
+    fireEvent.click(screen.getByRole('button', { name: 'Decision' }))
+    const dialog = await screen.findByRole('region', { name: 'Decision' })
+    await waitFor(() => expect(dialog.textContent).toContain('Emergency-aid eligibility review'))
+    expect(dialog.textContent).toContain("We couldn't check the message to the office.")
+    expect(within(dialog).getByRole('button', { name: 'Check the message again' })).toBeTruthy()
+  })
+})
+
+describe('a page this role cannot open, typed as an address', () => {
+  it('rewrites /institution for staff to the conversation and says why in one sentence', async () => {
+    window.history.replaceState(null, '', '/institution')
+    mockApi({ '/auth/me': () => json(sessionAs('staff')) })
+    render(<App />)
+    expect(
+      await screen.findByText('Only an administrator can open Institution settings.'),
+    ).toBeTruthy()
+    expect(window.location.pathname).toBe('/')
+    expect(document.body.textContent).not.toContain('the office mailboxes, the counseling permission')
+  })
+})
+
+describe('Institution settings for an administrator', () => {
+  it('has the shared page header (Back and the title) and no "Administration" bar title', async () => {
+    window.history.replaceState(null, '', '/institution')
+    mockApi({ '/auth/me': () => json(sessionAs('admin')) })
+    render(<App />)
+    expect(await screen.findByRole('heading', { level: 1, name: 'Institution settings' })).toBeTruthy()
+    expect(document.body.textContent).not.toContain('Administration')
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
   })
 })

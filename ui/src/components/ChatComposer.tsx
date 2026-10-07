@@ -1,4 +1,10 @@
-import { useState, type FormEvent } from 'react'
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react'
 
 import type { ApprovedQuestion } from '../api'
 import { SendIcon, SearchIcon } from './icons'
@@ -26,11 +32,19 @@ interface ChatComposerProps {
   /** The examples could not be loaded: a quiet line with Retry. */
   examplesFailed?: boolean
   onRetryExamples?: (() => void) | null
+  /** Hide the one-line note under the field (phones, once the
+   * conversation has started; the CSS decides by width). */
+  quietNote?: boolean
 }
+
+/** The field grows with the question up to this many lines, then scrolls. */
+const MAX_LINES = 6
 
 /**
  * The chat composer: one question field (id question-input, as the demo
- * script and verification expect) with the send button inside it. It takes
+ * script and verification expect) with the send button inside it. The field
+ * is a textarea that grows with the question (up to six lines): Enter asks,
+ * Shift+Enter starts a new line. It takes
  * any question: an approved briefing question runs the briefing, anything
  * else is answered by Explore (the page decides). On the empty screen
  * (before the first answer) the approved questions show as one-click
@@ -50,9 +64,28 @@ export function ChatComposer({
   examples = [],
   examplesFailed = false,
   onRetryExamples = null,
+  quietNote = false,
 }: ChatComposerProps) {
   const [question, setQuestion] = useState('')
   const approved = questions ?? []
+  const fieldRef = useRef<HTMLTextAreaElement>(null)
+
+  // Grow the field to fit what is typed, up to MAX_LINES; past that it scrolls.
+  useLayoutEffect(() => {
+    const field = fieldRef.current
+    if (field === null || typeof window.getComputedStyle !== 'function') return
+    field.style.height = 'auto'
+    const style = window.getComputedStyle(field)
+    const line = Number.parseFloat(style.lineHeight)
+    const padding =
+      Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom)
+    const border =
+      Number.parseFloat(style.borderTopWidth) + Number.parseFloat(style.borderBottomWidth)
+    const max = Number.isFinite(line) ? line * MAX_LINES + padding + border : Infinity
+    const wanted = field.scrollHeight + (Number.isFinite(border) ? border : 0)
+    if (wanted > 0) field.style.height = `${Math.min(wanted, max)}px`
+    field.style.overflowY = wanted > max ? 'auto' : 'hidden'
+  }, [question])
 
   const send = (text: string) => {
     const trimmed = text.trim()
@@ -62,6 +95,14 @@ export function ChatComposer({
   }
 
   const submit = (event: FormEvent) => {
+    event.preventDefault()
+    send(question)
+  }
+
+  // Enter asks; Shift+Enter is a new line; Enter that confirms an input
+  // method's composition (Japanese, Chinese, ...) never asks.
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
     event.preventDefault()
     send(question)
   }
@@ -151,13 +192,15 @@ export function ChatComposer({
         <label htmlFor="question-input" className="visually-hidden">
           Ask CampusLens a question
         </label>
-        <input
+        <textarea
+          ref={fieldRef}
           id="question-input"
-          type="text"
+          rows={1}
           autoComplete="off"
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
-          placeholder="Ask about students, courses or majors"
+          onKeyDown={onKeyDown}
+          placeholder="Ask a question"
           disabled={sending}
         />
         <button
@@ -170,7 +213,9 @@ export function ChatComposer({
           <SendIcon />
         </button>
       </form>
-      <p className="composer-note">Every number is computed from the records and checked.</p>
+      <p className={`composer-note${quietNote ? ' is-quiet' : ''}`}>
+        Every number is computed from the records and checked.
+      </p>
     </div>
   )
 }
