@@ -1704,6 +1704,7 @@ _BUDGET_FIELDS = (
     "cost_centers.name",
 )
 _BUDGET_COLS = (
+    Column("fiscal_year", "Fiscal year"),
     Column("budget", "Budget ($)", "money"),
     Column("actual", "Actual ($)", "money"),
     Column("variance", "Actual less budget ($)", "money"),

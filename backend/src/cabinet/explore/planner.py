@@ -103,6 +103,7 @@ def is_small_talk(question: str) -> bool:
     example questions, never planned and never sent to a model."""
     return _SMALL_TALK_RE.match(question) is not None
 
+
 # The owner's example, answered in one plan of three chained steps.
 OWNER_EXAMPLE = (
     "Which major has the lowest GPA? In that major, what is historically the hardest "
@@ -486,10 +487,15 @@ def parse_model_plan(text: str, catalog: Catalog) -> list[Step]:
         raw = json.loads(stripped)
     except ValueError as exc:
         raise PlanInvalid(f"the model's plan is not JSON: {exc}") from None
-    if isinstance(raw, dict) and raw.get("steps") == [] and set(raw) <= {
-        "steps",
-        "reasoning",
-    }:
+    if (
+        isinstance(raw, dict)
+        and raw.get("steps") == []
+        and set(raw)
+        <= {
+            "steps",
+            "reasoning",
+        }
+    ):
         raise PlanDeclined()
     try:
         raw = resolve_plan(raw, catalog)
@@ -1389,8 +1395,8 @@ class _ClausePlanner:
                     p["group_by"] = key
                     break
         if ranked:
-            p["order"] = "lowest_first" if _has(r"smallest|fewest", text) else (
-                "highest_first"
+            p["order"] = (
+                "lowest_first" if _has(r"smallest|fewest", text) else ("highest_first")
             )
         if e.majors and p.get("group_by") != "major":
             p["major"] = e.majors[0]
@@ -1486,8 +1492,11 @@ def _fiscal_year_in(text: str, v: Vocab) -> str | None:
 def _budget_step(text: str, v: Vocab) -> Step | None:
     """The university's budget, revenue or tuition discount, when the clause
     asks about them (never about a student's balance)."""
-    if _has(r"past[- ]due|overdue|owe|balance|payment|\bpaid\b|\bpay\b|"
-            r"student accounts?|collection", text):
+    if _has(
+        r"past[- ]due|overdue|owe|balance|payment|\bpaid\b|\bpay\b|"
+        r"student accounts?|collection",
+        text,
+    ):
         return None
     p: dict[str, Any] = {}
     year = _fiscal_year_in(text, v)
@@ -1495,7 +1504,7 @@ def _budget_step(text: str, v: Vocab) -> Step | None:
         if year is not None:
             p["fiscal_year"] = year
         return Step("tuition_discount", p)
-    if _has(_BUDGET_WORDS, text) or _has(r"budget vs|vs\.? budget|against budget", text):
+    if _has(_BUDGET_WORDS, text):
         if year is not None:
             p["fiscal_year"] = year
         if _has(r"department|cost cent|office|\bunits?\b|program", text):

@@ -99,7 +99,13 @@ def _fmt(value: Any, kind: str) -> str:
     if kind == "points":
         return f"{_signed(value)} points"
     if kind == "money":
-        return f"${value:,.2f}"
+        number = Decimal(str(value))
+        text = (
+            f"${abs(number):,.0f}"
+            if number == number.to_integral_value()
+            else f"${abs(number):,.2f}"
+        )
+        return f"−{text}" if number < 0 else text
     if kind == "gpa":
         return _signed(reader_number(value, kind))
     if kind in ("count", "hours") and isinstance(value, int):
@@ -189,6 +195,21 @@ class _Builder:
                 self.claims.append(claim)
         return self
 
+    def magnitude(self, step: StepResult, row: int, key: str) -> _Builder:
+        """A signed cell without its sign ("7.4%" for -7.4 under budget,
+        "$250,461,317" for aid shown as -250,461,317): the words around it
+        carry the direction. The claim is the cell itself."""
+        column = next(col for col in step.columns if col.key == key)
+        value = step.cell(row, key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            value = abs(value)
+        text = _fmt(value, column.kind)
+        self.parts.append(text)
+        claim = {"table": step.index, "row": row, "column": key}
+        if re.search(r"\d", text) and claim not in self.claims:
+            self.claims.append(claim)
+        return self
+
     def done(self) -> Sentence:
         text = "".join(self.parts)
         # "against a withheld number of for Spring 2025" -> "... number for".
@@ -258,6 +279,8 @@ def _primary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
         )
     if a == general.ANALYSIS_ID:
         return _general_primary(step, steps)
+    if a in _FINANCE:
+        return _finance_primary(step, steps)
     if step.instructor_rows_withheld and a == "course_instructors":
         b.t(
             "Instructor results are shown to the executive and admin only, so this "
@@ -614,6 +637,13 @@ def _value_phrase(b: _Builder, step: StepResult, row: int) -> _Builder:
         return b
     if general.MEASURES[str(step.params["measure"])].kind == "years":
         b.t(" years")
+    kind = general.MEASURES[str(step.params["measure"])].kind
+    if kind == "avg_dollars":
+        den = _lower_first(next(c.label for c in step.columns if c.key == "students"))
+        return b.t(" (").c(step, row, "students").t(f" {den})")
+    if "numerator" in keys and "denominator" in keys and _is_money(step):
+        b.t(" (").c(step, row, "numerator").t(" of ").c(step, row, "denominator")
+        return b.t(" billed)")
     if "numerator" in keys and "denominator" in keys:
         den = _lower_first(
             next(c.label for c in step.columns if c.key == "denominator")
@@ -628,6 +658,10 @@ def _value_phrase(b: _Builder, step: StepResult, row: int) -> _Builder:
         den = _lower_first(next(c.label for c in step.columns if c.key == "students"))
         b.t(" (").c(step, row, "students").t(f" {den})")
     return b
+
+
+def _is_money(step: StepResult) -> bool:
+    return any(c.key == "denominator" and c.kind == "money" for c in step.columns)
 
 
 def _general_primary(step: StepResult, steps: list[StepResult]) -> Sentence:
@@ -648,6 +682,20 @@ def _general_primary(step: StepResult, steps: list[StepResult]) -> Sentence:
         if m.id == "graduates":
             b.c(step, 0, "value").t(f" {_lower_first(subject)}{where} graduated from ")
             return b.t("the start of the records to the latest term.").done()
+        if m.id in ("past_due_students", "past_due_90_students"):
+            late = "more than 90 days " if m.id == "past_due_90_students" else ""
+            b.c(step, 0, "value").t(f" {_lower_first(subject)}{where} have a balance ")
+            return b.t(f"{late}past due.").done()
+        if m.id == "payment_plan_share":
+            b.c(step, 0, "numerator").t(" of ").c(step, 0, "denominator")
+            b.t(f" {_lower_first(subject)}{where} billed")
+            _in_scope(b, step).t(" pay through a payment plan (")
+            return b.c(step, 0, "value").t(").").done()
+        if m.kind == "dollars":
+            whose = "" if subject == "Students" else " of " + _lower_first(subject)
+            b.t(f"The {m.label}{whose}{where} is ")
+            _value_phrase(b, step, 0)
+            return b.t(".").done()
         b.t(f"{subject}{where} have {_a(m.label)} of ")
         _value_phrase(b, step, 0)
         if has_scope:
@@ -700,6 +748,94 @@ def _general_primary(step: StepResult, steps: list[StepResult]) -> Sentence:
     return _in_scope(b, step).t(".").done()
 
 
+_FINANCE = ("budget_vs_actual", "revenue_by_source", "tuition_discount")
+
+
+def _over_under(b: _Builder, step: StepResult, row: int) -> _Builder:
+    """ " (8.9% over budget)" or " (1.2% under budget)"."""
+    pct = _number(step.cell(row, "variance_pct"))
+    word = "over" if pct > 0 else "under"
+    if pct == 0:
+        return b.t(" (on budget)")
+    b.t(" (").magnitude(step, row, "variance_pct").t(f" {word} budget)")
+    return b
+
+
+def _finance_primary(step: StepResult, steps: list[StepResult]) -> Sentence:
+    """The university's own figures: spending, revenue, tuition."""
+    a = step.analysis.id
+    b = _Builder(steps)
+    rows = step.rows
+    if a == "tuition_discount":
+        if len(rows) == 1:
+            b.t("In ").c(step, 0, "fiscal_year").t(" net tuition revenue was ")
+            b.c(step, 0, "net_tuition").t(" (gross tuition of ")
+            b.c(step, 0, "gross_tuition").t(" less ").c(step, 0, "institutional_aid")
+            b.t(" in institutional aid), a discount rate of ")
+            return b.c(step, 0, "discount_rate").t(".").done()
+        first, last = 0, len(rows) - 1
+        verb = (
+            "rose"
+            if _number(step.cell(last, "discount_rate"))
+            > _number(step.cell(first, "discount_rate"))
+            else "fell"
+        )
+        b.t(f"The tuition discount rate {verb} from ").c(step, first, "discount_rate")
+        b.t(" in ").c(step, first, "fiscal_year").t(" to ")
+        b.c(step, last, "discount_rate").t(" in ").c(step, last, "fiscal_year")
+        b.t(", when net tuition revenue was ").c(step, last, "net_tuition")
+        b.t(" against a budget of ").c(step, last, "net_tuition_budget")
+        return b.t(".").done()
+    total = next((i for i, r in enumerate(rows) if r.get("group") in _TOTALS), None)
+    if a == "revenue_by_source" and total is not None:
+        b.t("Net revenue in ").c(step, total, "fiscal_year").t(" was ")
+        b.c(step, total, "actual").t(" against a budget of ").c(step, total, "budget")
+        return _over_under(b, step, total).t(".").done()
+    if total is not None:
+        b.t("In ").c(step, total, "fiscal_year").t(" the university spent ")
+        b.c(step, total, "actual").t(" against a budget of ").c(step, total, "budget")
+        return _over_under(b, step, total).t(".").done()
+    top = 0
+    b.t(f"{rows[top]['group']} is the furthest over budget in ")
+    b.c(step, top, "fiscal_year").t(": ").c(step, top, "actual")
+    b.t(" spent against a budget of ").c(step, top, "budget")
+    return _over_under(b, step, top).t(".").done()
+
+
+_TOTALS = ("All expenses", "Net revenue")
+
+
+def _finance_secondary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
+    a = step.analysis.id
+    rows = step.rows
+    b = _Builder(steps)
+    parts = [i for i, r in enumerate(rows) if r.get("group") not in _TOTALS]
+    if a == "budget_vs_actual" and parts:
+        if len(parts) == len(rows):  # only those over budget: the runner-up
+            if len(parts) < 2:
+                return None
+            b.t(f"Next is {rows[parts[1]]['group']} at ")
+            b.magnitude(step, parts[1], "variance_pct")
+            return b.t(" over.").done()
+        worst = max(parts, key=lambda i: _number(rows[i].get("variance_pct")))
+        if _number(rows[worst].get("variance_pct")) <= 0:
+            return Sentence("Every group spent within its budget.")
+        b.t(f"{rows[worst]['group']} is the furthest over budget: ")
+        b.c(step, worst, "actual").t(" against ").c(step, worst, "budget")
+        return _over_under(b, step, worst).t(".").done()
+    if a == "revenue_by_source":
+        gross = next((i for i in parts if rows[i]["group"] == "Gross tuition"), None)
+        aid = next(
+            (i for i in parts if rows[i]["group"].startswith("Institutional")), None
+        )
+        if gross is None or aid is None:
+            return None
+        b.t("Gross tuition was ").c(step, gross, "actual")
+        b.t(", less ").magnitude(step, aid, "actual").t(" in institutional aid.")
+        return b.done()
+    return None
+
+
 def _general_secondary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
     p = step.params
     ranked = [i for i in range(len(step.rows)) if not _is_total(step, i)]
@@ -733,6 +869,8 @@ def _secondary(step: StepResult, steps: list[StepResult]) -> Sentence | None:
         return None
     if a == general.ANALYSIS_ID:
         return _general_secondary(step, steps)
+    if a in _FINANCE:
+        return _finance_secondary(step, steps)
     b = _Builder(steps)
     if a == "course_instructors":
         b.c(step, 1, "instructor").t(f" {step.cell(1, 'name')} taught ")
