@@ -1555,7 +1555,7 @@ _NEW_MEASURES: tuple[tuple[str, str], ...] = (
     (
         "past_due_balance",
         r"past[- ]due|overdue|delinquen|outstanding balances?|accounts? receivable|"
-        r"\baging\b|how much (?:is |do students )?(?:owed|owe)",
+        r"\baging\b",
     ),
     (
         "time_to_degree",
