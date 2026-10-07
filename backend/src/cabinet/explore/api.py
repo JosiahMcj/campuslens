@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import queue
 import re
 import threading
@@ -48,8 +49,10 @@ from cabinet.explore.catalog import (
 from cabinet.explore.execute import StepResult, execute
 from cabinet.explore.planner import (
     EXAMPLE_QUESTIONS,
+    GREETING_MESSAGE,
     UNANSWERABLE_MESSAGE,
     describe_analysis,
+    is_small_talk,
     nearest_examples,
     plan_question,
     uses_model,
@@ -364,6 +367,31 @@ def _explore(
                 }
             )
 
+        if is_small_talk(question):
+            audit.append(
+                "explore.answered",
+                actor=EXPLORE_ACTOR,
+                payload={
+                    "task_id": task_id,
+                    "question_event_id": asked["id"],
+                    "steps": [],
+                    "row_counts": [],
+                    "planner": "greeting",
+                    "writer": None,
+                    "answered": False,
+                },
+            )
+            return JSONResponse(
+                content={
+                    "refused": False,
+                    "message": GREETING_MESSAGE,
+                    "answer": [],
+                    "steps": [],
+                    "suggestions": list(EXAMPLE_QUESTIONS[:3]),
+                    "source": None,
+                }
+            )
+
         provider = provider_from_env()
         emit(
             {
@@ -461,8 +489,11 @@ def _explore(
                     }
                 )
             emit({"type": "writing", "text": "Writing the answer from the tables"})
+            reword = uses_model(provider) and os.environ.get(
+                "CABINET_EXPLORE_WRITER", ""
+            ).strip().lower() != "template"
             answer, source, writer_fallback = write_answer(
-                steps, provider if uses_model(provider) else None
+                steps, provider if reword else None
             )
             claims = sum(len(s.claims) for s in answer)
             emit(

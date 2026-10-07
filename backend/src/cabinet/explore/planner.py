@@ -66,6 +66,25 @@ MAX_STEPS = 4
 RECORDING_SUBDIR = "explore"
 
 UNANSWERABLE_MESSAGE = "CampusLens can't answer that from the approved analyses yet."
+GREETING_MESSAGE = (
+    "Hi, I'm CampusLens. Ask me about your students, courses and majors, "
+    "and I'll answer from the records."
+)
+
+_SMALL_TALK_RE = re.compile(
+    r"^\s*(?:(?:hi|hello|hey|hiya|howdy|yo|greetings|good\s+(?:morning|afternoon|evening))"
+    r"(?:\s+(?:there|campus\s*lens|everyone))?"
+    r"|thanks?(?:\s+you)?|thank\s+you(?:\s+so\s+much)?|help|what\s+can\s+you\s+do"
+    r"|who\s+are\s+you|what\s+(?:is|are)\s+(?:this|you|campus\s*lens)|how\s+does\s+this\s+work)"
+    r"\s*[!.?]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def is_small_talk(question: str) -> bool:
+    """A greeting, a thank-you, or "what can you do": answered at once with
+    example questions, never planned and never sent to a model."""
+    return _SMALL_TALK_RE.match(question) is not None
 
 # The owner's example, answered in one plan of three chained steps.
 OWNER_EXAMPLE = (
@@ -446,18 +465,22 @@ def model_plan(
 ENV_PLANNER_ORDER = "CABINET_EXPLORE_PLANNER"
 RULES_FIRST = "rules-first"
 MODEL_FIRST = "model-first"
+RULES_ONLY = "rules-only"
 
 
 def planner_order_from_env() -> str:
     """``CABINET_EXPLORE_PLANNER``: ``rules-first`` (the default) asks the model
     only for a question the rule planner cannot map; ``model-first`` asks the
-    model every time and falls back to the rules. Anything else is logged and
+    model every time and falls back to the rules; ``rules-only`` never asks
+    the model to plan. Anything else is logged and
     read as the default."""
     raw = os.environ.get(ENV_PLANNER_ORDER, "").strip().lower()
     if raw in ("", RULES_FIRST):
         return RULES_FIRST
     if raw == MODEL_FIRST:
         return MODEL_FIRST
+    if raw == RULES_ONLY:
+        return RULES_ONLY
     logger.warning(
         "%s=%r is not %s or %s; using %s",
         ENV_PLANNER_ORDER,
@@ -502,7 +525,13 @@ def plan_question(
     if not uses_model(provider):
         steps, notes = rule_plan_detail(question, catalog)
         return PlanOutcome(steps, "rule", None, notes)
-    if planner_order_from_env() == RULES_FIRST:
+    order = planner_order_from_env()
+    if order == RULES_ONLY:
+        # Never ask a model to plan: a question the rules cannot map gets
+        # the example questions at once (a live demo on a slow model).
+        steps, notes = rule_plan_detail(question, catalog)
+        return PlanOutcome(steps, "rule", None, notes)
+    if order == RULES_FIRST:
         steps, notes = rule_plan_detail(question, catalog)
         if steps is not None:
             return PlanOutcome(steps, "rule", None, notes)
