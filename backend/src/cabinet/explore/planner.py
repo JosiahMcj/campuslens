@@ -649,18 +649,18 @@ def scoped_to_a_group(steps: list[Step]) -> bool:
 
 
 def forward_rule_plan_detail(
-    question: str, catalog: Catalog
+    question: str, catalog: Catalog, *, count_now: bool = True
 ) -> tuple[list[Step] | None, tuple[str, ...]]:
     """The rule plan for a forward-looking question, read as history: the
     historical measure ("will drop" is the dropout rate, with the stop-out
     rate beside it), after a count now when the question asks how many
     ("how many students have holds and will drop" also counts the students
-    with a hold this term)."""
+    with a hold this term, unless ``count_now`` is False)."""
     steps, notes = rule_plan_detail(historical_form(question), catalog)
     if steps is None:
         return None, notes
     chained = any(isinstance(v, Ref) for s in steps for v in s.params.values())
-    count = count_form(question)
+    count = count_form(question) if count_now else None
     if count and not chained:
         counted, _ = rule_plan_detail(count, catalog)
         if (

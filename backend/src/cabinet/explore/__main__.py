@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Protected before planning ({refusal[0]}): {refusal[1]}")
             return 0
         catalog = catalog_for(con)
-        if is_off_topic(args.question, catalog.title_names):
+        if is_off_topic(args.question, catalog.known_names):
             print(OFF_TOPIC_MESSAGE)
             return 0
         forward = is_forward_looking(args.question)
