@@ -39,13 +39,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from cabinet.explore import general
 from cabinet.explore.catalog import (
     ANALYSIS_BY_ID,
+    INSTRUCTOR_ROLES,
     Analysis,
     AnalysisError,
     Catalog,
     Param,
+    Vocab,
 )
+from cabinet.explore.privacy import redact_question
 from cabinet.provider import (
     ENV_RECORD,
     Provider,
@@ -310,6 +314,17 @@ def validate_plan(raw: Any, catalog: Catalog) -> list[Step]:
                 raise PlanInvalid(f"step {index}: {analysis.id} needs {param.name}")
         if analysis.id == "equity_gap" and not ({"course", "major"} & set(params)):
             raise PlanInvalid(f"step {index}: equity_gap needs a course or a major")
+        if analysis.id == general.ANALYSIS_ID:
+            if "then_by" in params and "group_by" not in params:
+                params["group_by"] = params.pop("then_by")
+            groups = [g for g in (params.get("group_by"), params.get("then_by")) if g]
+            if any(isinstance(g, Ref) for g in groups):
+                raise PlanInvalid(f"step {index}: a grouping cannot be a reference")
+            filters = {k: params[k] for k in general.GROUPING_KEYS if k in params}
+            try:
+                general.check_request(str(params.get("measure")), groups, filters)
+            except general.GeneralError as exc:
+                raise PlanInvalid(f"step {index}: {exc}") from None
         steps.append(Step(analysis.id, params))
     return steps
 
@@ -318,7 +333,9 @@ def validate_plan(raw: Any, catalog: Catalog) -> list[Step]:
 
 
 def normalize_question(question: str) -> str:
-    return " ".join(question.lower().split()).rstrip(" ?.!")
+    """The question as a recording key and as written to disk: any id or
+    long number a person typed is replaced first (``redact_question``)."""
+    return " ".join(redact_question(question).lower().split()).rstrip(" ?.!")
 
 
 def recording_key(question: str, catalog: Catalog) -> str:
@@ -395,9 +412,16 @@ def parse_model_plan(text: str, catalog: Catalog) -> list[Step]:
     return validate_plan(raw, catalog)
 
 
-def model_plan(question: str, catalog: Catalog, provider: Provider) -> list[Step]:
-    """The model planner. Raises PlanInvalid or ProviderUnavailable."""
-    payload = {"question": question, "catalog": catalog.spec()}
+def model_plan(
+    question: str, catalog: Catalog, provider: Provider, role: str = "staff"
+) -> list[Step]:
+    """The model planner. Raises PlanInvalid or ProviderUnavailable. The model
+    receives the question with any typed id or long number replaced, and the
+    catalog; the instructor list only for the executive and admin roles."""
+    payload = {
+        "question": redact_question(question),
+        "catalog": catalog.spec(instructors=role in INSTRUCTOR_ROLES),
+    }
     explanation = provider.explain(payload, PLANNER_ROLE)
     steps = parse_model_plan(explanation.text, catalog)
     if isinstance(provider, RecordingProvider):
@@ -432,11 +456,11 @@ def planner_order_from_env() -> str:
 
 
 def _try_model(
-    question: str, catalog: Catalog, provider: Provider
+    question: str, catalog: Catalog, provider: Provider, role: str = "staff"
 ) -> tuple[list[Step] | None, str | None]:
     """(model steps, None), or (None, the plain reason the model was not used)."""
     try:
-        return model_plan(question, catalog, provider), None
+        return model_plan(question, catalog, provider, role), None
     except ProviderUnavailable as exc:
         reason = f"the model planner was unavailable: {exc.reason}"
     except PlanInvalid as exc:
@@ -445,7 +469,9 @@ def _try_model(
     return None, reason
 
 
-def plan_question(question: str, catalog: Catalog, provider: Provider) -> PlanOutcome:
+def plan_question(
+    question: str, catalog: Catalog, provider: Provider, role: str = "staff"
+) -> PlanOutcome:
     """The plan for one question (call only after the refusal check).
 
     Replay serves a recorded plan first. With a live provider the default
@@ -466,11 +492,11 @@ def plan_question(question: str, catalog: Catalog, provider: Provider) -> PlanOu
         steps, notes = rule_plan_detail(question, catalog)
         if steps is not None:
             return PlanOutcome(steps, "rule", None, notes)
-        model_steps, reason = _try_model(question, catalog, provider)
+        model_steps, reason = _try_model(question, catalog, provider, role)
         if model_steps is not None:
             return PlanOutcome(model_steps, "model")
         return PlanOutcome(None, "rule", reason, ())
-    model_steps, reason = _try_model(question, catalog, provider)
+    model_steps, reason = _try_model(question, catalog, provider, role)
     if model_steps is not None:
         return PlanOutcome(model_steps, "model")
     steps, notes = rule_plan_detail(question, catalog)
@@ -877,6 +903,10 @@ class _ClausePlanner:
                 p["order"] = "largest_gap"
             return Step("withdrawal_by_modality", p)
 
+        general_params = _general_params(text, e, self.m.vocab)
+        if general_params is not None:
+            return Step(general.ANALYSIS_ID, general_params)
+
         groups = e.groups or (
             [] if not _has(r"equity|gap|disparit", text) else ["first_generation"]
         )
@@ -1108,6 +1138,361 @@ class _ClausePlanner:
             p["college"] = e.colleges[0]
         if term and e.terms:
             p["term"] = e.terms[0]
+
+
+# --- the general analysis: measure words, grouping words, filter words ------
+
+# Measures only the general analysis computes, in the order they are tried.
+_NEW_MEASURES: tuple[tuple[str, str], ...] = (
+    (
+        "time_to_degree",
+        r"time[- ]to[- ](?:degree|graduat)|years? to (?:a )?(?:degree|"
+        r"graduat)|how long (?:does it take|do (?:students|they|\w+ majors) take|"
+        r"it takes)"
+        r"|how many years",
+    ),
+    (
+        "transfer_out_rate",
+        r"transfer(?:red|ring)?[- ]out|transfer(?:red)? (?:out|away|"
+        r"to (?:another|other))|leave for another",
+    ),
+    (
+        "dropout_rate",
+        r"drop(?:ped|ping)?[- ]?outs?\b|dropped out|drop out|attrition|"
+        r"leav(?:e|ing) without (?:a )?degree|left without (?:a )?degree",
+    ),
+    (
+        "stop_out_rate",
+        r"stop(?:ped|ping)?[- ]?outs?\b|stopped out|stop out|"
+        r"(?:did ?n[o']t|do not|don't) (?:come back|return) (?:the )?next "
+        r"(?:term|semester)",
+    ),
+    (
+        "grad_rate_4yr",
+        r"(?:4|four)[- ]years? grad|graduat\w* (?:with)?in (?:4|four) years|"
+        r"on[- ]time grad|graduat\w* on time",
+    ),
+    (
+        "grad_rate_6yr",
+        r"(?:6|six)[- ]years? grad|graduat\w* (?:with)?in (?:6|six) years|"
+        r"graduation rates?|grad rates?|completion rates?",
+    ),
+    (
+        "retention_rate",
+        r"retention|\bretain(?:ed)?\b|persist(?:ence)?|"
+        r"(?:come|came|coming) back (?:for|their|a) (?:second|sophomore)|"
+        r"return(?:ed|ing)? (?:for|their|a) (?:second|sophomore)|second[- ]year return",
+    ),
+    (
+        "major_change_rate",
+        r"chang(?:e|ed|es|ing) (?:their |of |a )?majors?|"
+        r"switch(?:ed|es|ing)? (?:their )?majors?|major chang|"
+        r"(?:switch|chang|transfer)\w* out of (?:the |their |a )?(?:major|program)|"
+        r"(?:switch|chang)\w* out of\b",
+    ),
+    (
+        "credit_completion_rate",
+        r"credit completion|completion of (?:attempted )?credits|"
+        r"credits? (?:earned|completed) (?:vs\.?|versus|of|out of|against) "
+        r"(?:credits? )?attempted|earn the credits they attempt",
+    ),
+    (
+        "avg_credits_attempted",
+        r"average (?:credit|course) load|average (?:credit )?hours "
+        r"(?:attempted|per term)|average credits attempted|credit load",
+    ),
+    (
+        "avg_credits_earned",
+        r"average (?:cumulative )?credits earned|credits earned "
+        r"on average|average (?:number of )?credits",
+    ),
+)
+# Shares of an attribute ("what share of students are Pell recipients").
+_SHARE_WORDS = r"\bshare\b|percent|percentage|proportion|fraction|\bhow many of\b"
+_SHARES: tuple[tuple[str, str], ...] = (
+    ("pell_share", r"\bpell\b|need[- ]based|low[- ]income"),
+    ("first_gen_share", r"first[- ]?gen"),
+    ("international_share", r"international"),
+    ("part_time_share", r"part[- ]time"),
+    (
+        "on_campus_share",
+        r"on[- ]campus|in (?:university|campus) housing|residence halls?",
+    ),
+)
+# Measures existing analyses answer by major, college, course, or term; the
+# general analysis takes them only with a grouping or filter they lack.
+_OLD_MEASURES: tuple[tuple[str, str], ...] = (
+    (
+        "dfw_rate",
+        r"\bdfw\b|d/f/w|fail(?:ure|ing)? rates?|\bfail\b|pass rates?|"
+        r"\bfails?\b",
+    ),
+    ("withdrawal_rate", r"withdr[ae]w|withdrawals?"),
+    ("probation_rate", r"probation"),
+    ("suspension_rate", r"suspen"),
+    ("advising_rate", r"advis|appointment"),
+    ("hold_rate", r"\bholds?\b"),
+    ("graduates", r"graduates|graduated|graduations"),
+    ("avg_gpa", r"\bgpas?\b|grade point|\bgrades\b"),
+    (
+        "headcount",
+        r"how many|number of|headcount|enrol|count of|\bcount\b|"
+        r"how large|how big|size of",
+    ),
+)
+
+# Grouping words: (grouping, as a grouping, as filter values).
+_GROUPING_WORDS: dict[str, str] = {
+    "major": r"\b(?:which|what)\s+(?:\w+\s+)?(?:majors?|programs?)\b|"
+    r"\b(?:by|per|each|every|across|among)\s+(?:the\s+)?(?:majors?|programs?)\b|"
+    r"\bmajors? (?:have|has|with|had)\b",
+    "college": r"\b(?:which|what)\s+colleges?\b|\b(?:by|per|each|every|across)\s+"
+    r"(?:the\s+)?colleges?\b",
+    "class_level": r"class (?:level|year|standing)|by (?:year in school|level)|"
+    r"freshmen,? sophomores|by class\b",
+    "term": r"\b(?:by|per|each|every)\s+(?:term|semester)\b|term[- ]by[- ]term|"
+    r"over time|\btrend\b|each year|by year|per year|over the years|year over year",
+    "entry_cohort": r"\bcohorts?\b|entering class(?:es)?|entry year|by year of entry|"
+    r"entering year",
+    "residency": r"residen(?:cy|t status)|in[- ]state (?:vs\.?|versus|and|or) "
+    r"out[- ]of[- ]state|out[- ]of[- ]state (?:vs\.?|versus|and|or) in[- ]state",
+    "first_generation": r"first[- ]?gen(?:eration)?(?: college)?(?: students?)? status|"
+    r"first[- ]?gen(?:eration)? (?:vs\.?|versus|and|or|compared)|"
+    r"(?:vs\.?|versus|and|or) (?:first[- ]?gen|continuing[- ]gen)|"
+    r"continuing[- ]generation",
+    "pell": r"pell status|pell (?:vs\.?|versus|and|or) (?:non[- ]?pell|not)|"
+    r"non[- ]?pell|"
+    r"without pell|need[- ]based aid status",
+    "gender": r"\bgender\b|\bsex\b|men (?:and|vs\.?|versus|or) women|"
+    r"women (?:and|vs\.?|versus|or) men|male (?:and|vs\.?|versus|or) female|"
+    r"female (?:and|vs\.?|versus|or) male",
+    "race_ethnicity": r"\brac(?:e|es|ial)\b|ethnic",
+    "age_band": r"\bage\b|ages\b|older students|adult learners|non[- ]?traditional",
+    "admit_type": r"admit type|admission type|entry type|"
+    r"transfers? (?:vs\.?|versus|and|or) (?:first[- ]time|freshmen|native)|"
+    r"first[- ]time (?:vs\.?|versus|and|or) transfers?",
+    "load": r"full[- ]time (?:vs\.?|versus|and|or) part[- ]time|part[- ]time (?:vs\.?|"
+    r"versus|and|or) full[- ]time|enrollment (?:status|intensity)|course load status",
+    "housing": r"\bhousing\b|on[- ]campus (?:vs\.?|versus|and|or) off[- ]campus|"
+    r"off[- ]campus (?:vs\.?|versus|and|or) on[- ]campus|where (?:they|students) live|"
+    r"commuters? (?:vs\.?|versus|and|or)|residential (?:vs\.?|versus|and|or) commuter",
+    "athlete": r"athlet|\bsports?\b|athletics",
+    "honors": r"\bhonors\b|\bhonours\b",
+    "modality": r"modalit|in[- ]person (?:vs\.?|versus|and|or) online|"
+    r"online (?:vs\.?|versus|and|or) in[- ]person|delivery mode",
+}
+# Filter words: grouping -> [(pattern, value)], tried in order.
+_FILTER_WORDS: dict[str, tuple[tuple[str, str], ...]] = {
+    "residency": (
+        (r"\binternational\b", "international"),
+        (r"out[- ]of[- ]state", "out_of_state"),
+        (r"\bin[- ]state\b", "in_state"),
+    ),
+    "first_generation": (
+        (r"continuing[- ]gen", "continuing_generation"),
+        (r"first[- ]?gen", "first_generation"),
+    ),
+    "pell": (
+        (r"non[- ]?pell|without (?:a )?pell|no pell", "no_pell"),
+        (r"\bpell\b|need[- ]based aid|low[- ]income", "pell"),
+    ),
+    "gender": (
+        (r"\bwomen\b|\bfemales?\b", "female"),
+        (r"\bmen\b|\bmales?\b", "male"),
+    ),
+    "race_ethnicity": (
+        (r"hispanic|latin[oax]", "hispanic"),
+        (r"\bblack\b|african[- ]american", "black"),
+        (r"\basian\b", "asian"),
+        (r"\bwhite\b", "white"),
+        (r"native american|american indian|alaska native", "american_indian"),
+        (r"pacific islander|native hawaiian", "pacific_islander"),
+        (r"two or more races|multiracial|multi-racial", "two_or_more"),
+        (r"nonresident", "nonresident"),
+    ),
+    "admit_type": (
+        (r"\btransfer (?:students?|admits?|entrants?)\b|\btransfers\b", "transfer"),
+        (r"first[- ]time (?:students?|freshmen|entrants?)", "first_time"),
+    ),
+    "load": (
+        (r"part[- ]time", "part_time"),
+        (r"full[- ]time", "full_time"),
+    ),
+    "housing": (
+        (r"off[- ]campus|commuter", "off_campus"),
+        (
+            r"on[- ]campus|residential students|"
+            r"live in (?:the )?(?:dorms|residence halls)",
+            "on_campus",
+        ),
+    ),
+    "athlete": (
+        (r"non[- ]?athlet", "non_athlete"),
+        (r"athlet", "athlete"),
+    ),
+    "honors": (
+        (r"non[- ]?honors|not in (?:the )?honors", "non_honors"),
+        (r"\bhonors\b|\bhonours\b", "honors"),
+    ),
+    "class_level": (
+        (r"\bfreshm[ae]n\b|first[- ]year students", "Freshman"),
+        (r"\bsophomores?\b", "Sophomore"),
+        (r"\bjuniors?\b", "Junior"),
+        (r"\bseniors?\b", "Senior"),
+    ),
+    "age_band": (
+        (r"(?:35|thirty[- ]five) (?:and|or) (?:over|older)", "35_plus"),
+        (r"adult learners|25 and (?:over|older)|older students", "25_34"),
+    ),
+    "modality": (
+        (r"\bonline\b", "online"),
+        (r"\bhybrid\b", "hybrid"),
+        (r"in[- ]person", "in_person"),
+    ),
+}
+# Groupings existing analyses already answer for D, F or withdrawal rates
+# in a course or a major (the equity gap).
+_EQUITY_GROUPS = {"first_generation", "pell", "residency", "entry_cohort", "admit_type"}
+
+
+def _detect_measure(text: str) -> tuple[str | None, bool]:
+    """(measure id, whether only the general analysis computes it)."""
+    for measure, pattern in _NEW_MEASURES:
+        if _has(pattern, text):
+            return measure, True
+    if _has(_SHARE_WORDS, text) and not _has(r"\bhow many\b(?! of)", text):
+        for measure, pattern in _SHARES:
+            if _has(pattern, text):
+                return measure, True
+    for measure, pattern in _OLD_MEASURES:
+        if _has(pattern, text):
+            return measure, False
+    return None, False
+
+
+def _general_params(text: str, e: _Entities, v: Vocab) -> dict[str, Any] | None:
+    """Parameters of ``measure_by_group`` for a clause, or None when the
+    clause belongs to another analysis (or to none)."""
+    measure_id, new = _detect_measure(text)
+    if measure_id is None:
+        return None
+    measure = general.MEASURES[measure_id]
+    allowed = set(general.allowed_groupings(measure))
+    cohort_like = measure.scope in ("latest", "cohort")
+    groups: list[tuple[int, str]] = []
+    for key, pattern in _GROUPING_WORDS.items():
+        match = re.search(pattern, text, re.I)
+        if match is None:
+            continue
+        if key == "term" and cohort_like:
+            key = "entry_cohort"
+        if key in allowed and all(g != key for _, g in groups):
+            groups.append((match.start(), key))
+    groups.sort()
+    filters: dict[str, str] = {}
+    share_attr = {
+        "pell_share": "pell",
+        "first_gen_share": "first_generation",
+        "international_share": "residency",
+        "part_time_share": "load",
+        "on_campus_share": "housing",
+    }.get(measure_id)
+    for key, words in _FILTER_WORDS.items():
+        if key not in allowed or key == share_attr:
+            continue
+        if any(g == key for _, g in groups):
+            continue
+        for pattern, value in words:
+            if _has(pattern, text):
+                filters[key] = value
+                break
+    # "first-time students" is the cohort measures' own population.
+    if (
+        cohort_like
+        and measure.unit == "cohort"
+        and filters.get("admit_type") == "first_time"
+    ):
+        del filters["admit_type"]
+    if measure.unit == "cohort":
+        filters.pop("class_level", None)
+    # "Fall 2021 cohort", "students who entered in 2021": an entry cohort.
+    cohort_match = re.search(
+        r"(?:fall\s+)?(20\d\d)\s+(?:cohort|entering class|entrants|freshman class)|"
+        r"(?:entered|entering|started|starting)\s+(?:in\s+)?(?:fall\s+)?(20\d\d)",
+        text,
+        re.I,
+    )
+    if cohort_match and "entry_cohort" in allowed:
+        year = int(cohort_match.group(1) or cohort_match.group(2))
+        cohort = f"{year}-{year + 1}"
+        if cohort in v.entry_cohorts and all(g != "entry_cohort" for _, g in groups):
+            filters["entry_cohort"] = cohort
+    group_keys = [g for _, g in groups]
+    new_attr = any(
+        k not in ("major", "college", "term", "modality", *_EQUITY_GROUPS)
+        for k in group_keys + list(filters)
+    )
+    old_group = any(k in _EQUITY_GROUPS for k in group_keys + list(filters))
+    if not new:
+        if e.courses:
+            return None  # a course question: the course analyses answer it
+        if measure_id == "dfw_rate" and old_group and e.majors and not new_attr:
+            return None  # the equity gap in a major
+        if not (new_attr or old_group):
+            return None
+        if measure_id in ("headcount", "graduates") and not (new_attr or old_group):
+            return None
+    elif e.courses and measure_id in ("dfw_rate", "withdrawal_rate"):
+        return None
+    params: dict[str, Any] = {"measure": measure_id}
+    # A binary attribute named with no grouping ("average GPA of athletes")
+    # is compared with the rest; a count ("how many athletes") is filtered.
+    if not group_keys and filters and measure_id != "headcount":
+        compare = [
+            k
+            for k in filters
+            if k
+            in (
+                "athlete",
+                "honors",
+                "first_generation",
+                "pell",
+                "gender",
+                "admit_type",
+                "load",
+                "housing",
+            )
+        ]
+        if compare and not e.majors and not e.colleges:
+            key = compare[0]
+            group_keys.append(key)
+            del filters[key]
+    if e.majors and "major" not in group_keys and "major" in allowed:
+        filters["major"] = e.majors[0]
+    if e.colleges and "college" not in group_keys and "college" in allowed:
+        filters["college"] = e.colleges[0]
+    for key, slot in zip(group_keys[:2], ("group_by", "then_by"), strict=False):
+        params[slot] = key
+    params.update(filters)
+    if measure.scope not in ("latest", "cohort"):
+        terms = list(e.terms)
+        if not terms and e.years and not cohort_match:
+            terms = [f"{y + 1}10" for y in e.years if f"{y + 1}10" in v.terms]
+        if len(terms) >= 2:
+            params["term_from"], params["term_to"] = terms[0], terms[-1]
+        elif terms and _has(r"\bsince\b|\bfrom\b|\bafter\b", text):
+            params["term_from"] = terms[0]
+        elif terms:
+            params["term_from"] = params["term_to"] = terms[0]
+    low = _LOW_RE.search(text) is not None
+    high = _HIGH_RE.search(text) is not None
+    if low and not high:
+        params["order"] = "lowest_first"
+    elif high and not low:
+        params["order"] = "highest_first"
+    if "major" in group_keys and (low or high):
+        params["top"] = 10
+    return params
 
 
 def rule_plan(question: str, catalog: Catalog) -> list[Step] | None:

@@ -70,6 +70,11 @@ EXPECTED_COLUMNS: dict[str, list[str]] = {
                                       "advisor_type", "start_term", "end_term"],
     "student_appointments": ["appointment_id", "student_id", "advisor_id", "term_code",
                              "appointment_date", "appointment_type", "status"],
+    "student_profiles": ["student_id", "gender", "race_ethnicity", "age_band_at_entry",
+                         "athlete", "honors"],
+    "student_term_enrollment": ["student_id", "term_code", "status", "academic_load",
+                                "census_hours", "housing"],
+    "subsequent_enrollment": ["student_id", "found_term", "sector"],
 }
 
 POINTS10 = {"A": 40, "A-": 37, "B+": 33, "B": 30, "B-": 27, "C+": 23, "C": 20, "C-": 17,
@@ -150,13 +155,13 @@ class Checker:
                        - set(EXPECTED_COLUMNS))
         if extra:
             problems.append(f"unexpected tables {extra}")
-        self.record("schema", not problems, "; ".join(problems) or "21 tables, columns as documented")
+        self.record("schema", not problems, "; ".join(problems) or f"{len(EXPECTED_COLUMNS)} tables, columns as documented")
         fk = self.q("PRAGMA foreign_key_check")
         self.record("foreign_keys", not fk, f"{len(fk)} dangling references")
 
     def check_privacy(self) -> None:
         bad_ids = self.q("SELECT COUNT(*) FROM students WHERE student_id NOT GLOB 'S-[0-9]*'")[0][0]
-        cols = " ".join(EXPECTED_COLUMNS["students"])
+        cols = " ".join(EXPECTED_COLUMNS["students"] + EXPECTED_COLUMNS["student_profiles"])
         personal = [w for w in ("name", "birth", "address", "email", "phone") if w in cols]
         fictional = self.q("SELECT COUNT(*) FROM instructors WHERE fictional != 1")[0][0]
         ok = bad_ids == 0 and not personal and fictional == 0 and self.meta.get("fictional") == "true"
@@ -402,6 +407,67 @@ class Checker:
                     f"{pct(inside, len(rows))} % of {len(rows)} courses (>= {min_n} graded "
                     f"registrations) have a DFW rate between 5 % and 25 % (need {need:.0%})",
                     {"share": round(share, 3)})
+
+    # ------------------------------------------------------------ enrollment history
+    def check_enrollment_history(self) -> None:
+        """student_term_enrollment agrees with the records it is derived from."""
+        q = self.q
+        missing_profile = q("""SELECT COUNT(*) FROM students s WHERE NOT EXISTS
+            (SELECT 1 FROM student_profiles p WHERE p.student_id = s.student_id)""")[0][0]
+        intl = q("""SELECT COUNT(*) FROM students s JOIN student_profiles p USING (student_id)
+            WHERE (s.residency = 'international') != (p.race_ethnicity = 'nonresident')""")[0][0]
+        self.record("profiles_complete", missing_profile == 0 and intl == 0,
+                    f"{missing_profile} students without a profile, {intl} residency/IPEDS "
+                    "nonresident mismatches")
+        regular = "substr(term_code, 5, 2) IN ('10', '20')"
+        enrolled_mismatch = q(f"""SELECT
+            (SELECT COUNT(*) FROM student_term_records r WHERE {regular} AND NOT EXISTS
+                (SELECT 1 FROM student_term_enrollment e WHERE e.student_id = r.student_id
+                 AND e.term_code = r.term_code AND e.status = 'enrolled'))
+          + (SELECT COUNT(*) FROM student_term_enrollment e WHERE e.status = 'enrolled'
+             AND NOT EXISTS (SELECT 1 FROM student_term_records r
+                 WHERE r.student_id = e.student_id AND r.term_code = e.term_code))""")[0][0]
+        self.record("enrolled_terms_match_records", enrolled_mismatch == 0,
+                    f"{enrolled_mismatch} enrolled terms without a term record or the reverse")
+        load_bad = q("""SELECT COUNT(*) FROM student_term_enrollment e WHERE
+            (e.status = 'enrolled') != (e.academic_load IS NOT NULL)
+            OR (e.status = 'enrolled' AND ((e.census_hours >= 12) != (e.academic_load = 'full_time')
+                OR e.housing IS NULL OR e.census_hours != (
+                    SELECT SUM(c.credit_hours) FROM section_registrations r
+                    JOIN sections x ON x.section_id = r.section_id
+                    JOIN courses c ON c.course_id = x.course_id
+                    WHERE r.student_id = e.student_id AND r.term_code = e.term_code)))""")[0][0]
+        self.record("load_from_census_hours", load_bad == 0,
+                    f"{load_bad} terms whose load, housing, or census hours disagree with "
+                    "the registrations")
+        grad_bad = q("""SELECT COUNT(*) FROM student_term_enrollment e JOIN students s
+            USING (student_id) WHERE e.status = 'graduated'
+            AND (s.enrollment_status != 'graduated' OR e.term_code <= s.exit_term)""")[0][0]
+        transfer_bad = q("""SELECT COUNT(*) FROM subsequent_enrollment x JOIN students s
+            USING (student_id) WHERE s.enrollment_status NOT IN ('withdrawn', 'stopped_out')
+            OR x.found_term <= s.exit_term""")[0][0]
+        self.record("outcomes_consistent", grad_bad == 0 and transfer_bad == 0,
+                    f"{grad_bad} graduated terms not after a degree, {transfer_bad} "
+                    "transfer-out matches for students who did not leave without a degree")
+        # Plausible rates: first-year retention of first-time fall entrants,
+        # graduation of the first entering class within six academic years.
+        ret = q("""SELECT AVG(EXISTS (SELECT 1 FROM student_term_records r
+                       WHERE r.student_id = s.student_id
+                         AND r.term_code = (CAST(substr(s.entry_term, 1, 4) AS INTEGER) + 1)
+                             || '10'))
+                   FROM students s WHERE s.entry_type = 'first_time'
+                     AND s.entry_term BETWEEN '202110' AND '202510'
+                     AND substr(s.entry_term, 5, 2) = '10'""")[0][0] or 0.0
+        grad6 = q("""SELECT AVG(enrollment_status = 'graduated') FROM students
+                     WHERE entry_type = 'first_time' AND entry_term = '202110'""")[0][0] or 0.0
+        part_time = q("""SELECT AVG(academic_load = 'part_time') FROM student_term_enrollment
+                         WHERE status = 'enrolled'""")[0][0] or 0.0
+        ok = 0.65 <= ret <= 0.90 and 0.35 <= grad6 <= 0.75 and 0.03 <= part_time <= 0.30
+        self.record("outcome_rates_plausible", ok,
+                    f"first-year retention {ret:.1%}, 6-year graduation (Fall 2020 entrants) "
+                    f"{grad6:.1%}, part-time terms {part_time:.1%}",
+                    {"retention": round(ret, 3), "grad6": round(grad6, 3),
+                     "part_time": round(part_time, 3)})
 
     # ------------------------------------------------------------ planted facts
     def course_dfw(self, course: str, extra: str = "", args: tuple[Any, ...] = ()) -> tuple[int, int]:
@@ -663,6 +729,7 @@ class Checker:
         self.check_prerequisites()
         self.check_graduation()
         self.check_distributions()
+        self.check_enrollment_history()
         values = self.planted()
         digest = canonical_hash(self.con)
         self.check_planted_exact(values, digest)

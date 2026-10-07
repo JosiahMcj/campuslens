@@ -29,3 +29,6 @@ mypy_path = "src"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The source tree of this checkout first, ahead of any editable install of
+# another checkout sharing the same virtual environment.
+pythonpath = ["src"]

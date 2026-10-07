@@ -176,7 +176,7 @@ def _explore(body: ExploreRequest, request: Request) -> JSONResponse:
             )
 
         provider = provider_from_env()
-        outcome = plan_question(question, catalog, provider)
+        outcome = plan_question(question, catalog, provider, role)
         if outcome.steps is None:
             audit.append(
                 "explore.answered",
