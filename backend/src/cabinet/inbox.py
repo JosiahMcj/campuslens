@@ -17,6 +17,13 @@
     available". The counseling aggregate (M9) is never sent.
   - ``{"kind": "overview", "ref": "finance:open_balance"}`` — one figure of a
     department overview (``cabinet.departments``), likewise re-read on show.
+  - ``{"kind": "chart", "ref": "chart=retention&college=ENG&at=2024-2025"}`` —
+    a Data page chart, optionally one term (``at``) and one group
+    (``series``) on it. Only the ref is stored: whenever the message is
+    shown, the series is computed again for the READER's role through
+    ``cabinet.dashboards`` (withheld points stay withheld), and a role that
+    may not read that chart, or narrow or split it that way, sees "not
+    available" instead.
   - ``{"kind": "explore", "question": ..., "answer": [...]}`` — an Explore
     answer as the sender quoted it (Explore keeps no copy of its answers):
     the question and up to six sentences, each redacted like a question and
@@ -77,6 +84,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from cabinet.counseling import M9_ID
+from cabinet.dashboards import chart_attachment, chart_readable, parse_chart_ref
 from cabinet.departments import may_read, tile_snapshot
 from cabinet.explore.catalog import (
     INSTRUCTOR_ROLES,
@@ -364,6 +372,12 @@ def _resolve(
         except SchoolDataMissing:
             tile_view = None
         return tile_view, tile_view is not None
+    if kind == "chart":
+        try:
+            chart_view = chart_attachment(ref)
+        except SchoolDataMissing:
+            chart_view = None
+        return chart_view, chart_view is not None
     snapshot = json.loads(row["snapshot"]) if row["snapshot"] else None
     return snapshot, snapshot is not None
 
@@ -445,6 +459,8 @@ def attachment_allowed(kind: str, ref: str, role: str) -> bool:
         return may_read(role, ref.partition(":")[0])
     if kind == "explore":
         return role in EXPLORE_ROLES
+    if kind == "chart":
+        return chart_readable(ref, role)
     return False
 
 
@@ -519,7 +535,7 @@ def _snapshot(
     message is shown); an Explore answer stores the sender's quote."""
     role = str(sender["role"])
     kind = source.kind
-    if kind not in ("note", "finding", "overview", "explore"):
+    if kind not in ("note", "finding", "overview", "explore", "chart"):
         return _error(422, f"unknown source kind {kind!r}")
     if kind == "note":
         return None, None
@@ -528,6 +544,11 @@ def _snapshot(
     elif kind == "overview":
         department, _, tile = (source.ref or "").partition(":")
         ref = f"{department}:{tile}"
+    elif kind == "chart":
+        parsed = parse_chart_ref((source.ref or "").strip())
+        if parsed is None:
+            return _error(422, f"unknown chart {source.ref!r}")
+        ref = parsed.text()
     else:
         ref = ""
     if not attachment_allowed(kind, ref, role):
@@ -547,6 +568,14 @@ def _snapshot(
             return _error(503, exc.args[0])
         if found is None:
             return _error(422, f"unknown overview figure {source.ref!r}")
+        return ref, None
+    if kind == "chart":
+        try:
+            found_chart = chart_attachment(ref)
+        except SchoolDataMissing as exc:
+            return _error(503, exc.args[0])
+        if found_chart is None:
+            return _error(422, f"unknown chart {source.ref!r}")
         return ref, None
     question = " ".join((source.question or "").split())
     if not question or len(question) > QUESTION_MAX_CHARS:

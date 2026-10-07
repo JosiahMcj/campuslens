@@ -69,8 +69,8 @@ def test_migration_9_upgrades_a_real_1_to_8_database(tmp_path: Path) -> None:
                 (version, name),
             )
             conn.commit()
-        assert migrate(conn) == [9, 10]
-        assert recorded_versions(conn)[-1] == 10
+        assert migrate(conn) == [9, 10, 11]
+        assert recorded_versions(conn)[-1] == 11
         assert migrate(conn) == []
         tables = {
             str(row[0])

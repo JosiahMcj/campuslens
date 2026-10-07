@@ -15,8 +15,8 @@ applyPrefs()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {/* /dev/charts: the chart templates with sample data (no API). */}
-    {window.location.pathname === '/dev/charts' ? <ChartGallery /> : <App />}
+    {/* /dev/charts (development builds only): the chart templates with sample data. */}
+    {import.meta.env.DEV && window.location.pathname === '/dev/charts' ? <ChartGallery /> : <App />}
   </StrictMode>,
 )
 

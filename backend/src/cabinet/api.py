@@ -145,6 +145,7 @@ on stdout with a request id (``cabinet.accesslog``).
 
 from __future__ import annotations
 
+import logging
 import hashlib
 import json
 import os
@@ -1721,19 +1722,31 @@ def create_app(
         # The owning department's accounts get it in their inbox (never
         # emailed): the decision, the approved action, the deadline and the
         # figures, re-read whenever it is shown (cabinet.inbox).
-        notified = notify_decision(
-            store,
-            institution_id,
-            user,
-            decision,
-            int(runtime.dataset["id"]),
-            proposed_due(runtime),
-        )
+        # The approval is already recorded; a failed notification must not
+        # turn it into an error (the president would see a 500 for a decision
+        # that stands). It is logged and reported instead.
+        notify_failed = False
+        try:
+            notified = notify_decision(
+                store,
+                institution_id,
+                user,
+                decision,
+                int(runtime.dataset["id"]),
+                proposed_due(runtime),
+            )
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "notifying the department of %s failed", body.decision_id
+            )
+            notified = []
+            notify_failed = True
         return {
             "task": task,
             "created": True,
             "event_ids": [approved_event["id"], created_event["id"]],
             "department_inbox": notified,
+            "notify_failed": notify_failed,
         }
 
     # -- the governed execution step: dispatches ------------------------------

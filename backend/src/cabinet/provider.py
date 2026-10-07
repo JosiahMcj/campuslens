@@ -146,6 +146,12 @@ LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 def check_production_llm_base_url() -> None:
+    """Fail closed on both model endpoints (primary and fallback)."""
+    _check_base_url(ENV_LLM_BASE_URL)
+    _check_base_url("CABINET_LLM_FALLBACK_BASE_URL")
+
+
+def _check_base_url(env_name: str) -> None:
     """Fail closed on the model endpoint in production.
 
     ``CABINET_LLM_BASE_URL``, when set, must be ``https`` or plain ``http``
@@ -153,7 +159,7 @@ def check_production_llm_base_url() -> None:
     the clear. Unset is allowed (replay, or the model is not configured yet;
     asks then answer unavailable). Raises ``RuntimeError`` with one line.
     """
-    raw = os.environ.get(ENV_LLM_BASE_URL, "").strip()
+    raw = os.environ.get(env_name, "").strip()
     if not raw:
         return
     try:
@@ -168,7 +174,7 @@ def check_production_llm_base_url() -> None:
         if parts.scheme == "http" and host.lower() in LOOPBACK_HOSTS:
             return
     raise RuntimeError(
-        f"{ENV_LLM_BASE_URL} must be an https URL or a loopback address "
+        f"{env_name} must be an https URL or a loopback address "
         "(127.0.0.1, localhost, ::1) when CABINET_ENV=production, so the key "
         "and the findings never travel in the clear; refusing to start"
     )
@@ -242,11 +248,15 @@ class Provider(Protocol):
         ...
 
 
-def _reasoning_effort_field() -> dict[str, str]:
+def _reasoning_effort_field(prefix: str = "CABINET_LLM_") -> dict[str, str]:
     """``{"reasoning_effort": ...}`` for the request body, or ``{}`` when the
     setting is empty. Default ``low``: on reasoning models the default effort
-    can consume the entire output budget as hidden reasoning."""
-    value = os.environ.get(ENV_LLM_REASONING_EFFORT, DEFAULT_REASONING_EFFORT).strip()
+    can consume the entire output budget as hidden reasoning. ``prefix``
+    selects the primary (``CABINET_LLM_``) or the fallback
+    (``CABINET_LLM_FALLBACK_``) model's settings."""
+    value = os.environ.get(
+        prefix + "REASONING_EFFORT", DEFAULT_REASONING_EFFORT
+    ).strip()
     return {"reasoning_effort": value} if value else {}
 
 
@@ -401,9 +411,17 @@ class ChatProvider:
 
     name = "chat"
 
+    def __init__(self, prefix: str = "CABINET_LLM_") -> None:
+        # The primary model reads CABINET_LLM_*; the fallback model (see
+        # FallbackChatProvider) reads CABINET_LLM_FALLBACK_*.
+        self._prefix = prefix
+
+    def _env(self, suffix: str, default: str = "") -> str:
+        return os.environ.get(self._prefix + suffix, default)
+
     @property
     def model_label(self) -> str:
-        return os.environ.get(ENV_LLM_LABEL, DEFAULT_LABEL)
+        return self._env("LABEL", DEFAULT_LABEL)
 
     def explain(self, findings: dict[str, Any], role: str) -> Explanation:
         return self._complete(findings, role, correction=None)
@@ -420,18 +438,17 @@ class ChatProvider:
     def _complete(
         self, findings: dict[str, Any], role: str, *, correction: str | None
     ) -> Explanation:
-        base_url = os.environ.get(ENV_LLM_BASE_URL, "").strip()
-        model = os.environ.get(ENV_LLM_MODEL, "").strip()
+        base_url = self._env("BASE_URL").strip()
+        model = self._env("MODEL").strip()
         key = self._resolve_key()
+        p = self._prefix
         missing: list[str] = []
         if not base_url:
-            missing.append(ENV_LLM_BASE_URL)
+            missing.append(p + "BASE_URL")
         if not model:
-            missing.append(ENV_LLM_MODEL)
+            missing.append(p + "MODEL")
         if not key:
-            missing.append(
-                f"{ENV_LLM_API_KEY} (or {ENV_LLM_API_KEY_FILE} + {ENV_LLM_API_KEY_VAR})"
-            )
+            missing.append(f"{p}API_KEY (or {p}API_KEY_FILE + {p}API_KEY_VAR)")
         if missing:
             raise ProviderUnavailable(
                 "the live model is not configured: set "
@@ -466,7 +483,7 @@ class ChatProvider:
             "model": model,
             "messages": messages,
             "temperature": 0.2,
-            **_reasoning_effort_field(),
+            **_reasoning_effort_field(self._prefix),
             "max_tokens": max_tokens_from_env(),
         }
         url = base_url.rstrip("/") + "/chat/completions"
@@ -497,13 +514,12 @@ class ChatProvider:
             model_label=self.model_label,
         )
 
-    @staticmethod
-    def _resolve_key() -> str | None:
-        key = os.environ.get(ENV_LLM_API_KEY)
+    def _resolve_key(self) -> str | None:
+        key = self._env("API_KEY")
         if key:
             return key
-        file_var = os.environ.get(ENV_LLM_API_KEY_FILE)
-        var_name = os.environ.get(ENV_LLM_API_KEY_VAR)
+        file_var = self._env("API_KEY_FILE")
+        var_name = self._env("API_KEY_VAR")
         if not (file_var and var_name):
             return None
         prefix = f"{var_name}="
@@ -636,7 +652,8 @@ class FakeProvider:
 
         if role == "chief_of_staff":
             return Explanation(
-                text=self._chief_text(findings), provider=self.name,
+                text=self._chief_text(findings),
+                provider=self.name,
                 model_label=self.model_label,
             )
 
@@ -674,9 +691,7 @@ class FakeProvider:
                 continue
             display = str(finding.get("display", "--"))
             if display == "--":
-                sentences.append(
-                    f"{title}: no value available [{finding_id}]."
-                )
+                sentences.append(f"{title}: no value available [{finding_id}].")
             else:
                 sentences.append(f"{title}: {display} [{finding_id}].")
         return Explanation(
@@ -732,8 +747,7 @@ class FakeProvider:
         # A question whose chief dispatch has neither M2 nor M7 still gets a
         # true limitation, citing a finding the chief actually received.
         limitations = " ".join(limitations_parts) or (
-            "All records are fictional demonstration data "
-            f"[{sorted(findings)[0]}]."
+            f"All records are fictional demonstration data [{sorted(findings)[0]}]."
         )
         return json.dumps(
             {
@@ -857,6 +871,48 @@ class RecordingProvider:
 
 # The D5 seam: provider name -> class. To add a provider, implement the
 # Provider protocol and add one entry here.
+ENV_LLM_FALLBACK_PREFIX = "CABINET_LLM_FALLBACK_"
+
+
+class FallbackChatProvider:
+    """The primary chat model, and a second one when the primary is
+    unavailable (a network failure, a timeout, a truncated or filtered
+    answer). Configured by CABINET_LLM_FALLBACK_BASE_URL / _MODEL / _LABEL /
+    _API_KEY (or _API_KEY_FILE + _API_KEY_VAR) / _REASONING_EFFORT. Each
+    explanation carries the label of the model that actually wrote it, so
+    the UI never credits the primary for the fallback's words."""
+
+    name = "chat"
+
+    def __init__(self) -> None:
+        self.primary = ChatProvider()
+        self.fallback = ChatProvider(ENV_LLM_FALLBACK_PREFIX)
+
+    @property
+    def model_label(self) -> str:
+        return self.primary.model_label
+
+    def explain(self, findings: dict[str, Any], role: str) -> Explanation:
+        try:
+            return self.primary.explain(findings, role)
+        except ProviderUnavailable as exc:
+            logger.warning(
+                "primary model unavailable (%s); using the fallback model", exc
+            )
+            return self.fallback.explain(findings, role)
+
+    def correct(
+        self, findings: dict[str, Any], role: str, correction: str
+    ) -> Explanation:
+        try:
+            return self.primary.correct(findings, role, correction)
+        except ProviderUnavailable as exc:
+            logger.warning(
+                "primary model unavailable (%s); using the fallback model", exc
+            )
+            return self.fallback.correct(findings, role, correction)
+
+
 _PROVIDERS: dict[str, type] = {
     "chat": ChatProvider,
     "fake": FakeProvider,
@@ -877,6 +933,11 @@ def provider_from_env() -> Provider:
             f"{', '.join(sorted(_PROVIDERS))}"
         )
     provider: Provider = provider_cls()
+    if (
+        name == "chat"
+        and os.environ.get(ENV_LLM_FALLBACK_PREFIX + "BASE_URL", "").strip()
+    ):
+        provider = FallbackChatProvider()
     if name != "replay" and os.environ.get(ENV_RECORD) in ("1", "overwrite"):
         return RecordingProvider(provider)
     return provider

@@ -88,10 +88,12 @@ Explore uses.
 ## The inbox and Send alert
 
 Every account has an inbox (`cabinet/inbox.py`, table `inbox_messages`,
-migration 10).
+migration 10; migration 11 adds the `chart` kind).
 
 - **Send alert** is offered under every Explore answer, in the evidence
-  panel of every briefing figure, and on every overview figure. The sender
+  panel of every briefing figure, on every overview figure, and on every
+  Data page chart ("Send to department", for the whole chart or one point
+  on it). The sender
   picks a person (any enabled account of the institution except themselves),
   writes a short note (required, at most 1,000 characters) and can add a
   review-by date.
@@ -109,6 +111,16 @@ migration 10).
   ids). A figure that no longer exists, for example after a new dataset is
   activated or one is purged, shows "no longer available"; the note stays.
   The counseling aggregate (M9) can never be attached.
+- **A chart is computed again for the reader.** A Data page chart is stored
+  as its reference only (`chart=retention&college=ENG&at=2024-2025`: the
+  chart, the one group or comparison, and optionally a term and a group on
+  it). Each time the message is shown, `cabinet.dashboards` computes the
+  series again after the same checks `GET /data/series` makes for the
+  READER's role: the chart must be on one of their dashboards and every
+  attribute it narrows or splits by must be open to them (Pell status is for
+  the finance roles only). Otherwise the reader sees "not available to you".
+  Withheld points stay withheld; the recipient sees the chart redrawn, the
+  chosen point's value (or the withheld text), and Ask about this.
 - **An Explore answer is the sender's quote.** Explore keeps no copy of its
   answers, so the server cannot rebuild one. The alert stores the question
   and at most six sentences, each redacted like a question
