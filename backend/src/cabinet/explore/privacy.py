@@ -18,11 +18,14 @@ import re
 import unicodedata
 
 # Calm, plain lines: a refusal is CampusLens working as designed, not an
-# error. The counseling line does not say the data is absent: the briefing
-# may show an authorized aggregate count, and individual records are what is
-# never disclosed.
+# error. The counseling line refuses the topic, totals included, because the
+# questions it catches are mostly aggregate ("How many students visited the
+# counseling center?"). It does not say the data is absent: the one
+# authorized counseling count (M9) appears only in the briefing, never as an
+# answer to a typed question.
 COUNSELING_REFUSAL = (
-    "Individual counseling and spiritual-care records are never disclosed."
+    "CampusLens does not answer questions about counseling or spiritual care, "
+    "even as totals."
 )
 INDIVIDUAL_REFUSAL = (
     "CampusLens answers with totals only, never about a single student, by id or "

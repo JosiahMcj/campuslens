@@ -10,6 +10,8 @@ import {
   displayText,
   exploreResponseFrom,
   formatCell,
+  answerColumns,
+  quotedColumns,
   INSTRUCTOR_NOTE,
   linkSentence,
   loadExploreHistory,
@@ -1178,6 +1180,65 @@ describe('words and tables on screen', () => {
     expect(formatCell(2.623)).toBe('2.623')
     expect(formatCell('fewer than 10')).toBe('fewer than 10')
     expect(formatCell('I-0002 Anthony Jennings (fictional)')).toBe('Anthony Jennings (fictional)')
+  })
+
+  it('formats a number by its column kind', () => {
+    expect(formatCell(2.623, 'gpa')).toBe('2.62')
+    expect(formatCell(2.615, 'gpa')).toBe('2.62')
+    expect(formatCell(2.95, 'gpa')).toBe('2.95')
+    expect(formatCell(21, 'pct')).toBe('21.0')
+    expect(formatCell(41.8, 'pct')).toBe('41.8')
+    expect(formatCell(-4.75, 'points')).toBe('−4.8')
+    expect(formatCell(-0.01, 'pct')).toBe('0.0')
+    expect(formatCell(1533, 'count')).toBe('1,533')
+    expect(formatCell(12345.5, 'hours')).toBe('12,345.5')
+    expect(formatCell(1234.567)).toBe('1,234.567')
+    expect(formatCell(1200.5, 'money')).toBe('1,200.5')
+    expect(formatCell('Fall 2021', 'text')).toBe('Fall 2021')
+  })
+
+  it('shows the row label, then the quoted columns, then waits the rest', () => {
+    const step: ExploreStep = {
+      analysis_id: 'x',
+      title: 'Courses',
+      params_plain: [],
+      fields_read: [],
+      notes: [],
+      table: {
+        columns: [
+          { key: 'course', label: 'Course' },
+          { key: 'title', label: 'Title' },
+          { key: 'sections', label: 'Sections' },
+          { key: 'dfw_rate', label: 'Rate' },
+        ],
+        rows: [
+          ['A 1', 'One', 3, 20.5],
+          ['B 2', 'Two', 4, 10],
+        ],
+      },
+    }
+    expect(answerColumns(step, ['dfw_rate', 'sections'], false)).toEqual({
+      columns: [0, 3, 2],
+      hidden: 1,
+    })
+    expect(answerColumns(step, ['dfw_rate', 'sections'], true)).toEqual({
+      columns: [0, 3, 2, 1],
+      hidden: 0,
+    })
+    // Quoted only by its row label, or not at all: every column.
+    expect(answerColumns(step, ['course'], false)).toEqual({ columns: [0, 1, 2, 3], hidden: 0 })
+    expect(answerColumns(step, [], false)).toEqual({ columns: [0, 1, 2, 3], hidden: 0 })
+    const response = {
+      refused: false,
+      answer: [
+        { text: 'x', claims: [{ table: 0, row: 0, column: 'dfw_rate' }] },
+        { text: 'y', claims: [{ table: 1, row: 0, column: 'n' }, { table: 0, row: 1, column: 'sections' }, { table: 0, row: 0, column: 'dfw_rate' }] },
+      ],
+      steps: [step],
+      source: null,
+    }
+    expect(quotedColumns(response, 0)).toEqual(['dfw_rate', 'sections'])
+    expect(quotedColumns(response, 1)).toEqual(['n'])
   })
 
   it('writes the source line without the "(no model)" aside', () => {

@@ -1016,3 +1016,87 @@ def test_a_staff_stream_names_no_instructor() -> None:
     events = _stream(_client("staff"), "What has Alicia Shelby taught?")
     text = json.dumps(events)
     assert "Alicia Shelby" not in text and "I-0001" not in text
+
+
+# --- what "How this was answered" shows (UI fix pass) --------------------------------
+
+DROPOUT_QUESTION = "What majors have the highest dropout rate?"
+
+
+def test_a_dropout_answer_lists_only_the_fields_it_used() -> None:
+    client = _client("executive")
+    body = client.post(
+        "/explore", json={"question": "What majors have the highest dropout rate?"}
+    ).json()
+    step = body["steps"][0]
+    assert step["analysis_id"] == general.ANALYSIS_ID
+    fields = step["fields_read"]
+    assert "student_term_records.program_code" in fields
+    assert "students.enrollment_status" in fields
+    for unused in ("gender", "race_ethnicity", "athlete", "honors", "modality", "pell"):
+        assert not any(unused in field for field in fields), (unused, fields)
+    assert len(fields) <= 6
+
+
+def test_the_audit_event_keeps_the_full_field_list() -> None:
+    app = create_app()
+    client = make_authenticated_client(app, role="executive")
+    client.post("/explore", json={"question": DROPOUT_QUESTION})
+    store = app.state.auth
+    institution = store.institution_by_slug("bootstrap")
+    grants = [
+        e
+        for e in store.audit_events(int(institution["id"]))
+        if e["type"] == "data.granted"
+    ]
+    assert grants
+    assert "student_profiles.gender" in grants[0]["payload"]["fields_read"]
+
+
+def test_fields_used_follows_groupings_and_filters() -> None:
+    fields = general.fields_used(
+        {"measure": "avg_gpa", "group_by": "gender", "pell": "pell"}
+    )
+    assert fields[0] == "student_term_records.cumulative_gpa"
+    assert "student_profiles.gender" in fields and "students.pell_recipient" in fields
+    assert general.fields_used({"measure": "nope"}) == ()
+    cohort = general.fields_used(
+        {"measure": "retention_rate", "group_by": "admit_type"}
+    )
+    assert cohort.count("students.entry_type") == 1
+
+
+def test_every_table_column_carries_its_kind() -> None:
+    body = (
+        _client("executive")
+        .post("/explore", json={"question": "What is the average GPA by college?"})
+        .json()
+    )
+    columns = body["steps"][0]["table"]["columns"]
+    kinds = {c["key"]: c["kind"] for c in columns}
+    assert all(set(c) == {"key", "label", "kind"} for c in columns)
+    assert "gpa" in kinds.values() and kinds.get("college_name", "text") == "text"
+
+
+def test_a_cut_ranking_says_how_many_it_ranked() -> None:
+    body = (
+        _client("executive")
+        .post("/explore", json={"question": DROPOUT_QUESTION})
+        .json()
+    )
+    notes = body["steps"][0]["notes"]
+    cut = [n for n in notes if n.startswith("The first ")]
+    assert cut and re.search(
+        r"The first 10 of \d+ majors in this ranking are shown\.", cut[0]
+    )
+
+
+def test_the_reading_line_names_the_span_and_no_vendor() -> None:
+    events = _stream(_client("executive"), "What majors have the highest dropout rate?")
+    reading = next(e for e in events if e["type"] == "reading")["text"]
+    assert "Ellucian" not in reading
+    assert re.match(
+        r"Reading (one|two|three|four|five|six|seven|eight|nine|ten|[\d,]+) years? "
+        r"of student records \(fictional data\): [\d,]+ students, ",
+        reading,
+    ), reading
