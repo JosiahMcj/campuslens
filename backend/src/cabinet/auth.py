@@ -60,13 +60,38 @@ ROLE_REVIEWER = "reviewer"
 # Financial Aid office staff: they read the briefing like staff and work the
 # aid review queue, and nothing else (no ask, no sign-off, no audit log).
 ROLE_AID = "aid"
+# Department accounts (docs/ROLES.md). Each reads the briefing's aggregate
+# figures (never the student ids behind them), asks aggregate Explore
+# questions, and opens its own department overview:
+# Finance / Student Accounts (holds and balances), the Registrar
+# (enrollment, registration and academic standing), and Student Life
+# (retention, advising and first-generation support).
+ROLE_FINANCE = "finance"
+ROLE_REGISTRAR = "registrar"
+ROLE_STUDENT_LIFE = "studentlife"
+# IT: the people who run CampusLens for the institution. They manage the
+# department accounts, see sign-in activity, the outside connections and
+# the audit log, and nothing that is about students: no findings, no
+# briefing, no Explore (docs/ROLES.md).
+ROLE_IT = "it"
 USER_ROLES: tuple[str, ...] = (
     ROLE_ADMIN,
     ROLE_EXECUTIVE,
     ROLE_STAFF,
     ROLE_REVIEWER,
     ROLE_AID,
+    ROLE_FINANCE,
+    ROLE_REGISTRAR,
+    ROLE_STUDENT_LIFE,
+    ROLE_IT,
 )
+DEPARTMENT_ROLES: tuple[str, ...] = (ROLE_FINANCE, ROLE_REGISTRAR, ROLE_STUDENT_LIFE)
+# The accounts an IT person may create, enable, disable and re-role: staff
+# and the department accounts. Admin, executive and IT accounts, the
+# reviewer (who reads the aid queue's per-student rows) and the aid office
+# (which works them) stay with an administrator. IT never sees a new
+# account's password (cabinet.api: an administrator issues it).
+IT_MANAGED_ROLES: tuple[str, ...] = (ROLE_STAFF, *DEPARTMENT_ROLES)
 
 ENV_SESSION_TTL_HOURS = "CABINET_SESSION_TTL_HOURS"
 DEFAULT_SESSION_TTL_HOURS = 12

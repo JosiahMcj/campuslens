@@ -355,7 +355,7 @@ def _explore(
             payload={
                 # Ids and person names are replaced: the log never stores a
                 # student a person typed ("Did [name withheld] pass ...").
-                "question": strip_names(question, catalog.title_names),
+                "question": strip_names(question, catalog.known_names),
                 "route": "/explore",
                 "role": role,
             },
@@ -410,7 +410,7 @@ def _explore(
         lead: str | None = None
         redirect: str | None = None
         provider: Provider | None = None
-        guard = refusal_for(question, catalog.title_names)
+        guard = refusal_for(question, catalog.known_names)
         if guard is not None:
             # Protected data: recorded as a refusal, and never answered. The
             # reply is related questions or totals for students like that.
@@ -432,12 +432,17 @@ def _explore(
                         "source": None,
                     }
                 )
-            # Totals for students like that, from the rule planner only: a
-            # typed name or id never reaches a model, and is removed first.
-            text, named = aggregate_form(question, catalog.title_names)
+            # Totals for students like that, from the rule planner only (the
+            # model planner is not asked); masked names and ids are removed.
+            text, named = aggregate_form(question, catalog.known_names)
             forward = is_forward_looking(text)
-            rules = forward_rule_plan_detail if forward else rule_plan_detail
-            totals, _ = rules(text, catalog)
+            # A list ("which students ...") was rewritten to "how many": the
+            # historical rate answers it, not a count of the group now.
+            totals, _ = (
+                forward_rule_plan_detail(text, catalog, count_now=False)
+                if forward
+                else rule_plan_detail(text, catalog)
+            )
             if totals and named and not scoped_to_a_group(totals):
                 totals = None  # one student by id or name, and no group named
             if not totals:
@@ -459,7 +464,7 @@ def _explore(
                 if category == "prediction" or forward
                 else INDIVIDUAL_LEAD
             )
-        elif is_off_topic(question, catalog.title_names):
+        elif is_off_topic(question, catalog.known_names):
             return off_topic()
         elif is_small_talk(question):
             not_answered("greeting")
@@ -486,7 +491,7 @@ def _explore(
             outcome = plan_question(question, catalog, provider, role, forward=forward)
             if outcome.steps is None:
                 if outcome.declined and not mentions_campus_data(
-                    question, catalog.title_names
+                    question, catalog.known_names
                 ):
                     # The model found nothing in the catalog for a question
                     # that names nothing in the records: off-topic.
