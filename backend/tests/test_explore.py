@@ -1,6 +1,6 @@
 """Tests for Explore: governed specific questions over Demonstration University.
 
-Most tests run against the generator at --scale 0.05 in a tmp directory
+Most tests run against the generator at --scale 0.01 in a tmp directory
 (generated once per session, never the repo's var/). They cover every
 analysis returning aggregates only (no S- id anywhere in any response),
 suppression below 10 students, the owner's chained example, the instructor
@@ -83,7 +83,10 @@ from conftest import make_authenticated_client
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GENERATE = REPO_ROOT / "data" / "school" / "generate.py"
-FULL_DB = REPO_ROOT / "var" / "school" / "school.db"
+FULL_DB = Path(
+    os.environ.get("CABINET_EXPLORE_FULL_DB")
+    or REPO_ROOT / "var" / "school" / "school.db"
+)
 STUDENT_ID = re.compile(r"\bS-\d+")
 
 REFUSED_QUESTIONS = (
@@ -102,7 +105,7 @@ REFUSED_QUESTIONS = (
 def school_db(tmp_path_factory: pytest.TempPathFactory) -> Path:
     out = tmp_path_factory.mktemp("school") / "school.db"
     proc = subprocess.run(
-        [sys.executable, str(GENERATE), "--scale", "0.05", "--out", str(out)],
+        [sys.executable, str(GENERATE), "--scale", "0.01", "--out", str(out)],
         capture_output=True,
         text=True,
         check=False,

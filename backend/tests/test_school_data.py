@@ -1,15 +1,18 @@
 """Tests for the Demonstration University generator and checker (data/school/).
 
-The generator runs at --scale 0.05 into tmp dirs (never the repo's var/).
+The generator runs at --scale 0.01 into tmp dirs (never the repo's var/).
 These tests assert the schema, determinism (same seed, same canonical hash),
 the realism checks, the direction of every planted pattern, and that the
 checker fails on tampered rows. One test also generates the full scale
-(a few seconds) and requires every planted value in VERIFY.md exactly.
+and requires every planted value in VERIFY.md exactly; it takes about 45 s,
+so it runs only with CABINET_SCHOOL_FULL=1 (``make school-data`` makes the
+same exact comparison through check.py).
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import sqlite3
@@ -67,7 +70,7 @@ REALISM = [
 ]
 
 
-def generate(out: Path, scale: float = 0.05) -> None:
+def generate(out: Path, scale: float = 0.01) -> None:
     proc = subprocess.run(
         [sys.executable, str(GENERATE), "--scale", str(scale), "--out", str(out)],
         capture_output=True,
@@ -95,7 +98,7 @@ def by_name(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 @pytest.fixture(scope="module")
 def small(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
-    """Two independent generations at scale 0.05 and their check reports."""
+    """Two independent generations at scale 0.01 and their check reports."""
     first = tmp_path_factory.mktemp("school-a") / "school.db"
     second = tmp_path_factory.mktemp("school-b") / "school.db"
     generate(first)
@@ -130,7 +133,7 @@ def test_schema_tables_and_counts(small: dict[str, Any]) -> None:
     assert terms[0] == "202110"
     assert terms[-1] == "202620"
     assert meta["seed"] == "20261005"
-    assert meta["scale"] == "0.05"
+    assert meta["scale"] == "0.01"
     assert meta["fictional"] == "true"
 
 
@@ -219,6 +222,10 @@ def test_checker_fails_on_tampered_rows(
     assert report["canonical_sha256"] != small["reports"][0]["canonical_sha256"]
 
 
+@pytest.mark.skipif(
+    os.environ.get("CABINET_SCHOOL_FULL") != "1",
+    reason="full scale takes about 45 s: CABINET_SCHOOL_FULL=1, or make school-data",
+)
 def test_full_scale_matches_verify_md_exactly(tmp_path: Path) -> None:
     db = tmp_path / "school.db"
     generate(db, scale=1.0)
@@ -257,7 +264,7 @@ def test_python39_generates_the_same_rows(
     python39 = PYTHON39
     assert python39 is not None
     proc = subprocess.run(
-        [python39, str(GENERATE), "--scale", "0.05", "--out", str(db)],
+        [python39, str(GENERATE), "--scale", "0.01", "--out", str(db)],
         capture_output=True,
         text=True,
         check=False,

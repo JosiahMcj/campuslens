@@ -61,7 +61,7 @@ HEADCOUNT_CSCI = {
 def school_db(tmp_path_factory: pytest.TempPathFactory) -> Path:
     out = tmp_path_factory.mktemp("school-model") / "school.db"
     proc = subprocess.run(
-        [sys.executable, str(GENERATE), "--scale", "0.05", "--out", str(out)],
+        [sys.executable, str(GENERATE), "--scale", "0.01", "--out", str(out)],
         capture_output=True,
         text=True,
         check=False,
