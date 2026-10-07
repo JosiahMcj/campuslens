@@ -106,25 +106,141 @@
   color: var(--ink-soft);
 }
 
-/* Cards: as many whole ones per row as fit, one on a phone. */
+/* Cards: as many whole ones per row as fit, one on a phone. Every card
+   has the same four rows (head, plot, legend and notes, actions) and takes
+   them from the grid (subgrid), so the cards in a row are one height, their
+   plots start at the same y and their actions sit on one line at the foot. */
 .data-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr));
-  align-items: start;
   gap: var(--space-4);
   min-width: 0;
 }
 
 .data-card {
   display: grid;
-  align-content: start;
-  gap: var(--space-2);
+  grid-template-rows: auto auto 1fr auto;
+  row-gap: var(--space-3);
   min-width: 0;
   margin: 0;
   padding: var(--space-4);
   border: 1px solid var(--rule);
   border-radius: var(--radius-surface);
   background: var(--surface);
+}
+
+@supports (grid-template-rows: subgrid) {
+  .data-card {
+    grid-row: span 4;
+    grid-template-rows: subgrid;
+  }
+}
+
+/* Without subgrid, the head is a fixed slot (title, measure, the latest
+   figure), so a card without a big number starts its plot where its
+   neighbour does. With subgrid the row itself gives every head one height. */
+@supports not (grid-template-rows: subgrid) {
+  .data-card-head {
+    min-height: 4.5rem;
+  }
+}
+
+.data-card-plot {
+  min-width: 0;
+}
+
+.data-card-extras {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.data-card-foot {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--rule);
+}
+
+.data-card-foot:empty {
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* Show the figures, Ask about this, Send to department: one row that wraps. */
+.data-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.data-figures-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  margin-right: auto;
+  padding: 0 var(--space-2) 0 var(--space-1);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--navy);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.data-figures-toggle::before {
+  content: '';
+  flex: none;
+  width: 0.45em;
+  height: 0.45em;
+  margin-inline: 0.2em 0.1em;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.data-figures-toggle[aria-expanded='true']::before {
+  transform: rotate(45deg);
+}
+
+.data-figures-toggle:hover {
+  background: var(--surface-hover);
+}
+
+.data-figures-toggle:active {
+  background: var(--surface-pressed);
+}
+
+.data-figures-toggle:focus-visible,
+.chart-pop-row:focus-visible,
+.chart-pop-close:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .data-figures-toggle::before {
+    transition: transform 200ms ease-out;
+  }
+}
+
+/* On a phone the two actions share the row under the figures toggle. */
+@media (max-width: 480px) {
+  .data-figures-toggle {
+    flex-basis: 100%;
+  }
+
+  .data-card-actions .btn-secondary {
+    flex: 1 1 0;
+    padding-inline: var(--space-2);
+  }
 }
 
 .data-card h3 {
@@ -136,6 +252,7 @@
 
 .data-card-head {
   display: flex;
+  min-width: 0;
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--space-3);
@@ -154,6 +271,7 @@
 }
 
 .data-card-empty {
+  align-self: center;
   padding: var(--space-6) 0;
   font-size: var(--text-sm);
   text-align: center;
@@ -262,6 +380,137 @@
   stroke-width: 1;
 }
 
+.chart-cursor.is-pinned {
+  stroke: var(--ink-soft);
+  stroke-dasharray: 2 3;
+}
+
+.chart.is-pickable {
+  cursor: pointer;
+}
+
+.chart-dot-hit {
+  fill: transparent;
+  stroke: none;
+}
+
+/* A point's popover: its exact value and what to do with it. Placed like the
+   tooltip; under the chart, full width, on a narrow one. */
+.chart-pop {
+  position: absolute;
+  box-sizing: border-box;
+  top: 0;
+  z-index: 3;
+  display: grid;
+  gap: var(--space-2);
+  width: max-content;
+  min-width: 15rem;
+  max-width: min(21rem, 60%);
+  margin-left: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-surface);
+  background: var(--paper);
+  box-shadow: var(--shadow-float);
+  font-size: var(--text-xs);
+}
+
+.chart-pop.is-left {
+  transform: translateX(-100%);
+  margin-left: calc(-1 * var(--space-3));
+}
+
+.chart-pop.is-below {
+  position: static;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  margin: var(--space-2) 0 0;
+}
+
+.chart-pop-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.chart-pop-head .chart-tip-head {
+  margin: 0;
+  padding-top: var(--space-1);
+}
+
+.chart-pop-close {
+  flex: none;
+  width: var(--tap);
+  height: var(--tap);
+  margin: calc(-1 * var(--space-2)) 0 0 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+
+.chart-pop-close:hover {
+  background: var(--surface-hover);
+}
+
+.chart-pop-rows {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chart-pop-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-2);
+  align-items: baseline;
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+
+button.chart-pop-row {
+  min-height: var(--tap);
+  cursor: pointer;
+}
+
+button.chart-pop-row:hover {
+  background: var(--surface-hover);
+}
+
+.chart-pop-hint {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.chart-pop-back {
+  justify-self: start;
+  font-size: var(--text-xs);
+}
+
+.chart-pop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chart-pop-actions > button {
+  flex: 1 1 auto;
+}
+
 .chart-tip {
   position: absolute;
   top: 0;
@@ -343,34 +592,75 @@
   background: transparent;
 }
 
-/* Legend: each group is a button that narrows every chart to it. */
+/* Legend: compact chips that wrap, at most two rows until "+N more".
+   Each group's chip narrows every chart to it. */
+.data-legend-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+/* The unseen copy every chip is laid out in once, to count what fits. */
+.data-legend-measure {
+  position: absolute;
+  inset: 0 0 auto;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .data-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 var(--space-1);
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.data-legend > li {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .data-legend-item {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: var(--tap);
-  padding: 0 var(--space-2);
-  border: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 2rem;
+  padding: 0 var(--space-3) 0 var(--space-2);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper);
   color: var(--ink);
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
+  line-height: 1.25;
   text-align: left;
   cursor: pointer;
 }
 
+.data-legend-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .data-legend-item:hover {
   background: var(--surface-hover);
+}
+
+/* Below 900 px every chip is a full tap target. */
+@media (max-width: 900px) {
+  .data-legend-item {
+    min-height: var(--tap);
+  }
+}
+
+.data-legend-more {
+  padding-inline: var(--space-3);
+  color: var(--navy);
+  font-weight: 500;
 }
 
 .data-legend-item.is-static {
@@ -379,7 +669,7 @@
 }
 
 .data-legend-item.is-static:hover {
-  background: transparent;
+  background: var(--paper);
 }
 
 .data-gap-key {
@@ -391,8 +681,10 @@
   vertical-align: -0.1em;
 }
 
-.data-figures > summary {
-  margin-top: var(--space-1);
+.data-figures {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .data-table-wrap {
@@ -457,4 +749,50 @@
   .data-field-wide {
     grid-column: 1 / -1;
   }
+}
+
+/* A chart sent in an alert (ChartAttachment.tsx): the chosen point, then
+   the chart redrawn for the reader. */
+.alert-chart {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.alert-chart .hint,
+.alert-chart .alert-card-title {
+  margin-top: 0 !important;
+}
+
+.alert-chart-points {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.alert-chart-points li {
+  display: grid;
+  gap: 0;
+}
+
+.alert-chart-when {
+  color: var(--ink-soft);
+  font-size: var(--text-xs);
+}
+
+.alert-chart-points .alert-card-value {
+  margin-top: 0 !important;
+}
+
+.alert-chart-points .alert-card-value.is-missing {
+  font-size: var(--text-sm);
+  font-weight: 400;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+.alert-chart-ask {
+  justify-self: start;
 }

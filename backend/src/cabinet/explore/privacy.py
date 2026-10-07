@@ -228,6 +228,7 @@ _NOT_NAMES_TEXT = """
     already really actually just even likely going expected able enough to be been
     being do does did doing of in on at for with by from as and or nor but if so
     well highest lowest best worst most least top bottom hardest easiest
+    various different several alumni grads
     ai
 """
 _NOT_NAMES = frozenset(_NOT_NAMES_TEXT.split())
@@ -340,6 +341,19 @@ _GENERAL_WORDS_TEXT = """
     dr prof mr mrs ms miss sir madam
     python java javascript excel sql html css matlab spss tableau
 """
+# Graduate outcomes: what graduates did next and whether they gave back
+# ("Median Starting Salary", "Med School", "Alumni Giving").
+_OUTCOME_WORDS_TEXT = """
+    earn earned earning earnings potential salary salaries starting median mean pay
+    paid income wage wages job jobs employed employment unemployed unemployment
+    employer employers hire hired hiring career careers placement placed working
+    med medical school schools grad grads professional law doctor doctors physician
+    pre-med premed postgraduate master's masters doctoral graduate-school giving give
+    gave given donate donated donating donation donations donor donors gift gifts
+    participation fund annual philanthropy alumnus alumna alumnae back survey surveys
+    knowledge destination first-destination clearinghouse band bands acceptance
+    accepted outcome outcomes debt loan loans company companies
+"""
 # US states and territories, for residency questions ("Texas residents").
 _STATES_TEXT = """
     alabama alaska arizona arkansas california colorado connecticut delaware florida
@@ -365,11 +379,16 @@ _GROUP_WORDS_TEXT = """
 _ACRONYMS_TEXT = """
     gpa dfw stem cs it us usa fafsa sat act esl hbcu rotc ncaa ir ap ib ged ta ra
     phd mba ba bs ms ma bsn rn ipeds fte ftic sap caps id ids ok faq pdf csv
+    md do mcat nsc nace
 """
 KNOWN_ACRONYMS = frozenset(_ACRONYMS_TEXT.split())
 COMMON_WORDS = frozenset(
     (
-        _COMMON_WORDS_TEXT + _ABBREVIATIONS_TEXT + _GENERAL_WORDS_TEXT + _STATES_TEXT
+        _COMMON_WORDS_TEXT
+        + _ABBREVIATIONS_TEXT
+        + _GENERAL_WORDS_TEXT
+        + _OUTCOME_WORDS_TEXT
+        + _STATES_TEXT
     ).split()
 )
 GROUP_WORDS = frozenset((_GROUP_WORDS_TEXT + _STATES_TEXT).split())

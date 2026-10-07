@@ -46,8 +46,8 @@ PURPOSE: dict[str, str] = {
     "gpa_by_major": "average cumulative GPA of each major, ranked; or one major's GPA",
     "gpa_by_college": "average cumulative GPA of each college, ranked",
     "dfw_by_course": "courses ranked by D, F or withdrawal rate (hardest or "
-    "easiest classes); filter by the courses a major requires (major_required), "
-    "a subject, or a course level",
+    "easiest classes); filter by courses a major requires (major_required), "
+    "subject, or level",
     "course_dfw_trend": "one named course's D, F or withdrawal rate in each term",
     "course_instructors": "who taught one course, with each instructor's D, F "
     "or withdrawal rate",
@@ -57,7 +57,7 @@ PURPOSE: dict[str, str] = {
     "headcount_growth": "each major's headcount in two terms and its growth or "
     "decline, ranked",
     "enrollment_by_term": "students enrolled in EVERY term (a trend over time), new "
-    "and continuing; optionally one major, college or season",
+    "and continuing",
     "continuing_registration_change": "continuing students registered in a term "
     "against the same term a year earlier",
     "withdrawal_by_modality": "withdrawal rate online against in person, by term",
@@ -69,8 +69,8 @@ PURPOSE: dict[str, str] = {
     "advising_coverage": "share of each major's students who saw an advisor in a "
     "term, ranked",
     "credit_hours_by_term": "credit hours attempted and earned in each term",
-    "measure_by_group": "ONE measure (below) for all students, or broken down by "
-    "up to two groupings, with filters; counts and rates for any student group",
+    "measure_by_group": "ONE measure (below) for everyone or by up to two "
+    "groupings, with filters",
     "program_impact": "is a support program working or helping (AI tutoring, "
     "theology funding bridge, major-fit advising)",
     "program_reach": "students eligible for a support program, and take-up",
@@ -81,33 +81,40 @@ MEASURE_LINES: dict[str, str] = {
     "headcount": "number of students enrolled (default: the current term)",
     "avg_gpa": "average cumulative GPA",
     "avg_credits_earned": "average credits earned",
-    "dropout_rate": "share who left without a degree and did not come back",
-    "transfer_out_rate": "share who left and enrolled at another college",
-    "major_change_rate": "share who changed major (in their final major)",
-    "major_change_out_rate": "share of a major's students who switched out of it",
-    "major_attrition_rate": "attrition: share who left the university from the major",
-    "fit_flag_rate": "share of first-year students not a good fit for their major",
+    "dropout_rate": "share who left without a degree",
+    "transfer_out_rate": "share who left for another college",
+    "major_change_rate": "share who changed major",
+    "major_change_out_rate": "share who switched out of a major",
+    "major_attrition_rate": "attrition from each major",
+    "fit_flag_rate": "first-year students not a good fit for their major",
     "first_year_major_dfw_rate": "first-year DFW rate in major courses",
     "pell_share": "share with a Pell grant",
     "first_gen_share": "share first-generation",
     "international_share": "share international",
     "part_time_share": "share part-time",
     "on_campus_share": "share living on campus",
-    "probation_rate": "share of student terms on academic probation",
-    "suspension_rate": "share of student terms ending in suspension",
-    "stop_out_rate": "share who skipped the next fall or spring term",
+    "probation_rate": "share of terms on probation",
+    "suspension_rate": "share of terms ending in suspension",
+    "stop_out_rate": "share who skipped the next term",
     "credit_completion_rate": "credits earned over credits attempted",
     "avg_credits_attempted": "average credit load per term",
-    "advising_rate": "share of student terms with an advising appointment",
-    "hold_rate": "share of student terms with a hold",
-    "retention_rate": "first-year retention (first-time fall starters back the "
-    "next fall)",
+    "advising_rate": "share of terms with an advising appointment",
+    "hold_rate": "share of terms with a hold",
+    "retention_rate": "first-year retention (fall starters back next fall)",
     "grad_rate_4yr": "4-year graduation rate",
     "grad_rate_6yr": "6-year graduation rate (the usual 'graduation rate')",
     "time_to_degree": "average years to graduate",
     "graduates": "number of graduates",
-    "dfw_rate": "D, F or withdrawal rate of course registrations",
+    "dfw_rate": "D, F or withdrawal rate",
     "withdrawal_rate": "course withdrawal rate",
+    "knowledge_rate": "share of surveyed graduates who answered",
+    "employment_rate": "share of surveyed graduates employed",
+    "median_salary": "median starting salary (what graduates make, earnings)",
+    "grad_school_rate": "share of graduates in grad or professional school",
+    "med_acceptance_rate": "share of medical school applicants accepted",
+    "giving_rate": "share of alumni who gave back (donated)",
+    "avg_gift": "average alumni gift",
+    "total_giving": "total dollars alumni gave",
 }
 
 # Short names people use, beyond the names in the lists.
@@ -115,10 +122,11 @@ SYNONYMS = (
     "CS, comp sci = Computer Science; mech e, mechanical = Mechanical "
     "Engineering; psych = Psychology; bio = Biology; chem = Chemistry; nurses = "
     "Nursing; business = Business Administration; engineering (the college) = "
-    "College of Engineering and Computing; freshmen, first-years = class_level "
+    "CEC; freshmen, first-years = class_level "
     "Freshman; grads = graduates; kids = students; DFW = D, F or withdrawal; "
     "first gen = first_generation; this semester, now, currently = the current "
-    "term"
+    "term; alumni = graduates; med school = medical school; give back, donate = "
+    "giving"
 )
 
 # Worked examples. None of these questions is in the evaluation set.
@@ -175,24 +183,27 @@ RULES = (
     "major has the highest', 'what majors ... most', 'where are we losing') "
     "needs group_by (major unless another grouping is named) and order; order "
     "alone ranks nothing. A single group ('for Pell students', 'in Nursing') is "
-    "a filter, not a grouping. To cover a college or several majors use one step "
-    "with a college filter or group_by, never one step per major.\n"
+    "a filter, not a grouping. Several majors: one step with group_by or a "
+    "college filter, never a step per major.\n"
     "- order highest_first puts the highest rate first (hardest courses, most "
     "failing, most students); lowest_first the lowest (easiest).\n"
     "- A share or percent of students who are X uses the matching *_share "
     "measure.\n"
+    "- Graduate outcomes (pay, jobs, grad or med school, giving): 'do grades "
+    "matter' groups by gpa_band; 'X students who got into med school' is "
+    "med_acceptance_rate, filter X.\n"
     "- 'Students with holds' is the filter hold: hold on the asked measure "
     "(headcount for 'how many'), not hold_rate.\n"
     "- Course difficulty: hardest/easiest classes is dfw_by_course; one named "
     "course's rate is course_dfw_trend; who taught a course is "
     "course_instructors.\n"
-    "- Set a term only when the question names one; headcount_growth compares "
-    "Fall 2020 with Fall 2025 unless other terms are named. Name terms like "
+    "- Set a term only when the question names one. Name terms like "
     '"Fall 2024"; courses by code or title; majors and '
     "colleges by name or code from the lists; instructors as written.\n"
     "- A later step may use an earlier step's top row: "
     '{"from_step": <index from 0>, "column": "<column>"} (columns: major, '
     "college, course, term, instructor).\n"
+    "- Any ranked analysis takes top: 5|10|20|50 (rows shown).\n"
     "- Leave out every parameter the question does not ask for. Never invent "
     "numbers.\n"
     '- If no analysis answers the question, give "steps": [].'
@@ -210,7 +221,7 @@ _KIND_TYPES = {
     "major": "major",
     "college": "college",
     "subject": "subject (code or name)",
-    "course": "course (code or title)",
+    "course": "course",
     "term": "term",
     "advising_term": "term (fall or spring)",
     "instructor": "instructor name",
@@ -227,6 +238,8 @@ def _param_text(param: Param, catalog: Catalog) -> str:
         return "group_by: an id from GROUPINGS"
     if param.name == "top":
         return "top"
+    if param.name == "outcome":
+        return "outcome (optional)"
     if param.name == "order" and tuple(param.choices) == ORDER_LOW_HIGH:
         return f"order (default {param.default})" if param.default else "order"
     if param.kind == "choice":
@@ -240,6 +253,9 @@ def _param_text(param: Param, catalog: Catalog) -> str:
         if param.kind in ("term", "advising_term"):
             default = catalog.vocab.terms.get(str(default), default)
         kind += f" (default {default})"
+    if kind == param.name:
+        # "major: major" says nothing the name does not.
+        return f"{param.name}{'*' if param.required else ''}"
     return f"{param.name}{'*' if param.required else ''}: {kind}"
 
 
@@ -276,10 +292,16 @@ def _build(catalog: Catalog) -> str:
         params = [
             "then_by: same as group_by"
             if p.name == "then_by"
+            else f"{p.name}{'*' if p.required else ''}: an id from {p.name.upper()}S"
+            if analysis.id == general.ANALYSIS_ID and p.name in ("measure",)
+            else "group_by: an id from GROUPINGS"
+            if analysis.id == general.ANALYSIS_ID and p.name == "group_by"
             else _param_text(p, catalog)
             for p in analysis.params
             if not (analysis.id == general.ANALYSIS_ID and p.name in filter_keys)
             and not p.name.startswith("min_")
+            # The rows shown are listed once, in RULES.
+            and p.name != "top"
         ]
         if analysis.id == general.ANALYSIS_ID:
             params.insert(3, "any grouping below as a filter: one of its values")
@@ -297,6 +319,8 @@ def _build(catalog: Catalog) -> str:
             values_text = {"major": "a major", "college": "a college", "term": "-"}[key]
         elif key == "entry_cohort":
             values_text = "e.g. 2021-2022"
+        elif key == "gpa_band":
+            values_text = "graduates' final GPA: " + "|".join(values)
         else:
             values_text = "|".join(values)
         lines.append(f"- {key}: {values_text}")

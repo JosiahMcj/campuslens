@@ -552,5 +552,5 @@ def test_key_file_reader_stops_at_the_first_match(
         return SpyFile(handle) if self == key_file else handle
 
     monkeypatch.setattr(Path, "open", spying_open)
-    assert ChatProvider._resolve_key() == "secret-value"
+    assert ChatProvider()._resolve_key() == "secret-value"
     assert seen == ["FIRST=1", "THE_KEY=secret-value"]

@@ -134,13 +134,14 @@ college", "How many international students are in Nursing?", "Average GPA of ath
 vs non-athletes". `measure_by_group` answers that shape with reviewed parts only:
 
 - a **measure**, chosen from the list below. Each is a reviewed SQL aggregate over one
-  of five reviewed row sets (a student once, a student per term, an entering class, a
-  graduate, a graded registration), with a written definition that "How this was
-  answered" shows as the step's first note;
+  of six reviewed row sets (a student once, a student per term, an entering class, a
+  graduate, a graded registration, and a graduate with their outcomes), with a written
+  definition that "How this was answered" shows as the step's first note;
 - up to two **groupings** from an allow-list: major, college, class level, term, entry
   cohort, residency, first-generation status, Pell status, gender, race and ethnicity
   (IPEDS categories), age at entry, admit type, full-time or part-time, housing,
-  athletes, honors program, and section modality (registrations only);
+  athletes, honors program, section modality (registrations only), and final GPA band
+  (graduate outcomes only);
 - **filters**: one value of any grouping (a major, "international", "Pell
   recipients", "women", "Fall 2022 entrants"), and a term window;
 - an order and a row limit.
@@ -174,6 +175,27 @@ by section modality) are refused by the same allow-list for both planners.
 | average time to degree | Years from a graduate's first term to their graduation term |
 | graduates | Students who graduated, in the major they graduated in |
 | D, F or withdrawal rate; course withdrawal rate | Over graded registrations, with the student's major and class level in that term |
+| first-destination knowledge rate | Bachelor's graduates who answered the first-destination survey six months after graduating, over those surveyed (the classes through Summer 2025) |
+| employment rate | Survey respondents employed full or part time six months after graduating |
+| median starting salary | Respondents employed full time who reported a salary; the median, rounded to the nearest $500 |
+| graduate school rate | Bachelor's graduates enrolled in graduate or professional school within a year (Clearinghouse match), over graduates followed for a full year (the classes through Fall 2024) |
+| medical school acceptance rate | Accepted to an MD or DO program, over graduates who applied (cycles decided by Spring 2026) |
+| alumni giving participation rate | Graduates who made at least one gift after graduating, over all graduates |
+| average gift; total alumni giving | Dollars over gifts (to the nearest $5); dollars given (to the nearest $100), over donors |
+
+**Graduate outcomes** (the last seven rows) come from `first_destination`,
+`graduate_enrollment`, `medical_school_applications`, and `alumni_gifts`
+(`data/school/SCHEMA.md`). One row per graduate, in the major they graduated in; the term
+is the graduation term. Every rate says whom it counts: "of graduates who answered the
+survey", "of medical school applicants", "of alumni". Answers about the survey carry the
+institution-wide knowledge rate as a note, so a rate of respondents is not read as a rate
+of every graduate. A cell counts the people behind its figure (salary reporters for a
+median, applicants for an acceptance rate, donors for a gift) and is withheld under 10,
+with the same complementary suppression as every other measure. Dollar figures are
+rounded and shown without the exact sums behind them. Full-time or part-time status and
+housing do not apply to graduates. A school database generated before outcomes were
+added answers these measures with "graduate outcomes are not in this school database
+yet; regenerate it with make school-data".
 
 The cohort measures read first-time students unless admit type is asked about, as the
 federal graduation rate does. The rule planner maps common phrasings to this analysis

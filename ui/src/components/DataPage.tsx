@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import {
+  chartAbout,
+  chartQuestion,
+  chartRef,
+  chipsThatFit,
   fetchDataCatalog,
   fetchSeries,
   formatValue,
@@ -8,11 +12,15 @@ import {
   loadChoices,
   saveChoices,
   seriesQuery,
+  shortLabels,
   sliceYears,
   validChoices,
   WITHHELD_TEXT,
   describePoint,
+  WHOLE_CHART,
   type ChartData,
+  type ChartFocus,
+  type ChartGroup,
   type ChartSummary,
   type DataCatalog,
   type DataChoices,
@@ -20,6 +28,8 @@ import {
   type SeriesResponse,
 } from '../dataPage'
 import { friendlyLoadError } from '../errors'
+import type { AlertSource } from '../inbox'
+import { useWidth } from '../useWidth'
 import { DataChart } from './DataChart'
 import './DataPage.css'
 
@@ -28,9 +38,20 @@ type Load<T> = { kind: 'loading' } | { kind: 'ready'; data: T } | { kind: 'error
 /** How many chart requests run at once (each is one governed query). */
 const PARALLEL = 3
 
+/** A question about a chart, and the chip its new chat carries. */
+export interface ChartAsk {
+  question: string
+  about: string
+}
+
 interface DataPageProps {
   /** The signed-in account: the person's choices are remembered per account. */
   account: string
+  /** "Ask about this": start a new chat with this question (null for roles
+   * that cannot ask Explore questions). */
+  onAsk?: ((ask: ChartAsk) => void) | null
+  /** "Send to department": open Send alert with this chart attached. */
+  onSend?: ((source: AlertSource) => void) | null
 }
 
 /**
@@ -40,7 +61,7 @@ interface DataPageProps {
  * entry) narrows to that group. Choices are remembered per account on this
  * browser.
  */
-export function DataPage({ account }: DataPageProps) {
+export function DataPage({ account, onAsk = null, onSend = null }: DataPageProps) {
   const [catalog, setCatalog] = useState<Load<DataCatalog>>({ kind: 'loading' })
   const [choices, setChoices] = useState<DataChoices>(() => loadChoices(account))
   const [results, setResults] = useState<Record<string, Load<SeriesResponse>>>({})
@@ -171,6 +192,23 @@ export function DataPage({ account }: DataPageProps) {
   const fromYear = choices.from === '' ? data.years[0] : choices.from
   const toYear = choices.to === '' ? lastYear : choices.to
   const yearLabel = (year: string) => year.replace('-', '–')
+  const chartGroup: ChartGroup | null =
+    group === null ? null : { label: labelOf(group[0], group[1]).key, value: labelOf(group[0], group[1]).value }
+  // The two actions every chart and every point offers.
+  const askAbout =
+    onAsk === null
+      ? null
+      : (data: ChartData, focus: ChartFocus) =>
+          onAsk({ question: chartQuestion(data, chartGroup, focus), about: chartAbout(data, chartGroup, focus) })
+  const sendAbout =
+    onSend === null
+      ? null
+      : (data: ChartData, focus: ChartFocus) =>
+          onSend({
+            kind: 'chart',
+            ref: chartRef(data.chart, choices.compare, choices.filters, data, focus),
+            label: chartAbout(data, chartGroup, focus).replace(/^About: /, ''),
+          })
 
   return (
     <div className="data-page">
@@ -298,6 +336,8 @@ export function DataPage({ account }: DataPageProps) {
             to={choices.to}
             onRetry={() => retryChart(query)}
             onPick={(split, series) => setGroup(split, series.key)}
+            onAsk={askAbout}
+            onSend={sendAbout}
           />
         ))}
       </div>
@@ -313,6 +353,8 @@ function ChartCard({
   to,
   onRetry,
   onPick,
+  onAsk,
+  onSend,
 }: {
   summary: ChartSummary
   state: Load<SeriesResponse>
@@ -321,29 +363,44 @@ function ChartCard({
   to: string
   onRetry: () => void
   onPick: (split: string, series: Series) => void
+  onAsk: ((data: ChartData, focus: ChartFocus) => void) | null
+  onSend: ((data: ChartData, focus: ChartFocus) => void) | null
 }) {
   const headingId = `chart-${summary.id}`
+  // Every card has the same four rows (head, plot, legend and notes,
+  // actions), so the cards in a row line up whatever each one holds.
+  const head = (
+    <div className="data-card-head">
+      <div>
+        <h3 id={headingId}>{summary.title}</h3>
+      </div>
+    </div>
+  )
   if (state.kind === 'loading') {
     return (
       <figure className="data-card" aria-labelledby={headingId} aria-busy="true">
-        <h3 id={headingId}>{summary.title}</h3>
-        <div className="data-card-loading">
+        {head}
+        <div className="data-card-plot data-card-loading">
           <p className="skeleton-line" />
           <p className="skeleton-line short" />
         </div>
+        <div className="data-card-extras" />
+        <div className="data-card-foot" />
       </figure>
     )
   }
   if (state.kind === 'error') {
     return (
       <figure className="data-card" aria-labelledby={headingId}>
-        <h3 id={headingId}>{summary.title}</h3>
-        <div className="state-error">
+        {head}
+        <div className="data-card-plot state-error">
           <p>Couldn't load this chart. {state.message}</p>
           <button type="button" className="btn-primary" onClick={onRetry}>
             Retry
           </button>
         </div>
+        <div className="data-card-extras" />
+        <div className="data-card-foot" />
       </figure>
     )
   }
@@ -351,27 +408,118 @@ function ChartCard({
   if (isNotApplicable(response)) {
     return (
       <figure className="data-card" aria-labelledby={headingId}>
-        <h3 id={headingId}>{summary.title}</h3>
-        <p className="data-card-empty">
+        {head}
+        <p className="data-card-plot data-card-empty">
           Not shown for this selection: this chart can't be narrowed or split by{' '}
           {response.not_applicable.label.toLowerCase()}.
         </p>
+        <div className="data-card-extras" />
+        <div className="data-card-foot" />
       </figure>
     )
   }
   const data = sliceYears(response, years, from, to)
-  return <ChartBody data={data} headingId={headingId} onPick={onPick} />
+  return <ChartBody data={data} headingId={headingId} onPick={onPick} onAsk={onAsk} onSend={onSend} />
+}
+
+/** The legend: one chip per group, wrapping, at most two rows until
+ * "+N more" shows the rest. Each chip narrows every chart to its group. */
+export function Legend({ series, onPick }: { series: Series[]; onPick: ((series: Series) => void) | null }) {
+  const [expanded, setExpanded] = useState(false)
+  const [fit, setFit] = useState(series.length)
+  const [measureRef, width] = useWidth()
+  const listId = useId()
+  // Lay every chip out once, unseen, to find how many fit in two rows.
+  useLayoutEffect(() => {
+    const list = measureRef.current?.firstElementChild
+    if (!list) return
+    const items = [...list.children].map((chip) => chip.getBoundingClientRect().width)
+    const more = items.pop() ?? 0
+    const available = list.getBoundingClientRect().width
+    // jsdom (and a list not laid out yet) measures nothing: show every chip.
+    if (available <= 0) return
+    const gap = parseFloat(getComputedStyle(list).columnGap) || 0
+    setFit(chipsThatFit(items, available, gap, 2, more))
+  }, [series, width, measureRef])
+  const groups = series.filter((s) => s.slot !== null)
+  const short = new Map(shortLabels(groups.map((s) => s.label)).map((label, i) => [groups[i].key, label]))
+  const name = (s: Series) => short.get(s.key) ?? s.label
+  const collapsed = !expanded && fit < series.length
+  const shown = collapsed ? series.slice(0, fit) : series
+  const chip = (s: Series, live: boolean) =>
+    live && onPick !== null && s.slot !== null ? (
+      <button
+        type="button"
+        className="data-legend-item"
+        onClick={() => onPick(s)}
+        aria-label={`${s.label}: show only this group in every chart`}
+        title={`${s.label}: show only this group in every chart`}
+      >
+        <span className="swatch" style={{ background: `var(--series-${(s.slot % 7) + 1})` }} aria-hidden="true" />
+        <span className="data-legend-label">{name(s)}</span>
+      </button>
+    ) : (
+      <span
+        className={`data-legend-item${s.slot === null || onPick === null ? ' is-static' : ''}`}
+        title={name(s) !== s.label ? s.label : undefined}
+      >
+        <span
+          className={`swatch${s.slot === null ? ' is-reference' : ''}`}
+          style={s.slot === null ? undefined : { background: `var(--series-${(s.slot % 7) + 1})` }}
+          aria-hidden="true"
+        />
+        <span className="data-legend-label">{name(s)}</span>
+      </span>
+    )
+  return (
+    <div className="data-legend-wrap">
+      <div className="data-legend-measure" ref={measureRef} aria-hidden="true">
+        <ul className="data-legend">
+          {series.map((s) => (
+            <li key={s.key}>{chip(s, false)}</li>
+          ))}
+          <li>
+            <span className="data-legend-item data-legend-more">+{series.length} more</span>
+          </li>
+        </ul>
+      </div>
+      <ul className="data-legend" id={listId} aria-label="Groups in this chart">
+        {shown.map((s) => (
+          <li key={s.key}>{chip(s, true)}</li>
+        ))}
+        {(collapsed || expanded) && (
+          <li>
+            <button
+              type="button"
+              className="data-legend-item data-legend-more"
+              aria-expanded={expanded}
+              aria-controls={listId}
+              onClick={() => setExpanded((open) => !open)}
+            >
+              {expanded ? 'Show fewer' : `+${series.length - shown.length} more`}
+            </button>
+          </li>
+        )}
+      </ul>
+    </div>
+  )
 }
 
 function ChartBody({
   data,
   headingId,
   onPick,
+  onAsk,
+  onSend,
 }: {
   data: ChartData
   headingId: string
   onPick: (split: string, series: Series) => void
+  onAsk: ((data: ChartData, focus: ChartFocus) => void) | null
+  onSend: ((data: ChartData, focus: ChartFocus) => void) | null
 }) {
+  const [figuresOpen, setFiguresOpen] = useState(false)
+  const figuresId = useId()
   const split = data.split
   const shown = data.series.some((s) => s.points.some((p) => p.status === 'ok'))
   const anyWithheld = data.series.some((s) => s.points.some((p) => p.status === 'withheld'))
@@ -387,6 +535,9 @@ function ChartBody({
   })()
   const pick = split !== null ? (series: Series) => onPick(split.key, series) : null
   const xNoun = data.x_label === 'Term' ? 'Fall and spring terms' : 'Entering classes (fall)'
+
+  const ask = onAsk === null ? null : (focus: ChartFocus) => onAsk(data, focus)
+  const send = onSend === null ? null : (focus: ChartFocus) => onSend(data, focus)
 
   return (
     <figure className="data-card" aria-labelledby={headingId}>
@@ -406,58 +557,60 @@ function ChartBody({
       </div>
 
       {data.x.length === 0 ? (
-        <p className="data-card-empty">No figure falls in the years chosen.</p>
+        <p className="data-card-plot data-card-empty">No figure falls in the years chosen.</p>
       ) : !shown ? (
-        <p className="data-card-empty">
+        <p className="data-card-plot data-card-empty">
           {anyWithheld || data.notes.some((n) => n.startsWith('Withheld'))
             ? 'Every figure here is withheld for this selection: it covers fewer than 10 students, or could reveal a group that small.'
             : 'No students match this selection.'}
         </p>
       ) : (
-        <DataChart data={data} onPick={pick} />
+        <div className="data-card-plot">
+          <DataChart data={data} onPick={pick} onAsk={ask} onSend={send} />
+        </div>
       )}
 
-      {data.series.length > 1 && shown && (
-        <ul className="data-legend" aria-label="Groups in this chart">
-          {data.series.map((s) => (
-            <li key={s.key}>
-              {pick !== null && s.slot !== null ? (
-                <button
-                  type="button"
-                  className="data-legend-item"
-                  onClick={() => pick(s)}
-                  aria-label={`${s.label}: show only this group in every chart`}
-                  title="Show only this group in every chart"
-                >
-                  <span className="swatch" style={{ background: `var(--series-${(s.slot % 7) + 1})` }} aria-hidden="true" />
-                  {s.label}
-                </button>
-              ) : (
-                <span className="data-legend-item is-static">
-                  <span className="swatch is-reference" aria-hidden="true" />
-                  {s.label}
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+      <div className="data-card-extras">
+        {data.series.length > 1 && shown && <Legend series={data.series} onPick={pick} />}
+        {anyWithheld && shown && (
+          <p className="data-card-note">
+            <span className="data-gap-key" aria-hidden="true" />
+            Dashed line: a withheld figure (fewer than 10 students, or it could reveal a group that small).
+          </p>
+        )}
+        {data.notes.map((note) => (
+          <p key={note} className="data-card-note">
+            {note}
+          </p>
+        ))}
+      </div>
 
-      {anyWithheld && shown && (
-        <p className="data-card-note">
-          <span className="data-gap-key" aria-hidden="true" />
-          Dashed line: a withheld figure (fewer than 10 students, or it could reveal a group that small).
-        </p>
-      )}
-      {data.notes.map((note) => (
-        <p key={note} className="data-card-note">
-          {note}
-        </p>
-      ))}
-
-      {data.x.length > 0 && (
-        <details className="fold data-figures">
-          <summary>Show the figures</summary>
+      <div className="data-card-foot">
+        <div className="data-card-actions">
+          {data.x.length > 0 && (
+            <button
+              type="button"
+              className="data-figures-toggle"
+              aria-expanded={figuresOpen}
+              aria-controls={figuresId}
+              onClick={() => setFiguresOpen((open) => !open)}
+            >
+              {figuresOpen ? 'Hide the figures' : 'Show the figures'}
+            </button>
+          )}
+          {ask !== null && (
+            <button type="button" className="btn-secondary" onClick={() => ask(WHOLE_CHART)}>
+              Ask about this
+            </button>
+          )}
+          {send !== null && (
+            <button type="button" className="btn-secondary" onClick={() => send(WHOLE_CHART)}>
+              Send to department
+            </button>
+          )}
+        </div>
+      {data.x.length > 0 && figuresOpen && (
+        <div className="data-figures" id={figuresId}>
           <p className="data-card-note">{data.definition}</p>
           <div className="data-table-wrap">
             <table className="data-table">
@@ -492,8 +645,9 @@ function ChartBody({
               </tbody>
             </table>
           </div>
-        </details>
+        </div>
       )}
+      </div>
     </figure>
   )
 }

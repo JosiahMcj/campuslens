@@ -81,7 +81,7 @@ import { personaFor } from './personas'
 import { Institution, type ActiveDatasetMeta } from './components/Institution'
 import { LoginScreen } from './components/LoginScreen'
 import { SidePanel } from './components/SidePanel'
-import { DataPage } from './components/DataPage'
+import { DataPage, type ChartAsk } from './components/DataPage'
 import { canSeeDataPage } from './dataPage'
 import { StaffActionsPage } from './components/StaffActionsPage'
 import { InterventionsPage } from './components/InterventionsPage'
@@ -650,6 +650,8 @@ interface Exchange {
   id: number
   question: string
   state: ExchangeState
+  /** A chat started from a Data page chart: "About: <chart> · <group> · <term>". */
+  about?: string
 }
 
 type AcceptedAsk = Extract<AskResponse, { accepted: true }>
@@ -1043,7 +1045,7 @@ function BriefingPage({
   // stay as they are; the audit log is refreshed for the roles that read it.
   // A failed request stays in the thread as an interrupted answer.
   const explore = useCallback(
-    async (question: string) => {
+    async (question: string, about?: string) => {
       setAskState({ kind: 'sending' })
       if (route !== '/') navigate('/')
       if (restoredHidden && restoredId !== null) setViewFrom((current) => Math.max(current, restoredId + 1))
@@ -1051,7 +1053,7 @@ function BriefingPage({
       const exchangeId = nextExchangeId.current++
       setThread((previous) => [
         ...previous,
-        { id: exchangeId, question, state: { kind: 'explore-sending' } },
+        { id: exchangeId, question, state: { kind: 'explore-sending' }, ...(about !== undefined ? { about } : {}) },
       ])
       // The live trace: each stage the server reports joins the reply, one at
       // a time. The server often finishes several stages within a few
@@ -1712,6 +1714,15 @@ function BriefingPage({
     )
   }
 
+  // "Ask about this" on a Data page chart or a chart someone sent: a new
+  // chat (as New question starts one) whose question is about that chart,
+  // asked of Explore directly (never the briefing's follow-ups), with the
+  // chart named in the chat's header.
+  const askAbout = (ask: ChartAsk) => {
+    newQuestion()
+    void explore(ask.question, ask.about)
+  }
+
   const selectHistory = (id: number) => {
     if (id < 0) {
       // A question from before a reload: its answer was not kept, so ask again.
@@ -2176,6 +2187,11 @@ function BriefingPage({
             </span>
             {fictional && <span className="topbar-badge">Fictional data</span>}
             </div>
+            {!onInstitution && visible[0]?.about !== undefined && (
+              <p className="topbar-about">
+                <span className="topbar-about-chip">{visible[0].about}</span>
+              </p>
+            )}
             {routeNotice !== null && (
               // In the sticky bar, so the answer scrolling into view never hides it.
               <div className="route-notice" role="status">
@@ -2402,7 +2418,13 @@ function BriefingPage({
           )}
           {shownPanel === 'students' && studentSearch && <StudentLookup />}
           {shownPanel === 'interventions' && <InterventionsPage />}
-          {shownPanel === 'data' && canSeeDataPage(role) && <DataPage account={session.user.email} />}
+          {shownPanel === 'data' && canSeeDataPage(role) && (
+            <DataPage
+              account={session.user.email}
+              onAsk={explorer ? askAbout : null}
+              onSend={setAlertSource}
+            />
+          )}
           {shownPanel === 'overview' && overviewFor.length > 0 && (
             <DepartmentOverview departments={overviewFor} onSendAlert={setAlertSource} />
           )}
@@ -2411,7 +2433,11 @@ function BriefingPage({
               onChanged={refreshInboxUnread}
               onAsk={
                 explorer
-                  ? (question) => {
+                  ? (question, about) => {
+                      if (about !== undefined) {
+                        askAbout({ question, about })
+                        return
+                      }
                       closePanel()
                       submit(question)
                     }

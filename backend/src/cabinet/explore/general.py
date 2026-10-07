@@ -41,6 +41,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+import statistics
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -70,10 +71,15 @@ class Grouping:
 
 
 ALL_UNITS = frozenset(
-    {"student", "student_term", "cohort", "graduate", "registration", "spell"}
+    {"student", "student_term", "cohort", "graduate", "registration", "alumni", "spell"}
 )
 PERSON_UNITS = ALL_UNITS
-TERM_UNITS = frozenset({"student", "student_term", "registration", "graduate"})
+TERM_UNITS = frozenset(
+    {"student", "student_term", "registration", "graduate", "alumni"}
+)
+# Graduate outcomes (the "alumni" unit: one row per graduate) are read at
+# graduation, so the enrollment-term groupings below do not apply to them.
+NOT_FOR_ALUMNI = frozenset({"load", "housing"})
 
 NOT_RECORDED = "not_recorded"
 
@@ -230,6 +236,19 @@ GROUPINGS: dict[str, Grouping] = {
             },
             frozenset({"student", "student_term"}),
         ),
+        Grouping(
+            "gpa_band",
+            "Final GPA",
+            "final GPA band",
+            {
+                "2_00_2_49": "Graduates with a final GPA of 2.00 to 2.49",
+                "2_50_2_99": "Graduates with a final GPA of 2.50 to 2.99",
+                "3_00_3_49": "Graduates with a final GPA of 3.00 to 3.49",
+                "3_50_4_00": "Graduates with a final GPA of 3.50 to 4.00",
+            },
+            frozenset({"alumni"}),
+            ordinal=True,
+        ),
     )
 }
 GROUPING_KEYS: tuple[str, ...] = tuple(GROUPINGS)
@@ -256,9 +275,170 @@ class Measure:
     scope: str  # term (one term, default latest), latest (fixed), window, cohort
     default_order: str = "highest_first"
     short: str = ""  # one plain sentence for the answer, no digits
+    # Money measures: "ratio" (num / den), "median" (of each person's num /
+    # den), or "sum" (num), rounded to the nearest ``rounding`` dollars.
+    stat: str = "ratio"
+    rounding: int = 1
+    count_label: str = ""  # who the students column counts, when not den_label
 
 
 REGULAR = "substr(b.term, 5, 2) IN ('10', '20')"
+
+# Graduate outcomes: the first-destination survey (six months after
+# graduating), the graduate-school match, medical school applications, and
+# alumni gifts. One row per graduate (the "alumni" unit); the term is the
+# graduation term.
+_SURVEY = (
+    "From the first-destination survey six months after graduating, of bachelor's "
+    "graduates who answered it (graduates who did not answer are not counted)."
+)
+OUTCOME_MEASURES: tuple[Measure, ...] = (
+    Measure(
+        "knowledge_rate",
+        "first-destination knowledge rate",
+        "alumni",
+        "pct",
+        "SUM(b.responded)",
+        "COUNT(*)",
+        "b.surveyed = 1",
+        "Bachelor's graduates who answered the first-destination survey six months "
+        "after graduating, over every bachelor's graduate whose six-month point has "
+        "passed (the classes through Summer 2025).",
+        "Knowledge rate (%)",
+        "Answered the survey",
+        "Graduates surveyed",
+        "window",
+        short="The knowledge rate is the share of surveyed graduates whose outcome "
+        "is known.",
+    ),
+    Measure(
+        "employment_rate",
+        "employment rate",
+        "alumni",
+        "pct",
+        "SUM(b.employed)",
+        "COUNT(*)",
+        "b.responded = 1",
+        "Graduates employed full time or part time six months after graduating. "
+        + _SURVEY,
+        "Employed (%)",
+        "Employed",
+        "Graduates who answered the survey",
+        "window",
+        short="Employment here is from the first-destination survey after "
+        "graduation, of graduates who answered it.",
+    ),
+    Measure(
+        "median_salary",
+        "median starting salary",
+        "alumni",
+        "money",
+        "SUM(b.salary)",
+        "COUNT(*)",
+        "b.salary IS NOT NULL",
+        "Median starting salary of graduates employed full time six months after "
+        "graduating who reported a salary, rounded to the nearest $500. "
+        + _SURVEY,
+        "Median starting salary ($)",
+        "Salaries",
+        "Graduates reporting a salary",
+        "window",
+        short="Starting salaries are from the first-destination survey, for graduates "
+        "employed full time who reported one, and are rounded.",
+        stat="median",
+        rounding=500,
+    ),
+    Measure(
+        "grad_school_rate",
+        "graduate school rate",
+        "alumni",
+        "pct",
+        "SUM(b.grad1)",
+        "COUNT(*)",
+        "b.tracked = 1",
+        "Bachelor's graduates found enrolled in graduate or professional school "
+        "(master's, doctoral, medical, law, other professional) within one year of "
+        "graduating, from the National Student Clearinghouse match, over every "
+        "bachelor's graduate followed for a full year (the classes through Fall "
+        "2024).",
+        "Enrolled within a year (%)",
+        "Enrolled within a year",
+        "Graduates followed for a year",
+        "window",
+        short="Graduate school here means enrolled in a graduate or professional "
+        "program within one year of graduating, from the Clearinghouse match.",
+    ),
+    Measure(
+        "med_acceptance_rate",
+        "medical school acceptance rate",
+        "alumni",
+        "pct",
+        "SUM(b.med_accepted)",
+        "COUNT(*)",
+        "b.med_applied = 1",
+        "Graduates accepted to a medical school (MD or DO), over graduates who "
+        "applied, in application cycles decided by Spring 2026 (entering classes "
+        "through 2026).",
+        "Accepted (%)",
+        "Accepted",
+        "Medical school applicants",
+        "window",
+        short="The acceptance rate is of graduates who applied to medical school, "
+        "not of every graduate.",
+    ),
+    Measure(
+        "giving_rate",
+        "alumni giving participation rate",
+        "alumni",
+        "pct",
+        "SUM(b.donor)",
+        "COUNT(*)",
+        "1 = 1",
+        "Graduates (Fall 2020 to Spring 2026) who made at least one gift to the "
+        "university after graduating, through Spring 2026, over all those "
+        "graduates. Recent graduates have had less time to give.",
+        "Gave at least once (%)",
+        "Gave at least once",
+        "Alumni",
+        "window",
+        short="Giving participation here is the share of alumni who have made at "
+        "least one gift since graduating.",
+    ),
+    Measure(
+        "avg_gift",
+        "average gift",
+        "alumni",
+        "money",
+        "SUM(b.given)",
+        "SUM(b.gifts)",
+        "b.donor = 1",
+        "Dollars given over the number of gifts, for alumni who gave, rounded to "
+        "the nearest $5.",
+        "Average gift ($)",
+        "Dollars given",
+        "Gifts",
+        "window",
+        rounding=5,
+        count_label="Donors",
+    ),
+    Measure(
+        "total_giving",
+        "total alumni giving",
+        "alumni",
+        "money",
+        "SUM(b.given)",
+        "COUNT(*)",
+        "b.donor = 1",
+        "Dollars given by alumni after graduating, through Spring 2026, rounded to "
+        "the nearest $100.",
+        "Total given ($)",
+        "Dollars given",
+        "Donors",
+        "window",
+        stat="sum",
+        rounding=100,
+    ),
+)
 
 MEASURES: dict[str, Measure] = {
     m.id: m
@@ -746,6 +926,7 @@ MEASURES: dict[str, Measure] = {
             "Graded registrations",
             "window",
         ),
+        *OUTCOME_MEASURES,
     )
 }
 MEASURE_KEYS: tuple[str, ...] = tuple(MEASURES)
@@ -777,6 +958,7 @@ _GROUPING_FIELDS: dict[str, tuple[str, ...]] = {
     "honors": ("student_profiles.honors",),
     "modality": ("sections.modality",),
     "hold": ("person_holds.term_code",),
+    "gpa_band": ("student_term_records.cumulative_gpa (at graduation)",),
 }
 
 _ELSEWHERE = "subsequent_enrollment (enrolled at another college)"
@@ -828,6 +1010,14 @@ _MEASURE_FIELDS: dict[str, tuple[str, ...]] = {
     "graduates": ("student_academic_programs.status",),
     "dfw_rate": ("final_grades.grade",),
     "withdrawal_rate": ("final_grades.grade",),
+    "knowledge_rate": ("first_destination.student_id (answered or not)",),
+    "employment_rate": ("first_destination.outcome",),
+    "median_salary": ("first_destination.starting_salary",),
+    "grad_school_rate": ("graduate_enrollment.enrollment_begin_date",),
+    "med_acceptance_rate": ("medical_school_applications.accepted",),
+    "giving_rate": ("alumni_gifts.student_id (gave or not)",),
+    "avg_gift": ("alumni_gifts.amount",),
+    "total_giving": ("alumni_gifts.amount",),
 }
 
 # Who is counted, by unit: the term each row belongs to, and the rows a unit
@@ -838,6 +1028,7 @@ _UNIT_FIELDS: dict[str, tuple[str, ...]] = {
     "cohort": ("students.entry_type",),
     "graduate": ("student_academic_programs.end_term",),
     "registration": ("section_registrations.term_code", "courses.grade_mode"),
+    "alumni": ("student_academic_programs.end_term", "academic_periods.end_date"),
     "spell": ("student_academic_programs.program_code",),
 }
 
@@ -869,6 +1060,8 @@ def allowed_groupings(measure: Measure) -> tuple[str, ...]:
     if measure.id == "hold_rate":
         # Split by hold status, the hold rate is always 0% or 100%.
         out = [k for k in out if k != "hold"]
+    if measure.unit == "alumni":
+        out = [k for k in out if k not in NOT_FOR_ALUMNI]
     return tuple(out)
 
 
@@ -1084,7 +1277,58 @@ WITH b AS (
       AND g.grade IN ('A','A-','B+','B','B-','C+','C','C-','D+','D','F','W')
       AND r.term_code BETWEEN :term_from AND :term_to
 )""",
+    # One row per graduate. The data end is the last day of the latest term:
+    # a graduate is surveyed once six months have passed, and followed for
+    # graduate school once a full year has.
+    "alumni": f"""
+WITH ends AS (SELECT MAX(end_date) AS data_end FROM academic_periods),
+gf AS (
+    SELECT student_id, COUNT(*) AS n, SUM(amount) AS dollars
+    FROM alumni_gifts GROUP BY student_id
+),
+b AS (
+    SELECT st.student_id AS sid, sap.end_term AS term, {_TERM_COLS}, {_PERSON_COLS},
+        CASE WHEN t.cumulative_gpa >= 3.5 THEN '3_50_4_00'
+             WHEN t.cumulative_gpa >= 3.0 THEN '3_00_3_49'
+             WHEN t.cumulative_gpa >= 2.5 THEN '2_50_2_99'
+             ELSE '2_00_2_49' END AS gpa_band,
+        (ap.award_level = 'Bachelor'
+         AND date(gp.end_date, '+183 days') <= ends.data_end) AS surveyed,
+        fd.student_id IS NOT NULL AS responded,
+        COALESCE(fd.outcome IN ('employed_full_time', 'employed_part_time'), 0)
+            AS employed,
+        fd.starting_salary AS salary,
+        (ap.award_level = 'Bachelor'
+         AND date(gp.end_date, '+1 year') <= ends.data_end) AS tracked,
+        COALESCE(ge.enrollment_begin_date <= date(gp.end_date, '+1 year'), 0) AS grad1,
+        ma.student_id IS NOT NULL AS med_applied,
+        COALESCE(ma.accepted, 0) AS med_accepted,
+        gf.student_id IS NOT NULL AS donor,
+        COALESCE(gf.dollars, 0) AS given, COALESCE(gf.n, 0) AS gifts
+    FROM student_academic_programs sap
+    CROSS JOIN ends
+    JOIN students st ON st.student_id = sap.student_id
+    JOIN student_term_records t
+        ON t.student_id = sap.student_id AND t.term_code = sap.end_term
+    JOIN student_profiles p ON p.student_id = sap.student_id
+    JOIN academic_programs ap ON ap.program_code = sap.program_code
+    JOIN academic_periods gp ON gp.term_code = sap.end_term
+    LEFT JOIN student_term_enrollment e
+        ON e.student_id = sap.student_id AND e.term_code = sap.end_term
+    LEFT JOIN first_destination fd ON fd.student_id = sap.student_id
+    LEFT JOIN graduate_enrollment ge ON ge.student_id = sap.student_id
+    LEFT JOIN medical_school_applications ma ON ma.student_id = sap.student_id
+    LEFT JOIN gf ON gf.student_id = sap.student_id
+    WHERE sap.status = 'graduated' AND sap.end_term BETWEEN :term_from AND :term_to
+)""",
 }
+
+OUTCOME_TABLES = (
+    "first_destination",
+    "graduate_enrollment",
+    "medical_school_applications",
+    "alumni_gifts",
+)
 
 
 # --- complementary suppression ------------------------------------------------------
@@ -1122,6 +1366,7 @@ class Cell:
     students: int
     num: float
     den: float
+    values: list[float] | None = None  # each person's num / den (median measures)
 
 
 @dataclass(frozen=True)
@@ -1273,6 +1518,10 @@ class _Runner:
         sids: dict[tuple[str, ...], set[Any]] = {}
         nums: dict[tuple[str, ...], list[float]] = {}
         dens: dict[tuple[str, ...], list[float]] = {}
+        # A median is not a sum: keep each person's value (one base row per
+        # person, since a graduate graduates once).
+        per_person = self.req.measure.stat == "median"
+        values: dict[tuple[str, ...], list[float]] = {}
         for row in rows:
             if any(row[i] != v for i, v in filter_pos):
                 continue
@@ -1280,12 +1529,15 @@ class _Runner:
             sids.setdefault(cell_key, set()).add(row[0])
             nums.setdefault(cell_key, []).append(float(row[-2] or 0))
             dens.setdefault(cell_key, []).append(float(row[-1] or 0))
+            if per_person and row[-1]:
+                values.setdefault(cell_key, []).append(float(row[-2]) / float(row[-1]))
         return {
             cell_key: Cell(
                 cell_key,
                 len(sids[cell_key]),
                 math.fsum(nums[cell_key]),
                 math.fsum(dens[cell_key]),
+                values.get(cell_key) if per_person else None,
             )
             for cell_key in sorted(sids)
         }
@@ -1349,9 +1601,23 @@ def _column(key: str) -> str:
     return f"b.{key}"
 
 
+def _money(cell: Cell, m: Measure) -> int:
+    """A money value in whole dollars, rounded half up to ``m.rounding``."""
+    if m.stat == "median":
+        value = statistics.median(cell.values) if cell.values else 0.0
+    elif m.stat == "sum":
+        value = cell.num
+    else:
+        value = cell.num / cell.den if cell.den else 0.0
+    step = m.rounding or 1
+    return int(math.floor(value / step + 0.5) * step)
+
+
 def _value_of(cell: Cell, m: Measure) -> float | int:
     if m.kind == "count":
         return int(cell.num)
+    if m.kind == "money":
+        return _money(cell, m)
     if not cell.den:
         return 0.0
     ratio = cell.num / cell.den
@@ -1418,6 +1684,11 @@ def run(
     groups = [g for g in (p.get("group_by"), p.get("then_by")) if g]
     filters = {k: str(p[k]) for k in GROUPING_KEYS if k not in ("term",) and p.get(k)}
     m, groups_t = check_request(str(p.get("measure")), groups, filters)
+    if m.unit == "alumni" and not _has_outcomes(con):
+        raise GeneralError(
+            "graduate outcomes are not in this school database yet; regenerate it "
+            "with make school-data"
+        )
     req = Request(m, groups_t, filters, p.get("term_from"), p.get("term_to"))
     r = _Runner(con, req, v)
     keys = list(groups_t)
@@ -1450,6 +1721,11 @@ def run(
         columns.append(("window", "Window", "text"))
     if m.kind == "count":
         columns.append(("value", m.value_label, "count"))
+    elif m.kind == "money":
+        # Only the people counted and the rounded value: an exact sum beside
+        # a rounded figure would undo the rounding.
+        columns.append(("students", m.count_label or m.den_label, "count"))
+        columns.append(("value", m.value_label, "money"))
     else:
         per_student = _per_student(m)
         columns.append(
@@ -1481,7 +1757,11 @@ def run(
             row["numerator"] = _num_out(cell.num, m, den=False)
             row["value"] = _value_of(cell, m)
         row["_sort"] = (
-            (cell.num / cell.den) if (cell.den and m.kind != "count") else cell.num
+            row["value"]
+            if m.kind == "money"
+            else (cell.num / cell.den)
+            if (cell.den and m.kind != "count")
+            else cell.num
         )
         row["_key"] = tuple(_sort_key(g, x) for g, x in zip(keys, key, strict=True))
         return row
@@ -1553,6 +1833,8 @@ def run(
         notes.append(
             "Entering students are first-time students unless admit type is asked."
         )
+    if m.unit == "alumni":
+        notes.extend(_outcome_notes(con, m))
     keep = {c[0] for c in columns}
     rows = [
         {k: val for k, val in row.items() if k in keep or k.startswith("_")}
@@ -1566,11 +1848,12 @@ def run(
 def row_for_total(cell: Cell, m: Measure, keys: list[str]) -> dict[str, Any]:
     row: dict[str, Any] = {}
     g = keys[0]
+    everyone = "All graduates" if m.unit == "alumni" else "All students"
     if g in ("major", "college", "term"):
         row[g] = "All"
-        row[f"{g}_name"] = "All students"
+        row[f"{g}_name"] = everyone
     else:
-        row["group"] = "All students"
+        row["group"] = everyone
     if m.kind == "count":
         row["value"] = int(cell.num)
     else:
@@ -1585,7 +1868,7 @@ def row_for_total(cell: Cell, m: Measure, keys: list[str]) -> dict[str, Any]:
 
 def _per_student(m: Measure) -> bool:
     """The denominator is the students themselves (one row per student)."""
-    return m.unit in ("student", "cohort", "graduate") and m.den == "COUNT(*)"
+    return m.unit in ("student", "cohort", "graduate", "alumni") and m.den == "COUNT(*)"
 
 
 def _den_kind(m: Measure) -> str:
@@ -1612,3 +1895,53 @@ def _num_out(value: float, m: Measure, *, den: bool) -> float | int:
     ):
         return int(round(value))
     return round(value, 2)
+
+
+def _has_outcomes(con: sqlite3.Connection) -> bool:
+    found = {
+        str(r[0])
+        for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN "
+            "(SELECT value FROM json_each(?))",
+            (json.dumps(OUTCOME_TABLES),),
+        )
+    }
+    return found == set(OUTCOME_TABLES)
+
+
+def _outcome_notes(con: sqlite3.Connection, m: Measure) -> list[str]:
+    """Institution-wide context for an outcome measure: the survey's
+    knowledge rate (so a rate of respondents is read honestly), and how
+    salaries and small groups are shown. Every count here is over all
+    graduates in the records, never a group."""
+    notes: list[str] = []
+    if m.id in ("knowledge_rate", "employment_rate", "median_salary"):
+        row = con.execute(
+            """SELECT MIN(sap.end_term), MAX(sap.end_term), COUNT(*),
+                      SUM(fd.student_id IS NOT NULL)
+               FROM student_academic_programs sap
+               JOIN academic_programs ap ON ap.program_code = sap.program_code
+               JOIN academic_periods gp ON gp.term_code = sap.end_term
+               LEFT JOIN first_destination fd ON fd.student_id = sap.student_id
+               WHERE sap.status = 'graduated' AND ap.award_level = 'Bachelor'
+                 AND date(gp.end_date, '+183 days')
+                     <= (SELECT MAX(end_date) FROM academic_periods)"""
+        ).fetchone()
+        if row and row[2]:
+            names = dict(
+                con.execute("SELECT term_code, name FROM academic_periods").fetchall()
+            )
+            first, last, eligible, answered = row
+            notes.append(
+                f"First-destination survey: {answered:,} of {eligible:,} bachelor's "
+                f"graduates surveyed ({names.get(first, first)} to "
+                f"{names.get(last, last)} graduates) answered, a knowledge rate of "
+                f"{round(100.0 * answered / eligible, 1)}%. Graduates who did not "
+                "answer are not in the rates or salaries."
+            )
+    if m.kind == "money":
+        notes.append(
+            f"Dollar figures are rounded to the nearest ${m.rounding:,}; a figure "
+            f"for a group of {SUPPRESSED_DISPLAY} people is withheld."
+        )
+    return notes
