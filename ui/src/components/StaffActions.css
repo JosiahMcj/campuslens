@@ -1,6 +1,8 @@
 /* The Staff actions worklist (StaffActionsPage.tsx). Tokens only (DESIGN.md):
-   a summary strip of three status tiles, the office and status filters, then
-   one card per action on a hairline, two columns where the page is wide. */
+   one notice when offices have no mailbox, a segmented strip of three status
+   toggles, the office and status filters, then one card per action on a
+   hairline, two columns only where each card still has room for its editor
+   on one row. */
 
 .worklist {
   display: grid;
@@ -12,26 +14,49 @@
   margin-top: var(--space-3);
 }
 
-/* The summary strip: each tile is a toggle that filters by its status. */
-.worklist-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-
-.summary-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-1);
-  min-height: var(--tap);
+/* One notice for every office without a mailbox, instead of a paragraph
+   on each card. */
+.worklist-notice {
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--rule);
   border-radius: var(--radius-surface);
   background: var(--surface);
+  font-size: var(--text-sm);
+}
+
+.worklist-notice p {
+  margin: 0;
+}
+
+/* The summary strip: a segmented control of three toggles (aria-pressed),
+   each filtering by its status; pressed is a filled accent segment, so it
+   reads as chosen in both themes. Segments wrap on a narrow screen. */
+.worklist-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-self: start;
+  max-width: 100%;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+}
+
+.summary-tile {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: baseline;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
   color: var(--ink);
   font: inherit;
-  text-align: start;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -50,19 +75,27 @@
 
 .summary-tile[aria-pressed='true'] {
   border-color: var(--navy);
-  box-shadow: inset 0 0 0 1px var(--navy);
+  background: var(--navy);
+  color: var(--on-navy);
+}
+
+.summary-tile[aria-pressed='true']:hover {
+  background: var(--navy-hover);
+}
+
+.summary-tile[aria-pressed='true']:active {
+  background: var(--navy-pressed);
 }
 
 .summary-count {
-  font-size: var(--text-2xl);
+  font-size: var(--text-lg);
   font-weight: 600;
-  line-height: 1.25;
   font-variant-numeric: tabular-nums;
 }
 
 .summary-label {
   font-size: var(--text-sm);
-  color: var(--ink-soft);
+  font-weight: 500;
 }
 
 .worklist-filters {
@@ -91,20 +124,15 @@
   font-size: var(--text-sm);
 }
 
-/* The cards: one column, two where the page has room. */
+/* The cards: one column, two only where each card is at least 36rem wide,
+   so status, owner and due date still sit on one row inside it. */
 .action-cards {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 36rem), 1fr));
   gap: var(--space-4);
   margin: 0;
   padding: 0;
   list-style: none;
-}
-
-@media (min-width: 1200px) {
-  .action-cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 .action-cards > li {
@@ -174,7 +202,7 @@
 
 .action-count {
   margin: var(--space-2) 0 0;
-  font-size: var(--text-lg);
+  font-size: var(--text-md);
 }
 
 /* The count is a phrase ("12 students with no advising contact this
@@ -207,15 +235,16 @@
   font-weight: 600;
 }
 
-/* The editor: status, owner and due date side by side where they fit. */
+/* The editor: status, owner and due date on one row where the card is
+   wide enough; status and due date over the owner on a mid-size card; one
+   field per row on a narrow one (a phone, or larger text). */
 .action-editor {
+  container-type: inline-size;
   margin-top: var(--space-4);
   padding-top: var(--space-3);
   border-top: 1px solid var(--rule);
 }
 
-/* Status and due date share a row; the owner (an office or an email
-   address, often long) takes the full width under them. */
 .action-editor-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -224,6 +253,22 @@
 
 .editor-field-owner {
   grid-column: 1 / -1;
+}
+
+@container (min-width: 32rem) {
+  .action-editor-fields {
+    grid-template-columns: minmax(9rem, 1fr) minmax(10rem, 1fr) minmax(0, 1.6fr);
+  }
+
+  .editor-field-owner {
+    grid-column: auto;
+  }
+}
+
+@container (max-width: 24rem) {
+  .action-editor-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .editor-field {
@@ -289,20 +334,39 @@
 
 .message-sent svg {
   flex: none;
-  margin-top: 0.15em;
+  margin-top: var(--space-1);
   color: var(--navy);
+}
+
+.message-blocked {
+  font-size: var(--text-sm);
 }
 
 .message-actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-2) var(--space-3);
+}
+
+/* Send and, directly under it, why the last try failed. */
+.message-send {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
+.message-send .error-line {
+  margin: 0;
+  max-width: 40ch;
 }
 
 .message-actions .hint {
   flex: 1 1 14rem;
   margin: 0;
+  align-self: center;
 }
 
 .message-subject {
@@ -370,6 +434,10 @@
   justify-self: start;
 }
 
+.note-form .note-added:empty {
+  margin-top: calc(-1 * var(--space-2));
+}
+
 .history-list {
   gap: var(--space-2);
   font-size: var(--text-sm);
@@ -386,15 +454,11 @@
 
 @media (max-width: 899px) {
   .worklist-summary {
-    gap: var(--space-2);
+    justify-self: stretch;
   }
 
   .summary-tile {
     padding: var(--space-2) var(--space-3);
-  }
-
-  .summary-count {
-    font-size: var(--text-xl);
   }
 
   .worklist-shown {

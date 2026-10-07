@@ -123,19 +123,26 @@ measure 68ch.
   open link is marked (`aria-current`) and the address keeps it (`/institution#inst-offices`). Escape and Back close a
   page; focus returns. It rises in over 200 ms: closing adds `.is-closing` and unmounts it 200 ms
   later; switching pages cross-fades the body. No motion under reduced motion.
-- **Worklist (Staff actions):** a summary strip of three status tiles (To do, In progress,
-  Done; each a toggle that filters, `aria-pressed`), then the Office and Status filters with a
-  "Showing N of M" line, then one card per action (`.action-card`, `--surface` once done): the
-  office and a status pill, the title, the count as a finding link to its evidence, what to do,
-  then the editor (Status and Due date on one row, Owner under them; "Save changes" appears
-  only when something changed, so a page of cards never shows a row of main buttons), the
-  message to the office (Send, Sent with who and when, or a failure with Retry; never the raw
-  error), and Notes and History folds. Two columns at 1200 px and wider. Roles that cannot edit
-  see owner and due date as a `.kv` list instead of the form.
+- **Worklist (Staff actions):** one notice when any office has no mailbox (never a paragraph
+  per card; each such card only says "Can't send yet"), a segmented strip of three status
+  toggles (To do, In progress, Done; `aria-pressed`, the pressed one a filled accent segment,
+  wrapping on a narrow screen), then the Office and Status filters with a "Showing N of M"
+  line, then one card per action (`.action-card`, `--surface` once done): the office and a
+  status pill, the title, the count (`--text-md`) as a finding link to its evidence, what to
+  do, then the editor (Status, Due date and Owner on one row where the card is 32rem wide,
+  Status and Due date over Owner below that, one field per row under 24rem: container
+  queries, so larger text never clips the date; "Save changes" appears only when something
+  changed, so a page of cards never shows a row of main buttons), the message to the office
+  (Send, Sent with who and when, or a failure: the button then says "Retry sending" with the
+  reason directly under it; never the raw error), and Notes and History folds, closed. Two
+  columns only where each card is at least 36rem wide. Roles that cannot edit see owner and
+  due date as a `.kv` list instead of the form.
 - **Steps:** the Decision page shows where a decision stands as a line of steps
-  (`.decision-steps`): done steps carry a filled accent check, the next step is outlined in the
-  accent, later ones are quiet. Four equal columns at 1200 px and wider (never three and one).
-  The decision card keeps its gold.
+  (`.decision-steps`, short labels; four equal columns at 1200 px and wider, never three and one): done steps carry a filled
+  accent check, the next step is outlined in the accent, later ones are quiet, and a step that
+  waits on someone else ("Waiting: Financial Aid needs a mailbox") has a dashed mark. The
+  decision card keeps its gold; the "Approved by …" line on it is ink with an accent check
+  (DecisionPanel.css), so an approval never reads as a warning.
 - **Filters:** a filter is a labelled `.field` select or date above its control, on one row that
   wraps, every field the same width (at least 12rem); the page's own buttons (Test a refusal,
   Refresh) sit together at the right of the count line; a "Clear filters" secondary button appears only while a filter is set, and a count

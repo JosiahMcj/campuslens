@@ -307,6 +307,73 @@ describe('Staff actions page', () => {
     expect(calls.find((call) => call.url.endsWith('/notes'))?.body).toEqual({
       text: 'Called the office.',
     })
+    // Focus goes back to the box (never to the page), and the page says so.
+    const after = card("Resolve the Bursar office's holds")
+    expect(document.activeElement).toBe(within(after).getByLabelText('Add a note'))
+    expect(within(after).getByRole('status').textContent).toBe('Note added.')
+  })
+
+  it('never capitalises an email address at the start of a line', async () => {
+    stub({
+      'GET /api/staff-actions': () =>
+        jsonResponse(
+          list({
+            items: [
+              action({
+                updated_by: 'reviewer@example.edu',
+                updated_at: '2026-10-06T13:00:00+00:00',
+                notes: [
+                  {
+                    id: 1,
+                    author: 'reviewer@example.edu',
+                    text: 'Checked.',
+                    created_at: '2026-10-06T13:00:00+00:00',
+                  },
+                ],
+                history: [
+                  {
+                    id: 1,
+                    actor: 'reviewer@example.edu',
+                    at: '2026-10-06T13:00:00+00:00',
+                    change: 'note',
+                    from_value: null,
+                    to_value: null,
+                  },
+                ],
+              }),
+            ],
+          }),
+        ),
+    })
+    renderPage()
+    await waitFor(() => card("Resolve the Bursar office's holds"))
+    const text = card("Resolve the Bursar office's holds").textContent ?? ''
+    expect(text).toContain('reviewer@example.edu')
+    expect(text).not.toContain('Reviewer@example.edu')
+  })
+
+  it('shows one notice when no office has a mailbox, never a paragraph per card', async () => {
+    stub({
+      'GET /api/staff-actions': () =>
+        jsonResponse(
+          list({
+            items: [
+              action({ office_mailbox: null }),
+              { ...LIBRARY, office_mailbox: null },
+              { ...AID, office_mailbox: null },
+            ],
+          }),
+        ),
+    })
+    renderPage()
+    await waitFor(() => card("Resolve the Bursar office's holds"))
+    const notices = document.querySelectorAll('.worklist-notice')
+    expect(notices).toHaveLength(1)
+    expect(notices[0].textContent).toBe(
+      'No office mailboxes are set yet, so nothing can be sent to an office. An administrator can add them in Institution settings.',
+    )
+    expect(screen.getAllByText("Can't send yet: no mailbox for this office.")).toHaveLength(3)
+    expect(screen.queryByRole('button', { name: /Send to/ })).toBeNull()
   })
 
   it('sends to the office mailbox, and shows who sent it', async () => {
@@ -371,13 +438,41 @@ describe('Staff actions page', () => {
     expect(after.textContent).not.toContain('smtp said no')
   })
 
+  it('says "Retry sending" after a dropped connection, with the error under the button', async () => {
+    let calls = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if ((init?.method ?? 'GET') === 'GET' && url === '/api/staff-actions') {
+          return jsonResponse(list())
+        }
+        calls += 1
+        throw new TypeError('Failed to fetch')
+      }),
+    )
+    renderPage()
+    await waitFor(() => card("Resolve the Bursar office's holds"))
+    fireEvent.click(within(card("Resolve the Bursar office's holds")).getByRole('button', { name: 'Send to Bursar' }))
+    const retry = await waitFor(() =>
+      within(card("Resolve the Bursar office's holds")).getByRole('button', { name: 'Retry sending' }),
+    )
+    expect(calls).toBe(1)
+    // The reason sits directly under the button that failed.
+    expect(retry.nextElementSibling?.getAttribute('role')).toBe('alert')
+  })
+
   it('says when an office has no mailbox, instead of offering Send', async () => {
     stub({ 'GET /api/staff-actions': () => jsonResponse(list()) })
     renderPage()
     await waitFor(() => card("Resolve the Library office's holds"))
     const library = card("Resolve the Library office's holds")
-    expect(library.textContent).toContain('No mailbox is set for the Library office yet')
+    // One notice for the page; each card only says it cannot go yet.
+    expect(library.textContent).toContain("Can't send yet: no mailbox for this office.")
     expect(within(library).queryByRole('button', { name: /Send to/ })).toBeNull()
+    const notices = document.querySelectorAll('.worklist-notice')
+    expect(notices).toHaveLength(1)
+    expect(notices[0].textContent).toContain('No mailbox is set yet for Library')
   })
 
   it('is read only for a reader, and comment-only for the executive', async () => {
