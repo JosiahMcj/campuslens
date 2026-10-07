@@ -170,6 +170,10 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     # The outside connections (Ellucian import, outgoing mail): whether each
     # is configured, never a credential. Admin only.
     ("GET", "/admin/connections"): (ROLE_ADMIN,),
+    # The demonstration student directory (cabinet.roster): a name search
+    # that returns named student records, so only the roles that may open
+    # the records behind a figure. Every search is logged.
+    ("GET", "/students/search"): ROW_ROLES,
 }
 
 # Prefix rules, checked when the exact table misses (routes with path

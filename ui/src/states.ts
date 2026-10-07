@@ -315,6 +315,7 @@ export const PAGE_SLUGS = {
   access: 'ai-employees',
   audit: 'audit-log',
   aid: 'financial-aid-review',
+  students: 'find-a-student',
   profile: 'profile',
   settings: 'settings',
 } as const
@@ -826,6 +827,8 @@ export const EVENT_TYPES = [
   'action.noted',
   'action.sent',
   'action.send_failed',
+  // The demonstration student directory: a name search (never the text).
+  'student.searched',
 ] as const
 
 export interface AuditEvent {

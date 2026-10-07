@@ -7,6 +7,9 @@ import { setPrefs, usePrefs, type Motion, type TextSize, type ThemeChoice } from
 /** The Explore line: every role but Financial Aid may ask it. */
 const ASK_ANYTHING = 'Ask any question about students, courses and majors (totals only)'
 
+/** The demonstration directory: a logged name search. */
+const FIND_STUDENT = 'Find a student by name in the demonstration directory (each search is logged)'
+
 /** What each human role may do, mirroring the API's role table (auth.ts). */
 const ROLE_ABILITIES: Record<Role, string[]> = {
   admin: [
@@ -14,6 +17,7 @@ const ROLE_ABILITIES: Record<Role, string[]> = {
     ASK_ANYTHING,
     'Approve leadership decisions',
     'Read the audit log',
+    FIND_STUDENT,
     'Manage datasets and users in Institution settings',
     'Track the staff actions and send them to their offices',
     'Work the Financial Aid review queue',
@@ -23,6 +27,7 @@ const ROLE_ABILITIES: Record<Role, string[]> = {
     ASK_ANYTHING,
     'Approve leadership decisions',
     'Read the audit log',
+    FIND_STUDENT,
     'Follow the staff actions and add notes to them',
     'Read the Financial Aid review queue',
   ],
@@ -279,7 +284,7 @@ function employeeRoles(grants: AccessGrant[] | null): string[] {
  * The Data access panel: the cabinet's data boundary in one place. For each
  * AI employee, its job in one line, then the findings and the fields its
  * latest task was granted (from the audit log or the ask response, never
- * assumed); then what each human role may do. Nobody, human or AI, receives student names or identifiers.
+ * assumed); then what each human role may do. No AI employee receives student names or identifiers.
  */
 export function DataAccessPanel({
   grants,

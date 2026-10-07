@@ -18,7 +18,11 @@ export const AUDIT_FILTERS = [
       'explore.answered',
     ],
   },
-  { id: 'access', label: 'Data access', types: ['data.granted', 'data.refused'] },
+  {
+    id: 'access',
+    label: 'Data access',
+    types: ['data.granted', 'data.refused', 'student.searched'],
+  },
   {
     id: 'decisions',
     label: 'Decisions and messages',
