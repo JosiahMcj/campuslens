@@ -210,7 +210,11 @@ GROUPINGS: dict[str, Grouping] = {
             "modality",
             "Section modality",
             "section modality",
-            {"in_person": "In person", "online": "Online", "hybrid": "Hybrid"},
+            {
+                "in_person": "In-person sections",
+                "online": "Online sections",
+                "hybrid": "Hybrid sections",
+            },
             frozenset({"registration"}),
         ),
     )

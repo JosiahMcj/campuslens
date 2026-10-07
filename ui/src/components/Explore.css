@@ -497,7 +497,9 @@
 .thought-inner {
   min-height: 0;
   overflow: hidden;
-  padding-left: 0.1rem;
+  /* The same indent as the live trace under the Thinking mark, so the
+     lines do not jump sideways when the live trace hands over to this. */
+  padding-left: calc(2.25rem + var(--space-3));
 }
 
 @media (max-width: 599px) {
