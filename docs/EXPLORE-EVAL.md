@@ -279,6 +279,79 @@ school the owner's question reads: "2,303 students with a hold were enrolled in 
 7.7% for students without a hold (12.1% overall)", with the stop-out rate (14.3% against
 4.5%) beside it.
 
+## Graduate outcomes (2026-10-07)
+
+The owner asked: "What do various majors make after graduation? Do grades matter for
+earning potential? What % of xyz students got into med school, grad school… what % have
+given back to their school. What majors give back to school." The school data now has
+graduate outcomes (`data/school/SCHEMA.md`, "Graduate outcomes": a first-destination
+survey, a Clearinghouse-style graduate school match, medical school applications, and
+alumni gifts), and the general analysis has eight outcome measures and a final GPA band
+grouping (docs/EXPLORE.md). A fourth set, `--set outcomes` (21 questions), covers them:
+the owner's eight questions as he would type them, eleven casual variants, and two
+questions the records cannot answer (which companies hire our graduates, student loan
+debt). We wrote the set before extending the rules and the compact catalog, but then
+tuned both against it, so its scores are optimistic, like the main set's.
+
+Measured on the full-scale database regenerated with the outcome tables (the 24 earlier
+tables are byte for byte the same, so the other sets ran against the same rows as
+before), through `POST /explore` on a throwaway server, one question at a time, template
+writer, local qwen3:14b with hidden reasoning off:
+
+| Planner order | Outcomes (21) | Main (56) | Held-out (22) | Forward (12) |
+|---|---|---|---|---|
+| Rules only | 21 (100%), median 0.2 s | 52 (93%), median 0.2 s | 20 (91%) | 12 (100%) |
+| Model first (qwen3:14b) | 21 (100%), median 1.1 s, p90 1.3 s | 54 (96%), median 1.1 s, p90 2.4 s | 21 (95%), median 1.1 s | 12 (100%) |
+
+The rule planner's scores on the older sets are the same as before. The model's plan was
+used for 18 of the 21 outcome questions. For "do honors students earn more after college"
+the model named the same grouping twice, the plan was rejected, and the rules answered
+it correctly; the two unanswerable questions were not answered. The two main-set misses are the ones described
+above ("how are the engineering students doing grade wise", planned as four steps;
+"where are we losing the most students", planned as headcount growth), and the held-out
+miss is "online vs in person dfw rates".
+
+Two earlier model-first runs during the work are worth recording. The first scored 20 of
+21 on outcomes: for "Do athletes give back more?" the model added the average gift by
+athlete status beside the participation rate, a reasonable reading the set does not
+accept. In the second, the main set fell to 53 of 56 ("how many kids live on campus"
+became the on-campus share) after we shortened the compact catalog's headcount rule to
+make room; with that rule restored word for word, the misses went away. The compact
+catalog is 11,941 characters (the limit is 12,000): the measure and grouping choices of
+`measure_by_group` are no longer listed twice, and the row-count choices are listed once.
+
+The owner's questions on the full-scale data (template writer, model first):
+
+| Question | Answer |
+|---|---|
+| What do various majors make after graduation? | Computer Science has the highest median starting salary: $77,500 (185 graduates reporting a salary), against $46,000 overall. Next is Software Development at $72,000. Starting salaries are from the first-destination survey, for graduates employed full time who reported one, and are rounded. |
+| Do grades matter for earning potential? | The median starting salary was $41,500 for graduates with a final GPA of 2.00 to 2.49 and $48,000 for graduates with a final GPA of 3.50 to 4.00, $46,000 overall. |
+| What % of biology students got into med school? | Graduates in Biology have a medical school acceptance rate of 42.7% (44 of 103 medical school applicants). The acceptance rate is of graduates who applied to medical school, not of every graduate. |
+| What % of graduates went to grad school? | Graduates have a graduate school rate of 16.8% (2,099 of 12,498 graduates followed for a year). Graduate school here means enrolled in a graduate or professional program within one year of graduating, from the Clearinghouse match. |
+| What % of alumni have given back? | Graduates have an alumni giving participation rate of 10.4% (1,867 of 17,895 alumni). |
+| Which majors give back the most? | Christian Ministry has the highest alumni giving participation rate: 21.2% (62 of 293 alumni), against 10.4% overall. Next is Theology at 20.0%. |
+| Do athletes give back more? | Athletes have an alumni giving participation rate of 13.0% (209 of 1,606 alumni), against 10.2% for non-athletes (10.4% overall). |
+| How many nursing grads are employed? | Graduates in Nursing have an employment rate of 85.5% (585 of 684 graduates who answered the survey). Employment here is from the first-destination survey after graduation, of graduates who answered it. |
+
+Every answer about the survey also carries, under "How this was answered", the
+institution-wide knowledge rate: 9,163 of 14,296 bachelor's graduates surveyed (Fall 2020
+to Summer 2025 graduates) answered, 64.1%. The table under "Do grades matter" shows all
+four bands ($41,500, $43,500, $46,500, $48,000); part of the rise is the mix of majors in
+each band.
+
+Two things we found and fixed along the way. A definition sentence with a number word
+("six months", "five hundred dollars") failed the answer's numeral check, so the
+sentence was dropped from the answer; the definitions now carry no number words, and a
+test checks every outcome definition the same way. And "average gift" and "total giving"
+read awkwardly in the general sentence ("Graduates have a total alumni giving of ..."),
+so they have their own sentences.
+
+One limit: "med school acceptance by gpa" shows only the 3.00 to 3.49 band (39.7% of
+116 applicants). Fewer than 10 applicants have a final GPA under 3.00, and complementary
+suppression then also withholds the 3.50 to 4.00 band, since the total is published.
+That is the privacy rule working; `VERIFY.md` has the full figures (62.7% at 3.50 and
+up against 37.7% below).
+
 ## Re-running
 
 With a server running and a user who may use Explore:
@@ -290,5 +363,5 @@ PYTHONPATH=$PWD/backend/src CABINET_SCHOOL_DB=<the server's school.db> \
   --label model-first --set main --out results.jsonl
 ```
 
-`--set held-out` runs the held-out set, `--set forward` the forward set, and `--only 0 1 2` runs chosen questions.
+`--set held-out` runs the held-out set, `--set forward` the forward set, `--set outcomes` the graduate outcomes set, and `--only 0 1 2` runs chosen questions. A local model through Ollama needs `CABINET_LLM_API_KEY` set to any value.
 Keep runs one at a time: a local model serves one question at a time.
