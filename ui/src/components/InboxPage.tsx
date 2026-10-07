@@ -72,6 +72,11 @@ export function AlertAttachment({
           </p>
         )}
         {decision.figures.length > 0 && (
+          <p className="alert-card-sentence">
+            <strong>The figures behind it:</strong>
+          </p>
+        )}
+        {decision.figures.length > 0 && (
           <ul className="alert-card-figures">
             {decision.figures.map((figure) => (
               <li key={figure.id}>
