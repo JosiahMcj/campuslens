@@ -99,6 +99,11 @@ EVENT_TYPES: tuple[str, ...] = (
     "action.noted",
     "action.sent",
     "action.send_failed",
+    # The demonstration student directory (cabinet.roster). student.searched:
+    # a named executive or admin searched the directory by name (payload:
+    # matches, shown, directory). Never the search text and never a student
+    # id or name: the log records that a lookup happened and by whom.
+    "student.searched",
 )
 
 ENV_VAR = "CABINET_AUDIT_PATH"

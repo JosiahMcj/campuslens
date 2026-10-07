@@ -31,6 +31,7 @@ import { postAidQueue } from './aid'
 import {
   canAct,
   canEditAidQueue,
+  canSearchStudents,
   canSeeAidQueue,
   canSeeAuditLog,
   canSeeInstitution,
@@ -69,7 +70,9 @@ import { StaffActionsPage } from './components/StaffActionsPage'
 import { LensMark } from './components/LensMark'
 import { Thinking } from './components/Thinking'
 import { BackIcon, MenuIcon } from './components/icons'
+import { FirstResult } from './components/FirstResult'
 import { StatRow } from './components/StatRow'
+import { StudentLookup } from './components/StudentLookup'
 import { friendlyError, friendlyLoadError, isRateLimited, retryAfterSeconds } from './errors'
 import {
   canExplore,
@@ -245,6 +248,8 @@ function pageIntro(page: PanelId, role: Role, fictional: boolean): string | unde
       return "Each AI employee sees only the fields its task needs, and never a student's name or identifiers. A request outside those fields is refused before any AI employee is asked, and the refusal is logged."
     case 'audit':
       return 'Every question, data request, refusal and decision is recorded here and can never be changed. Newest entries are first.'
+    case 'students':
+      return 'Look up one student by name to see their program, progress, GPA, holds and advisor.'
     case 'aid':
       return canEditAidQueue(role)
         ? 'Facts for the Financial Aid office to start its own review. CampusLens decides nothing about any student; a person in the office sets each status and note.'
@@ -645,6 +650,8 @@ function BriefingPage({
   const userId = session.user.id
   const audit = canSeeAuditLog(role)
   const aidQueue = canSeeAidQueue(role)
+  // The directory is demonstration data: offered only with the fictional set.
+  const studentSearch = canSearchStudents(role) && fictional
 
   const [events, setEventsState] = useState<AuditEvent[] | null>(audit ? null : [])
   const [eventsStatus, setEventsStatus] = useState<ResourceStatus>(
@@ -709,15 +716,12 @@ function BriefingPage({
   const nextExchangeId = useRef(1)
   const [viewFrom, setViewFrom] = useState(0)
   // The exchange restored on load (GET /briefing). Someone who may ask
-  // starts on the empty screen with the question front and centre, unless a
-  // decision is still waiting on them: then the restored answer stays open.
+  // always starts on the empty screen with the question front and centre.
   // Settled for good once they choose anything (ask, New question, history).
   const [restoredId, setRestoredId] = useState<number | null>(null)
   const [restoredSettled, setRestoredSettled] = useState(false)
-  // Decided ONCE, when both the restored briefing and the decisions have
-  // loaded: 'show' keeps the restored answer open (a decision waits, or the
-  // decisions could not be checked), 'hide' starts on the empty screen.
-  // Approving later never hides the answer the person is looking at.
+  // Decided once the restored briefing has loaded: 'hide' starts on the
+  // empty screen ('show' is kept for the type; nothing sets it now).
   const [restoredView, setRestoredView] = useState<'pending' | 'show' | 'hide'>('pending')
   // The Financial Aid role's work is the review queue, so it lands there.
   const [panel, setPanel] = useState<PanelId | null>(
@@ -896,15 +900,13 @@ function BriefingPage({
     )
   }, [])
 
-  // Whether the restored answer is hidden behind the empty home screen.
+  // Signing in always starts on the empty home screen with a new question.
+  // The restored answer stays in the history, and a waiting decision is
+  // still one click away in the decisions panel.
   useEffect(() => {
     if (restoredView !== 'pending' || restoredId === null) return
-    if (decisionsStatus.kind === 'loading') return
-    const waiting =
-      decisionsStatus.kind === 'error' ||
-      (decisions ?? []).some((decision) => !decision.approved)
-    setRestoredView(waiting ? 'show' : 'hide')
-  }, [restoredView, restoredId, decisionsStatus, decisions])
+    setRestoredView('hide')
+  }, [restoredView, restoredId])
   const restoredOpenable = act && restoredId !== null && !restoredSettled
   const restoredHidden = restoredOpenable && restoredView !== 'show'
   // Both loads still settling: a skeleton, not an empty screen that then
@@ -1352,6 +1354,7 @@ function BriefingPage({
     'decision',
     'access',
     ...(aidQueue ? (['aid'] as PanelId[]) : []),
+    ...(studentSearch ? (['students'] as PanelId[]) : []),
     ...(audit ? (['audit'] as PanelId[]) : []),
   ]
   // An address for a page this role does not have goes back to the conversation.
@@ -1463,6 +1466,7 @@ function BriefingPage({
     access: 'AI employees and data access',
     audit: 'Audit log',
     aid: 'Financial Aid review',
+    students: 'Find a student',
     profile: 'Profile',
     settings: 'Settings',
   }
@@ -1816,6 +1820,25 @@ function BriefingPage({
             <span className="work-link">See who worked on this</span>
           </button>
         )}
+        {current && (
+          <FirstResult
+            findings={findings}
+            fictional={fictional}
+            role={role}
+            decision={decisions?.[0] ?? null}
+            dispatch={decisions?.[0] != null ? (dispatches[decisions[0].id]?.info ?? null) : null}
+            onOpenEvidence={openEvidence}
+            onReviewNextSteps={() => {
+              const target = document.getElementById('reply-next-steps')
+              if (target === null) return
+              target.scrollIntoView({
+                behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+                block: 'start',
+              })
+              target.focus({ preventScroll: true })
+            }}
+          />
+        )}
         <ExecutiveSummary
           findings={findings}
           chiefSummary={summarySection}
@@ -1825,8 +1848,9 @@ function BriefingPage({
         />
         {current && (
           <>
-            <StatRow findings={findings} onOpenEvidence={openEvidence} />
-            {decisionPanel('Your decision')}
+            <div id="reply-next-steps" className="reply-next-steps" tabIndex={-1}>
+              {decisionPanel('Your decision')}
+            </div>
             <div className="reply-actions">
               <button type="button" className="link-button" onClick={() => openPanel('briefing')}>
                 Read the full briefing
@@ -2193,6 +2217,7 @@ function BriefingPage({
           {shownPanel === 'aid' && aidQueue && (
             <AidQueuePanel canEdit={canEditAidQueue(role)} onOpenDecision={() => openPanel('decision')} />
           )}
+          {shownPanel === 'students' && studentSearch && <StudentLookup />}
           {shownPanel === 'profile' && (
             <ProfilePanel session={session} datasetName={datasetName} onSignOut={onSignOut} />
           )}

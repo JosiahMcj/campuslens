@@ -257,6 +257,12 @@ export function canSeeAidQueue(role: Role): boolean {
   return role === 'aid' || role === 'admin' || role === 'executive' || role === 'reviewer'
 }
 
+/** Find a student by name: the executive and the admin, the roles that may
+ * open the records behind a figure. Matches ROW_ROLES in the API. */
+export function canSearchStudents(role: Role): boolean {
+  return role === 'admin' || role === 'executive'
+}
+
 /** Status and note on a queue row: the aid role and the admin only. */
 export function canEditAidQueue(role: Role): boolean {
   return role === 'aid' || role === 'admin'

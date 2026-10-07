@@ -435,6 +435,8 @@ def test_every_protected_route_is_in_the_role_table() -> None:
         ("GET", "/staff-actions"),
         # Institution settings: the outside connections (admin only).
         ("GET", "/admin/connections"),
+        # The demonstration student directory (tests/test_roster.py).
+        ("GET", "/students/search"),
     }
     assert set(ROUTE_ROLES) == expected
 

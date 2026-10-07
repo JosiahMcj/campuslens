@@ -1,0 +1,102 @@
+/* The first result screen (FirstResult.tsx). Tokens only (DESIGN.md). */
+
+.first-result-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}
+
+.first-result-head h2 {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+.first-result-finding {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.first-result-finding .finding-link {
+  font-variant-numeric: tabular-nums;
+}
+
+.first-result-period {
+  margin: var(--space-2) 0 0;
+  color: var(--ink-soft);
+}
+
+.first-result .stat-row {
+  margin-top: var(--space-4);
+}
+
+/* Four counts sit on one row once the reading column is wide enough. */
+@media (min-width: 720px) {
+  .msg-body .first-result .stat-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.first-result-next {
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.first-result-kicker {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.first-result-next-title {
+  margin: var(--space-1) 0 var(--space-3);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.first-result-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+
+.first-result-facts dt {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.first-result-facts dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.first-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.first-result-actions .btn-lg {
+  flex: 1 1 14rem;
+}
+
+/* "Review next steps" lands here: clear of the top bar, no focus ring on
+   the wrapper itself (the panel inside is what is read). */
+.reply-next-steps {
+  scroll-margin-top: 72px;
+}
+
+.reply-next-steps:focus {
+  outline: none;
+}

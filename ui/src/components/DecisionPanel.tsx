@@ -3,6 +3,7 @@ import { useRef, useState, type ReactNode } from 'react'
 import type { AuditEvent, Decision, DispatchInfo, SimulatedTask } from '../api'
 import type { Role } from '../auth'
 import { plainSentence } from '../errors'
+import { formatIsoDate } from '../displayFormat'
 import { formatTimestamp, personName } from '../states'
 import { AidQueueNotice, type AidQueueUiState } from './AidQueueNotice'
 import { ApprovedIcon, SentIcon } from './icons'
@@ -124,6 +125,7 @@ function DecisionSteps({
   sent,
   mailbox,
   queue,
+  savedOnly,
 }: {
   approved: boolean
   office: string
@@ -133,6 +135,9 @@ function DecisionSteps({
   mailbox: boolean
   /** null when this decision opens no review queue. */
   queue: boolean | null
+  /** True when no email delivery is set up: the message is recorded on the
+   * server, so the step never claims it was sent to the office. */
+  savedOnly: boolean
 }) {
   // Short labels, so the four steps keep to one line on a desktop.
   const steps: { label: string; done: boolean; waiting?: boolean }[] = [
@@ -140,7 +145,7 @@ function DecisionSteps({
     { label: 'Message ready', done: prepared },
     !sent && !mailbox
       ? { label: `Waiting: ${office} needs a mailbox`, done: false, waiting: true }
-      : { label: `Sent to ${office}`, done: sent },
+      : { label: savedOnly ? `Recorded for ${office}` : `Sent to ${office}`, done: sent },
     ...(queue !== null ? [{ label: 'Review queue ready', done: queue }] : []),
   ]
   const next = steps.findIndex((step) => !step.done)
@@ -299,6 +304,13 @@ export function DecisionPanel({
         const dispatch = dispatchState?.info?.dispatch ?? null
         const officeContact = dispatchState?.info?.office_contact ?? null
         const office = decision.follow_up.office
+        // No email delivery is set up when the server keeps messages in its
+        // own outbox. A sent record names how it left; before that, the
+        // server's current setting applies.
+        const savedOnly =
+          (dispatch?.status === 'sent' ? dispatch.provider : null) === 'outbox' ||
+          (dispatch?.status !== 'sent' && dispatchState?.info?.delivery === 'outbox')
+        const proposedDue = dispatchState?.info?.proposed_due ?? null
         const composeBusy = dispatchState?.busy === 'compose'
         const sendBusy = dispatchState?.busy === 'send'
         const dispatchError =
@@ -319,6 +331,7 @@ export function DecisionPanel({
                 prepared={dispatch !== null}
                 sent={dispatch?.status === 'sent'}
                 mailbox={dispatchState?.info == null || officeContact !== null}
+                savedOnly={savedOnly}
                 queue={
                   dispatchState?.info?.aid_queue?.supported === true
                     ? dispatchState.info.aid_queue.count !== null
@@ -328,6 +341,22 @@ export function DecisionPanel({
             )}
             <h3>{decision.title}</h3>
             <p>{decision.text}</p>
+            <dl className="kv decision-owner">
+              <dt>Office</dt>
+              <dd>{office} carries out the follow-up</dd>
+              {proposedDue !== null && (
+                <>
+                  <dt>Deadline</dt>
+                  <dd>
+                    {formatIsoDate(proposedDue)} (proposed)
+                    <span className="decision-owner-note">
+                      Proposed for this demonstration. No deadline is saved until a person
+                      sets one.
+                    </span>
+                  </dd>
+                </>
+              )}
+            </dl>
 
             {!approved ? (
               canApprove ? (
@@ -385,7 +414,9 @@ export function DecisionPanel({
                             ? 'Not prepared yet'
                             : 'Not prepared yet. Staff or leadership prepares it.'
                           : dispatch.status === 'sent'
-                            ? 'Sent'
+                            ? savedOnly
+                              ? 'Recorded, not emailed'
+                              : 'Sent'
                             : dispatch.status === 'failed'
                               ? 'Not sent yet'
                               : 'Prepared, not sent'}
@@ -442,13 +473,15 @@ export function DecisionPanel({
                             tabIndex={-1}
                             ref={focusWhen(`${decision.id}:sent`)}
                           >
-                            <SentIcon /> Sent by{' '}
+                            <SentIcon /> {savedOnly ? 'Recorded by' : 'Sent by'}{' '}
                             {dispatch.sent_by !== null
                               ? personName(dispatch.sent_by, userEmail)
                               : 'a staff member'}
                             {dispatch.sent_at !== null &&
                               ` at ${formatTimestamp(dispatch.sent_at)}`}
                             .
+                            {savedOnly &&
+                              ` Email delivery is not set up, so the message was saved on this server and nothing was emailed to ${dispatch.to_office}.`}
                           </p>
                         ) : (
                           <>
@@ -486,12 +519,18 @@ export function DecisionPanel({
                                   adds one in Institution settings before it can be sent.
                                 </p>
                               ))}
+                            {savedOnly && (
+                              <p className="hint">
+                                Email delivery is not set up. Recording this message saves
+                                it on this server; nothing is emailed to {dispatch.to_office}.
+                              </p>
+                            )}
                             {canSend && officeContact !== null ? (
                               confirmSend === decision.id ? (
                                 <div
                                   className="confirm-inline"
                                   role="alertdialog"
-                                  aria-label="Confirm sending"
+                                  aria-label={savedOnly ? 'Confirm recording' : 'Confirm sending'}
                                   tabIndex={-1}
                                   ref={focusWhen(`${decision.id}:confirm`)}
                                   onKeyDown={(event) => {
@@ -505,8 +544,9 @@ export function DecisionPanel({
                                   }}
                                 >
                                   <p>
-                                    Send to {dispatch.to_office} at {officeContact}? It goes
-                                    from {userEmail}.
+                                    {savedOnly
+                                      ? `Record this message for ${dispatch.to_office} (${officeContact})? It is saved on this server under ${userEmail}. Nothing is emailed.`
+                                      : `Send to ${dispatch.to_office} at ${officeContact}? It goes from ${userEmail}.`}
                                   </p>
                                   <div className="confirm-actions">
                                     <button
@@ -519,7 +559,11 @@ export function DecisionPanel({
                                         onSendDispatch(decision.id)
                                       }}
                                     >
-                                      <BusyLabel busy={sendBusy} working="Sending…" idle="Send" />
+                                      <BusyLabel
+                                        busy={sendBusy}
+                                        working={savedOnly ? 'Recording…' : 'Sending…'}
+                                        idle={savedOnly ? 'Record' : 'Send'}
+                                      />
                                     </button>
                                     <button
                                       type="button"
@@ -541,12 +585,16 @@ export function DecisionPanel({
                                     setConfirmSend(decision.id)
                                   }}
                                 >
-                                  Send…
+                                  {savedOnly ? 'Record message…' : 'Send…'}
                                 </button>
                               )
                             ) : (
                               !canSend && (
-                                <p className="hint">A staff member sends this message.</p>
+                                <p className="hint">
+                                  {savedOnly
+                                    ? 'A staff member records this message.'
+                                    : 'A staff member sends this message.'}
+                                </p>
                               )
                             )}
                           </>

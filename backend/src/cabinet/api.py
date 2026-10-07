@@ -152,7 +152,7 @@ import re
 import sqlite3
 import sys
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -234,6 +234,7 @@ from cabinet.questions import (
 )
 from cabinet.questions import DEMO_DECISION_ID as DEMO_DECISION_ID
 from cabinet.questions import OUT_OF_SCOPE_REFUSAL as OUT_OF_SCOPE_REFUSAL
+from cabinet.roster import router as roster_router
 from cabinet.security import (
     GENERIC_LOGIN_ERROR,
     ROW_ROLES,
@@ -1624,6 +1625,35 @@ def create_app(
             "created_at": rows[0]["created_at"] if rows else None,
         }
 
+    def delivery_mode() -> str | None:
+        """How a sent message leaves this server: "outbox" (saved here,
+        nothing is emailed), "smtp" (emailed), or None when the outbound
+        configuration cannot be read. The screen says which, so "sent" is
+        never read as "emailed" when no email delivery is configured."""
+        try:
+            return outbound_from_env(
+                outbox_dir=store.path.parent / "outbox", production=production
+            ).name
+        except RuntimeError:
+            return None
+
+    def proposed_due(runtime: InstitutionRuntime) -> str | None:
+        """A proposed follow-up deadline for the fictional demonstration
+        dataset only: one week after the data date, never later than the
+        day registration closes. It is a suggestion shown on screen; nothing
+        is stored and no real institution's decision gets a date from it."""
+        if not runtime.fictional:
+            return None
+        meta = runtime.findings["meta"]
+        try:
+            due = date.fromisoformat(str(meta["as_of"])) + timedelta(days=7)
+        except ValueError:
+            return None
+        close = meta["terms"].get("registration_close_date")
+        if close is not None:
+            due = min(due, date.fromisoformat(str(close)))
+        return due.isoformat()
+
     @app.get("/decisions/{decision_id}/dispatch")
     def get_decision_dispatch(decision_id: str, request: Request) -> JSONResponse:
         """The dispatch state for one decision: whether it is approved,
@@ -1636,7 +1666,7 @@ def create_app(
             raise HTTPException(
                 status_code=404, detail=f"unknown decision_id {decision_id!r}"
             )
-        _, _, decision, dataset_id, task_id = context
+        runtime, _, decision, dataset_id, task_id = context
         office = str(decision["follow_up"]["office"])
         row = store.dispatch_for_task(institution_id, task_id, dataset_id=dataset_id)
         approval = store.decision_row(
@@ -1654,6 +1684,8 @@ def create_app(
                 ),
                 "approved_at": str(approval["at"]) if approval is not None else None,
                 "dispatch": dispatch_body(row) if row is not None else None,
+                "delivery": delivery_mode(),
+                "proposed_due": proposed_due(runtime),
                 "aid_queue": aid_queue_summary(
                     institution_id, decision_id, dataset_id
                 ),
@@ -2568,6 +2600,7 @@ def create_app(
     # GET /staff-actions, PATCH /staff-actions/{id}, POST .../notes, .../send
     app.include_router(staff_actions_router)
     app.include_router(connections_router)  # GET /admin/connections
+    app.include_router(roster_router)  # GET /students/search
 
     # The built UI, served by the same process. Mounted after every API
     # route so an API path always wins over the static mount; a missing
