@@ -447,6 +447,20 @@ class InstitutionRuntime:
                     break
 
 
+def proposed_due_from(today: date, close: Any) -> str:
+    """Today plus seven days, capped at the registration close date when
+    that date is still ahead of today (``proposed_due`` in ``create_app``)."""
+    due = today + timedelta(days=7)
+    if close is not None:
+        try:
+            closes = date.fromisoformat(str(close))
+        except ValueError:
+            closes = None
+        if closes is not None and closes > today:
+            due = min(due, closes)
+    return due.isoformat()
+
+
 def create_app(
     *,
     db_path: str | Path | None = None,
@@ -1657,20 +1671,15 @@ def create_app(
 
     def proposed_due(runtime: InstitutionRuntime) -> str | None:
         """A proposed follow-up deadline for the fictional demonstration
-        dataset only: one week after the data date, never later than the
-        day registration closes. It is a suggestion shown on screen; nothing
-        is stored and no real institution's decision gets a date from it."""
+        dataset only: one week from today (the server's date), never later
+        than the day registration closes while that day is still ahead; once
+        it has passed, today plus a week. It is a suggestion shown on screen
+        and carried on the department's inbox message; nothing is stored as
+        a deadline and no real institution's decision gets a date from it."""
         if not runtime.fictional:
             return None
-        meta = runtime.findings["meta"]
-        try:
-            due = date.fromisoformat(str(meta["as_of"])) + timedelta(days=7)
-        except ValueError:
-            return None
-        close = meta["terms"].get("registration_close_date")
-        if close is not None:
-            due = min(due, date.fromisoformat(str(close)))
-        return due.isoformat()
+        terms = runtime.findings["meta"]["terms"]
+        return proposed_due_from(date.today(), terms.get("registration_close_date"))
 
     @app.get("/decisions/{decision_id}/dispatch")
     def get_decision_dispatch(decision_id: str, request: Request) -> JSONResponse:

@@ -381,3 +381,36 @@ def test_staff_cannot_approve_so_nothing_is_sent(app: FastAPI) -> None:
         == 403
     )
     assert aid.get("/inbox").json()["received"] == []
+
+
+def test_holds_decision_says_how_it_relates_to_the_briefing_count() -> None:
+    from cabinet.questions import QUESTIONS
+
+    findings = {
+        "M3": {"value": 18, "comparison": {"threshold_usd": 1000}},
+        "M5": {
+            "value": [
+                {"office": "Bursar", "count": 20},
+                {"office": "Registrar", "count": 8},
+            ]
+        },
+    }
+    decision = next(
+        d
+        for q in QUESTIONS
+        for d in q.build_decisions(findings)
+        if d["id"] == UNRESOLVED_HOLDS_DECISION_ID
+    )
+    text = decision["text"]
+    assert "all 28 unresolved holds" in text
+    assert "the 18 continuing students in the main briefing" in text
+    assert "less than $1,000" in text
+    # Without M3 the sentence still reads, with no bare number.
+    findings["M3"] = {"value": None, "comparison": {"threshold_usd": 1000}}
+    fallback = next(
+        d
+        for q in QUESTIONS
+        for d in q.build_decisions(findings)
+        if d["id"] == UNRESOLVED_HOLDS_DECISION_ID
+    )["text"]
+    assert "None" not in fallback and "come first" in fallback

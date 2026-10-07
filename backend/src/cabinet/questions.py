@@ -298,14 +298,24 @@ def _q2_decisions(findings_obj: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(rows, list) and rows
         else None
     )
+    small = findings_obj["M3"].get("value")
     if total is not None:
+        # How these holds relate to the main briefing's small-balance count
+        # (M3): those students' holds are among them and come first.
+        included = (
+            f" They include the holds of the {small} continuing students in "
+            "the main briefing who have not registered yet and owe less than "
+            f"{limit}; those cases come first."
+            if isinstance(small, int)
+            else " The small-balance cases below the defined balance "
+            f"threshold of {limit} come first."
+        )
         text = (
             "Decide whether to authorize a coordinated hold-resolution "
-            f"review, led by the Bursar, for the {total} unresolved "
-            "holds affecting continued enrollment, with priority for the "
-            f"small-balance cases below the defined balance threshold of "
-            f"{limit}. Approving authorizes the review only. No hold is "
-            "cleared, and nothing is sent."
+            f"review, led by the Bursar, for all {total} unresolved "
+            f"holds affecting continued enrollment.{included} Approving "
+            "authorizes the review only. No hold is cleared, and nothing is "
+            "sent."
         )
         follow_up = (
             f"Lead the coordinated hold-resolution review for the {total} "

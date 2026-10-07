@@ -187,3 +187,35 @@ Add a single account in any role with
 - **IT's audit log includes question text.** The audit log records each
   question as asked (student-id-shaped tokens redacted), and IT reads the
   audit log. The questions are about the school, never answers or rows.
+
+## Approved decisions reach the department
+
+When the president approves a leadership decision, the server puts it in
+the inbox of every enabled account of the department that owns the
+follow-up (`DEPARTMENT_ROLES` in `cabinet/inbox.py`: Financial Aid → `aid`,
+Bursar → `finance`, Registrar → `registrar`, Student Success →
+`studentlife`), from the president. The message names the decision, the
+approved action and the proposed deadline (one week from today, never past
+the registration close date while that is ahead), and lists the briefing
+figures behind it. Only the reference is stored: the figures are re-read
+from the current data each time it is opened, never a student row, and the
+message reads "no longer available" once another dataset is active. One
+`inbox.sent` event per recipient carries `reason: "decision.approved"`. The
+department clicks **Acknowledge**; the decision card shows each account as
+delivered, opened or acknowledged. Nothing is emailed. These messages are
+stored as kind `note` with the reference `decision:<id>` (the inbox table's
+check constraint predates them) and shown as kind `decision`.
+
+## Answer cards under Explore answers
+
+Every Explore answer carries a card computed in code
+(`cabinet/explore/card.py`): two to four key points (highest, lowest, the
+gap from the whole, the change since the same term a year earlier, the
+withheld groups), each number a link to its table cell; one chart from a
+fixed template registry (`CHART_TEMPLATES`; the gallery is at `/dev/charts`);
+and the buttons Send to department, Show trend, Break it down, Make a plan
+and See evidence. Show trend and Break it down only offer questions the rule
+planner has already answered the same way. Make a plan asks the seven-day
+plan follow-up for registration answers (president and admin), and otherwise
+shows a short proposed list that is never saved or sent. The reviewer gets
+no Make a plan.
