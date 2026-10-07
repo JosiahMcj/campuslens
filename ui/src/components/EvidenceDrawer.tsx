@@ -1,13 +1,19 @@
-import { useEffect, useRef } from 'react'
+import { Fragment } from 'react'
 
-import type { Finding, OfficeHolds, RatioRowIds } from '../api'
-import { findingDisplay } from '../states'
+import type { Finding, FindingAuthorization, OfficeHolds, RatioRowIds } from '../api'
+import { isAggregateOnly, suppressionNote } from '../counseling'
+import { fieldLabels } from '../fieldLabels'
+import { findingDefinition, findingLabel } from '../findingLabels'
+import { findingDisplay, formatTimestamp } from '../states'
+import { SidePanel } from './SidePanel'
 
 interface EvidenceDrawerProps {
   finding: Finding
   /** True while the active dataset is the fictional demonstration set. */
   fictional: boolean
   onClose: () => void
+  /** True while the panel plays its exit animation. */
+  closing?: boolean
 }
 
 function isRatioRowIds(rowIds: Finding['row_ids']): rowIds is RatioRowIds {
@@ -23,71 +29,131 @@ function hasRowRules(finding: Finding): boolean {
   )
 }
 
+/** How many records sit behind the figure (0 for a term-level figure). */
+function recordCount(finding: Finding): number {
+  if (isAggregateOnly(finding)) return 0
+  if (isRatioRowIds(finding.row_ids)) {
+    return finding.row_ids.numerator.length + finding.row_ids.denominator.length
+  }
+  return finding.row_ids.length
+}
+
+/** Plain names for the comparison values a finding carries. */
+const COMPARISON_LABELS: Record<string, string> = {
+  prior_year_registered_continuing: 'Registered by the same date last year',
+  prior_year_registered_credit_hours: 'Credit hours by the same date last year',
+  prior_year_equivalent_date: 'Same date last year',
+  threshold_usd: 'Hold amount threshold',
+}
+
+function comparisonValue(key: string, value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return key.endsWith('_usd')
+      ? value.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+      : value.toLocaleString('en-US')
+  }
+  return String(value)
+}
+
 /**
- * The evidence drawer (Beat 4): a claim opened to its source fields, its
- * formula/definition, and the row IDs behind the number. Keyboard-closable
- * (Esc) and focus-managed: focus moves into the drawer on open and returns
- * to the element that opened it on close.
+ * The evidence for one figure (Beat 4), in the shared slide-over panel: a
+ * plain one-sentence definition, the value, and what it is compared with
+ * first. How it is computed (the fields it reads, and the formula and raw
+ * field names inside a Technical detail) and the records behind it each sit
+ * behind a fold. An aggregate-only figure (M9, the authorized counseling
+ * count) shows its authorization record and never a row. Escape and the
+ * close button are the shared panel's, so one Escape closes only this layer.
  */
-export function EvidenceDrawer({ finding, fictional, onClose }: EvidenceDrawerProps) {
-  const drawerRef = useRef<HTMLDivElement>(null)
-  const openerRef = useRef<Element | null>(null)
-
-  useEffect(() => {
-    openerRef.current = document.activeElement
-    drawerRef.current?.focus()
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('keydown', onKeyDown)
-      const opener = openerRef.current
-      if (opener instanceof HTMLElement) opener.focus()
-    }
-  }, [onClose])
-
+export function EvidenceDrawer({
+  finding,
+  fictional,
+  onClose,
+  closing = false,
+}: EvidenceDrawerProps) {
   const display = findingDisplay(finding)
+  // M9: an authorized aggregate with no rows behind it, ever.
+  const aggregateOnly = isAggregateOnly(finding)
+  const withheld = suppressionNote(finding)
+  const definition = findingDefinition(finding.id)
+  const comparison = Object.entries(finding.comparison ?? {}).filter(
+    ([key]) => COMPARISON_LABELS[key] !== undefined,
+  )
+  const records = recordCount(finding)
+  // M1 compares two counts of continuing students: the one registered now
+  // (the numerator's records) sits beside last year's, and the records
+  // fold names the students it lists.
+  const registeredNow =
+    finding.comparison?.prior_year_registered_continuing !== undefined &&
+    isRatioRowIds(finding.row_ids)
+      ? finding.row_ids.numerator.length
+      : null
+  const recordsLabel =
+    registeredNow !== null
+      ? `All ${records.toLocaleString('en-US')} continuing students`
+      : `Show the records (${records.toLocaleString('en-US')})`
 
   return (
-    <div className="drawer-overlay" onClick={onClose}>
-      <div
-        ref={drawerRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="drawer-title"
-        className="drawer"
-        tabIndex={-1}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="drawer-header">
-          <h2 id="drawer-title">
-            <span className="id-badge">{finding.id}</span>
-            {finding.title}
-          </h2>
-          <button type="button" className="close-button" onClick={onClose}>
-            Close <span aria-hidden="true">(Esc)</span>
-          </button>
-        </div>
+    <SidePanel
+      title={findingLabel(finding.id, finding.title)}
+      onClose={onClose}
+      closing={closing}
+      evidence
+    >
+      <div className="evidence-panel">
+        {definition !== null && <p className="panel-intro">{definition}</p>}
 
-        <dl className="drawer-facts">
-          <dt>Value</dt>
-          <dd>
-            <span className={display.missing ? 'drawer-value missing' : 'drawer-value'}>
-              {display.text}
-            </span>
-            {display.missing && display.reason !== null && (
-              <p className="hint">Not available: {display.reason}</p>
+        <p className="evidence-value">
+          <span className={display.missing ? 'drawer-value missing' : 'drawer-value'}>
+            {withheld !== null ? `${capitalize(display.text)} students` : display.text}
+          </span>
+        </p>
+        {withheld !== null && <p className="hint">{withheld}</p>}
+        {display.missing && <p className="hint">This figure is not available for this data.</p>}
+
+        {comparison.length > 0 && (
+          <dl className="kv evidence-comparison">
+            {registeredNow !== null && (
+              <>
+                <dt>Registered now</dt>
+                <dd>{registeredNow.toLocaleString('en-US')}</dd>
+              </>
             )}
-          </dd>
+            {comparison.map(([key, value]) => (
+              <Fragment key={key}>
+                <dt>{COMPARISON_LABELS[key]}</dt>
+                <dd>{comparisonValue(key, value)}</dd>
+              </Fragment>
+            ))}
+          </dl>
+        )}
 
-          <dt>Formula / definition</dt>
-          <dd>
+        {finding.authorization !== undefined && (
+          <AuthorizationRecord authorization={finding.authorization} />
+        )}
+
+        <OfficeBreakdown finding={finding} />
+        <IndicatorBreakdown finding={finding} />
+
+        <details className="fold technical-detail">
+          <summary>
+            How it is computed
+          </summary>
+          <p>It reads these fields from each student record:</p>
+          <ul className="plain-list">
+            {fieldLabels(finding.source_fields).map((label) => (
+              <li key={label}>{label}</li>
+            ))}
+          </ul>
+          <details className="fold technical-detail">
+            <summary>
+              Technical detail
+            </summary>
+            {display.missing && display.reason !== null && (
+              <p>Why it is not available: {display.reason}</p>
+            )}
+            <p>Formula</p>
             <code className="formula">{finding.definition}</code>
-          </dd>
-
-          <dt>Source fields</dt>
-          <dd>
+            <p>Field names</p>
             <ul className="field-list">
               {finding.source_fields.map((field) => (
                 <li key={field}>
@@ -95,58 +161,81 @@ export function EvidenceDrawer({ finding, fictional, onClose }: EvidenceDrawerPr
                 </li>
               ))}
             </ul>
-          </dd>
+          </details>
+        </details>
 
-          {finding.comparison !== null && (
-            <>
-              <dt>Comparison</dt>
-              <dd>
-                <ul className="field-list">
-                  {Object.entries(finding.comparison).map(([key, value]) => (
-                    <li key={key}>
-                      <code>{key}</code>: {String(value)}
-                    </li>
-                  ))}
-                </ul>
-              </dd>
-            </>
-          )}
-
-          <dt>Rows behind this number</dt>
-          <dd>
-            {isRatioRowIds(finding.row_ids) ? (
-              <>
-                <RowList
-                  label="Numerator"
-                  rows={finding.row_ids.numerator}
-                />
-                <RowList
-                  label="Denominator"
-                  rows={finding.row_ids.denominator}
-                />
-              </>
-            ) : hasRowRules(finding) ? (
-              <IndicatorRows finding={finding} />
-            ) : finding.row_ids.length > 0 ? (
-              <RowList label="Rows" rows={finding.row_ids} />
-            ) : (
-              <p className="hint">
-                This is a term-level figure, so there is no per-student row list.
-              </p>
-            )}
-          </dd>
-        </dl>
-
-        <OfficeBreakdown finding={finding} />
-        <IndicatorBreakdown finding={finding} />
-
-        <p className="hint">
-          {fictional
-            ? 'These rows are fictional and pseudonymous. data/VERIFY.md lists them for hand-counting.'
-            : 'These rows are pseudonymous student records from the uploaded export.'}
-        </p>
+        {aggregateOnly ? (
+          <p className="hint">
+            No records are shown for this figure. It is a count only, with no list of
+            students behind it.
+          </p>
+        ) : records === 0 ? (
+          <p className="hint">
+            This is a term-level figure, so there is no list of students behind it.
+          </p>
+        ) : (
+          <details className="fold technical-detail">
+            <summary>{recordsLabel}</summary>
+            <Records finding={finding} />
+            <p className="hint">
+              {fictional
+                ? 'These records are fictional and pseudonymous.'
+                : 'These are pseudonymous student records from the uploaded export.'}
+            </p>
+          </details>
+        )}
       </div>
-    </div>
+    </SidePanel>
+  )
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/** The records behind the figure, by the shape the finding carries. */
+function Records({ finding }: { finding: Finding }) {
+  if (isRatioRowIds(finding.row_ids)) {
+    return (
+      <>
+        <RowList label="Registered now" rows={finding.row_ids.numerator} />
+        <RowList
+          label="Registered by the same date last year"
+          rows={finding.row_ids.denominator}
+        />
+      </>
+    )
+  }
+  if (hasRowRules(finding)) return <IndicatorRows finding={finding} />
+  if (Array.isArray(finding.value)) {
+    const offices = finding.value as OfficeHolds[]
+    return (
+      <>
+        {offices.map((office) => (
+          <RowList key={office.office} label={office.office} rows={office.hold_row_ids} />
+        ))}
+      </>
+    )
+  }
+  return <RowList label="Students" rows={finding.row_ids} />
+}
+
+/** Who authorized an aggregate in writing, the document, and who recorded it. */
+function AuthorizationRecord({ authorization }: { authorization: FindingAuthorization }) {
+  return (
+    <dl className="kv authorization-record">
+        <dt>Authorized by</dt>
+        <dd>{authorization.authorized_by ?? 'Not recorded'}</dd>
+        <dt>Document</dt>
+        <dd>{authorization.document_reference ?? 'Not recorded'}</dd>
+        <dt>Recorded by</dt>
+        <dd>
+          {authorization.recorded_by ?? 'Not recorded'}
+          {authorization.recorded_at !== null && (
+            <> on {formatTimestamp(authorization.recorded_at)}</>
+          )}
+        </dd>
+    </dl>
   )
 }
 
@@ -158,28 +247,25 @@ function RowList({ label, rows }: { label: string; rows: string[] }) {
       </h3>
       <ul className="row-list">
         {rows.map((row) => (
-          <li key={row}>
-            <code>{row}</code>
-          </li>
+          <li key={row}>{row}</li>
         ))}
       </ul>
     </div>
   )
 }
 
-/** M5 carries a per-office breakdown with hold row IDs. */
+/** M5's per-office counts (the student lists are under Show the records). */
 function OfficeBreakdown({ finding }: { finding: Finding }) {
   if (!Array.isArray(finding.value)) return null
   const offices = finding.value as OfficeHolds[]
   if (offices.length === 0) return null
   return (
     <table className="office-table">
-      <caption>Unresolved holds by responsible office</caption>
+      <caption>Unresolved holds by office</caption>
       <thead>
         <tr>
           <th scope="col">Office</th>
           <th scope="col">Holds</th>
-          <th scope="col">Hold row IDs</th>
         </tr>
       </thead>
       <tbody>
@@ -187,9 +273,6 @@ function OfficeBreakdown({ finding }: { finding: Finding }) {
           <tr key={office.office}>
             <td>{office.office}</td>
             <td>{office.count}</td>
-            <td>
-              <code>{office.hold_row_ids.join(', ')}</code>
-            </td>
           </tr>
         ))}
       </tbody>
@@ -198,34 +281,26 @@ function OfficeBreakdown({ finding }: { finding: Finding }) {
 }
 
 /**
- * M8's per-rule table: each named support indicator with its count and the
- * fields it reads. The rules never combine into a total per student.
+ * M8's indicators: each named support indicator with its count. The
+ * indicators never combine into a total per student.
  */
 function IndicatorBreakdown({ finding }: { finding: Finding }) {
   const rules = finding.rules
   if (rules === undefined || rules.length === 0) return null
   return (
     <table className="office-table">
-      <caption>Support indicator rules</caption>
+      <caption>Support indicators</caption>
       <thead>
         <tr>
-          <th scope="col">Rule</th>
-          <th scope="col">Title</th>
+          <th scope="col">Indicator</th>
           <th scope="col">Students</th>
-          <th scope="col">Fields read</th>
         </tr>
       </thead>
       <tbody>
         {rules.map((rule) => (
           <tr key={rule.id}>
-            <td>
-              <span className="id-badge">{rule.id}</span>
-            </td>
             <td>{rule.title}</td>
             <td>{rule.count}</td>
-            <td>
-              <code>{rule.fields_read.join(', ')}</code>
-            </td>
           </tr>
         ))}
       </tbody>
@@ -234,10 +309,9 @@ function IndicatorBreakdown({ finding }: { finding: Finding }) {
 }
 
 /**
- * M8's per-student list: each pseudonymous id with every rule that fired and
- * the rule's reason, exactly as the other findings list their rows. These
- * are people who may need support; a student has indicators when at least
- * one rule fires.
+ * M8's per-student list: each pseudonymous id with every indicator that
+ * applies, by name. These are people who may need support; a student has
+ * indicators when at least one applies.
  */
 function IndicatorRows({ finding }: { finding: Finding }) {
   const rules = finding.rules ?? []
@@ -245,20 +319,15 @@ function IndicatorRows({ finding }: { finding: Finding }) {
   const rows = Array.isArray(finding.row_ids) ? finding.row_ids : []
   return (
     <div className="row-list-block">
-      <h3>Support indicators by student ({rows.length})</h3>
+      <h3>Students and their indicators ({rows.length})</h3>
       <ul className="indicator-rows">
         {rows.map((row) => (
           <li key={row}>
-            <code>{row}</code>
+            {row}
             <ul>
               {(rowRules[row] ?? []).map((ruleId) => {
                 const rule = rules.find((entry) => entry.id === ruleId)
-                return (
-                  <li key={ruleId}>
-                    <span className="id-badge">{ruleId}</span>{' '}
-                    {rule !== undefined ? rule.reason : ruleId}
-                  </li>
-                )
+                return <li key={ruleId}>{rule !== undefined ? rule.title : 'Indicator'}</li>
               })}
             </ul>
           </li>

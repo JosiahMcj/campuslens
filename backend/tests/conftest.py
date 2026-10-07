@@ -94,6 +94,7 @@ def _isolated_security_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     # Rate limits are per app instance; raise them so functional tests never
     # trip them. The rate-limit tests set their own values before create_app.
     monkeypatch.setenv("CABINET_RATE_GENERAL_PER_MIN", "100000")
+    monkeypatch.setenv("CABINET_RATE_SESSION_PER_MIN", "100000")
     monkeypatch.setenv("CABINET_RATE_ASK_PER_MIN", "100000")
     # A stand-in built UI: /ready requires an index.html and the static
     # mount serves whatever this directory holds, so tests never depend on a
@@ -102,8 +103,17 @@ def _isolated_security_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     ui_dist.mkdir()
     (ui_dist / "index.html").write_text("<html>test build</html>\n")
     monkeypatch.setenv("CABINET_UI_DIST", str(ui_dist))
-    # Never let a developer's shell leak production mode into the test run.
-    for name in ("CABINET_ENV", "CABINET_BIND"):
+    # Never let a developer's shell or cabinet.local.env leak production
+    # mode, a non-default validation retry count, model tuning, or the
+    # Explore planner order into the test run.
+    for name in (
+        "CABINET_ENV",
+        "CABINET_BIND",
+        "CABINET_VALIDATION_RETRIES",
+        "CABINET_LLM_REASONING_EFFORT",
+        "CABINET_LLM_MAX_TOKENS",
+        "CABINET_EXPLORE_PLANNER",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 

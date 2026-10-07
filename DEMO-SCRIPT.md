@@ -175,6 +175,14 @@ panel says a staff member sends it.
 > to the office, never to a student, and the record will show exactly whose click sent
 > it."
 
+**Optional sentence (only with time to spare).** After the sign-off, the presenter
+clicks "Prepare the Financial Aid review queue" and the panel reads "Queued 18 students
+for Financial Aid review".
+
+> "The office gets a queue of those eighteen students with the facts it needs to start
+> its own review. The cabinet makes no determination about any student. Financial Aid
+> staff record their own status and notes."
+
 ## Beat 6, 3:40 to 4:00 · The audit log and the refusal
 
 **On screen.** The audit log view. Reading the audit log belongs to the executive
@@ -198,6 +206,11 @@ appears.
 > cabinet refuses in plain words, and the refusal is recorded. The counseling fields
 > exist in this fictional data precisely so that refusal is real. Governed AI is not a
 > promise. It is the architecture here. Thank you."
+
+*Footnote.* The refusal is the default for every institution, and it is what this
+demo shows. An institution may record its counseling director's written
+authorization for one aggregate count (RUNBOOK.md). Even then this question and every
+request for a counseling field are refused word for word.
 
 ---
 

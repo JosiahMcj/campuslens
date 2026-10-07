@@ -34,9 +34,9 @@ describe('StatRow', () => {
 
   it('renders one figure per headline measure, each a finding link', () => {
     expect(html.match(/stat-figure/g)?.length).toBe(5)
-    for (const id of ['M1', 'M2', 'M3', 'M4', 'M8']) {
-      expect(html).toContain(`Open the evidence for finding ${id}`)
-    }
+    // A screen reader hears which figure opens, by its label, never the code.
+    expect(html.match(/open the evidence: /g)?.length).toBe(5)
+    expect(html).not.toMatch(/\bM[1-9]\b/)
   })
 
   it("shows each finding's display string verbatim and nothing else", () => {
@@ -46,15 +46,25 @@ describe('StatRow', () => {
     expect(displays).toEqual(['−4.8 %', '42', '18', '12', '22'])
   })
 
-  it('shows the finding titles beneath the numbers', () => {
+  it('never makes M9 a card, even when the findings carry it', () => {
+    const withM9 = {
+      ...findings,
+      M9: finding('M9', 'Counseling contact', '7'),
+    } as unknown as Findings
+    const out = renderToStaticMarkup(<StatRow findings={withM9} onOpenEvidence={() => {}} />)
+    expect(out.match(/stat-figure/g)?.length).toBe(5)
+    expect(out).not.toContain('counseling')
+  })
+
+  it('shows the display labels beneath the numbers, not the backend titles', () => {
     const titles = [...html.matchAll(/<span class="stat-title">([^<]*)<\/span>/g)].map(
       (match) => match[1],
     )
     expect(titles).toEqual([
-      'Registered continuing students vs prior year',
+      'Spring registration vs. same point last year',
       'Continuing students not yet registered',
-      'Unresolved financial holds under the threshold',
-      'No advising appointment this term',
+      'Not yet registered, with a hold under $1,000',
+      'Not yet registered, no advising appointment this term',
       'Students with one or more support indicators',
     ])
   })

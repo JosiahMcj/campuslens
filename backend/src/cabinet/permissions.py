@@ -11,6 +11,12 @@ model call* and logged as ``data.refused``; a granted request is logged as
   are refused.
 - ``refused`` — never granted. ``counseling.*`` is refused to every role: it
   exists in the fixture only so the refusal is real.
+
+The counseling fields stay refused even when an institution has recorded a
+counseling aggregate authorization (``cabinet.counseling``). That
+authorization never grants a field. It lets code compute one count (M9),
+which the Chief of Staff alone may receive as a number or a suppressed
+marker, with its own ``data.granted`` event marked ``aggregate_only``.
 """
 
 from __future__ import annotations
@@ -19,6 +25,7 @@ from collections.abc import Callable
 from typing import Any
 
 from cabinet.audit import AuditSink
+from cabinet.counseling import m9_model_view
 
 READ = "read"
 STATUS_ONLY = "status_only"
@@ -110,6 +117,15 @@ ROLE_FINDINGS: dict[str, tuple[str, ...]] = {
     "enrollment_analyst": ("M1", "M2", "M7"),
     "student_success_analyst": ("M3", "M4", "M5", "M8"),
     "chief_of_staff": ("M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8"),
+}
+
+# Findings a role may receive only when the institution has recorded the
+# authorization that makes them exist (M9, the counseling aggregate). They
+# sit outside ROLE_FINDINGS on purpose: a question's standing dispatch is
+# ROLE_FINDINGS itself, and an absent M9 must never be dispatched. No
+# analyst appears here, so findings_for_role refuses M9 to every analyst.
+AUTHORIZED_AGGREGATE_FINDINGS: dict[str, tuple[str, ...]] = {
+    "chief_of_staff": ("M9",),
 }
 
 # The fields each analyst's task requests when the Chief of Staff dispatches
@@ -266,6 +282,38 @@ def grant_aggregates(
     return requested
 
 
+def grant_authorized_aggregate(
+    role: str,
+    finding_id: str,
+    fields_read: list[str] | tuple[str, ...],
+    authorization: dict[str, Any],
+    task_id: str,
+    log: AuditSink,
+) -> None:
+    """Record that ``role`` received an authorized aggregate (M9).
+
+    A separate ``data.granted`` event from the role's aggregate grant, so a
+    reader of the chain sees the counseling count apart from everything
+    else: ``aggregate_only: true``, the fields code read to compute it (never
+    their values, and never granted to the role), and the authorization
+    reference it rests on. Only the roles listed in
+    ``AUTHORIZED_AGGREGATE_FINDINGS`` for that finding may receive it.
+    """
+    if finding_id not in AUTHORIZED_AGGREGATE_FINDINGS.get(role, ()):
+        raise ValueError(f"role {role!r} may not receive {finding_id!r}")
+    log.append(
+        "data.granted",
+        actor=role,
+        payload={
+            "task_id": task_id,
+            "finding_id": finding_id,
+            "aggregate_only": True,
+            "fields_read": list(fields_read),
+            "authorization": dict(authorization),
+        },
+    )
+
+
 def run_task_with_model(
     role: str,
     fields: list[str] | tuple[str, ...],
@@ -301,18 +349,22 @@ def findings_for_role(
     """The findings a role may receive (ROADMAP §3 layer 4).
 
     Enrollment Analyst: M1, M2, M7. Student Success Analyst: M3, M4, M5, M8.
-    Chief of Staff: all findings. ``finding_ids`` narrows the role's standing
-    set for one approved question's dispatch (``questions.received_for``); it
-    must be a subset of ``ROLE_FINDINGS[role]`` — a question can narrow a
-    role's lane, never widen it. Every role receives aggregates only: all
-    row-ID lists (and any other student-level lists) are stripped — row IDs
-    reach the evidence drawer through ``GET /findings``, never through a
-    model. Unknown roles raise ``ValueError``.
+    Chief of Staff: M1-M8, plus M9 when the institution has authorized it.
+    ``finding_ids`` narrows the role's standing set for one approved
+    question's dispatch (``questions.received_for``); it must be a subset of
+    ``ROLE_FINDINGS[role]`` plus the role's ``AUTHORIZED_AGGREGATE_FINDINGS``
+    — a question can narrow a role's lane, never widen it. M9 arrives as
+    ``counseling.m9_model_view``: the count or the suppressed marker only.
+    Every role receives aggregates only: all row-ID lists (and any other
+    student-level lists) are stripped — row IDs reach the evidence drawer
+    through ``GET /findings``, never through a model. Unknown roles raise
+    ``ValueError``.
     """
     if role not in ROLE_FINDINGS:
         raise ValueError(f"unknown role: {role!r}")
-    permitted = ROLE_FINDINGS[role]
-    ids = permitted if finding_ids is None else finding_ids
+    standing = ROLE_FINDINGS[role]
+    permitted = (*standing, *AUTHORIZED_AGGREGATE_FINDINGS.get(role, ()))
+    ids = standing if finding_ids is None else finding_ids
     outside = [f for f in ids if f not in permitted]
     if outside:
         raise ValueError(
@@ -321,5 +373,10 @@ def findings_for_role(
         )
     out: dict[str, Any] = {}
     for finding_id in ids:
-        out[finding_id] = _strip_row_ids(findings_obj[finding_id])
+        if finding_id in AUTHORIZED_AGGREGATE_FINDINGS.get(role, ()):
+            # The count or the suppressed marker only, never the fields read
+            # or the authorization (see counseling.m9_model_view).
+            out[finding_id] = m9_model_view(findings_obj[finding_id])
+        else:
+            out[finding_id] = _strip_row_ids(findings_obj[finding_id])
     return out

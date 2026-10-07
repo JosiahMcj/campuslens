@@ -13,7 +13,7 @@ PYBIN := $(VENV)/bin
 	typecheck typecheck-python typecheck-ui \
 	test test-python test-ui \
 	check audit check-config bootstrap-admin institution user import-ethos api ui stop record-golden \
-	migrate backup restore purge-deleted build serve
+	migrate backup restore purge-deleted build serve school-data school-check explore-check
 
 setup: setup-python setup-ui
 
@@ -303,3 +303,24 @@ stop:
 			echo "port $$port is still held by pid $$pid ($$(ps -p $$pid -o command= 2>/dev/null || echo 'unknown command')) — not killed; it was not started from this directory's pid files"; \
 		done; \
 	done
+
+# Demonstration University, the synthetic school (data/school/README.md).
+# school-data generates the whole university at scale 1.0 into
+# var/school/school.db (seeded, deterministic, never committed) and then
+# runs the checker. school-check re-runs the checker alone: schema,
+# realism rules, and every planted fact in data/school/VERIFY.md.
+school-data:
+	@mkdir -p var/school
+	$(PYBIN)/python data/school/generate.py --out var/school/school.db
+	$(PYBIN)/python data/school/check.py --db var/school/school.db
+
+school-check:
+	$(PYBIN)/python data/school/check.py --db var/school/school.db
+
+# Explore's full-scale check (docs/EXPLORE.md), after make school-data: the
+# owner's example and five more planted facts asked in plain English must
+# come back with the VERIFY.md values, then the owner's example is printed
+# (answer sentences and the three tables) from the same code, offline.
+explore-check:
+	cd backend && CABINET_EXPLORE_FULL=1 CABINET_PROVIDER=replay ../$(PYBIN)/pytest -q tests/test_explore.py -k full_scale
+	CABINET_SCHOOL_DB=var/school/school.db $(PYBIN)/python -m cabinet.explore "Which major has the lowest GPA? In that major, what is historically the hardest class, and which instructor has historically taught it?"

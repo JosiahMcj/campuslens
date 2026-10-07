@@ -182,12 +182,28 @@ def _q1_actions(findings_obj: dict[str, Any]) -> list[dict[str, Any]]:
     return actions
 
 
+# The decision text the president reads ends with what approving does NOT
+# do, including "and nothing is sent." That is true of the approval, but it
+# reads as false inside the very message being sent, so the dispatch quotes
+# the decision without that clause. The decision text itself is unchanged:
+# the briefing, the decision card and every recorded answer keep it.
+_NOTHING_SENT_CLAUSE = ", and nothing is sent."
+
+
+def _dispatch_decision_text(text: str) -> str:
+    """The decision text as quoted in a dispatch: the closing
+    "…, and nothing is sent." becomes a full stop, so a message that is
+    being sent never says that nothing is sent."""
+    return text.replace(_NOTHING_SENT_CLAUSE, ".")
+
+
 def _dispatch_body(
     decision: dict[str, Any], approved_by: str, evidence_lines: list[str]
 ) -> str:
     """The shared dispatch message shape. Every line is built in code from
     the decision and the findings: the office, the decision, the approving
-    user, and the numbers with their finding ids. The closing sentence is a
+    user, and the numbers, in plain words for the office that reads it (no
+    finding or decision ids: the audit log keeps those). The closing sentence is a
     promise the template keeps by construction, because no student row or
     student id is ever passed in.
     """
@@ -198,8 +214,8 @@ def _dispatch_body(
         "A leadership decision has been approved, and this office is "
         "asked to act on it.",
         "",
-        f"Decision: {decision['title']} ({decision['id']})",
-        f"Decision text: {decision['text']}",
+        f"Decision: {decision['title']}",
+        f"Decision text: {_dispatch_decision_text(decision['text'])}",
         f"Approved by: {approved_by}",
         "",
         f"Requested follow-up: {decision['follow_up']['description']}",
@@ -221,21 +237,20 @@ def _q1_dispatch(
     """Q1's message to Financial Aid: the emergency-aid eligibility review.
 
     The count and the threshold come from M3 exactly as the briefing's
-    numeral rules require: a real value is a numeral with its finding id,
-    a missing value is spelled out, never a bare ``--``.
+    numeral rules require: a real value is a numeral, a missing value is
+    spelled out, never a bare ``--``.
     """
     limit = f"${M3_AMOUNT_LIMIT:,.0f}"
     holds = findings_obj["M3"].get("value")
     if isinstance(holds, int):
         evidence = (
             f"{holds} continuing students have an unresolved financial hold "
-            f"below {limit} (finding M3)."
+            f"below {limit}."
         )
     else:
         evidence = (
             f"The count of continuing students with unresolved financial "
-            f"holds below {limit} is not available in the current findings "
-            "(finding M3)."
+            f"holds below {limit} is not available in the current findings."
         )
     office = decision["follow_up"]["office"]
     return {
@@ -379,15 +394,13 @@ def _q2_dispatch(
     )
     if total is not None:
         evidence = (
-            f"{total} unresolved holds affect continued enrollment "
-            f"(finding M5), with the small-balance cases below {limit} "
-            "counted in finding M3."
+            f"{total} unresolved holds affect continued enrollment, "
+            f"including the small-balance cases below {limit}."
         )
     else:
         evidence = (
             "The count of unresolved holds is not available in the "
-            f"current findings (finding M5); the small-balance threshold "
-            f"is {limit} (finding M3)."
+            f"current findings; the small-balance threshold is {limit}."
         )
     office = decision["follow_up"]["office"]
     return {

@@ -240,6 +240,12 @@ def test_findings_for_role_scoping() -> None:
         assert "row_rules" not in scoped
         assert "STU-" not in scoped
         assert "PRI-" not in scoped
+        # Nor any Financial Aid review queue field (the queue's rows, facts,
+        # and notes never reach a model; test_aid_queue.py runs both
+        # questions after a note is saved).
+        assert "facts" not in scoped
+        assert "aid_review" not in scoped
+        assert "advising_appointment_status" not in scoped
     with pytest.raises(ValueError, match="unknown role"):
         findings_for_role("nobody", obj)
 
@@ -441,7 +447,7 @@ def test_double_approve_creates_exactly_one_task(client: TestClient) -> None:
     first_body = first.json()
     assert first_body["created"] is True
     task = first_body["task"]
-    assert task["status"] == "simulated, nothing sent"
+    assert task["status"] == "Waiting for the message to be sent"
     assert task["office"] == "Financial Aid"
     assert task["id"]
 

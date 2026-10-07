@@ -1,15 +1,28 @@
-import type { Finding, Findings, OfficeHolds } from '../api'
+import type { Decision, Finding, Findings, OfficeHolds } from '../api'
 import { getFinding } from '../api'
 import {
   analystSource,
+  analystSourceDetail,
   analystSourceLabel,
   findingDisplay,
   m3ThresholdLabel,
   type AnalystClaim,
   type ModelSection,
 } from '../states'
+import { authorizedSourceLabel, suppressionNote } from '../counseling'
+import { fieldLabels } from '../fieldLabels'
+import { findingLabel, linkClaimNumbers } from '../findingLabels'
 import { FindingLink } from './FindingLink'
-import { ChevronIcon } from './icons'
+
+/** A figure's display text by id, for linking the numbers in model text. */
+type DisplayOf = (findingId: string) => string
+
+function displayLookup(findings: Findings, counselingFigure: Finding | null = null): DisplayOf {
+  return (id) => {
+    const finding = id === 'M9' ? (counselingFigure ?? undefined) : getFinding(findings, id)
+    return findingDisplay(finding ?? {}).text
+  }
+}
 
 interface BriefingProps {
   findings: Findings
@@ -34,6 +47,16 @@ interface BriefingProps {
    * ask (staff, reviewer): the button is not offered. */
   onCheckAgain: (() => void) | null
   onOpenEvidence: (findingId: string) => void
+  /**
+   * M9, the authorized counseling count, from the produced briefing's own
+   * `aggregates` (never the current findings). Null when the briefing did
+   * not carry it: before the first Ask, under another question, or on a
+   * briefing produced while the authorization was off.
+   */
+  counselingFigure?: Finding | null
+  /** Opens the Staff actions panel: section 5 links there instead of
+   * repeating it. Omitted, the section names the sidebar entry instead. */
+  onOpenStaffActions?: () => void
 }
 
 /**
@@ -58,13 +81,14 @@ export function BriefingSections({
   chiefSummary,
   onCheckAgain,
   onOpenEvidence,
+  counselingFigure = null,
+  onOpenStaffActions,
 }: BriefingProps) {
-  const m1 = getFinding(findings, 'M1')
   const m2 = getFinding(findings, 'M2')
   const m3 = getFinding(findings, 'M3')
   const m4 = getFinding(findings, 'M4')
   const m5 = getFinding(findings, 'M5')
-  const m7 = getFinding(findings, 'M7')
+  const displayOf = displayLookup(findings, counselingFigure)
 
   return (
     <article className="briefing" aria-label="Executive briefing">
@@ -72,32 +96,26 @@ export function BriefingSections({
         findings={findings}
         chiefSummary={chiefSummary}
         onOpenEvidence={onOpenEvidence}
+        about={false}
       />
 
       <section aria-labelledby="s-measure">
         <h2 id="s-measure">2. Current measure and historical comparison</h2>
-        {enrollment !== null && enrollment.kind === 'available' ? (
-          <ModelClaims
-            claims={enrollment.claims}
-            provenance={enrollment.provenance}
-            analyst="the Enrollment Analyst"
-            onOpen={onOpenEvidence}
-          />
-        ) : (
-          <p>
-            Registered continuing students stand at{' '}
-            <Num finding={m1} id="M1" onOpen={onOpenEvidence} /> compared with the
-            equivalent date last year
-            {typeof m1?.comparison?.prior_year_equivalent_date === 'string' && (
-              <> ({m1.comparison.prior_year_equivalent_date})</>
-            )}
-            , and registered credit hours are{' '}
-            <Num finding={m7} id="M7" onOpen={onOpenEvidence} /> over the same
-            comparison.
-          </p>
-        )}
-        {enrollment !== null && enrollment.kind === 'unavailable' && (
-          <ModelUnavailable reason={enrollment.reason} onRetry={onCheckAgain} />
+        <ComparisonTable findings={findings} onOpen={onOpenEvidence} />
+        {enrollment !== null && enrollment.kind === 'available' && (
+          <details className="fold technical-detail">
+            <summary>
+              Show the Enrollment Analyst's explanation
+            </summary>
+            <ModelClaims
+              claims={enrollment.claims}
+              provenance={enrollment.provenance}
+              analyst="the Enrollment Analyst"
+              onOpen={onOpenEvidence}
+              displayOf={displayOf}
+              about={false}
+            />
+          </details>
         )}
       </section>
 
@@ -109,6 +127,8 @@ export function BriefingSections({
             provenance={studentSuccess.provenance}
             analyst="the Student Success Analyst"
             onOpen={onOpenEvidence}
+            displayOf={displayOf}
+            about={false}
           />
         ) : (
           <>
@@ -120,8 +140,7 @@ export function BriefingSections({
               appears, pseudonymously, in the evidence behind that number.
             </p>
             <p>
-              Of the <Num finding={m2} id="M2" onOpen={onOpenEvidence} /> students not
-              yet registered, <Num finding={m3} id="M3" onOpen={onOpenEvidence} />{' '}
+              Of those students, <Num finding={m3} id="M3" onOpen={onOpenEvidence} />{' '}
               carry an unresolved financial hold (
               <M3Threshold finding={m3} onOpen={onOpenEvidence} />), the kind a
               payment plan or a focused aid review often clears, and{' '}
@@ -133,16 +152,37 @@ export function BriefingSections({
         {studentSuccess !== null && studentSuccess.kind === 'unavailable' && (
           <ModelUnavailable reason={studentSuccess.reason} onRetry={onCheckAgain} />
         )}
-        <OfficeTable finding={m5} onOpen={onOpenEvidence} />
+        <CounselingAggregate
+          finding={counselingFigure ?? undefined}
+          m2={m2}
+          onOpen={onOpenEvidence}
+        />
+        <OfficeTable finding={m5} />
       </section>
 
       <EvidenceSources
         findings={findings}
         fictional={fictional}
         onOpenEvidence={onOpenEvidence}
+        counselingFigure={counselingFigure}
       />
 
-      <StaffActions findings={findings} onOpenEvidence={onOpenEvidence} />
+      <section aria-labelledby="s-actions">
+        <h2 id="s-actions">5. Operational actions</h2>
+        <p>
+          Staff can act on these figures now, each action with a responsible office
+          and no leadership approval needed.{' '}
+          {onOpenStaffActions !== undefined ? (
+            <button type="button" className="link-button" onClick={onOpenStaffActions}>
+              Open Staff actions
+            </button>
+          ) : (
+            <>They are listed under Staff actions in the sidebar.</>
+          )}
+        </p>
+      </section>
+
+      <AboutBriefing sections={[chiefSummary, enrollment, studentSuccess]} />
     </article>
   )
 }
@@ -159,12 +199,15 @@ export function EvidenceSources({
   onOpenEvidence,
   headingId = 's-evidence',
   title = '4. Evidence and source fields',
+  counselingFigure = null,
 }: {
   findings: Findings
   fictional: boolean
   onOpenEvidence: (findingId: string) => void
   headingId?: string | null
   title?: string
+  /** M9 from the produced briefing, listed last when present. */
+  counselingFigure?: Finding | null
 }) {
   return (
     <section
@@ -175,9 +218,9 @@ export function EvidenceSources({
       <p>
         Every number in this briefing is computed from{' '}
         {fictional ? 'fictional source data' : "your institution's source data"} and
-        traces to one of the findings below, each listed with the exact
-        source fields it read. Open any finding to see its formula and the
-        rows behind it.
+        traces to one of the figures below, each listed with the fields it
+        reads. Open any figure to see how it is computed and the records
+        behind it.
       </p>
       <ul className="finding-list">
         {(['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8'] as const).map((id) => {
@@ -191,16 +234,33 @@ export function EvidenceSources({
                 className="finding-row"
                 onClick={() => onOpenEvidence(id)}
               >
-                <span className="finding-row-id">{id}</span>
-                <span className="finding-row-title">{finding.title}</span>
+                <span className="finding-row-title">{findingLabel(id, finding.title)}</span>
                 <span className="finding-row-display">{display.text}</span>
                 <span className="finding-row-fields">
-                  {finding.source_fields.join(', ')}
+                  Reads: {fieldLabels(finding.source_fields).join(', ')}
                 </span>
               </button>
             </li>
           )
         })}
+        {counselingFigure !== null && (
+          <li key="M9">
+            <button
+              type="button"
+              className="finding-row"
+              onClick={() => onOpenEvidence('M9')}
+            >
+              <span className="finding-row-title">{findingLabel('M9')}</span>
+              <span className="finding-row-display">
+                {findingDisplay(counselingFigure).text}
+              </span>
+              <span className="finding-row-fields">
+                {capitalize(authorizedSourceLabel(counselingFigure))}. No list of
+                students is shown for this figure.
+              </span>
+            </button>
+          </li>
+        )}
       </ul>
     </section>
   )
@@ -242,11 +302,8 @@ export function StaffActions({
           <strong>Student Success</strong>{' '}
           {findingDisplay(m4 ?? {}).missing ? (
             <>
-              has no students to review. The{' '}
-              <FindingLink findingId="M4" onOpen={onOpenEvidence}>
-                M4
-              </FindingLink>{' '}
-              value is not available.
+              has no students to review: the figure for students with no
+              advising appointment is not available.
             </>
           ) : (
             <>
@@ -259,11 +316,8 @@ export function StaffActions({
           <strong>Financial Aid</strong>{' '}
           {findingDisplay(m3 ?? {}).missing ? (
             <>
-              has no small-balance cases to review. The{' '}
-              <FindingLink findingId="M3" onOpen={onOpenEvidence}>
-                M3
-              </FindingLink>{' '}
-              value is not available.
+              has no small-balance cases to review: the figure for students with
+              a small hold is not available.
             </>
           ) : (
             <>
@@ -276,13 +330,12 @@ export function StaffActions({
         </li>
         {officeRows(m5).map((office) => (
           <li key={office.office}>
-            <strong>{office.office}</strong> resolves the {office.count}{' '}
-            unresolved hold{office.count === 1 ? '' : 's'} recorded for that
-            office (
+            <strong>{office.office}</strong> resolves the{' '}
             <FindingLink findingId="M5" onOpen={onOpenEvidence}>
-              M5
-            </FindingLink>
-            ).
+              <span className="num">{office.count}</span>
+            </FindingLink>{' '}
+            unresolved hold{office.count === 1 ? '' : 's'} recorded for that
+            office.
           </li>
         ))}
       </ul>
@@ -303,12 +356,16 @@ export function ExecutiveSummary({
   onOpenEvidence,
   headingId = 's-summary',
   title = '1. Executive summary',
+  about = true,
 }: {
   findings: Findings
   chiefSummary: ModelSection | null
   onOpenEvidence: (findingId: string) => void
   headingId?: string | null
   title?: string
+  /** Its own "About this answer" fold (the chat answer). The full briefing
+   * passes false and shows one fold for the whole panel. */
+  about?: boolean
 }) {
   const m1 = getFinding(findings, 'M1')
   const m2 = getFinding(findings, 'M2')
@@ -325,6 +382,8 @@ export function ExecutiveSummary({
           provenance={chiefSummary.provenance}
           analyst="the Chief of Staff"
           onOpen={onOpenEvidence}
+          displayOf={displayLookup(findings)}
+          about={about}
         />
       ) : (
         <p className="headline-text">
@@ -350,9 +409,8 @@ export function ExecutiveSummary({
             The headline above is computed from the data and remains fully
             evidenced.
           </p>
-          <details className="technical-detail">
+          <details className="fold technical-detail">
             <summary>
-              <ChevronIcon />
               Technical detail
             </summary>
             <p>{chiefSummary.reason}</p>
@@ -384,26 +442,36 @@ export function Limitations({
   chiefLimitations: ModelSection | null
   onOpenEvidence: (findingId: string) => void
 }) {
+  const heading = (
+    <h2 id="s-limitations">7. Known limitations, missing data, or conflicting definitions</h2>
+  )
   if (chiefLimitations !== null && chiefLimitations.kind === 'available') {
     return (
       <section aria-labelledby="s-limitations">
-        <h2 id="s-limitations">
-          7. Known limitations, missing data, or conflicting definitions
-        </h2>
-        <ModelClaims
-          claims={chiefLimitations.claims}
-          provenance={chiefLimitations.provenance}
-          analyst="the Chief of Staff"
-          onOpen={onOpenEvidence}
-        />
+        {heading}
+        <details className="fold technical-detail">
+          <summary>
+            Show the known limitations ({chiefLimitations.claims.length})
+          </summary>
+          <ModelClaims
+            claims={chiefLimitations.claims}
+            provenance={chiefLimitations.provenance}
+            analyst="the Chief of Staff"
+            onOpen={onOpenEvidence}
+            displayOf={displayLookup(findings)}
+            about={false}
+          />
+        </details>
       </section>
     )
   }
   return (
     <section aria-labelledby="s-limitations">
-      <h2 id="s-limitations">
-        7. Known limitations, missing data, or conflicting definitions
-      </h2>
+      {heading}
+      <details className="fold technical-detail">
+        <summary>
+          Show the known limitations (5)
+        </summary>
       <ul className="limitations-list">
         <li>
           {fictional
@@ -424,8 +492,9 @@ export function Limitations({
           summary (section 1) and its stated limitations replace this list;
           both are validated against the findings the same way.
         </li>
-        <li>M7 (registered credit hours vs. prior year) is an optional measure.</li>
+        <li>{findingLabel('M7')} is an optional measure.</li>
       </ul>
+      </details>
     </section>
   )
 }
@@ -444,6 +513,8 @@ function ModelClaims({
   provenance,
   analyst,
   onOpen,
+  displayOf,
+  about = true,
 }: {
   claims: AnalystClaim[]
   provenance: {
@@ -454,24 +525,112 @@ function ModelClaims({
   /** Who the source label names, e.g. "the Student Success Analyst". */
   analyst: string
   onOpen: (findingId: string) => void
+  displayOf: DisplayOf
+  /** Its own "About this answer" fold; false where the panel has one. */
+  about?: boolean
 }) {
   const source = analystSource(provenance)
+  // A figure already linked by its number in an earlier sentence needs no
+  // extra "Evidence" link in a later one.
+  const linked = new Set<string>()
   return (
     <>
       <p className={source === 'fake' ? 'analyst-source stub-tag' : 'analyst-source'}>
-        {analystSourceLabel(source, analyst, provenance.model_label)}
+        {analystSourceLabel(source, analyst)}
       </p>
-      {claims.map((claim, index) => (
-        <p key={index}>
-          {claim.text}{' '}
-          {claim.finding_ids.map((id) => (
-            <FindingLink key={id} findingId={id} onOpen={onOpen}>
-              [{id}]
-            </FindingLink>
-          ))}
-        </p>
-      ))}
+      {claims.map((claim, index) => {
+        const skip = new Set(linked)
+        for (const id of claim.finding_ids) linked.add(id)
+        return (
+          <ClaimText
+            key={index}
+            claim={claim}
+            onOpen={onOpen}
+            displayOf={displayOf}
+            alreadyLinked={skip}
+          />
+        )
+      })}
+      {about && (
+        <details className="fold technical-detail about-answer">
+          <summary>About this answer</summary>
+          <p>{analystSourceDetail(source, provenance.model_label)}</p>
+        </details>
+      )}
     </>
+  )
+}
+
+/**
+ * The full briefing's one "About this answer": who wrote what, and whether
+ * it was written just now or replayed, once for the whole panel (the same
+ * sentence is said once). Nothing when no section was model-written.
+ */
+function AboutBriefing({ sections }: { sections: (ModelSection | null)[] }) {
+  const details: string[] = []
+  for (const section of sections) {
+    if (section === null || section.kind !== 'available') continue
+    const detail = analystSourceDetail(
+      analystSource(section.provenance),
+      section.provenance.model_label,
+    )
+    if (!details.includes(detail)) details.push(detail)
+  }
+  if (details.length === 0) return null
+  return (
+    <details className="fold technical-detail about-answer">
+      <summary>About this answer</summary>
+      {details.map((detail) => (
+        <p key={detail}>{detail}</p>
+      ))}
+    </details>
+  )
+}
+
+/**
+ * One validated claim: the cited figures' numbers inside the sentence are
+ * their evidence links. A cited figure whose number is not in the sentence
+ * gets one small "evidence" link after it (never a bracketed code).
+ */
+function ClaimText({
+  claim,
+  onOpen,
+  displayOf,
+  alreadyLinked,
+}: {
+  claim: AnalystClaim
+  onOpen: (findingId: string) => void
+  displayOf: DisplayOf
+  /** Figures an earlier sentence already links: no extra Evidence link. */
+  alreadyLinked?: ReadonlySet<string>
+}) {
+  const linked = linkClaimNumbers(
+    claim.text,
+    claim.finding_ids.map((id) => ({ id, display: displayOf(id) })),
+  )
+  const parts = linked.parts
+  const unmatched = linked.unmatched.filter((id) => alreadyLinked?.has(id) !== true)
+  return (
+    <p>
+      {parts.map((part, index) =>
+        part.kind === 'text' ? (
+          part.text
+        ) : (
+          <FindingLink key={index} findingId={part.findingId} onOpen={onOpen}>
+            <span className="num">{part.text}</span>
+          </FindingLink>
+        ),
+      )}
+      {/[.!?]$/.test(claim.text.trim()) ? '' : '.'}
+      {unmatched.map((id) => (
+        <span key={id}>
+          {' '}
+          <FindingLink findingId={id} onOpen={onOpen} className="evidence-tag">
+            Evidence
+          </FindingLink>
+        </span>
+      ))}
+    </p>
   )
 }
 
@@ -496,7 +655,7 @@ function M3Threshold({
   const label = m3ThresholdLabel(finding ?? {})
   return (
     <FindingLink findingId="M3" onOpen={onOpen}>
-      {label !== null ? `under ${label}` : (finding?.title ?? 'the contracted threshold')}
+      {label !== null ? `under ${label}` : 'under the threshold'}
     </FindingLink>
   )
 }
@@ -524,22 +683,46 @@ function Num({
   )
 }
 
-function OfficeTable({
+/**
+ * M9, the authorized counseling aggregate, in section 3. Rendered only when
+ * the findings carry it (the institution recorded the counseling director's
+ * written authorization). It is computed in code, never written by a model,
+ * so its source label names the authorization instead of an analyst. A small
+ * count is withheld, and the sentence says so plainly.
+ */
+function CounselingAggregate({
   finding,
+  m2,
   onOpen,
 }: {
   finding: Finding | undefined
+  m2: Finding | undefined
   onOpen: (findingId: string) => void
 }) {
+  if (finding === undefined) return null
+  const note = suppressionNote(finding)
+  return (
+    <div className="aggregate-figure">
+      <p className="analyst-source">{capitalize(authorizedSourceLabel(finding))}</p>
+      <p>
+        Of the <Num finding={m2} id="M2" onOpen={onOpen} /> students not yet
+        registered, <Num finding={finding} id="M9" onOpen={onOpen} /> have had
+        any counseling contact this term.{note !== null && <> {note}</>}
+      </p>
+    </div>
+  )
+}
+
+function OfficeTable({ finding }: { finding: Finding | undefined }) {
   const offices = officeRows(finding)
   if (offices.length === 0) {
     return <p className="hint">No unresolved holds.</p>
   }
   return (
     <table className="office-table">
-      <caption>
-        Unresolved holds by office: <Num finding={finding} id="M5" onOpen={onOpen} />
-      </caption>
+      {/* The total is linked in the text above and in section 4; the
+          caption only names the table. */}
+      <caption className="visually-hidden">Unresolved holds by office</caption>
       <thead>
         <tr>
           <th scope="col">Office</th>
@@ -574,17 +757,137 @@ function ModelUnavailable({
         on this page is computed from the data and remains fully evidenced.
       </p>
       {onRetry !== null && (
-        <button type="button" className="secondary" onClick={onRetry}>
+        <button type="button" className="btn-secondary secondary" onClick={onRetry}>
           Check again
         </button>
       )}
-      <details className="technical-detail">
+      <details className="fold technical-detail">
         <summary>
-          <ChevronIcon />
           Technical detail
         </summary>
         <p>{reason}</p>
       </details>
     </div>
+  )
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/**
+ * Section 2's comparison: each measure, its change, and what it is compared
+ * with (the prior-year value and its date), read from the finding's own
+ * comparison block. Section 1 says the headline; this table is what it adds.
+ */
+function ComparisonTable({
+  findings,
+  onOpen,
+}: {
+  findings: Findings
+  onOpen: (findingId: string) => void
+}) {
+  const rows: { id: 'M1' | 'M7'; measure: string; baseKey: string; unit: string }[] = [
+    {
+      id: 'M1',
+      measure: 'Continuing students registered',
+      baseKey: 'prior_year_registered_continuing',
+      unit: 'students',
+    },
+    {
+      id: 'M7',
+      measure: 'Registered credit hours',
+      baseKey: 'prior_year_registered_credit_hours',
+      unit: 'credit hours',
+    },
+  ]
+  const present = rows.filter((row) => getFinding(findings, row.id) !== undefined)
+  if (present.length === 0) return null
+  return (
+    <table className="office-table comparison-table">
+      <caption>Now compared with the same date last year</caption>
+      <thead>
+        <tr>
+          <th scope="col">Measure</th>
+          <th scope="col">Change</th>
+          <th scope="col">Same date last year</th>
+        </tr>
+      </thead>
+      <tbody>
+        {present.map((row) => {
+          const finding = getFinding(findings, row.id)
+          const comparison = finding?.comparison ?? null
+          const base = comparison?.[row.baseKey]
+          const date = comparison?.prior_year_equivalent_date
+          return (
+            <tr key={row.id}>
+              <th scope="row">{row.measure}</th>
+              <td>
+                <Num finding={finding} id={row.id} onOpen={onOpen} />
+              </td>
+              <td>
+                {typeof base === 'number'
+                  ? `${base.toLocaleString('en-US')} ${row.unit}`
+                  : 'Not recorded'}
+                {typeof date === 'string' && <> ({date})</>}
+              </td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
+  )
+}
+
+/**
+ * Section 6 in the full briefing: the decision's title and where it stands,
+ * with one way to the decision itself (the Decision panel), instead of
+ * repeating it.
+ */
+export function DecisionSection({
+  decisions,
+  onOpenDecision,
+  loadError = null,
+  onRetry,
+}: {
+  decisions: Decision[] | null
+  onOpenDecision: () => void
+  /** The decision could not be loaded: a plain sentence, shown with Retry. */
+  loadError?: string | null
+  onRetry?: () => void
+}) {
+  return (
+    <section aria-labelledby="s-decision-note">
+      <h2 id="s-decision-note">6. Leadership decisions</h2>
+      {loadError !== null ? (
+        <div className="state-error state-panel error-panel" role="alert">
+          <p>Couldn't load the decision. {loadError}</p>
+          {onRetry !== undefined && (
+            <button type="button" className="btn-secondary secondary" onClick={onRetry}>
+              Retry
+            </button>
+          )}
+        </div>
+      ) : decisions === null ? (
+        <p className="status-line">Loading the decision…</p>
+      ) : decisions.length === 0 ? (
+        <p>No leadership decision is waiting for this question.</p>
+      ) : (
+        <ul className="plain-list decision-summary">
+          {decisions.map((decision) => (
+            <li key={decision.id}>
+              <strong>{decision.title}</strong>
+              <br />
+              {decision.approved ? 'Approved.' : 'Waiting for leadership approval.'}
+            </li>
+          ))}
+        </ul>
+      )}
+      {loadError === null && (
+        <button type="button" className="btn-secondary secondary" onClick={onOpenDecision}>
+          Open the decision
+        </button>
+      )}
+    </section>
   )
 }

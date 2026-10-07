@@ -4,7 +4,7 @@
 // state-changing request sends it back as X-CSRF-Token, and a 401 anywhere
 // ends the session in the UI and returns the app to the sign-in screen.
 
-export type Role = 'admin' | 'executive' | 'staff' | 'reviewer'
+export type Role = 'admin' | 'executive' | 'staff' | 'reviewer' | 'aid'
 
 export interface SessionUser {
   id: number
@@ -50,12 +50,23 @@ export class SessionEndedError extends Error {
 /** A non-401 API failure, carrying the response's detail sentence when it has one. */
 export class ApiError extends Error {
   status: number
+  /** Seconds from the response's Retry-After header (429s), when it had one. */
+  retryAfter: number | undefined
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, retryAfter?: number) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.retryAfter = retryAfter
   }
+}
+
+/** The Retry-After header in seconds, when it is a plain number. */
+export function retryAfterFrom(response: Response): number | undefined {
+  const raw = response.headers?.get?.('Retry-After')
+  if (raw === null || raw === undefined) return undefined
+  const seconds = Number.parseInt(raw, 10)
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined
 }
 
 /** A sign-in failure with a sentence that names the problem. */
@@ -161,7 +172,7 @@ export async function login(email: string, password: string): Promise<Session> {
     })
   } catch {
     throw new LoginError(
-      'The sign in service could not be reached. Check that the API is running and try again.',
+      "We couldn't reach the Cabinet. Check your connection and try again.",
     )
   }
   if (response.status === 401) {
@@ -179,7 +190,9 @@ export async function login(email: string, password: string): Promise<Session> {
   }
   if (!response.ok) {
     throw new LoginError(
-      `Sign in did not work (HTTP ${response.status}). Try again in a moment.`,
+      response.status >= 500
+        ? 'Something went wrong on our side. Try again in a minute.'
+        : 'Sign in did not work. Try again in a moment.',
     )
   }
   const parsed = parseSession(await response.json().catch(() => null))
@@ -199,7 +212,11 @@ export async function fetchMe(): Promise<Session | null> {
   const response = await fetch('/api/auth/me')
   if (response.status === 401) return null
   if (!response.ok) {
-    throw new ApiError(response.status, `The session check failed (HTTP ${response.status}).`)
+    throw new ApiError(
+      response.status,
+      'The session check did not work.',
+      retryAfterFrom(response),
+    )
   }
   const parsed = parseSession(await response.json().catch(() => null))
   if (parsed === null) {
@@ -232,6 +249,19 @@ export function canSeeAuditLog(role: Role): boolean {
   return role === 'admin' || role === 'reviewer' || role === 'executive'
 }
 
+/** The Financial Aid review queue: the aid office works it, the admin
+ * manages it, and the executive and reviewer may read it. Staff may prepare
+ * it from the decision panel but never read the rows. Matches
+ * AID_QUEUE_READ_ROLES in the API. */
+export function canSeeAidQueue(role: Role): boolean {
+  return role === 'aid' || role === 'admin' || role === 'executive' || role === 'reviewer'
+}
+
+/** Status and note on a queue row: the aid role and the admin only. */
+export function canEditAidQueue(role: Role): boolean {
+  return role === 'aid' || role === 'admin'
+}
+
 /** The Institution area: admin only. */
 export function canSeeInstitution(role: Role): boolean {
   return role === 'admin'
@@ -247,5 +277,7 @@ export function roleDisplayName(role: Role): string {
       return 'Staff'
     case 'reviewer':
       return 'Reviewer'
+    case 'aid':
+      return 'Financial Aid'
   }
 }

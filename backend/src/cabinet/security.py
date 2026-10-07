@@ -18,8 +18,11 @@ Controls, in the order a request meets them (the first three apply to the
 public routes too — ``GET /health``, ``GET /ready``, ``POST /auth/login`` —
 so a no-session caller is still capped and rate-limited):
 
-1. **Rate limit (per client IP)** — in-process token bucket (default 60
-   requests/min). Over the limit is 429 with ``Retry-After``. The buckets
+1. **Rate limit (per client IP)** — in-process token bucket (default 600
+   requests/min, generous because a whole campus can share one address;
+   each signed-in session has its own tighter bucket, default 120/min, in
+   step 6). Over the limit is 429 with ``Retry-After`` and the plain
+   message ``RATE_LIMIT_MESSAGE``. The buckets
    are per process: behind more than one worker or replica, limits must
    move to the proxy (see docs/SECURITY.md). Keys idle longer than the
    eviction horizon are dropped, so the bucket dict cannot grow without
@@ -38,7 +41,8 @@ so a no-session caller is still capped and rate-limited):
    otherwise; ``GET /auth/me`` hands the token to the UI). In production
    the Origin/Referer host is checked against the request host as a
    second layer. CSRF needs no body, so it runs before the body is read.
-6. **Rate limit (per session)** — same general bucket keyed by session,
+6. **Rate limit (per session)** — a separate bucket per signed-in
+   session (default 120 requests/min, ``CABINET_RATE_SESSION_PER_MIN``),
    plus the tighter consequential-action bucket (default 5/min) on
    ``POST /ask`` (it spends model calls) and on the dispatch Send route
    (it can make a message leave the machine).
@@ -81,6 +85,7 @@ from cabinet.auth import (
     COOKIE_NAME,
     CSRF_HEADER,
     ROLE_ADMIN,
+    ROLE_AID,
     ROLE_EXECUTIVE,
     ROLE_REVIEWER,
     ROLE_STAFF,
@@ -101,12 +106,18 @@ BODY_CAP_OVERRIDES: tuple[tuple[str, int], ...] = (
     ("/admin/datasets", UPLOAD_BODY_BYTES),
 )
 
-ALL_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF, ROLE_REVIEWER)
+ALL_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF, ROLE_REVIEWER, ROLE_AID)
 READ_ROLES = ALL_ROLES  # every logged-in role may read
 ACT_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE)  # ask / approve / refresh
 # The audit log itself: admin and reviewer, and the executive (the
 # president runs the Beat 6 audit walkthrough; staff still may not).
 AUDIT_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_REVIEWER)
+# The Financial Aid review queue holds per-student rows, so it is narrower
+# than READ_ROLES: the aid office works it, the admin manages it, and the
+# executive and reviewer may watch it. Staff may create it from the decision
+# panel but never read the rows.
+AID_QUEUE_READ_ROLES = (ROLE_AID, ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_REVIEWER)
+AID_QUEUE_EDIT_ROLES = (ROLE_AID, ROLE_ADMIN)
 
 # (method, path) -> roles allowed. Anything not listed here (and not
 # public) is denied to every role: the table is the allow-list.
@@ -125,14 +136,23 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     ("POST", "/briefing/student-success/refresh"): ACT_ROLES,
     ("POST", "/governance/request"): ACT_ROLES,
     ("POST", "/decisions/approve"): ACT_ROLES,
+    ("GET", "/aid-queue"): AID_QUEUE_READ_ROLES,
     # The dispatch address book: the institution's admin manages the
     # office mailboxes messages may be sent to (never a student address).
     ("GET", "/admin/offices"): (ROLE_ADMIN,),
     ("PUT", "/admin/offices"): (ROLE_ADMIN,),
+    # The counseling aggregate authorization: the admin records or revokes
+    # what the counseling director authorized in writing.
+    ("GET", "/admin/institution/counseling-authorization"): (ROLE_ADMIN,),
+    ("PUT", "/admin/institution/counseling-authorization"): (ROLE_ADMIN,),
     # Institution admins manage their own institution's users; the
     # institution always comes from the session, never from the client.
     ("GET", "/admin/users"): (ROLE_ADMIN,),
     ("POST", "/admin/users"): (ROLE_ADMIN,),
+    # Explore (cabinet.explore): aggregate questions over the school data;
+    # every role but aid.
+    ("POST", "/explore"): (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF, ROLE_REVIEWER),
+    ("GET", "/explore/catalog"): AUDIT_ROLES + (ROLE_STAFF,),
 }
 
 # Prefix rules, checked when the exact table misses (routes with path
@@ -152,6 +172,9 @@ ROUTE_ROLE_PREFIXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     # with a data.refused event, not a silent drop.
     ("GET", "/decisions/", READ_ROLES),
     ("POST", "/decisions/", (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_STAFF)),
+    # One Financial Aid review row by id: the office records its own status
+    # and note. The aid role and the admin only; everyone else is a 403.
+    ("PATCH", "/aid-queue/", AID_QUEUE_EDIT_ROLES),
 )
 
 # No session needed: liveness, readiness, and login itself.
@@ -179,9 +202,17 @@ def is_api_route(method: str, path: str) -> bool:
     )
 
 ENV_RATE_GENERAL = "CABINET_RATE_GENERAL_PER_MIN"
+ENV_RATE_SESSION = "CABINET_RATE_SESSION_PER_MIN"
 ENV_RATE_ASK = "CABINET_RATE_ASK_PER_MIN"
-DEFAULT_RATE_GENERAL_PER_MIN = 60
+# Per client address. Everyone behind one campus address shares it, so it
+# is generous; the per-session bucket below is what paces one person.
+DEFAULT_RATE_GENERAL_PER_MIN = 600
+DEFAULT_RATE_SESSION_PER_MIN = 120
 DEFAULT_RATE_ASK_PER_MIN = 5
+
+# The body of every rate-limit 429: plain words a person can act on. The
+# Retry-After header carries the seconds.
+RATE_LIMIT_MESSAGE = "The Cabinet is busy. Wait a minute and try again."
 
 GENERIC_LOGIN_ERROR = "invalid email or password"
 
@@ -385,6 +416,7 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
         secret_key: str,
         production: bool,
         rate_general_per_min: int | None = None,
+        rate_session_per_min: int | None = None,
         rate_ask_per_min: int | None = None,
     ) -> None:
         super().__init__(app)
@@ -395,6 +427,11 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
             rate_general_per_min
             if rate_general_per_min is not None
             else _env_int(ENV_RATE_GENERAL, DEFAULT_RATE_GENERAL_PER_MIN)
+        )
+        self.session_bucket = TokenBucket(
+            rate_session_per_min
+            if rate_session_per_min is not None
+            else _env_int(ENV_RATE_SESSION, DEFAULT_RATE_SESSION_PER_MIN)
         )
         self.ask_bucket = TokenBucket(
             rate_ask_per_min
@@ -510,7 +547,7 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
         if not allowed:
             return JSONResponse(
                 status_code=429,
-                content={"detail": "rate limit exceeded"},
+                content={"detail": RATE_LIMIT_MESSAGE},
                 headers={"Retry-After": str(retry_after)},
             )
 
@@ -617,17 +654,17 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
                 )
 
         # 6. Per-session rate limits.
-        allowed, retry_after = self.general_bucket.allow(f"session:{session['id']}")
+        allowed, retry_after = self.session_bucket.allow(f"session:{session['id']}")
         if not allowed:
             return JSONResponse(
                 status_code=429,
-                content={"detail": "rate limit exceeded"},
+                content={"detail": RATE_LIMIT_MESSAGE},
                 headers={"Retry-After": str(retry_after)},
             )
         # The tighter ask bucket covers POST /ask (it spends model calls)
         # and the dispatch Send (it can make a message leave the machine);
         # both are consequential enough to pace per session and per IP.
-        if (method, path) == ("POST", "/ask") or (
+        if (method, path) in (("POST", "/ask"), ("POST", "/explore")) or (
             method == "POST" and path.endswith("/dispatch/send")
         ):
             for key in (f"ask:session:{session['id']}", f"ask:ip:{client_ip}"):
@@ -635,7 +672,7 @@ class CabinetSecurityMiddleware(BaseHTTPMiddleware):
                 if not allowed:
                     return JSONResponse(
                         status_code=429,
-                        content={"detail": "ask rate limit exceeded"},
+                        content={"detail": RATE_LIMIT_MESSAGE},
                         headers={"Retry-After": str(retry_after)},
                     )
 

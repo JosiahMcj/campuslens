@@ -33,7 +33,8 @@ Endpoints:
 - ``GET  /decisions`` — the leadership decision for the latest question
   asked (the registry default before anything is asked), with approval
   state; the text is built from the findings at request time.
-- ``POST /decisions/approve`` — creates one simulated follow-up task,
+- ``POST /decisions/approve`` — creates one follow-up task (waiting until
+  a named person sends the office's message),
   idempotent per decision id (any approved question's decision id is
   accepted), restart-safe via the ``decisions`` table.
 - ``GET  /decisions/{id}/dispatch`` — the dispatch state for one decision
@@ -50,9 +51,30 @@ Endpoints:
   delivers for real and refuses to start in production when its settings
   are incomplete. A sent dispatch is never resent (409 with the earlier
   record). Logs ``task.sent`` with provider and reference.
+- ``POST /decisions/{id}/aid-queue`` — prepares the Financial Aid review
+  queue for the emergency-aid review decision once it is signed off for the
+  active dataset (executive, staff, admin): one row per M3 student with the
+  facts the office needs (``cabinet.aidqueue``). Idempotent per decision and
+  dataset; 409 before sign-off. Logs ``aid.queued``.
+- ``GET  /aid-queue`` — the queue rows for the active dataset (aid, admin,
+  executive, reviewer).
+- ``PATCH /aid-queue/{id}`` — a person in the aid role (or an admin) sets a
+  row's status (open, in_review, closed) and note (free text, at most 1,000
+  characters, stored as typed, never sent to a model). Rows of the active
+  dataset only. ``expected_updated_at`` (the row's updated_at as read) is
+  required (422 without it), and a save against a row that changed since it
+  was opened is a 409. Logs ``aid.updated`` with the acting
+  user, the row id, and the status transition, never the student id.
 - ``GET  /admin/offices`` / ``PUT /admin/offices`` (admin role) — the
   institution's office address book, the only source of dispatch
   recipients. Offices, never student addresses.
+- ``GET  /admin/institution/counseling-authorization`` / ``PUT`` (admin
+  role) — the institution's counseling aggregate authorization: who
+  authorized it in writing and the document, recorded by an admin, or
+  revoked. While it is on, the findings carry M9 (``cabinet.counseling``),
+  a count with no rows. It never grants a counseling field: the
+  ``/governance/request`` refusal is the same either way. Logs
+  ``admin.changed`` with action ``counseling_authorization``.
 - ``GET  /admin/datasets`` / ``POST /admin/datasets`` /
   ``POST /admin/datasets/{id}/activate`` / ``DELETE /admin/datasets/{id}``
   (admin role) — the caller's institution's datasets: upload (strict
@@ -133,6 +155,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from cabinet.accesslog import RequestLogMiddleware
+from cabinet.aidqueue import (
+    AID_NOTE_MAX_CHARS,
+    AID_QUEUE_DECISION_IDS,
+    AID_STATUSES,
+    queue_rows,
+)
 from cabinet.analysts import (
     CHIEF_OF_STAFF,
     ENROLLMENT_ANALYST,
@@ -158,7 +186,9 @@ from cabinet.auth import (
     session_ttl,
     sign_session_id,
 )
+from cabinet.counseling import M9_ID, authorization_block, m9_finding
 from cabinet.datasets import UploadError, validate_upload
+from cabinet.explore.api import router as explore_router
 from cabinet.fixture import parse_fixture
 from cabinet.metrics import findings as compute_findings
 from cabinet.migrations import (
@@ -198,7 +228,7 @@ from cabinet.security import (
     CabinetSecurityMiddleware,
     LoginLockout,
 )
-from cabinet.store import CabinetStore, StoreError
+from cabinet.store import AidReviewConflict, CabinetStore, StoreError
 from cabinet.webui import ApiPrefixMiddleware, SpaStaticFiles, ui_dist_from_env
 
 ENV_FIXTURE = "CABINET_FIXTURE"
@@ -215,7 +245,13 @@ ANALYST_ROLES = ("enrollment_analyst", "student_success_analyst")
 build_decisions = DEFAULT_QUESTION.build_decisions
 build_actions = DEFAULT_QUESTION.build_actions
 
-SIMULATED_STATUS = "simulated, nothing sent"
+# The follow-up task's status. Approving creates the task; the message to
+# the office leaves only when a named person presses Send, and the UI takes
+# "Sent" from the dispatch record. A task stored by an earlier build carries
+# the legacy wording, which is rewritten on the way out.
+TASK_STATUS_WAITING = "Waiting for the message to be sent"
+TASK_STATUS_SENT = "Sent"
+LEGACY_TASK_STATUS = "simulated, nothing sent"
 
 
 class AskRequest(BaseModel):
@@ -253,6 +289,56 @@ class OfficeContactEntry(BaseModel):
 
 class OfficesPutRequest(BaseModel):
     offices: list[OfficeContactEntry]
+
+
+class CounselingAuthorizationRequest(BaseModel):
+    """Record (``authorized: true`` with both texts) or revoke
+    (``authorized: false``) the counseling aggregate authorization. The
+    texts are stored exactly as typed, trimmed."""
+
+    authorized: bool
+    authorized_by: str | None = None
+    document_reference: str | None = None
+
+
+# The longest name/title or document reference the authorization stores.
+COUNSELING_AUTHORIZATION_TEXT_MAX = 200
+
+
+class AidReviewPatchRequest(BaseModel):
+    """A person's update to one Financial Aid review row. Either field may
+    be omitted (left unchanged); the note is stored exactly as typed.
+
+    ``expected_updated_at`` is required: the row's ``updated_at`` as the
+    person opened it (null for a row nobody has saved yet). A save without it
+    is a 422, and a save against a row that changed since is a 409, so no
+    one overwrites work they have not seen."""
+
+    status: str | None = None
+    note: str | None = None
+    expected_updated_at: str | None = None
+
+
+# SQLite stores integers as signed 64-bit values. A path id outside that
+# range cannot name a row, and binding it raises OverflowError (a 500).
+SQLITE_MAX_ROW_ID = 2**63 - 1
+
+AID_REVIEW_MISSING_VERSION_MESSAGE = (
+    "Reload the row and send its updated_at as expected_updated_at "
+    "(null for a row nobody has saved yet)."
+)
+
+AID_REVIEW_STALE_MESSAGE = (
+    "This row changed since you opened it. Reload to see the latest."
+)
+
+
+def require_row_id(value: int, detail: str) -> int:
+    """The path id when it can name a row, otherwise a 404 with ``detail``
+    (the same answer as an id that names no row)."""
+    if not 1 <= value <= SQLITE_MAX_ROW_ID:
+        raise HTTPException(status_code=404, detail=detail)
+    return value
 
 
 # Office mailboxes: a deliberately simple shape check (local@domain.tld).
@@ -318,6 +404,16 @@ class InstitutionRuntime:
             "name": dataset["name"],
             "sha256": dataset["sha256"],
         }
+        # M9 exists only while the institution's counseling aggregate
+        # authorization is recorded; recording or revoking it invalidates
+        # this runtime, so the next request recomputes with or without it.
+        m9 = m9_finding(
+            self.document,
+            self.findings["M2"],
+            store.counseling_authorization_for(institution_id),
+        )
+        if m9 is not None:
+            self.findings[M9_ID] = m9
         self.briefing_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
         self.chief_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
         # The last question asked, for GET /decisions; rebuilt from the
@@ -705,9 +801,11 @@ def create_app(
         force_refresh: bool,
         runtime: InstitutionRuntime,
         question: Question = DEFAULT_QUESTION,
-    ) -> tuple[dict[str, Any] | None, str | None]:
+    ) -> tuple[dict[str, Any] | None, str | None, int]:
         """One analyst's validated explanation as a response body, or
-        (None, reason) when the provider cannot answer.
+        (None, reason) when the provider cannot answer, plus the number of
+        corrective tries the run made after a validation failure (0 for a
+        cache hit).
 
         The provider is chosen per call from the environment
         (``CABINET_PROVIDER``), so ``make api REPLAY=1`` takes effect without
@@ -724,7 +822,7 @@ def create_app(
         try:
             provider = provider_from_env()
         except ValueError as exc:
-            return None, str(exc)
+            return None, str(exc), 0
         received = received_for(question, role, runtime.findings)
         received_sha = hashlib.sha256(
             canonical_findings_json(received).encode("utf-8")
@@ -738,12 +836,12 @@ def create_app(
             received_sha,
         )
         if not force_refresh and cache_key in runtime.briefing_cache:
-            return runtime.briefing_cache[cache_key], None
+            return runtime.briefing_cache[cache_key], None, 0
         result = run_analyst(
             role, runtime.findings, provider, audit, task_id=task_id, question=question
         )
         if not result.available:
-            return None, str(result.reason)
+            return None, str(result.reason), result.validation_retries
         body = {
             "available": True,
             "text": result.text,
@@ -776,7 +874,7 @@ def create_app(
                 "question_id": question.id,
             },
         )
-        return body, None
+        return body, None, result.validation_retries
 
     def analyst_section(
         role: str, body: dict[str, Any] | None, reason: str | None
@@ -819,9 +917,12 @@ def create_app(
     @app.post("/ask")
     def post_ask(body: AskRequest, request: Request) -> dict[str, Any]:
         institution_id = request_institution(request)
-        runtime = runtime_for(institution_id)
         audit = store.audit_for(institution_id)
         with ask_lock_for(institution_id):
+            # The runtime is read inside the lock, so an ask that waited
+            # behind a counseling authorization change answers with the
+            # findings that change produced, never the ones before it.
+            runtime = runtime_for(institution_id)
             return _ask_unlocked(body, runtime, audit)
 
     def _ask_unlocked(
@@ -880,12 +981,17 @@ def create_app(
         # this question's task.
         analyst_bodies: dict[str, dict[str, Any] | None] = {}
         analyst_reasons: dict[str, str | None] = {}
+        # Corrective tries after a validation failure, per role; recorded on
+        # briefing.produced (a cache hit made none).
+        validation_retries: dict[str, int] = {}
         for role in ANALYST_ROLES:
-            body_out, reason = analyst_body(
+            body_out, reason, retries = analyst_body(
                 role, analyst_task_ids[role], False, runtime, question
             )
             analyst_bodies[role] = body_out
             analyst_reasons[role] = reason
+            validation_retries[role] = retries
+        validation_retries[CHIEF_OF_STAFF] = 0
 
         # The Chief of Staff merges the analysts' validated findings into
         # sections 1 and 7. It runs only when both analysts produced; if one
@@ -895,6 +1001,7 @@ def create_app(
         chief_body: dict[str, Any] | None = None
         chief_reason: str | None = None
         chief_fields: list[str] = []
+        chief_findings: list[str] = []
         if all(analyst_bodies[role] is not None for role in ANALYST_ROLES):
             chief_task_id = f"task-{CHIEF_OF_STAFF}-{question_event_id}"
             analyst_texts = {
@@ -904,6 +1011,10 @@ def create_app(
             }
             received = chief_received(findings_obj, analyst_texts, question)
             chief_fields = chief_aggregate_fields(received)
+            # What the chief actually received (M9 included while the
+            # counseling authorization is on), so the response's task card
+            # and the task.assigned event never disagree.
+            chief_findings = sorted(received["findings"])
             audit.append(
                 "task.assigned",
                 actor=CHIEF_OF_STAFF,
@@ -942,6 +1053,7 @@ def create_app(
                         chief_task_id,
                         question,
                     )
+                    validation_retries[CHIEF_OF_STAFF] = result.validation_retries
                     if result.available:
                         chief_body = {
                             "executive_summary": result.executive_summary,
@@ -993,6 +1105,11 @@ def create_app(
             "recorded": chief_body["recorded"] if chief_body else False,
             "rekeyed_from": chief_body.get("rekeyed_from") if chief_body else None,
         }
+        # M9 belongs to this briefing only when it answers Q1 and the
+        # authorization was on when it was produced. The briefing keeps its
+        # own copy (no rows, by construction), so the UI never borrows the
+        # current findings' M9 for a Q2 briefing or an older one.
+        m9_in_briefing = question.id == DEFAULT_QUESTION.id and M9_ID in findings_obj
         sections: dict[str, Any] = {
             "1": chief_section(
                 chief_body["executive_summary"] if chief_body else None,
@@ -1018,6 +1135,18 @@ def create_app(
                     }
                     for finding_id in ("M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8")
                 }
+                | (
+                    {
+                        M9_ID: {
+                            "title": findings_obj[M9_ID]["title"],
+                            "display": findings_obj[M9_ID]["display"],
+                            "source_fields": findings_obj[M9_ID]["source_fields"],
+                            "aggregate_only": True,
+                        }
+                    }
+                    if m9_in_briefing
+                    else {}
+                )
             },
             "5": {"actions": question.build_actions(findings_obj)},
             "6": {"decisions": question.build_decisions(findings_obj)},
@@ -1032,6 +1161,9 @@ def create_app(
             "question": question.text,
             "question_event_id": question_event_id,
             "sections": sections,
+            "aggregates": (
+                {M9_ID: findings_obj[M9_ID]} if m9_in_briefing else {}
+            ),
             "meta": {
                 "fictional": runtime.fictional,
                 "dataset": {
@@ -1067,6 +1199,7 @@ def create_app(
                 },
                 "analyst_task_ids": analyst_task_ids,
                 "chief_task_id": chief_task_id,
+                "validation_retries": validation_retries,
             },
         )
         store.save_briefing(
@@ -1093,7 +1226,7 @@ def create_app(
                     "task_id": chief_task_id,
                     "role": CHIEF_OF_STAFF,
                     "granted_fields": chief_fields,
-                    "findings": list(question.dispatch[CHIEF_OF_STAFF]),
+                    "findings": chief_findings,
                     "level": "aggregate",
                 }
             )
@@ -1144,7 +1277,52 @@ def create_app(
                     ),
                 },
             )
-        return JSONResponse(content=briefing)
+        authorized = store.counseling_authorization_for(institution_id)["authorized"]
+        return JSONResponse(
+            content=briefing if authorized else without_m9_claims(briefing)
+        )
+
+    def without_m9_claims(briefing: dict[str, Any]) -> dict[str, Any]:
+        """A stored briefing as it may be shown while the counseling
+        authorization is off. A revoked authorization withdraws the count at
+        once, not at the next ask: the briefing's own M9 copy and its
+        section 4 entry are dropped, and a model-written section that cited
+        M9 (only the Chief of Staff's sections 1 and 7 can) is served as
+        unavailable until the question is asked again. Nothing is rewritten
+        in the store."""
+        sections = briefing.get("sections")
+        if not isinstance(sections, dict):
+            return briefing
+        cleaned = dict(sections)
+        section4 = sections.get("4")
+        if isinstance(section4, dict) and isinstance(section4.get("findings"), dict):
+            cleaned["4"] = {
+                **section4,
+                "findings": {
+                    key: value
+                    for key, value in section4["findings"].items()
+                    if key != M9_ID
+                },
+            }
+        for key in ("1", "7"):
+            section = sections.get(key)
+            if not isinstance(section, dict) or section.get("kind") != "available":
+                continue
+            claims = section.get("claims")
+            cites_m9 = isinstance(claims, list) and any(
+                isinstance(claim, dict) and M9_ID in (claim.get("finding_ids") or [])
+                for claim in claims
+            )
+            if cites_m9:
+                cleaned[key] = {
+                    "kind": "unavailable",
+                    "reason": (
+                        "this section cited the counseling figure, whose "
+                        "authorization has been revoked; ask the question "
+                        "again to refresh it"
+                    ),
+                }
+        return {**briefing, "sections": cleaned, "aggregates": {}}
 
     @app.post("/governance/request")
     def post_governance_request(
@@ -1204,7 +1382,7 @@ def create_app(
                 },
             )
         try:
-            body, reason = analyst_body(
+            body, reason, _retries = analyst_body(
                 role, analyst_task_id(role, runtime), force_refresh, runtime
             )
         finally:
@@ -1248,13 +1426,18 @@ def create_app(
         not shown as approved."""
         institution_id = request_institution(request)
         runtime = runtime_for(institution_id)
-        approved = store.approved_decision_ids(
+        approvals = store.approvals(
             institution_id, dataset_id=int(runtime.dataset["id"])
         )
+        none = {"approved_by": None, "approved_at": None}
         return {
             "question_id": runtime.last_question.id,
             "decisions": [
-                {**decision, "approved": decision["id"] in approved}
+                {
+                    **decision,
+                    "approved": decision["id"] in approvals,
+                    **approvals.get(decision["id"], none),
+                }
                 for decision in runtime.last_question.build_decisions(runtime.findings)
             ],
         }
@@ -1287,7 +1470,7 @@ def create_app(
             "decision_id": body.decision_id,
             "office": decision["follow_up"]["office"],
             "description": decision["follow_up"]["description"],
-            "status": SIMULATED_STATUS,
+            "status": TASK_STATUS_WAITING,
         }
         user = request.scope["cabinet_user"]
         created = store.record_decision(
@@ -1304,8 +1487,19 @@ def create_app(
                 body.decision_id,
                 dataset_id=int(runtime.dataset["id"]),
             )
+            current = dict(existing) if existing is not None else dict(task)
+            # Never claim "nothing sent" once the office's message has left.
+            dispatch = store.dispatch_for_task(
+                institution_id,
+                str(current.get("id", task["id"])),
+                dataset_id=int(runtime.dataset["id"]),
+            )
+            if dispatch is not None and dispatch["status"] == "sent":
+                current["status"] = TASK_STATUS_SENT
+            elif current.get("status") in (LEGACY_TASK_STATUS, None):
+                current["status"] = TASK_STATUS_WAITING
             return {
-                "task": existing if existing is not None else task,
+                "task": current,
                 "created": False,
                 "event_ids": [],
             }
@@ -1388,6 +1582,23 @@ def create_app(
         dataset_id = int(runtime.dataset["id"])
         return runtime, question, decision, dataset_id, f"TASK-{decision_id}"
 
+    def aid_queue_summary(
+        institution_id: int, decision_id: str, dataset_id: int
+    ) -> dict[str, Any]:
+        """Whether this decision opens a Financial Aid review queue and, once
+        prepared, how many students it holds. Counts only: the per-student
+        rows are behind GET /aid-queue, which staff may not read."""
+        if decision_id not in AID_QUEUE_DECISION_IDS:
+            return {"supported": False, "count": None, "created_at": None}
+        rows = store.aid_reviews_for(
+            institution_id, dataset_id=dataset_id, decision_id=decision_id
+        )
+        return {
+            "supported": True,
+            "count": len(rows) if rows else None,
+            "created_at": rows[0]["created_at"] if rows else None,
+        }
+
     @app.get("/decisions/{decision_id}/dispatch")
     def get_decision_dispatch(decision_id: str, request: Request) -> JSONResponse:
         """The dispatch state for one decision: whether it is approved,
@@ -1403,15 +1614,24 @@ def create_app(
         _, _, decision, dataset_id, task_id = context
         office = str(decision["follow_up"]["office"])
         row = store.dispatch_for_task(institution_id, task_id, dataset_id=dataset_id)
+        approval = store.decision_row(
+            institution_id, decision_id, dataset_id=dataset_id
+        )
         return JSONResponse(
             content={
                 "decision_id": decision_id,
                 "task_id": task_id,
                 "office": office,
                 "office_contact": store.office_contact(institution_id, office),
-                "approved": decision_id
-                in store.approved_decision_ids(institution_id, dataset_id=dataset_id),
+                "approved": approval is not None,
+                "approved_by": (
+                    str(approval["approved_by"]) if approval is not None else None
+                ),
+                "approved_at": str(approval["at"]) if approval is not None else None,
                 "dispatch": dispatch_body(row) if row is not None else None,
+                "aid_queue": aid_queue_summary(
+                    institution_id, decision_id, dataset_id
+                ),
             }
         )
 
@@ -1637,6 +1857,178 @@ def create_app(
                 content={"dispatch": dispatch_body(sent), "event_id": event["id"]}
             )
 
+    # -- the Financial Aid review queue -----------------------------------------
+    #
+    # Facts for the aid office, never a determination. Once leadership has
+    # authorized the emergency-aid review, a person prepares the queue: one
+    # row per M3 student with the facts the office needs to start its own
+    # review (cabinet.aidqueue). The office records a status from a fixed
+    # list and a free-text note; the system computes nothing about any
+    # student. No route here calls a model, and nothing here is ever passed
+    # to one.
+
+    def aid_review_body(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "decision_id": row["decision_id"],
+            "dataset_id": row["dataset_id"],
+            "student_id": row["student_id"],
+            "facts": row["facts"],
+            "status": row["status"],
+            "note": row["note"],
+            "updated_by": row["updated_by"],
+            "updated_at": row["updated_at"],
+            "created_at": row["created_at"],
+        }
+
+    @app.post("/decisions/{decision_id}/aid-queue")
+    def post_decision_aid_queue(decision_id: str, request: Request) -> JSONResponse:
+        """Prepare the Financial Aid review queue for an authorized decision
+        (executive, staff, admin; the middleware's /decisions/ prefix rule).
+        Idempotent per decision and dataset: a second request answers the
+        existing queue with created=false. 409, loudly, when the decision
+        has not been signed off for the active dataset."""
+        institution_id = request_institution(request)
+        user = request.scope["cabinet_user"]
+        if decision_id not in AID_QUEUE_DECISION_IDS:
+            raise HTTPException(
+                status_code=404,
+                detail=f"decision {decision_id!r} does not open a Financial "
+                "Aid review queue",
+            )
+        runtime = runtime_for(institution_id)
+        dataset_id = int(runtime.dataset["id"])
+        signed_off = store.decision_row(
+            institution_id, decision_id, dataset_id=dataset_id
+        )
+        if signed_off is None:
+            return dispatch_refused(
+                request,
+                409,
+                f"decision {decision_id!r} has not been authorized for the "
+                "active dataset; leadership signs off on the review before "
+                "the Financial Aid queue is prepared",
+            )
+        created = store.create_aid_queue(
+            institution_id,
+            decision_id=decision_id,
+            dataset_id=dataset_id,
+            rows=queue_rows(runtime.fixture),
+        )
+        count = len(
+            store.aid_reviews_for(
+                institution_id, dataset_id=dataset_id, decision_id=decision_id
+            )
+        )
+        content: dict[str, Any] = {
+            "decision_id": decision_id,
+            "dataset_id": dataset_id,
+            "count": count,
+            "created": created,
+        }
+        if created:
+            event = store.audit_append(
+                institution_id,
+                "aid.queued",
+                actor=str(user["email"]),
+                payload={
+                    "decision_id": decision_id,
+                    "dataset_id": dataset_id,
+                    "count": count,
+                },
+            )
+            content["event_id"] = event["id"]
+        return JSONResponse(content=content)
+
+    @app.get("/aid-queue")
+    def get_aid_queue(request: Request) -> dict[str, Any]:
+        """The Financial Aid review rows for the active dataset (aid, admin,
+        executive, reviewer). Student ids are the pseudonymous ids the
+        evidence drawer shows; the order is student id order, nothing else."""
+        institution_id = request_institution(request)
+        runtime = runtime_for(institution_id)
+        dataset_id = int(runtime.dataset["id"])
+        rows = store.aid_reviews_for(institution_id, dataset_id=dataset_id)
+        return {
+            "dataset_id": dataset_id,
+            "fictional": runtime.fictional,
+            "statuses": list(AID_STATUSES),
+            "note_max_chars": AID_NOTE_MAX_CHARS,
+            "rows": [aid_review_body(row) for row in rows],
+        }
+
+    @app.patch("/aid-queue/{review_id}")
+    def patch_aid_queue_row(
+        review_id: int, body: AidReviewPatchRequest, request: Request
+    ) -> JSONResponse:
+        """A person in the aid role (or an admin) sets one row's status and
+        note. The note is stored exactly as typed, capped at 1,000
+        characters, never interpreted and never shown to a model. One
+        aid.updated event per change, naming the acting user; the note text
+        and the student id stay out of the audit payload. Only rows of the
+        active dataset are editable (404 otherwise). Every save carries
+        ``expected_updated_at`` (422 without it) and is refused with 409 when
+        the row changed since the person opened it."""
+        institution_id = request_institution(request)
+        user = request.scope["cabinet_user"]
+        errors: list[str] = []
+        if body.status is None and body.note is None:
+            errors.append("send a status, a note, or both")
+        if "expected_updated_at" not in body.model_fields_set:
+            errors.append(AID_REVIEW_MISSING_VERSION_MESSAGE)
+        if body.status is not None and body.status not in AID_STATUSES:
+            errors.append(
+                f"status {body.status!r} is not one of {', '.join(AID_STATUSES)}"
+            )
+        if body.note is not None and len(body.note) > AID_NOTE_MAX_CHARS:
+            errors.append(
+                f"the note is {len(body.note):,} characters; the limit is "
+                f"{AID_NOTE_MAX_CHARS:,}"
+            )
+        if errors:
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "; ".join(errors), "errors": errors},
+            )
+        not_found = f"no Financial Aid review row {review_id}"
+        require_row_id(review_id, not_found)
+        try:
+            change = store.update_aid_review(
+                institution_id,
+                review_id,
+                status=body.status,
+                note=body.note,
+                updated_by=str(user["email"]),
+                expected_updated_at=body.expected_updated_at,
+            )
+        except AidReviewConflict as conflict:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "detail": AID_REVIEW_STALE_MESSAGE,
+                    "row": aid_review_body(conflict.current),
+                },
+            )
+        if change is None:
+            # Not in this institution, or not in its active dataset.
+            raise HTTPException(status_code=404, detail=not_found)
+        before, updated = change
+        event = store.audit_append(
+            institution_id,
+            "aid.updated",
+            actor=str(user["email"]),
+            payload={
+                "aid_review_id": review_id,
+                "decision_id": updated["decision_id"],
+                "status_from": before["status"],
+                "status_to": updated["status"],
+                "note_changed": updated["note"] != before["note"],
+            },
+        )
+        return JSONResponse(
+            content={"row": aid_review_body(updated), "event_id": event["id"]}
+        )
+
         # -- institution admin: office contacts (the dispatch address book) ------
         #
         # Same tenancy rule as datasets and users: the institution comes from
@@ -1698,6 +2090,105 @@ def create_app(
         return JSONResponse(
             content={"offices": store.office_contacts_for(institution_id)}
         )
+
+    # -- institution admin: the counseling aggregate authorization ----------
+    #
+    # Recording this never grants a counseling field to anyone. It lets code
+    # compute one count (M9) for the institution, shown with no rows and
+    # suppressed below the minimum group size. The audit event carries the
+    # typed authorization only, never counseling data.
+
+    def counseling_authorization_body(institution_id: int) -> dict[str, Any]:
+        record = store.counseling_authorization_for(institution_id)
+        return {
+            "authorized": record["authorized"],
+            **authorization_block(record),
+        }
+
+    @app.get("/admin/institution/counseling-authorization")
+    def get_counseling_authorization(request: Request) -> dict[str, Any]:
+        return counseling_authorization_body(request_institution(request))
+
+    @app.put("/admin/institution/counseling-authorization")
+    def put_counseling_authorization(
+        body: CounselingAuthorizationRequest, request: Request
+    ) -> JSONResponse:
+        """Record or revoke the authorization (admin only). Recording needs
+        both the name or title of the person who authorized it and the
+        document reference; revoking needs neither and keeps the earlier
+        texts for the record. Either way the findings are recomputed on the
+        next request. M9 leaves the findings at once on a revoke, a stored
+        briefing that cited it is withheld (``without_m9_claims``), and the
+        next ask runs without it."""
+        institution_id = request_institution(request)
+        admin = request.scope["cabinet_user"]
+        authorized_by = (body.authorized_by or "").strip()
+        reference = (body.document_reference or "").strip()
+        errors: list[str] = []
+        if body.authorized:
+            if not authorized_by:
+                errors.append(
+                    "enter the name and title of the person who authorized it"
+                )
+            if not reference:
+                errors.append("enter the reference of the written authorization")
+        for label, text in (
+            ("the name and title", authorized_by),
+            ("the document reference", reference),
+        ):
+            if len(text) > COUNSELING_AUTHORIZATION_TEXT_MAX:
+                errors.append(
+                    f"{label} is longer than "
+                    f"{COUNSELING_AUTHORIZATION_TEXT_MAX} characters"
+                )
+        if errors:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "detail": "the authorization was not recorded",
+                    "errors": errors,
+                },
+            )
+        # Under the institution's ask lock: a question being answered right
+        # now finishes with the state it started with, and the next one sees
+        # the change. Without the lock a revoke could land mid-run and that
+        # run would still send M9 and log its grant after the revoke.
+        with ask_lock_for(institution_id):
+            return _set_counseling_authorization(
+                institution_id, admin, body.authorized, authorized_by, reference
+            )
+
+    def _set_counseling_authorization(
+        institution_id: int,
+        admin: dict[str, Any],
+        authorized: bool,
+        authorized_by: str,
+        reference: str,
+    ) -> JSONResponse:
+        previous = store.counseling_authorization_for(institution_id)
+        record = store.set_counseling_authorization(
+            institution_id,
+            authorized=authorized,
+            authorized_by=(authorized_by if authorized else previous["authorized_by"]),
+            document_reference=(
+                reference if authorized else previous["document_reference"]
+            ),
+            recorded_by=str(admin["email"]),
+        )
+        invalidate_runtime(institution_id)
+        store.audit_append(
+            institution_id,
+            "admin.changed",
+            actor=str(admin["id"]),
+            payload={
+                "action": "counseling_authorization",
+                "by": str(admin["email"]),
+                "authorized": record["authorized"],
+                "authorized_by": record["authorized_by"],
+                "document_reference": record["document_reference"],
+            },
+        )
+        return JSONResponse(content=counseling_authorization_body(institution_id))
 
     # -- institution admin: datasets ----------------------------------------
     #
@@ -1804,6 +2295,7 @@ def create_app(
         """Make one of the institution's datasets active: the findings,
         briefings, decisions, and caches recompute from it on the next
         request. The previously active dataset stays until deleted."""
+        require_row_id(dataset_id, f"unknown dataset id {dataset_id}")
         institution_id = request_institution(request)
         user = request.scope["cabinet_user"]
         dataset = store.dataset_row(institution_id, dataset_id)
@@ -1833,6 +2325,7 @@ def create_app(
         """Soft-delete a dataset. The row stays for the retention window
         (30 days; ``make purge-deleted`` hard-deletes after it); the active
         dataset cannot be deleted — activate another first."""
+        require_row_id(dataset_id, f"unknown dataset id {dataset_id}")
         institution_id = request_institution(request)
         user = request.scope["cabinet_user"]
         dataset = store.dataset_row(institution_id, dataset_id)
@@ -1949,6 +2442,7 @@ def create_app(
         and no new audit event. An admin cannot disable their own account,
         and the institution's last enabled admin cannot be disabled — both
         are 409."""
+        require_row_id(user_id, f"unknown user id {user_id}")
         institution_id = request_institution(request)
         admin = request.scope["cabinet_user"]
         target = store.user_in_institution(institution_id, user_id)
@@ -2004,6 +2498,7 @@ def create_app(
         """Change one user's role. Idempotent (the current role answers 200
         with changed=false); the institution's last enabled admin cannot be
         demoted — 409."""
+        require_row_id(user_id, f"unknown user id {user_id}")
         institution_id = request_institution(request)
         admin = request.scope["cabinet_user"]
         if body.role not in USER_ROLES:
@@ -2041,6 +2536,8 @@ def create_app(
         assert updated is not None
         admin_changed(institution_id, "role_changed", updated, admin)
         return JSONResponse(content={"user": admin_user_body(updated), "changed": True})
+
+    app.include_router(explore_router)  # POST /explore, GET /explore/catalog
 
     # The built UI, served by the same process. Mounted after every API
     # route so an API path always wins over the static mount; a missing

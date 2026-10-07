@@ -38,7 +38,7 @@ of `var/api.log` and exits non-zero. `make ui` starts Vite on
 `http://127.0.0.1:5200` with the same health-polling contract.
 
 Both servers run in the background with pid files in `var/`, so open
-`http://127.0.0.1:5200`. It opens on the login screen, and the demo signs in as
+`http://127.0.0.1:5200`. It opens on the sign-in screen, and the demo signs in as
 the president.
 
 ## Users, institutions, and login
@@ -49,10 +49,12 @@ recordings live in `var/cabinet.db` (override with `CABINET_DB`). Dataset
 documents live under `var/data/<institution slug>/<dataset id>.json` with 0600
 permissions.
 
-`make bootstrap-admin` creates the bootstrap institution and its first admin,
-and the generated password prints exactly once and is never logged.
+`make bootstrap-admin` creates the first institution and its first admin,
+and the generated password prints exactly once and is never logged. The first
+institution is shown as "Demonstration University" and keeps the slug
+`bootstrap`.
 `make institution` adds another tenant, and `make user` adds a login in one of
-four roles, which are admin, executive, staff, and reviewer. Every new
+five roles, which are admin, executive, staff, reviewer, and aid (the Financial Aid office). Every new
 institution is seeded with the fictional demonstration dataset ("Demonstration
 (fictional)"), so the demo and onboarding work from the first login.
 
@@ -238,7 +240,10 @@ The database schema is versioned in the `schema_migrations` table. The app
 applies known pending migrations at startup and refuses to start on a schema
 version it does not know, which means a database written by a newer build. The
 refusal is one clear line on stderr, not a traceback. `make migrate` runs the
-migrations explicitly and shows what applied.
+migrations explicitly and shows what applied. Migration 8 renames the first
+institution from "Bootstrap Institution" to "Demonstration University" when it
+still has the old name. A name an admin already changed is left alone, and the
+slug stays `bootstrap`.
 
 ```bash
 make migrate
@@ -307,8 +312,8 @@ app's 20 MB upload cap, so the app's own 413 is what a client sees), and sets
 HSTS. `deploy/nginx.conf` is the equivalent for nginx, with edge rate limits
 matching the in-process ones, and certbot owns the certificate
 (`certbot --nginx -d <domain>`). Stock Caddy has no rate limiting, so the
-in-process limits (60 per minute per IP and session, 5 per minute on
-`POST /ask`) still apply and see the real client IP. The Caddyfile names the
+in-process limits (600 per minute per IP, 120 per minute per signed-in session,
+and 5 per minute on `POST /ask` and the dispatch Send) still apply and see the real client IP. The Caddyfile names the
 plugin to use when the edge must limit too.
 
 ### Keeping it alive
@@ -354,6 +359,7 @@ are in `deploy/checklist.md`, the full first-deploy walkthrough.
   CABINET_LLM_MODEL=your-model-id
   CABINET_LLM_LABEL=live model        # what the UI shows as the source
   CABINET_LLM_REASONING_EFFORT=low    # keeps reasoning models from thinking past the answer
+  CABINET_LLM_MAX_TOKENS=2048         # output budget per call; hidden reasoning counts against it
   CABINET_LLM_API_KEY=your-key-here
   ```
 
@@ -363,6 +369,29 @@ are in `deploy/checklist.md`, the full first-deploy walkthrough.
   with a reason naming the missing `CABINET_*` variables, and the rest of the app
   keeps working. The endpoint key and the model id are never logged, recorded, or
   returned to the UI, because responses carry the label only.
+
+  A local thinking model needs two settings. On our local chat-completions server,
+  `reasoning_effort: low` changed nothing (about 950 characters of hidden reasoning per
+  short answer, the same as no setting), and the server's `think: false` field and a
+  `/no_think` prefix were ignored, while `none` turned the hidden reasoning off
+  (0 characters, 0.6 s instead of 4 to 5 s). With `low` and 2,048 tokens, 1 of 8
+  approved-question asks lost the Student Success Analyst to `finish_reason 'length'`
+  (and with it sections 1 and 7), and an ask took 25 to 51 s. With `none` and 2,048,
+  all 24 sections of 6 fresh asks came back on the first try in 6 to 16 s. So the
+  local `cabinet.local.env` sets `CABINET_LLM_REASONING_EFFORT=none` and
+  `CABINET_LLM_MAX_TOKENS=2048`. A hosted endpoint keeps the defaults.
+
+  When the model's answer fails validation (for example it cites a finding its
+  role did not receive), we ask it once more with the same inputs plus one
+  short correction that states the reason in plain words and adds no data.
+  The new answer is validated again, and a second failure leaves the section
+  unavailable. Set `CABINET_VALIDATION_RETRIES=0` to turn this off, or a
+  higher number for more tries (capped at 3). Each try can take up to about a
+  minute on a slow endpoint, so one retry can double a section's worst-case
+  time. This is separate from the provider's own single retry on HTTP 429,
+  5xx, and refused connections. The count of corrective tries appears as
+  `validation_retries` on the `finding.produced` and `briefing.produced`
+  events. Replay never retries.
 
 - **`replay`** serves recorded responses with no network. `make api REPLAY=1` is the
   shorthand, and the search order is `CABINET_REPLAY_DIR` if set, then `var/replay/`,
@@ -378,11 +407,23 @@ After an executive approves a leadership decision, the decision panel offers
 from the findings and stores it as a draft. A staff member or admin then
 clicks "Send as \<their address\>", and the message goes to the office
 mailbox. The executive prepares and approves but never sends, and we never
-compose, queue, or send anything without that click.
+compose, queue, or send anything without that click. Until then the follow-up
+task reads "Waiting for the message to be sent", and the panel shows "Sent"
+once the message has left.
 
 The recipient must exist in the institution's office address book first, or
-Send refuses with a message naming the office. An admin manages the book with
-the same session and CSRF flow as the user routes above.
+Send refuses with a message naming the office. An admin manages the book in
+**Institution settings, Offices** (`/institution`). The table lists every
+office in the book and every office the current decision routes to, so an
+office still without a mailbox shows up as a gap. Add, change, or remove a
+mailbox in the row, add another office with "Add an office", then press
+"Save the office contacts". We check each mailbox and office name before
+anything is sent, and an error appears under the field it belongs to. When
+the decision panel finds no mailbox, it links an admin straight to that
+section and tells other roles that an administrator adds it.
+
+The same book is reachable from the command line, with the same session and
+CSRF flow as the user routes above.
 
 ```bash
 curl -b /tmp/cookies http://127.0.0.1:8910/admin/offices
@@ -392,7 +433,7 @@ curl -b /tmp/cookies -X PUT http://127.0.0.1:8910/admin/offices \
                    {"office": "Bursar", "email": "bursar@example.edu"}]}'
 ```
 
-Each PUT replaces the book whole, we validate every entry, and the change is
+Each Save (or PUT) replaces the book whole, we validate every entry, and the change is
 one `admin.changed` audit event. The table holds offices only. No student
 address belongs in it, and the dispatch routes have no other place to get a
 recipient from.
@@ -423,6 +464,98 @@ We audit every draft and every send (`task.dispatched`, then `task.sent` with
 the provider and its reference). A sent message is never resent, because the
 repeat click is a 409 returning the earlier record. A failed send is recorded
 on the dispatch row with the provider's error so it can be retried.
+
+## The Financial Aid review queue
+
+The emergency-aid review decision asks the Financial Aid office to review the
+students M3 counts. Once leadership signs off on that decision, a staff
+member, the executive, or an admin can prepare a review queue for the office
+from the decision panel ("Prepare the Financial Aid review queue"). The queue
+holds one row per M3 student, with the facts the office needs to start its
+own review. Those facts are the qualifying hold's amount, date, and office,
+the registration status, and the advising status. The cabinet makes no
+determination about any student. The office records its own status (open,
+in review, or closed) and a free-text note for each row.
+
+The queue is worked by a fifth role, `aid`, for Financial Aid staff. An aid
+user reads the briefing like staff and lands on the queue after sign-in. It
+cannot ask, sign off, prepare or send a message, or read the audit log.
+Create one with the CLI or the admin API.
+
+```bash
+make user EMAIL=aid@example.edu ROLE=aid   # INSTITUTION defaults to bootstrap
+curl -b /tmp/cookies -X POST http://127.0.0.1:8910/admin/users \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
+  -d '{"email": "aid@example.edu", "role": "aid"}'      # 201 + one_time_password
+```
+
+The routes, with the same session and CSRF flow as above.
+
+```bash
+curl -b /tmp/cookies -X POST http://127.0.0.1:8910/decisions/D-spring-registration-1/aid-queue \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF"
+# -> {"count": 18, "created": true, ...}, or 409 before sign-off
+curl -b /tmp/cookies http://127.0.0.1:8910/aid-queue    # aid, admin, executive, reviewer
+curl -b /tmp/cookies -X PATCH http://127.0.0.1:8910/aid-queue/<row id> \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
+  -d '{"status": "in_review", "note": "Called the student.",
+       "expected_updated_at": null}'   # aid and admin
+```
+
+Preparing the queue twice returns the same rows with `"created": false`.
+Each queue belongs to the dataset it was read from, so activating another
+dataset shows that dataset's queue (empty until someone prepares it), and
+purging a dataset purges its queue. A note holds at most 1,000 characters,
+we store it exactly as typed, and no model ever receives it. We audit the
+queue as `aid.queued` (decision, dataset, and count) and every change as
+`aid.updated` with the acting user, the row id, and the status before and
+after. The note text and the student id stay out of the audit log.
+
+Every save must carry `expected_updated_at`, the row's `updated_at` as it was
+read (`null` for a row nobody has saved yet). A save without it is refused
+with 422 and asks you to reload the row and send its `updated_at`. When the row
+changed since it was read, the save is refused with 409 and the message "This
+row changed since you opened it. Reload to see the latest." Read the row again
+with GET /aid-queue and send its current `updated_at`. Only rows of the active
+dataset can be changed. A row of an inactive or deleted dataset is a 404.
+
+## Recording a counseling authorization
+
+Per-student counseling data stays refused to everyone. An institution can allow one
+aggregate figure (M9, CONTRACTS.md), the count of continuing students not yet
+registered who have had any counseling contact this term. We record it only after the
+institution's counseling director has authorized it in writing.
+
+An admin records it in Institution settings, under "Counseling figure". Enter the
+director's name and title as written and the document reference, then press "Record
+the authorization". The same section shows who recorded it and when, and "Revoke the
+authorization" turns it off behind a confirmation. The API does the same.
+
+```bash
+curl -b /tmp/cookies http://127.0.0.1:8910/admin/institution/counseling-authorization
+curl -b /tmp/cookies -X PUT http://127.0.0.1:8910/admin/institution/counseling-authorization \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
+  -d '{"authorized": true, "authorized_by": "Dr. Example, Director of Counseling",
+       "document_reference": "memo 2026-09-26"}'
+# -> {"authorized": true, "authorized_by": ..., "recorded_by": ..., "recorded_at": ...}
+curl -b /tmp/cookies -X PUT http://127.0.0.1:8910/admin/institution/counseling-authorization \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
+  -d '{"authorized": false}'                                  # revoke
+```
+
+The findings recompute on the next request. While the authorization is recorded,
+the next ask of the spring registration question gives the Chief of Staff the count
+or the withheld marker, and that briefing keeps its own copy of M9. It shows M9 in
+section 3 and in section 4's evidence list as "aggregate, authorized", with no rows.
+A briefing for the other question, or one produced before the authorization, never
+shows it. A revoke removes
+M9 at once. A stored Chief of Staff section that cited it is held back until the
+question is asked again, and the next ask runs without it. A change waits for a
+question that is being answered, so no run sees half of it. A count under 10 shows as "fewer than 10", which is what the fictional
+demonstration dataset shows (its raw count is 2). The evidence for M9 shows the
+authorization and the fields read, never a row. Each change is one `admin.changed`
+event with action `counseling_authorization`. The beat-6 refusal and every
+`/governance/request` for a counseling field stay refused either way.
 
 ## Replay and the golden run
 
@@ -491,6 +624,73 @@ file with `CABINET_FIXTURE=/path/to/fixture.json`, which affects only
 institutions created afterwards. A malformed seed fixture fails startup with
 one clear line naming the problem, not a traceback, and an empty-but-valid
 fixture renders every metric as `--` per the contract.
+
+### Demonstration University (the synthetic school)
+
+`data/school/` generates a whole fictional university (Fall 2020 to Spring 2026)
+as an Ellucian-shaped SQLite database for specific historical questions. Build it
+with `make school-data`, which writes `var/school/school.db` (about 33 MB, about
+3 s) and then runs the checker. Re-check an existing database with
+`make school-check`, which exits non-zero if any GPA, standing, schedule,
+capacity, or planted fact in `data/school/VERIFY.md` disagrees with the raw rows.
+Nothing runs in the background, so there is nothing to stop. To reset, delete
+`var/school/school.db` and run `make school-data` again, and the same seed gives
+the same rows (the canonical hash in `VERIFY.md` proves it). The data is
+synthetic, students are pseudonymous ids with no names, and instructor names are
+fictional. Tables are documented in `data/school/SCHEMA.md`.
+
+## Asking any question (Explore)
+
+Explore answers specific questions about Demonstration University, the fictional
+school in `data/school/`: GPA by major, the hardest courses, who taught them, equity
+gaps, growth, registration, withdrawals, standing, graduations, holds, and advising.
+Every number comes from code over the records, each number in the answer links to its
+table cell, and a "How this was answered" fold shows each step.
+
+1. Build the school data once: `make school-data` (writes `var/school/school.db`, about
+   3 s, and checks it). Without it, `POST /explore` and `GET /explore/catalog` answer
+   503 with "The demonstration university data is not installed. Run make
+   school-data." Explore runs inside the API process, so starting, stopping, and
+   restarting the API covers it.
+2. Sign in as an executive, admin, staff member, or reviewer (the Financial Aid role
+   gets a 403) and type the question into the composer, for example "Which major has
+   the lowest GPA, what is its hardest class, and who has taught it?" The answer is
+   Mechanical Engineering at 2.623, MEEN 3310 Thermodynamics I at 41.8 %, and Alicia
+   Shelby (fictional), 7 sections at 56.7 %.
+3. `make explore-check` runs the full-scale check (the owner's question in both
+   wordings and five more planted facts) and prints the answer with its three tables.
+
+Privacy rules: the model never sees a student row, groups under 10 students are
+withheld, and instructor rows go to the executive and admin roles only (staff and
+reviewers get the course as a whole, and the API records a `data.refused`).
+Questions about counseling or spiritual care, about one student, or about what a
+student will do next are refused before planning, and the refusal is recorded.
+
+The reviewed rule planner maps every question it can, and the live model plans only
+the rest (`CABINET_EXPLORE_PLANNER=model-first` asks the model first). We measured
+why: on our local model, reading the catalog took longer than the 55 s request
+budget every time, while the rules map all forty test wordings of the planted
+questions. The live model is configured in the gitignored `cabinet.local.env` (any
+standard chat-completions endpoint; we run a local model), and it may reword the answer,
+which is checked number by number or replaced by the template.
+
+With the API running, the same question over HTTP:
+
+```sh
+curl -s -b cookies.txt -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
+  -d '{"question": "Which major has the lowest GPA, what is its hardest class, and who has taught it?"}' \
+  http://127.0.0.1:8910/explore
+# -> {"refused": false, "answer": [{"text": ..., "claims": [...]}, ...],
+#     "steps": [...three tables...], "planner": "rule", "source": ...}
+# ("planner" is "model" only for a question the rules could not map)
+```
+
+`.venv/bin/python -m cabinet.explore "<question>"` answers offline from the same code and
+writes nothing. Each question writes `question.asked`, then `data.refused` (refused
+questions) or one `data.granted` per step and `explore.answered`, on the asker's
+institution chain. Replay and fake modes use the rule planner and the template answer,
+and `CABINET_RECORD=1` records validated model plans under `var/replay/explore/`
+(details in `docs/EXPLORE.md`).
 
 ## Known issues
 

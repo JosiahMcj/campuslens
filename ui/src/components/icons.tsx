@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 /**
  * The dashboard's drawn icons, one stroke weight (1.5) across the set:
  * check (a task resolved), chevron (a disclosure's open state), and sun and
@@ -130,7 +132,7 @@ export function ChatIcon() {
 
 /* The sidebar navigation's icons, in the reference's round, 2px-stroke style
    (drawn here; the reference's icon set is a paid package). */
-function NavGlyph({ children, size = 18 }: { children: React.ReactNode; size?: number }) {
+function NavGlyph({ children, size = 18 }: { children: ReactNode; size?: number }) {
   return (
     <svg
       width={size}
@@ -217,19 +219,20 @@ export function BriefingNavIcon() {
   )
 }
 
-export function TeamNavIcon() {
-  return (
-    <NavGlyph>
-      <circle cx="9" cy="8.5" r="3" />
-      <path d="M3.5 19c.5-3 2.7-5 5.5-5s5 2 5.5 5M16 5.8a3 3 0 0 1 0 5.4M17.5 14.3c1.8.6 2.8 2.3 3 4.7" />
-    </NavGlyph>
-  )
-}
-
 export function AuditNavIcon() {
   return (
     <NavGlyph>
       <path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" />
+    </NavGlyph>
+  )
+}
+
+/** The Financial Aid review queue: a clipboard of rows to work through. */
+export function AidQueueNavIcon() {
+  return (
+    <NavGlyph>
+      <rect x="5" y="4" width="14" height="17" rx="2" />
+      <path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3" />
     </NavGlyph>
   )
 }
@@ -312,5 +315,75 @@ export function RefusalNavIcon() {
       <path d="M12 3.5 19 6v5.5c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6z" />
       <path d="m9.5 10 5 5M14.5 10l-5 5" />
     </NavGlyph>
+  )
+}
+
+/** The governance marks (DESIGN.md): always beside a text label. */
+function MarkSvg({ className, children }: { className: string; children: ReactNode }) {
+  return (
+    <svg
+      className={`mark ${className}`}
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  )
+}
+
+/** Approved: a check in a square (the leadership decision, gold). */
+export function ApprovedIcon() {
+  return (
+    <MarkSvg className="mark-approved">
+      <rect x="2" y="2" width="12" height="12" rx="2" />
+      <path d="M5 8.25 7.1 10.4 11 5.75" />
+    </MarkSvg>
+  )
+}
+
+/** Sent: an arrow out of a tray. */
+export function SentIcon() {
+  return (
+    <MarkSvg className="mark-sent">
+      <path d="M8 10V2.5M5.25 5.25 8 2.5l2.75 2.75" />
+      <path d="M2.5 9.5v3a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-3" />
+    </MarkSvg>
+  )
+}
+
+/** Granted: a check in a circle. */
+export function GrantedIcon() {
+  return (
+    <MarkSvg className="mark-granted">
+      <circle cx="8" cy="8" r="6" />
+      <path d="M5.25 8.25 7.1 10 10.75 6" />
+    </MarkSvg>
+  )
+}
+
+/** Refused: a no-entry circle (red). */
+export function RefusedIcon() {
+  return (
+    <MarkSvg className="mark-refused">
+      <circle cx="8" cy="8" r="6" />
+      <path d="M4.75 8h6.5" />
+    </MarkSvg>
+  )
+}
+
+/** Refresh: a circular arrow. */
+export function RefreshIcon() {
+  return (
+    <MarkSvg className="mark-refresh">
+      <path d="M13 8a5 5 0 1 1-1.46-3.54" />
+      <path d="M13 2.75V5.5h-2.75" />
+    </MarkSvg>
   )
 }

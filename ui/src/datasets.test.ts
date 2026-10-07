@@ -1,11 +1,14 @@
-// Tests for the dataset-upload client: the 422 validation errors rendered
-// line by line, the 201 summary (row counts, counseling flag), the CSRF
+// Tests for the dataset-upload client: the 422 validation errors kept
+// line by line (for the folded technical detail), failures thrown as plain
+// ApiErrors, the 201 summary (row counts, counseling flag), the CSRF
 // header on the upload POST, and the display formatters.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { clearSession, setSession } from './auth'
+import { ApiError, clearSession, setSession } from './auth'
 import {
+  activateDataset,
+  deleteDataset,
   formatBytes,
   rowCountLabel,
   uploadDataset,
@@ -70,25 +73,50 @@ describe('uploadResultFrom — the API answer mapped onto the render branches', 
     expect(result).toEqual({ ok: false, errors })
   })
 
-  it('falls back to the detail sentence when the error list is absent', () => {
-    const result = uploadResultFrom(413, {
-      detail: 'request body exceeds the 20971520-byte cap',
-    })
+  it('throws a plain sentence for a file over the size cap', () => {
+    let thrown: unknown = null
+    try {
+      uploadResultFrom(413, { detail: 'request body exceeds the 20971520-byte cap' })
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown).toBeInstanceOf(ApiError)
+    expect((thrown as ApiError).status).toBe(413)
+    expect((thrown as ApiError).message).toBe('The file is larger than 20 MB. Nothing was saved.')
+  })
 
-    expect(result).toEqual({
-      ok: false,
-      errors: ['request body exceeds the 20971520-byte cap'],
+  it('throws with no server text (never an HTTP code) for any other failure', () => {
+    let thrown: unknown = null
+    try {
+      uploadResultFrom(500, { detail: 'rate limit exceeded' })
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown).toBeInstanceOf(ApiError)
+    expect((thrown as ApiError).status).toBe(500)
+    expect((thrown as ApiError).message).toBe('')
+  })
+})
+
+describe('activate and delete — failures throw for friendlyError', () => {
+  it('words the refusal to delete the active data plainly', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(409, {
+          detail: 'the active dataset cannot be deleted; activate another dataset first',
+        }),
+      ),
+    )
+    await expect(deleteDataset(1)).rejects.toMatchObject({
+      status: 409,
+      message: "The active data can't be deleted. Activate another upload first.",
     })
   })
 
-  it('never invents an error sentence for an empty body', () => {
-    const result = uploadResultFrom(500, null)
-
-    expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(result.errors).toHaveLength(1)
-      expect(result.errors[0]).toContain('HTTP 500')
-    }
+  it('passes a network failure through untouched', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+    await expect(activateDataset(1)).rejects.toBeInstanceOf(TypeError)
   })
 })
 
@@ -151,6 +179,6 @@ describe('display formatters', () => {
       '185 current students, 135 prior year',
     )
     expect(rowCountLabel({ students: 1 })).toBe('1 current student')
-    expect(rowCountLabel({})).toBe('row counts not reported')
+    expect(rowCountLabel({})).toBe('record counts not reported')
   })
 })

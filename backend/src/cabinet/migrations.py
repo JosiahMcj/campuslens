@@ -36,9 +36,13 @@ from datetime import UTC, datetime
 PLATFORM_INSTITUTION_ID = 0
 
 BOOTSTRAP_SLUG = "bootstrap"
-BOOTSTRAP_NAME = "Bootstrap Institution"
+# The display name of the first institution. The slug stays ``bootstrap``
+# (scripts, exports and outbox paths use it); only the name a person reads
+# changed, in migration 8.
+BOOTSTRAP_NAME = "Demonstration University"
+LEGACY_BOOTSTRAP_NAME = "Bootstrap Institution"
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 8
 
 
 class SchemaVersionError(RuntimeError):
@@ -363,12 +367,97 @@ def _migration_5(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _migration_6(conn: sqlite3.Connection) -> None:
+    """The Financial Aid review queue: ``aid_reviews``.
+
+    One row per student in the M3 population, created once per authorized
+    emergency-aid review decision per dataset. The UNIQUE constraint is the
+    idempotency anchor, so a second request (or a double click) cannot queue
+    a student twice. ``facts_json`` holds only the record fields the aid
+    office needs to start its own review (the M3 hold, registration status,
+    advising status), never a counseling field. ``status`` and ``note`` are
+    set by a person in the aid role; the system never fills them in.
+    ``dataset_id`` ties the rows to their dataset, so purging a dataset
+    purges its queue with it.
+    """
+    for statement in (
+        """
+        CREATE TABLE IF NOT EXISTS aid_reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            institution_id INTEGER NOT NULL REFERENCES institutions(id),
+            dataset_id INTEGER NOT NULL,
+            decision_id TEXT NOT NULL,
+            student_id TEXT NOT NULL,
+            facts_json TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open'
+                CHECK (status IN ('open', 'in_review', 'closed')),
+            note TEXT NOT NULL DEFAULT '',
+            updated_by TEXT,
+            updated_at TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE (institution_id, decision_id, dataset_id, student_id)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_aid_reviews_institution_dataset"
+        " ON aid_reviews (institution_id, dataset_id)",
+    ):
+        conn.execute(statement)
+
+
+# The counseling aggregate authorization, one set of columns on the
+# institution row (migration 7). Kept as a module constant so the store, the
+# migration and its test agree on the exact column names.
+COUNSELING_AUTHORIZATION_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("counseling_aggregate_authorized", "INTEGER NOT NULL DEFAULT 0"),
+    ("counseling_aggregate_authorized_by", "TEXT"),
+    ("counseling_aggregate_document_reference", "TEXT"),
+    ("counseling_aggregate_recorded_by", "TEXT"),
+    ("counseling_aggregate_recorded_at", "TEXT"),
+)
+
+
+def _migration_7(conn: sqlite3.Connection) -> None:
+    """The counseling aggregate authorization on the ``institutions`` row.
+
+    An institution's counseling director may authorize, in writing, one
+    aggregate figure (M9, a count with no rows); an admin records that
+    authorization here. Every existing institution starts unauthorized
+    (``DEFAULT 0``), so upgrading a database changes nothing a user can see.
+    SQLite has no ``ADD COLUMN IF NOT EXISTS``, so each column is checked
+    first: a database that already carries a column (a hand repair, or a
+    retried migration) is upgraded without a "duplicate column" failure.
+    """
+    existing = {
+        str(row[1]) for row in conn.execute("PRAGMA table_info(institutions)")
+    }
+    for name, declaration in COUNSELING_AUTHORIZATION_COLUMNS:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE institutions ADD COLUMN {name} {declaration}")
+
+
+def _migration_8(conn: sqlite3.Connection) -> None:
+    """The first institution's display name: "Bootstrap Institution"
+    becomes "Demonstration University". Only a row that still carries the
+    old name under the ``bootstrap`` slug is renamed, so an institution an
+    admin has already renamed keeps its name. The slug is unchanged. A new
+    database is created with the new name already (migration 1 seeds
+    ``BOOTSTRAP_NAME``), so there this is a no-op.
+    """
+    conn.execute(
+        "UPDATE institutions SET name = ? WHERE slug = ? AND name = ?",
+        (BOOTSTRAP_NAME, BOOTSTRAP_SLUG, LEGACY_BOOTSTRAP_NAME),
+    )
+
+
 MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (1, "h2 tenancy baseline", _migration_1),
     (2, "r3 dataset pinning and audit index", _migration_2),
     (3, "r3b decisions keyed per dataset", _migration_3),
     (4, "r4 briefings keyed per dataset", _migration_4),
-    (SCHEMA_VERSION, "dispatches and office contacts", _migration_5),
+    (5, "dispatches and office contacts", _migration_5),
+    (6, "financial aid review queue", _migration_6),
+    (7, "counseling aggregate authorization", _migration_7),
+    (SCHEMA_VERSION, "demonstration institution display name", _migration_8),
 ]
 
 

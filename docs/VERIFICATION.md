@@ -194,10 +194,12 @@ All three items are resolved.
   `backend/tests/test_fixture_config.py::test_empty_fixture_prose_never_interpolates_a_bare_dash_dash`.
 - **The source label stacked provenance**, "(recorded run) (live model)".
   Accurate (a recording made by the live model), but worth a wording pass.
-  **Resolved.** One parenthetical now. Replay reads "Written by the \<role\>
-  (recorded live run)", and live reads "Written by the \<role\> (live model)".
-  A configured label replaces "live model" only when it differs. The fake
-  provider keeps its `Test stub, not a live model` tag.
+  **Resolved.** The label is now one plain line, "Written by the \<role\>",
+  and the replay or live fact moved into a small "About this answer" detail
+  under the text: a replay says it was written during an earlier live run and
+  is replayed for the demonstration, and a live answer says it was written
+  just now (naming a configured label only when it differs from "live
+  model"). The fake provider keeps its `Test stub, not a live model` tag.
 
 ## House bar
 

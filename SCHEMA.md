@@ -130,14 +130,21 @@ current-term students, and every `prior_year_students` record has `holds: []`.
 ### `counseling`, **present only to be refused**
 
 We put these two fields in the fixture **solely so the permission layer has something
-real to refuse** (ROADMAP §5, §9). They are granted to no role, no metric, finding,
-analyst, or UI element may read them, and every request is refused before any model
-call and logged as `data.refused`.
+real to refuse** (ROADMAP §5, §9). They are granted to no role, and every request is
+refused before any model call and logged as `data.refused`. No analyst and no UI
+element reads them, and no metric among M1 to M8 does.
+
+One exception reads them in code, never through a role. When an institution records
+its counseling director's written authorization, M9 (CONTRACTS.md M9) counts the M2
+rows with any counseling contact. It reads `profile.continuing`,
+`enrollment.registration_status`, `counseling.counseling_notes`, and
+`counseling.chaplain_contact`, and it shows a count of 10 or more, never a row. The
+request refusal stays the same either way.
 
 | Field | Type | Allowed values / notes |
 |---|---|---|
-| `counseling.counseling_notes` | string or `null` | Non-null on exactly five rows (STU-0026, STU-0071, STU-0126, STU-0147, STU-0177). Gentle fictional text, so the refusal is real. **Present only to be refused.** |
-| `counseling.chaplain_contact` | boolean | `true` on the same five rows, `false` elsewhere. **Present only to be refused.** |
+| `counseling.counseling_notes` | string or `null` | Non-null on exactly five rows (STU-0026, STU-0071, STU-0126, STU-0147, STU-0177). Gentle fictional text, so the refusal is real. **Present only to be refused.** Read by M9 in code, only with a recorded authorization. |
+| `counseling.chaplain_contact` | boolean | `true` on the same five rows, `false` elsewhere. **Present only to be refused.** Read by M9 in code, only with a recorded authorization. |
 
 ---
 
@@ -270,6 +277,11 @@ dispatches(id INTEGER PRIMARY KEY, institution_id, task_id, dataset_id,
            status CHECK (status IN ('draft', 'sent', 'failed')),
            created_by, created_at, sent_by, sent_at, provider, provider_ref, error,
            UNIQUE (institution_id, task_id, dataset_id))
+aid_reviews(id INTEGER PRIMARY KEY, institution_id, dataset_id, decision_id,
+            student_id, facts_json,
+            status CHECK (status IN ('open', 'in_review', 'closed')),
+            note, updated_by, updated_at, created_at,
+            UNIQUE (institution_id, decision_id, dataset_id, student_id))
 ```
 
 Notes on the tables.
@@ -315,6 +327,17 @@ Notes on the tables.
   the message. A sent row is never resent. With the default `outbox` provider
   the same content also sits in `var/outbox/<institution slug>/<dispatch id>.eml`
   (0600), and nothing leaves the machine.
+- `aid_reviews` is the Financial Aid review queue (migration 6). We create it
+  once per authorized emergency-aid review decision per dataset, with one row for
+  each student in the M3 finding (the UNIQUE constraint anchors it). `student_id`
+  is the pseudonymous `profile.student_id`. `facts_json` holds only
+  `enrollment.registration_status`, the qualifying holds' `amount`, `hold_date`,
+  and `responsible_office`, and the advising group's `appointment_status` and
+  `last_appointment_date`, and it never holds a counseling field. `status` starts
+  at `open`, and only a person in the aid role (or an admin) changes it or the
+  free-text `note` (at most 1,000 characters, stored as typed). `updated_by` and
+  `updated_at` record who changed the row and when. The rows are purged with
+  their dataset, and no model ever receives them.
 - `make backup` snapshots the database through the SQLite backup API, plus
   the dataset files and a sha256 manifest, and verifies the copy into
   `var/backups/<timestamp>/`. `make restore FROM=<dir>` runs after `make

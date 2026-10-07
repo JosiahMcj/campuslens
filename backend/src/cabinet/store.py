@@ -3,7 +3,10 @@ institution, and dataset documents live as files under ``var/data/``.
 
 Tables (created and versioned by ``cabinet.migrations``):
 
-- ``institutions(id, name, slug UNIQUE, created_at)`` — the tenants.
+- ``institutions(id, name, slug UNIQUE, created_at, counseling_aggregate_*)``
+  — the tenants. The five ``counseling_aggregate_*`` columns (migration 7)
+  hold the recorded counseling aggregate authorization: whether it is on,
+  who authorized it and the document, and the admin who recorded it and when.
 - ``users(..., institution_id NOT NULL, ...)`` and ``sessions(...)`` — the
   original auth tables, now tenanted; the password hashing and session signing
   stay in ``cabinet.auth``.
@@ -38,6 +41,13 @@ Tables (created and versioned by ``cabinet.migrations``):
   (migration 5): one message per approved task per dataset (the UNIQUE
   constraint anchors that), composed in code and sent only on a named
   staff member's click. ``status`` is draft, sent, or failed.
+- ``aid_reviews(id, institution_id, dataset_id, decision_id, student_id,
+  facts_json, status, note, updated_by, updated_at, created_at)`` — the
+  Financial Aid review queue (migration 6): one row per M3 student, created
+  once per authorized emergency-aid review decision per dataset (the UNIQUE
+  constraint anchors it). ``facts_json`` holds the facts the office needs to
+  start its own review (``cabinet.aidqueue``); ``status`` and ``note`` are
+  set only by a person in the aid role. Purged with its dataset.
 - ``recordings(institution_id, role, key, json)`` — validated model outputs
   per institution; the key is the sha256 of the canonical received findings
   (which covers the dataset content and the question).
@@ -77,6 +87,16 @@ PURGE_AFTER_DAYS = 30
 
 class StoreError(RuntimeError):
     """A storage-level failure (integrity, missing rows)."""
+
+
+class AidReviewConflict(Exception):
+    """A queue row changed since the person saving it opened it. Not a
+    StoreError: the API answers 409, never the 503 of an integrity failure.
+    ``current`` is the row as it stands."""
+
+    def __init__(self, current: dict[str, Any]) -> None:
+        super().__init__("the Financial Aid review row changed")
+        self.current = current
 
 
 def _now() -> str:
@@ -237,6 +257,67 @@ class CabinetStore:
                 "SELECT * FROM institutions WHERE id = ?", (institution_id,)
             ).fetchone()
         return dict(row) if row is not None else None
+
+    def counseling_authorization_for(self, institution_id: int) -> dict[str, Any]:
+        """The institution's counseling aggregate authorization (migration 7).
+
+        Always a full record, so callers never branch on a missing row: an
+        institution that never recorded one reads as not authorized with
+        every other field ``None``. Revoking keeps who revoked it and when in
+        ``recorded_by`` and ``recorded_at``, and clears nothing else, so the
+        settings screen can say what the last recorded state was.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT counseling_aggregate_authorized,"
+                " counseling_aggregate_authorized_by,"
+                " counseling_aggregate_document_reference,"
+                " counseling_aggregate_recorded_by,"
+                " counseling_aggregate_recorded_at"
+                " FROM institutions WHERE id = ?",
+                (institution_id,),
+            ).fetchone()
+        if row is None:
+            raise StoreError(f"institution {institution_id} does not exist")
+        return {
+            "authorized": bool(row[0]),
+            "authorized_by": row[1],
+            "document_reference": row[2],
+            "recorded_by": row[3],
+            "recorded_at": row[4],
+        }
+
+    def set_counseling_authorization(
+        self,
+        institution_id: int,
+        *,
+        authorized: bool,
+        authorized_by: str | None,
+        document_reference: str | None,
+        recorded_by: str,
+    ) -> dict[str, Any]:
+        """Record or revoke the authorization in one UPDATE (one statement,
+        so the five fields can never be seen half-written). Returns the
+        stored record."""
+        with self._lock, self._conn:
+            self._conn.execute(
+                "UPDATE institutions SET"
+                " counseling_aggregate_authorized = ?,"
+                " counseling_aggregate_authorized_by = ?,"
+                " counseling_aggregate_document_reference = ?,"
+                " counseling_aggregate_recorded_by = ?,"
+                " counseling_aggregate_recorded_at = ?"
+                " WHERE id = ?",
+                (
+                    1 if authorized else 0,
+                    authorized_by,
+                    document_reference,
+                    recorded_by,
+                    _now(),
+                    institution_id,
+                ),
+            )
+        return self.counseling_authorization_for(institution_id)
 
     def list_institutions(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -727,6 +808,14 @@ class CabinetStore:
                 path = self.dataset_path(row)
                 with contextlib.suppress(FileNotFoundError):
                     path.unlink()
+                # The aid review queue lives and dies with its dataset: its
+                # rows are facts read from that dataset plus the office's
+                # notes about those students.
+                self._conn.execute(
+                    "DELETE FROM aid_reviews WHERE dataset_id = ?"
+                    " AND institution_id = ?",
+                    (row["id"], row["institution_id"]),
+                )
                 self._conn.execute("DELETE FROM datasets WHERE id = ?", (row["id"],))
             self._conn.commit()
         return rows
@@ -1019,6 +1108,31 @@ class CabinetStore:
             rows = self._conn.execute(sql, params).fetchall()
         return {str(row["decision_id"]) for row in rows}
 
+    def approvals(
+        self, institution_id: int, dataset_id: int | None = None
+    ) -> dict[str, dict[str, str]]:
+        """Who approved each decision and when, by decision id, in one
+        query: ``{"approved_by": email, "approved_at": ISO time}``. With
+        ``dataset_id``, only approvals made against that dataset (the same
+        rule as approved_decision_ids)."""
+        sql = (
+            "SELECT decision_id, approved_by, at FROM decisions"
+            " WHERE institution_id = ?"
+        )
+        params: list[Any] = [institution_id]
+        if dataset_id is not None:
+            sql += " AND dataset_id = ?"
+            params.append(dataset_id)
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return {
+            str(row["decision_id"]): {
+                "approved_by": str(row["approved_by"]),
+                "approved_at": str(row["at"]),
+            }
+            for row in rows
+        }
+
     def decision_task(
         self,
         institution_id: int,
@@ -1228,6 +1342,132 @@ class CabinetStore:
                 return None
         return self.dispatch_by_id(institution_id, dispatch_id)
 
+    # -- the Financial Aid review queue ------------------------------------------
+
+    @staticmethod
+    def _aid_review_dict(row: sqlite3.Row) -> dict[str, Any]:
+        result = dict(row)
+        result["id"] = int(result["id"])
+        result["dataset_id"] = int(result["dataset_id"])
+        result["facts"] = json.loads(result.pop("facts_json"))
+        return result
+
+    def create_aid_queue(
+        self,
+        institution_id: int,
+        *,
+        decision_id: str,
+        dataset_id: int,
+        rows: list[tuple[str, dict[str, Any]]],
+    ) -> bool:
+        """Create the queue for one decision on one dataset: one row per
+        ``(student_id, facts)``. True when this call created it; False when a
+        queue already exists for that decision and dataset (nothing is
+        inserted, so a second request can never add or duplicate students).
+        The existence check and the inserts share one transaction under the
+        store lock, so two concurrent requests create the queue once."""
+        created_at = _now()
+        with self._lock, self._conn:
+            existing = self._conn.execute(
+                "SELECT 1 FROM aid_reviews WHERE institution_id = ?"
+                " AND decision_id = ? AND dataset_id = ? LIMIT 1",
+                (institution_id, decision_id, dataset_id),
+            ).fetchone()
+            if existing is not None:
+                return False
+            self._conn.executemany(
+                "INSERT INTO aid_reviews (institution_id, dataset_id,"
+                " decision_id, student_id, facts_json, status, note,"
+                " created_at) VALUES (?, ?, ?, ?, ?, 'open', '', ?)",
+                [
+                    (
+                        institution_id,
+                        dataset_id,
+                        decision_id,
+                        student_id,
+                        json.dumps(facts, ensure_ascii=False, sort_keys=True),
+                        created_at,
+                    )
+                    for student_id, facts in rows
+                ],
+            )
+        return True
+
+    def aid_reviews_for(
+        self,
+        institution_id: int,
+        *,
+        dataset_id: int,
+        decision_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """One institution's queue rows for one dataset, in student id order
+        (the evidence drawer's order; the queue has no other ordering)."""
+        sql = "SELECT * FROM aid_reviews WHERE institution_id = ? AND dataset_id = ?"
+        params: list[Any] = [institution_id, dataset_id]
+        if decision_id is not None:
+            sql += " AND decision_id = ?"
+            params.append(decision_id)
+        sql += " ORDER BY decision_id, student_id"
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return [self._aid_review_dict(row) for row in rows]
+
+    def update_aid_review(
+        self,
+        institution_id: int,
+        review_id: int,
+        *,
+        status: str | None,
+        note: str | None,
+        updated_by: str,
+        expected_updated_at: str | None,
+    ) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        """Set a row's status and/or note as a person typed them (None leaves
+        a field unchanged) and stamp who and when.
+
+        Only a row of the institution's active dataset is editable: a row id
+        from another institution, an inactive dataset, or a deleted one
+        answers None, the same as no row at all. The row's current
+        ``updated_at`` must equal ``expected_updated_at`` (None for a row
+        nobody has saved yet), otherwise nothing is written and
+        :class:`AidReviewConflict` is raised. The read, the check, the
+        write, and the read back share one transaction under the store lock,
+        so the returned ``(before, after)`` pair is the true transition even
+        when two people save the same row at once."""
+        with self._lock, self._conn:
+            row = self._conn.execute(
+                "SELECT * FROM aid_reviews WHERE id = ? AND institution_id = ?"
+                " AND dataset_id IN (SELECT id FROM datasets"
+                " WHERE institution_id = ? AND is_active = 1"
+                " AND deleted_at IS NULL)",
+                (review_id, institution_id, institution_id),
+            ).fetchone()
+            if row is None:
+                return None
+            before = self._aid_review_dict(row)
+            if before["updated_at"] != expected_updated_at:
+                raise AidReviewConflict(before)
+            assignments = ["updated_by = ?", "updated_at = ?"]
+            params: list[Any] = [updated_by, _now()]
+            if status is not None:
+                assignments.append("status = ?")
+                params.append(status)
+            if note is not None:
+                assignments.append("note = ?")
+                params.append(note)
+            params.extend([review_id, institution_id])
+            self._conn.execute(
+                f"UPDATE aid_reviews SET {', '.join(assignments)}"
+                " WHERE id = ? AND institution_id = ?",
+                params,
+            )
+            after_row = self._conn.execute(
+                "SELECT * FROM aid_reviews WHERE id = ? AND institution_id = ?",
+                (review_id, institution_id),
+            ).fetchone()
+            after = self._aid_review_dict(after_row)
+        return before, after
+
     # -- recordings ---------------------------------------------------------------
 
     def save_recording(
@@ -1258,6 +1498,7 @@ class CabinetStore:
 
 
 __all__ = [
+    "AidReviewConflict",
     "CabinetStore",
     "ScopedAudit",
     "StoreError",

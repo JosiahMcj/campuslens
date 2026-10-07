@@ -61,6 +61,8 @@ _LLM_VARS = (
     "CABINET_LLM_API_KEY",
     "CABINET_LLM_API_KEY_FILE",
     "CABINET_LLM_API_KEY_VAR",
+    "CABINET_LLM_REASONING_EFFORT",
+    "CABINET_LLM_MAX_TOKENS",
 )
 
 
@@ -490,6 +492,29 @@ def test_reasoning_effort_is_configurable_and_omittable(
     monkeypatch.setenv("CABINET_LLM_REASONING_EFFORT", "")
     ChatProvider().explain(FINDINGS, "enrollment_analyst")
     assert "reasoning_effort" not in calls[-1]["body"]
+
+
+def test_max_tokens_is_configurable_with_a_safe_default(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("CABINET_LLM_API_KEY", TEST_KEY)
+    calls: list[dict[str, Any]] = []
+    _install_urlopen(monkeypatch, lambda request: _FakeResponse(SUCCESS_BODY), calls)
+
+    monkeypatch.delenv("CABINET_LLM_MAX_TOKENS", raising=False)
+    ChatProvider().explain(FINDINGS, "enrollment_analyst")
+    assert calls[-1]["body"]["max_tokens"] == 2048
+
+    monkeypatch.setenv("CABINET_LLM_MAX_TOKENS", " 6144 ")
+    ChatProvider().explain(FINDINGS, "enrollment_analyst")
+    assert calls[-1]["body"]["max_tokens"] == 6144
+
+    for bad in ("lots", "-1", "12", "999999", "2048.5"):
+        monkeypatch.setenv("CABINET_LLM_MAX_TOKENS", bad)
+        with caplog.at_level("WARNING"):
+            ChatProvider().explain(FINDINGS, "enrollment_analyst")
+        assert calls[-1]["body"]["max_tokens"] == 2048, bad
+        assert "CABINET_LLM_MAX_TOKENS" in caplog.text
 
 
 def test_key_file_reader_stops_at_the_first_match(

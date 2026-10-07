@@ -1,0 +1,198 @@
+/* Institution settings: layout only (group D). Every value is a token from
+ * the token block in index.css (DESIGN.md). Button looks come from the
+ * shared .btn-* classes, never from here. */
+
+/* The page: the top bar names it "Institution settings" (the page's h1 is
+   visually hidden), so the intro starts close under the bar. */
+.institution-doc {
+  margin-top: var(--space-5);
+}
+
+.institution-doc > .lede {
+  color: var(--ink-soft);
+  max-width: 68ch;
+  margin: 0;
+  text-wrap: pretty;
+}
+
+/* The section links read as plain links, not buttons. */
+.inst-toc {
+  margin: var(--space-3) 0 var(--space-5);
+}
+
+.inst-toc ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inst-toc a {
+  display: inline-flex;
+  align-items: center;
+  color: var(--navy);
+  font-size: var(--text-md);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.inst-toc a:hover {
+  text-decoration-thickness: 2px;
+}
+
+@media (max-width: 899px) {
+  .inst-toc a {
+    min-height: var(--tap);
+    min-width: var(--tap);
+    justify-content: center;
+  }
+}
+
+/* The Users table: each row's email, role picker, status and actions sit
+   on one centre line. */
+.stack-table.user-table td {
+  vertical-align: middle;
+}
+
+.inst-card {
+  margin: 0 0 var(--space-5);
+  padding: var(--space-5);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-surface);
+  background: var(--paper);
+  scroll-margin-top: var(--space-4);
+}
+
+.inst-card > h2 {
+  margin-top: 0;
+  font-size: var(--text-xl);
+}
+
+.inst-card > h2:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.inst-card h3 {
+  font-size: var(--text-lg);
+  margin: var(--space-5) 0 var(--space-3);
+}
+
+.inst-card table {
+  width: 100%;
+}
+
+.inst-form {
+  margin-top: var(--space-5);
+}
+
+.inst-form > .inst-field {
+  margin-top: var(--space-3);
+}
+
+.inst-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.inst-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.inst-field-narrow {
+  flex: 0 1 12rem;
+}
+
+.inst-field > label,
+.inst-field > .inst-label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.inst-field input:not([type='file']),
+.inst-field select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-size: var(--text-md);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-control);
+}
+
+.inst-field input:not([type='file'])[aria-invalid='true'] {
+  border-color: var(--alert);
+}
+
+.inst-field .field-error {
+  margin: 0;
+}
+
+.inst-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.inst-actions .error-line,
+.inst-under-button {
+  margin: var(--space-2) 0 0;
+}
+
+/* The file picker: a visually hidden input inside a label styled as a
+ * secondary button, so the label carries the focus ring. */
+.inst-file-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.inst-file-pick {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  cursor: pointer;
+}
+
+.inst-file-pick:focus-within {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+}
+
+.inst-file-pick[aria-disabled='true'] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.inst-file-name {
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.inst-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+@media (max-width: 640px) {
+  .inst-card {
+    padding: var(--space-4);
+  }
+}

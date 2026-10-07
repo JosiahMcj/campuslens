@@ -3,6 +3,8 @@
 // approved-question check, and display formatting. No arithmetic on
 // metrics lives here — the API's `display` strings are rendered verbatim.
 
+import type { Finding } from './api'
+
 export const APPROVED_QUESTION = 'What should I know about spring registration?'
 
 // --- Demo query switches ---------------------------------------------------
@@ -245,27 +247,145 @@ export function analystSource(briefing: {
 }
 
 /**
- * The one-line source label under a model-written section. Exactly one
- * parenthetical, ever: a replay says the text was recorded from a live run;
- * a live run names its configured label, or "live model" when the label is
- * unset (or is literally "live model"); the fake provider is a test stub and
- * never passes as a model.
+ * The one-line source label under a model-written section: who wrote it,
+ * in plain words. Whether the text was written just now or replayed from a
+ * recorded run is in analystSourceDetail, shown in a small "About this
+ * answer" fold; the fake provider is a test stub and says so on the label
+ * itself, so it can never pass as a model.
  */
 export function analystSourceLabel(
   source: AnalystSource,
   analyst: string,
-  modelLabel: string | null = null,
+  // Kept for callers that pass it; the label no longer names the model
+  // (analystSourceDetail does).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _modelLabel: string | null = null,
 ): string {
   switch (source) {
     case 'fake':
       return 'Test stub, not a live model'
     case 'recorded':
-      return `Written by ${analyst} (recorded live run)`
     case 'live':
-      return `Written by ${analyst} (${
-        modelLabel !== null && modelLabel !== 'live model' ? modelLabel : 'live model'
-      })`
+      return `Written by ${analyst}`
   }
+}
+
+/** The "About this answer" sentence: replayed or written just now, honestly. */
+export function analystSourceDetail(
+  source: AnalystSource,
+  modelLabel: string | null = null,
+): string {
+  switch (source) {
+    case 'fake':
+      return 'Written by a test stub, not a live model. Use it only to check the screens.'
+    case 'recorded':
+      return (
+        'This text was written by the AI employee during an earlier live run and ' +
+        'is replayed here for the demonstration. The figures are computed from ' +
+        'the data each time, and every number in it was checked against the ' +
+        'data before it was shown.'
+      )
+    case 'live':
+      return (
+        (modelLabel !== null && modelLabel !== '' && modelLabel !== 'live model'
+          ? `Written just now by the AI employee, using ${modelLabel}.`
+          : 'Written just now by the AI employee, using the live model.') +
+        ' Every number in it was checked against the data before it was shown.'
+      )
+  }
+}
+
+// --- Shell helpers: page titles, routes, polling --------------------------------
+
+export const PRODUCT_NAME = 'Golden Eagle AI Cabinet'
+
+/** The browser tab title: the screen (or open panel) first, then the product. */
+export function documentTitle(screen: string | null): string {
+  return screen === null || screen === '' ? PRODUCT_NAME : `${screen} · ${PRODUCT_NAME}`
+}
+
+/** The routes the app knows; anything else goes to the conversation. */
+export function normalizeRoute(path: string): '/' | '/login' | '/institution' {
+  const trimmed = path.length > 1 ? path.replace(/\/+$/, '') : path
+  if (trimmed === '/login' || trimmed === '/institution') return trimmed
+  return '/'
+}
+
+/** A time a reader recognises at a glance: "Oct 5, 9:02 PM"; null when unreadable. */
+export function friendlyTime(ts: string, timeZone?: string): string | null {
+  const date = new Date(ts)
+  if (Number.isNaN(date.getTime())) return null
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
+}
+
+// --- Focus and motion (the modal panel and the phone drawer) ------------------
+
+/** The panel's slide in and out, in milliseconds (none under reduced motion). */
+export const PANEL_MOTION_MS = 200
+
+export function prefersReducedMotion(): boolean {
+  return (
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+}
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
+  'textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'
+
+/** The focusable elements inside a container, in tab order, visible ones only. */
+export function focusableIn(container: HTMLElement): HTMLElement[] {
+  return [...container.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+    (element) => !element.closest('[inert]') && element.getClientRects().length > 0,
+  )
+}
+
+/** Keep Tab and Shift+Tab inside a container (a modal panel or the drawer). */
+export function trapTab(
+  event: { key: string; shiftKey: boolean; preventDefault: () => void },
+  container: HTMLElement,
+): void {
+  if (event.key !== 'Tab') return
+  const items = focusableIn(container)
+  if (items.length === 0) {
+    event.preventDefault()
+    container.focus()
+    return
+  }
+  const first = items[0]
+  const last = items[items.length - 1]
+  const active = document.activeElement
+  if (event.shiftKey && (active === first || active === container)) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+/** The audit log's poll interval while a run is in flight. */
+export const POLL_BASE_MS = 3000
+
+/**
+ * The delay before the next poll: the base interval after a success, the
+ * server's Retry-After (or a minute) after a 429, and a doubling back-off,
+ * capped at 30 s, after any other failure.
+ */
+export function nextPollDelay(
+  outcome: { ok: true } | { ok: false; rateLimited: boolean; retryAfterSeconds: number | null; failures: number },
+  base: number = POLL_BASE_MS,
+): number {
+  if (outcome.ok) return base
+  if (outcome.rateLimited) return Math.max(base, (outcome.retryAfterSeconds ?? 60) * 1000)
+  return Math.min(30_000, base * 2 ** Math.max(1, outcome.failures))
 }
 
 // --- The produced briefing (POST /ask, GET /briefing) ---------------------------
@@ -328,6 +448,45 @@ export interface CabinetBriefing {
     5: { actions: BriefingAction[] }
     6: { decisions: BriefingDecision[] }
     7: ModelSection
+  }
+  /**
+   * Aggregates this briefing carried when it was produced: M9, the
+   * authorized counseling count, on a spring registration briefing asked
+   * while the authorization was on. Empty otherwise. Rendered from here,
+   * never from the current findings, so it never appears under another
+   * question's briefing or one produced before the authorization.
+   */
+  aggregates: Record<string, Finding>
+}
+
+/** One stored aggregate finding, or null when it is not one. No rows are
+ * accepted: an aggregate-only finding always has an empty row list. */
+function aggregateFindingFrom(id: string, raw: unknown): Finding | null {
+  const record = asRecord(raw)
+  if (record.aggregate_only !== true) return null
+  if (typeof record.title !== 'string' || typeof record.display !== 'string') return null
+  const authorization = asRecord(record.authorization)
+  const text = (value: unknown) => (typeof value === 'string' ? value : null)
+  return {
+    id,
+    title: record.title,
+    value: typeof record.value === 'number' ? record.value : null,
+    display: record.display,
+    reason: text(record.reason),
+    comparison: null,
+    source_fields: stringList(record.source_fields),
+    row_ids: [],
+    definition: typeof record.definition === 'string' ? record.definition : '',
+    aggregate_only: true,
+    suppressed: record.suppressed === true,
+    minimum_cell_size:
+      typeof record.minimum_cell_size === 'number' ? record.minimum_cell_size : undefined,
+    authorization: {
+      authorized_by: text(authorization.authorized_by),
+      document_reference: text(authorization.document_reference),
+      recorded_by: text(authorization.recorded_by),
+      recorded_at: text(authorization.recorded_at),
+    },
   }
 }
 
@@ -426,6 +585,11 @@ export function cabinetBriefingFrom(raw: unknown): CabinetBriefing | null {
       })
     }
   }
+  const aggregates: Record<string, Finding> = {}
+  for (const [id, value] of Object.entries(asRecord(record.aggregates))) {
+    const finding = aggregateFindingFrom(id, value)
+    if (finding !== null) aggregates[id] = finding
+  }
   return {
     question_id: record.question_id,
     question: typeof record.question === 'string' ? record.question : '',
@@ -439,6 +603,7 @@ export function cabinetBriefingFrom(raw: unknown): CabinetBriefing | null {
       6: { decisions },
       7: modelSectionFrom(sections[7]),
     },
+    aggregates,
   }
 }
 
@@ -619,7 +784,8 @@ export interface AuditEvent {
   payload: Record<string, unknown>
 }
 
-/** The log renders oldest first — newest last — per the demo script. */
+/** Filter by event type; the order is the caller's (the audit log shows
+ * newest first). */
 export function filterEvents(
   events: AuditEvent[],
   eventType: string | null,
@@ -629,10 +795,36 @@ export function filterEvents(
 }
 
 // The API records every event in UTC; the reader is a person in one place
-// (a president in one time zone), so the log shows the viewer's own zone, named,
-// rather than making them convert. `timeZone` is a test seam — production
-// leaves it undefined and takes the browser's zone.
+// (a president in one time zone), so times show in the viewer's own zone.
+// `timeZone` is a test seam: production leaves it undefined and takes the
+// browser's zone.
+
+function timeParts(date: Date, timeZone: string | undefined, withDate: boolean) {
+  const part: Record<string, string> = {}
+  for (const { type, value } of new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    ...(withDate ? { month: 'short', day: 'numeric' } : {}),
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).formatToParts(date)) {
+    part[type] = value
+  }
+  return part
+}
+
+/** A time as people read it on screen: "Oct 5, 10:41 PM" (no seconds, no
+ * zone code). */
 export function formatTimestamp(ts: string, timeZone?: string): string {
+  const date = new Date(ts)
+  if (Number.isNaN(date.getTime())) return ts
+  const part = timeParts(date, timeZone, true)
+  return `${part.month} ${part.day}, ${part.hour}:${part.minute} ${part.dayPeriod}`
+}
+
+/** The full record time, to the second and with the zone named:
+ * "2026-09-24 17:24:46 CDT". Only inside the audit log's Details fold. */
+export function formatTimestampFull(ts: string, timeZone?: string): string {
   const date = new Date(ts)
   if (Number.isNaN(date.getTime())) return ts
   const part: Record<string, string> = {}
@@ -653,6 +845,15 @@ export function formatTimestamp(ts: string, timeZone?: string): string {
     `${part.year}-${part.month}-${part.day} ` +
     `${part.hour}:${part.minute}:${part.second} ${part.timeZoneName}`
   )
+}
+
+/** "you" when the person named is the one viewing, else their address. */
+export function personName(email: string, viewerEmail: string | null | undefined): string {
+  return viewerEmail != null &&
+    viewerEmail !== '' &&
+    email.trim().toLowerCase() === viewerEmail.trim().toLowerCase()
+    ? 'you'
+    : email
 }
 
 export interface TaskRecord {

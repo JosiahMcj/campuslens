@@ -18,13 +18,14 @@ governance API, and the dashboard. We built all three AI employees with output
 validation. The Enrollment Analyst covers M1, M2 and M7. The Student Success
 Analyst covers M3, M4 and M5. The Chief of Staff dispatches the tasks and merges
 the seven-section briefing. The golden replay runs for both approved questions and
-all three roles are committed in `data/golden/`. Sign-in with four roles and
+all three roles are committed in `data/golden/`. Sign-in with five roles and
 institution accounts with validated dataset upload are live as well. The human panel approves the leadership decision and
 records it, and the audit log shows every grant and every refusal, including both
 refusal demos. Beside the briefing, five figures show M1 to M4 and M8, and each
-one opens its own evidence drawer. Every analyst-written section carries an honest
-source label, "Written by the role (recorded live run)" on replay and "(live
-model)" live. We verified the whole system on the real path against the Day-8
+one opens its own evidence panel. Every analyst-written section carries an honest
+source label, "Written by" the role that wrote it, and a small "About this
+answer" detail says whether the text was replayed from an earlier live run or
+written just now. We verified the whole system on the real path against the Day-8
 matrix in `docs/VERIFICATION.md`, and all eight rows pass. The six-beat demo timed
 at 204.9 seconds against the four-minute limit. We documented how to run, stop,
 replay, and reset any of it in `RUNBOOK.md`.
@@ -36,6 +37,15 @@ reviews it and clicks Send, and the default outbound provider writes it to a loc
 outbox file, so nothing leaves the machine. Real SMTP delivery stays off unless
 someone configures it on purpose (`RUNBOOK.md`, "Sending an approved follow-up").
 
+The emergency-aid review decision can also open a Financial Aid review queue.
+Once leadership signs off, a person prepares the queue, and the Financial Aid office
+gets one row for each of the students M3 counts, with the facts it needs to start its
+own review (the qualifying hold's amount, date, and office, the registration status,
+and the advising status). The software makes no determination about any student. A
+fifth role, `aid`, works the queue by setting each row's status and keeping a note,
+and the executive and the reviewer can read it. No row, fact, or note ever reaches a
+model (`RUNBOOK.md`, "The Financial Aid review queue").
+
 The briefing also reports M8, students with one or more support indicators
 (`backend/src/cabinet/indicators.py`, contract in `CONTRACTS.md`). Each indicator
 is a named, deterministic rule with a plain-language reason. The four rules test
@@ -45,6 +55,17 @@ A student has indicators when at least one rule fires. The rules never combine
 into a weighting or sum, no model ever sees the per-student detail, and the
 evidence drawer shows exactly which rules fired for each pseudonymous id, with the
 rule's reason.
+
+Explore answers specific questions over Demonstration University, the synthetic school
+in `data/school/` ("Which major has the lowest GPA? In that major, what is historically
+the hardest class, and which instructor has historically taught it?"). The question
+becomes a plan of reviewed analyses, code computes every table, and the answer cites the
+cells its numbers came from. The model sees only the analysis catalog and the finished
+aggregate tables, never a student row. Counseling questions and questions about one
+student are refused before any planning, groups under 10 students are withheld, and
+instructor rows go to the executive and admin roles only (`POST /explore`,
+`GET /explore/catalog`, `make school-data` then `make explore-check`, and
+`docs/EXPLORE.md`).
 
 What is left is rehearsal. The demo script and the offline deck in
 `docs/backup-demo.html` are frozen, and the remaining items are the timed
@@ -91,7 +112,7 @@ make build          # production UI into ui/dist
 make serve          # one production process serving UI + API (needs CABINET_SECRET_KEY)
 ```
 
-The app always opens on the login screen, and the demo begins by signing in as
+The app always opens on the sign-in screen, and the demo begins by signing in as
 the president. Every route except `/health` and `/ready` needs a logged-in user,
 and `RUNBOOK.md` has the curl flow under "Users and login".
 
@@ -112,6 +133,32 @@ production configuration fail closed. The API refuses to start without a
 `CABINET_SECRET_KEY` of 32 bytes or more and an explicit `CABINET_BIND`.
 `RUNBOOK.md` covers the rest under "Operating in production".
 
+## Asking any question (Explore)
+
+Beyond the two approved briefing questions, anyone who may ask can put a specific
+question to Demonstration University, the fictional school in `data/school/`. We ask
+it the way a president would: "Which major has the lowest GPA, what is its hardest
+class, and who has taught it?" The Cabinet answers in a few plain sentences, and each
+number in them links to the table cell it came from. A "How this was answered" fold
+shows every step, the fields it read, and its table.
+
+- **First run** `make school-data` once (about 3 s). It writes `var/school/school.db`
+  and checks every planted fact. Without it, Explore says the data is not installed.
+- **Roles.** The executive, admin, staff, and reviewer roles can ask. The Financial
+  Aid role cannot. Instructor names and rows go to the executive and admin roles
+  only, and staff and reviewers see the course as a whole.
+- **Privacy.** Code computes every number from reviewed analyses, and the model
+  never sees a student row. Questions about counseling or spiritual care, about one
+  student, or about what a student will do next are refused before anything runs,
+  and the refusal is recorded. Groups under 10 students are withheld.
+- **Planning.** The reviewed rule planner maps the question to analyses. The live
+  model plans only what the rules cannot map, and its plan is checked against the
+  catalog (`CABINET_EXPLORE_PLANNER=model-first` reverses the order).
+
+The live model is configured in the gitignored `cabinet.local.env` at the repo root.
+Any standard chat-completions endpoint works, and we run a local model. `docs/EXPLORE.md` has
+the analyses, the rules, and the routes.
+
 ## Institutions and datasets
 
 Every user belongs to an institution, and each institution's findings come from
@@ -125,6 +172,23 @@ deletes datasets from the Institution screen.
 
 We pin approvals to the dataset they were computed from. A newly activated
 dataset starts with no briefing and no approvals.
+
+Counseling data stays refused to every role and every AI employee. The one
+exception is a count, and only with the institution's written consent. When the
+counseling director authorizes it and an admin records that authorization in
+Institution settings, the briefing shows how many students not yet registered have
+had any counseling contact this term (M9). It shows no rows, names the person who
+authorized it, and withholds any count under 10 as "fewer than 10". `RUNBOOK.md`
+covers recording and revoking it.
+
+For questions that need a whole school's history, we also ship Demonstration
+University in `data/school/`. It is a synthetic, Ellucian-shaped SQLite database
+covering Fall 2020 to Spring 2026, with 40 programs, 906 courses, 220 fictional
+instructors, about 6,200 pseudonymous students, and about 140,000 graded
+registrations. `make school-data` builds it into `var/school/school.db` in a few
+seconds, and `make school-check` recomputes every GPA and every planted fact in
+`data/school/VERIFY.md` from the raw rows. Nothing in the cabinet reads it yet, and
+a governed question engine will. `data/school/README.md` explains the rest.
 
 ## UI states
 
@@ -174,7 +238,8 @@ never by code changes.
 | `CABINET_LLM_BASE_URL` | base URL of the configured model endpoint | unset |
 | `CABINET_LLM_MODEL` | model id sent to the endpoint (never shown or recorded) | unset |
 | `CABINET_LLM_LABEL` | what the UI shows as the source | `live model` |
-| `CABINET_LLM_REASONING_EFFORT` | sent as `reasoning_effort`, since reasoning models otherwise spend the output budget thinking. Empty omits it | `low` |
+| `CABINET_LLM_REASONING_EFFORT` | sent as `reasoning_effort`, since reasoning models otherwise spend the output budget thinking. A local thinking model may ignore `low` and honour only `none`, which turns its hidden reasoning off. Empty omits it | `low` |
+| `CABINET_LLM_MAX_TOKENS` | the output budget per call, sent as `max_tokens` (256 to 32768). Hidden reasoning counts against it, and running out makes that section unavailable, never half written | `2048` |
 | `CABINET_LLM_API_KEY` | the endpoint key, environment only, never in the repo | unset |
 | `CABINET_LLM_API_KEY_FILE` + `CABINET_LLM_API_KEY_VAR` | read that one variable's line from another env file | unset |
 | `CABINET_RECORD` | `1` records each validated response into `var/replay/`. `overwrite` also replaces existing recordings | off |
@@ -191,13 +256,16 @@ never by code changes.
 | `CABINET_LOCAL_ENV` | path of the env file to load, where service managers point | `cabinet.local.env` at the repo root |
 
 **Security.** Every route except `/health` and `/ready` requires a logged-in
-user with the right role. The four roles are admin, executive, staff, and
-reviewer, and the executive reads the institution's audit log. Sessions are
+user with the right role. The five roles are admin, executive, staff, reviewer,
+and aid (Financial Aid staff), and the executive reads the institution's audit log. Sessions are
 server-side and HMAC-signed, passwords are scrypt-hashed, and every POST needs
 the session's CSRF token. Sign-in throttling hard-locks an IP, or an IP and
 email pair, after 5 failures in 15 minutes, answering 429 with a `Retry-After`
 header. The bare email is never hard-blocked and instead pays a progressive
-delay of 1, 2, 4, and 8 seconds, capped at 30. Request bodies are capped at
+delay of 1, 2, 4, and 8 seconds, capped at 30. Every address may make 600
+requests a minute, because a whole campus can share one address, and each
+signed-in session may make 120. Over either limit the answer is "The Cabinet is
+busy. Wait a minute and try again." Request bodies are capped at
 256 KB (20 MB on the dataset upload route). We enforce the cap on the bytes
 actually read, and on admin routes it applies only after authentication. The
 audit log is a verifiable hash chain in the `audit_events` table

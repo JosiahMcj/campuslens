@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest'
 import {
   APPROVED_QUESTION,
   analystSource,
+  analystSourceDetail,
   analystSourceLabel,
+  documentTitle,
+  friendlyTime,
+  nextPollDelay,
+  normalizeRoute,
   describeState,
   analystFromResponse,
   cabinetBriefingFrom,
@@ -12,9 +17,11 @@ import {
   filterEvents,
   findingDisplay,
   formatTimestamp,
+  formatTimestampFull,
   isApprovedQuestion,
   latestQuestionEventId,
   maxEventId,
+  personName,
   m3ThresholdLabel,
   modelSectionFrom,
   parseFlags,
@@ -195,26 +202,26 @@ describe('analystSource — honest labeling of the analyst text', () => {
   it('labels a live model run', () => {
     expect(analystSource({ provider: 'live', recorded: false })).toBe('live')
     expect(analystSourceLabel('live', 'the Enrollment Analyst')).toBe(
-      'Written by the Enrollment Analyst (live model)',
+      'Written by the Enrollment Analyst',
     )
   })
 
   it('labels a recorded (replay) run, never stacking a second parenthetical', () => {
     expect(analystSource({ provider: 'live', recorded: true })).toBe('recorded')
     expect(analystSourceLabel('recorded', 'the Enrollment Analyst')).toBe(
-      'Written by the Enrollment Analyst (recorded live run)',
+      'Written by the Enrollment Analyst',
     )
     expect(analystSourceLabel('recorded', 'the Enrollment Analyst', 'live model')).toBe(
-      'Written by the Enrollment Analyst (recorded live run)',
+      'Written by the Enrollment Analyst',
     )
   })
 
   it('uses a configured model label for a live run only when it differs', () => {
     expect(analystSourceLabel('live', 'the Chief of Staff', 'campus GPT')).toBe(
-      'Written by the Chief of Staff (campus GPT)',
+      'Written by the Chief of Staff',
     )
     expect(analystSourceLabel('live', 'the Chief of Staff', 'live model')).toBe(
-      'Written by the Chief of Staff (live model)',
+      'Written by the Chief of Staff',
     )
   })
 
@@ -227,10 +234,10 @@ describe('analystSource — honest labeling of the analyst text', () => {
 
   it('names the Student Success Analyst for its own section', () => {
     expect(analystSourceLabel('live', 'the Student Success Analyst')).toBe(
-      'Written by the Student Success Analyst (live model)',
+      'Written by the Student Success Analyst',
     )
     expect(analystSourceLabel('recorded', 'the Student Success Analyst')).toBe(
-      'Written by the Student Success Analyst (recorded live run)',
+      'Written by the Student Success Analyst',
     )
   })
 })
@@ -281,23 +288,37 @@ describe('audit log helpers', () => {
     expect(taskFromEvents(events, 'D-2')).toBeUndefined()
   })
 
-  it('formats timestamps in the viewer\'s zone, named', () => {
+  it('formats timestamps as people read them, in the viewer\'s zone', () => {
     const recorded = '2026-09-24T22:24:46.535823+00:00'
-    expect(formatTimestamp(recorded, 'America/Chicago')).toBe(
-      '2026-09-24 17:24:46 CDT',
-    )
+    expect(formatTimestamp(recorded, 'America/Chicago')).toBe('Sep 24, 5:24 PM')
     expect(formatTimestamp('2026-12-24T22:24:46+00:00', 'America/Chicago')).toBe(
-      '2026-12-24 16:24:46 CST',
+      'Dec 24, 4:24 PM',
     )
-    expect(formatTimestamp(recorded, 'UTC')).toBe('2026-09-24 22:24:46 UTC')
-    // Midnight stays 00, never 24.
+    expect(formatTimestamp(recorded, 'UTC')).toBe('Sep 24, 10:24 PM')
+    // Midnight reads 12:00 AM, never 0:00 or 24:00.
     expect(formatTimestamp('2026-09-25T05:00:00+00:00', 'America/Chicago')).toBe(
+      'Sep 25, 12:00 AM',
+    )
+  })
+
+  it('keeps the full record time, to the second and zone named, for Details', () => {
+    const recorded = '2026-09-24T22:24:46.535823+00:00'
+    expect(formatTimestampFull(recorded, 'America/Chicago')).toBe('2026-09-24 17:24:46 CDT')
+    expect(formatTimestampFull(recorded, 'UTC')).toBe('2026-09-24 22:24:46 UTC')
+    expect(formatTimestampFull('2026-09-25T05:00:00+00:00', 'America/Chicago')).toBe(
       '2026-09-25 00:00:00 CDT',
     )
   })
 
   it('leaves an unparseable timestamp as it came', () => {
     expect(formatTimestamp('not a time')).toBe('not a time')
+    expect(formatTimestampFull('not a time')).toBe('not a time')
+  })
+
+  it('names the viewer "you" and anyone else by address', () => {
+    expect(personName('President@demo.test', 'president@demo.test')).toBe('you')
+    expect(personName('staff@demo.test', 'president@demo.test')).toBe('staff@demo.test')
+    expect(personName('staff@demo.test', null)).toBe('staff@demo.test')
   })
 })
 
@@ -567,5 +588,57 @@ describe('dispatchTasks — the Beat 2 task cards from the audit events', () => 
     expect(latestQuestionEventId(eventsAfter([asked, later], 25))).toBe(30)
     expect(latestQuestionEventId(eventsAfter([asked, later], 30))).toBeNull()
     expect(latestQuestionEventId([])).toBeNull()
+  })
+})
+
+describe('analystSourceDetail', () => {
+  it('keeps the replay and live distinction honest in the detail', () => {
+    expect(analystSourceDetail('recorded')).toContain('earlier live run')
+    expect(analystSourceDetail('live')).toContain('just now')
+    expect(analystSourceDetail('live', 'campus GPT')).toContain('campus GPT')
+    expect(analystSourceDetail('fake')).toContain('test stub')
+  })
+})
+
+describe('documentTitle', () => {
+  it('puts the screen before the product name', () => {
+    expect(documentTitle(null)).toBe('Golden Eagle AI Cabinet')
+    expect(documentTitle('Sign in')).toBe('Sign in · Golden Eagle AI Cabinet')
+    expect(documentTitle('Audit log')).toBe('Audit log · Golden Eagle AI Cabinet')
+  })
+})
+
+describe('normalizeRoute', () => {
+  it('keeps known routes and sends anything else to the conversation', () => {
+    expect(normalizeRoute('/')).toBe('/')
+    expect(normalizeRoute('/login')).toBe('/login')
+    expect(normalizeRoute('/institution/')).toBe('/institution')
+    expect(normalizeRoute('/nowhere')).toBe('/')
+    expect(normalizeRoute('/institution/users')).toBe('/')
+  })
+})
+
+describe('nextPollDelay', () => {
+  it('polls every 3 s, waits out a 429, and backs off on failures', () => {
+    expect(nextPollDelay({ ok: true })).toBe(3000)
+    expect(
+      nextPollDelay({ ok: false, rateLimited: true, retryAfterSeconds: 20, failures: 1 }),
+    ).toBe(20_000)
+    expect(
+      nextPollDelay({ ok: false, rateLimited: true, retryAfterSeconds: null, failures: 1 }),
+    ).toBe(60_000)
+    expect(
+      nextPollDelay({ ok: false, rateLimited: false, retryAfterSeconds: null, failures: 1 }),
+    ).toBe(6000)
+    expect(
+      nextPollDelay({ ok: false, rateLimited: false, retryAfterSeconds: null, failures: 9 }),
+    ).toBe(30_000)
+  })
+})
+
+describe('friendlyTime', () => {
+  it('formats a timestamp for a reader, or null', () => {
+    expect(friendlyTime('2026-10-05T14:02:00Z', 'UTC')).toBe('Oct 5, 2:02 PM')
+    expect(friendlyTime('not a time')).toBeNull()
   })
 })

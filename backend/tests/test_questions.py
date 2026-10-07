@@ -374,7 +374,7 @@ def test_each_questions_decision_approves_idempotently(client: TestClient) -> No
         assert first.status_code == 200
         assert first.json()["created"] is True
         assert first.json()["task"]["office"] == office
-        assert first.json()["task"]["status"] == "simulated, nothing sent"
+        assert first.json()["task"]["status"] == "Waiting for the message to be sent"
         second = client.post(
             "/decisions/approve", json={"decision_id": decision_id}
         )

@@ -10,10 +10,12 @@ the smtp provider against a mocked smtplib, and every loud refusal.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import ssl
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -72,8 +74,10 @@ def test_migration_5_is_idempotent_and_upgrades_a_real_1_to_4_database(
             )
             conn.commit()
         assert recorded_versions(conn) == [1, 2, 3, 4]
-        assert migrate(conn) == [5]
-        assert recorded_versions(conn) == [1, 2, 3, 4, 5]
+        # Migration 5 applies; later migrations (6, the aid review queue)
+        # follow in the same call.
+        assert migrate(conn)[0] == 5
+        assert recorded_versions(conn)[:5] == [1, 2, 3, 4, 5]
         # Idempotent: nothing pending, nothing applied.
         assert migrate(conn) == []
         tables = {
@@ -164,13 +168,14 @@ def test_compose_builds_the_draft_from_the_findings() -> None:
     assert dispatch["sent_by"] is None
     assert dispatch["sent_at"] is None
     assert dispatch["provider"] is None
-    # The office, the decision, the numbers with their finding ids, and the
-    # approving user are all named.
+    # The office, the decision, the numbers, and the approving user are
+    # all named, in plain words: no decision id, no finding id.
     assert "Financial Aid" in dispatch["subject"]
-    assert DEMO_DECISION_ID in dispatch["body"]
+    assert DEMO_DECISION_ID not in dispatch["body"]
     assert "Approved by: executive@test.example" in dispatch["body"]
     assert "18 continuing students" in dispatch["body"]
-    assert "(finding M3)" in dispatch["body"]
+    assert "(finding" not in dispatch["body"]
+    assert re.search(r"\bM\d\b", dispatch["body"]) is None
     assert "$1,000" in dispatch["body"]
     # Never a student id or advisor id (STU-…, ADV-… in the fixture).
     text = dispatch["subject"] + dispatch["body"]
@@ -210,6 +215,27 @@ def test_dispatch_routes_404_unknown_decision() -> None:
     assert client.post("/decisions/D-nope/dispatch/send").status_code == 404
 
 
+def test_get_decisions_names_the_approver_and_the_time() -> None:
+    app = create_app()
+    executive = make_authenticated_client(app, role="executive")
+    reviewer = make_authenticated_client(app, role="reviewer")
+
+    def demo_decision() -> dict[str, Any]:
+        decisions = reviewer.get("/decisions").json()["decisions"]
+        return next(d for d in decisions if d["id"] == DEMO_DECISION_ID)
+
+    before = demo_decision()
+    assert before["approved"] is False
+    assert before["approved_by"] is None
+    assert before["approved_at"] is None
+
+    _approve(executive)
+    after = demo_decision()
+    assert after["approved"] is True
+    assert after["approved_by"] == "executive@test.example"
+    assert datetime.fromisoformat(after["approved_at"]).tzinfo is not None
+
+
 def test_get_dispatch_reports_approval_and_contact_state() -> None:
     app = create_app()
     admin = make_authenticated_client(app, role="admin")
@@ -219,12 +245,16 @@ def test_get_dispatch_reports_approval_and_contact_state() -> None:
     assert before["office"] == "Financial Aid"
     assert before["office_contact"] is None
     assert before["dispatch"] is None
+    assert before["approved_by"] is None
+    assert before["approved_at"] is None
 
     _approve(admin)
     _compose(admin)
     _set_offices(admin, [FINANCIAL_AID])
     after = reviewer.get(f"/decisions/{DEMO_DECISION_ID}/dispatch").json()
     assert after["approved"] is True
+    assert after["approved_by"] == "admin@test.example"
+    assert datetime.fromisoformat(after["approved_at"]).tzinfo is not None
     assert after["office_contact"] == "financial-aid@example.edu"
     assert after["dispatch"]["status"] == "draft"
 
@@ -388,7 +418,8 @@ def test_q2_dispatch_goes_to_the_bursar_and_refuses_without_a_contact() -> None:
     composed = _compose(admin, UNRESOLVED_HOLDS_DECISION_ID)
     dispatch = composed["dispatch"]
     assert dispatch["to_office"] == "Bursar"
-    assert "(finding M5)" in dispatch["body"]
+    assert "unresolved holds affect continued enrollment" in dispatch["body"]
+    assert "(finding" not in dispatch["body"]
     assert "STU-" not in dispatch["body"]
 
     refused = admin.post(f"/decisions/{UNRESOLVED_HOLDS_DECISION_ID}/dispatch/send")

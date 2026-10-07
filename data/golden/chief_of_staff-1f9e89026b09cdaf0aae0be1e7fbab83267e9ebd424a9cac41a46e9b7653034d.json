@@ -1,0 +1,11 @@
+{
+  "provider": "chat",
+  "model_label": "live model",
+  "role": "chief_of_staff",
+  "findings_sha256": "1f9e89026b09cdaf0aae0be1e7fbab83267e9ebd424a9cac41a46e9b7653034d",
+  "recorded_at": "2026-09-25T04:11:31.893337+00:00",
+  "text": "{\"executive_summary\": \"Spring registration among continuing students is down 4.8% versus the same point last year, when 125 had registered as of 2025-11-20 [M1]. Registered credit hours are 2.7% below the prior year's 1872 hours [M7]. 42 continuing students have not yet registered, and each is a person we can still reach with support before the term begins [M2]. Among them, 18 have an unresolved financial hold under $1,000 and 12 have had no advising appointment this term [M3, M4]. Registration closes in 28 days, and the Bursar is responsible for 24 of the 28 unresolved holds across all current-term students [M5, M6].\", \"limitations\": \"All records are fictional demonstration data [M1]. The as-of date used throughout comes from the data rather than today's date [M1]. Registered credit hours versus the prior year is an optional measure and may be excluded if a single headline enrollment indicator is preferred [M7]. The prior-year comparison relies on the equivalent date 2025-11-20, and differences in timing or definitions could affect the comparison [M1].\"}",
+  "rekeyed_from": "f649f7f7c5222c792ec6c936f2ec58fd78ee28008dce85f63869499cdd9f1f31",
+  "rekeyed_at": "2026-10-06T01:02:44.113993+00:00",
+  "rekey_reason": "findings object gained M9, the authorized counseling aggregate (suppressed below the minimum group size), which the recorded text does not mention; text byte-identical and re-validated. A copy, not a move: the key without M9 (e704c50d528b1a18c8df340085e9e12c7091afd721453a5649c9e216a8529d41) stays for institutions without the authorization"
+}

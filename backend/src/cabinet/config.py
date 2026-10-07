@@ -24,7 +24,7 @@ from cabinet.auth import (
     session_ttl,
 )
 from cabinet.provider import load_local_env
-from cabinet.security import ENV_RATE_ASK, ENV_RATE_GENERAL
+from cabinet.security import ENV_RATE_ASK, ENV_RATE_GENERAL, ENV_RATE_SESSION
 
 # Every CABINET_* variable the code reads, grouped by concern.
 KNOWN_VARIABLES: tuple[str, ...] = (
@@ -52,9 +52,13 @@ KNOWN_VARIABLES: tuple[str, ...] = (
     "CABINET_LLM_MODEL",
     "CABINET_LLM_LABEL",
     "CABINET_LLM_REASONING_EFFORT",
+    "CABINET_LLM_MAX_TOKENS",
     "CABINET_LLM_API_KEY",
     "CABINET_LLM_API_KEY_FILE",
     "CABINET_LLM_API_KEY_VAR",
+    "CABINET_VALIDATION_RETRIES",
+    "CABINET_EXPLORE_PLANNER",
+    "CABINET_SCHOOL_DB",
     # the Ethos import (cabinet.ellucian)
     "CABINET_ETHOS_BASE_URL",
     "CABINET_ETHOS_API_KEY_FILE",
@@ -71,6 +75,7 @@ KNOWN_VARIABLES: tuple[str, ...] = (
     "CABINET_SMTP_PASSWORD_FILE",
     # rate limits
     ENV_RATE_GENERAL,
+    ENV_RATE_SESSION,
     ENV_RATE_ASK,
 )
 

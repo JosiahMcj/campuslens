@@ -4,144 +4,18 @@
    and changes only the look: LibreChat's neutral gray palette with its teal
    accent, Inter throughout, rounded surfaces, a full-height left sidebar,
    and a dark mode switched by a `dark` class on <html> (see theme.ts).
-   Colour values follow LibreChat's client/src/style.css tokens (MIT).
+   The colour values follow LibreChat's client/src/style.css tokens (MIT).
 
-   index.css reads its colours from nine tokens (--paper, --rail, --ink,
-   --ink-soft, --rule, --navy, --gold, --gold-wash, --alert), so remapping
-   them here restyles the whole app; the rules below add the new shapes. */
+   Every value comes from the one token block at the top of index.css. */
 
-:root {
-  --paper: #ffffff; /* surface-primary */
-  --rail: #f7f7f8; /* sidebar: surface-primary-alt (gray-50) */
-  --surface: #f7f7f8; /* cards on the page */
-  --surface-hover: #ececec; /* gray-100 */
-  --ink: #212121; /* text-primary (gray-800) */
-  --ink-soft: #595959; /* text-secondary-alt (gray-500) */
-  --rule: #e3e3e3; /* border-light (gray-200) */
-  --rule-strong: #cdcdcd; /* border-medium (gray-300) */
-  --navy: #126e6b; /* accent-primary: links, focus, primary actions */
-  --gold: #b45309; /* amber-700: the leadership decision */
-  --gold-wash: #fffbeb; /* amber-50 */
-  --alert: #b91c1c; /* red-700 */
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 4px 12px rgb(0 0 0 / 0.06);
-
-  --document: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --instrument: var(--document);
-
-  --radius-control: 0.75rem;
-  --radius-surface: 1rem;
-
-  color-scheme: light;
-}
-
-.dark {
-  --paper: #212121; /* gray-800: the main surface in dark */
-  --rail: #171717; /* gray-850: the sidebar */
-  --surface: #2f2f2f; /* gray-700 */
-  --surface-hover: #393939; /* gray-650 */
-  --ink: #ececec; /* gray-100 */
-  --ink-soft: #b4b4b4;
-  --rule: #393939;
-  --rule-strong: #595959;
-  --navy: #41a79d; /* accent-primary, dark */
-  --gold: #f59e0b; /* amber-500 */
-  --gold-wash: #2a2419;
-  --alert: #f87171; /* red-400 */
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 12px rgb(0 0 0 / 0.25);
-
-  color-scheme: dark;
-}
-
-body {
-  background: var(--paper);
-  color: var(--ink);
-}
-
-::selection {
-  background: color-mix(in srgb, var(--navy) 25%, var(--paper));
-}
-
-/* --- Type: Inter, neutral headings, a calmer scale ---------------------------*/
-
-h1,
-h2,
-h3 {
-  color: var(--ink);
-  letter-spacing: -0.015em;
-}
-
-h1 {
-  font-size: 1.6rem;
-}
-
-h2 {
-  font-size: 1.2rem;
-  border-bottom: none;
-  padding-bottom: 0;
-  margin-bottom: 12px;
-}
-
-h3 {
-  font-size: 1.05rem;
-}
+/* --- Type: a calmer measure for the briefing ---------------------------------*/
 
 .doc {
   line-height: 1.7;
 }
 
 .doc section {
-  margin-top: 40px;
-}
-
-.page-header .lede,
-.login-lede {
-  color: var(--ink-soft);
-}
-
-a {
-  color: var(--navy);
-}
-
-/* --- Controls: LibreChat's rounded buttons ------------------------------------*/
-
-button {
-  border-radius: var(--radius-control);
-}
-
-button.secondary,
-.close-button {
-  background: transparent;
-  color: var(--ink);
-  border: 1px solid var(--rule-strong);
-}
-
-button.secondary:hover,
-.close-button:hover {
-  background: var(--surface-hover);
-  border-color: var(--rule-strong);
-  color: var(--ink);
-}
-
-button.secondary:active {
-  background: var(--rule);
-}
-
-/* Filled actions are the ink colour, as LibreChat's send button is. */
-.primary-button,
-.question-row button[type='submit'] {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--paper);
-}
-
-.primary-button:hover,
-.question-row button[type='submit']:hover {
-  background: color-mix(in srgb, var(--ink) 82%, var(--paper));
-}
-
-.primary-button:active,
-.question-row button[type='submit']:active {
-  background: color-mix(in srgb, var(--ink) 70%, var(--paper));
+  margin-top: var(--space-6);
 }
 
 /* --- Page layout: sidebar on the left, one centred content column ------------*/
@@ -163,12 +37,8 @@ button.secondary:active {
   }
 
   .page > :not(.rail) {
-    width: min(100% - 64px, 52rem);
+    width: min(100% - 2 * var(--space-6), 52rem);
     justify-self: center;
-  }
-
-  .page-header {
-    padding-top: 40px;
   }
 
   .stat-block,
@@ -177,7 +47,7 @@ button.secondary:active {
   }
 
   .doc {
-    padding-bottom: 64px;
+    padding-bottom: var(--space-7);
   }
 
   .rail {
@@ -188,7 +58,7 @@ button.secondary:active {
     align-self: start;
     height: 100vh;
     margin: 0;
-    padding: 12px;
+    padding: var(--space-3);
     box-sizing: border-box;
     overflow-y: auto;
     border-radius: 0;
@@ -200,7 +70,7 @@ button.secondary:active {
   .rail-inner {
     position: static;
     min-height: 100%;
-    gap: 16px;
+    gap: var(--space-4);
   }
 
   /* The account block stays pinned to the sidebar's bottom edge. */
@@ -208,10 +78,10 @@ button.secondary:active {
     order: 99;
     margin-top: auto;
     position: sticky;
-    bottom: -12px;
-    margin-inline: -12px;
-    margin-bottom: -12px;
-    padding: 12px 20px 16px;
+    bottom: calc(-1 * var(--space-3));
+    margin-inline: calc(-1 * var(--space-3));
+    margin-bottom: calc(-1 * var(--space-3));
+    padding: var(--space-3) var(--space-4) var(--space-4);
     background: var(--rail);
   }
 }
@@ -234,9 +104,6 @@ button.secondary:active {
     display: none;
   }
 
-  .dispatch {
-    margin-top: 28px;
-  }
 }
 
 /* --- Sidebar masthead: brand on top, account at the bottom --------------------*/
@@ -248,15 +115,15 @@ button.secondary:active {
 }
 
 .masthead-brand {
-  padding: 8px 8px 12px;
+  padding: var(--space-2) var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--rule);
 }
 
 .masthead-product {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 1rem;
+  gap: var(--space-2);
+  font-size: var(--text-md);
   letter-spacing: -0.01em;
 }
 
@@ -266,29 +133,29 @@ button.secondary:active {
   flex: none;
   width: 1.9rem;
   height: 1.9rem;
-  border-radius: 0.6rem;
+  border-radius: var(--radius-control);
   background: var(--ink);
   color: var(--paper);
-  font-size: 0.7rem;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  font-weight: 600;
   letter-spacing: 0.02em;
 }
 
 .masthead-institution,
 .masthead-dataset {
-  font-size: 0.85rem;
-  padding-inline-start: calc(1.9rem + 10px);
+  font-size: var(--text-sm);
+  padding-inline-start: calc(1.9rem + var(--space-2));
 }
 
 .masthead-account {
-  padding: 12px 8px 4px;
+  padding: var(--space-3) var(--space-2) var(--space-1);
   border-top: 1px solid var(--rule);
 }
 
 .masthead-user {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   margin: 0;
   color: var(--ink);
 }
@@ -302,23 +169,23 @@ button.secondary:active {
   border-radius: 999px;
   background: var(--navy);
   color: var(--paper);
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
   font-weight: 600;
 }
 
 .masthead-user-text {
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
 .masthead-actions {
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .masthead-actions button {
   margin-inline-start: 0;
-  border-radius: 0.6rem;
+  border-radius: var(--radius-control);
 }
 
 .masthead-actions button:last-child {
@@ -328,21 +195,21 @@ button.secondary:active {
 .theme-toggle {
   display: inline-grid;
   place-items: center;
-  padding: 6px 8px;
+  padding: var(--space-1) var(--space-2);
 }
 
 @media (max-width: 1199px) {
   .masthead-brand {
-    margin-top: 16px;
+    margin-top: var(--space-4);
     border-bottom: none;
-    padding-bottom: 4px;
+    padding-bottom: var(--space-1);
   }
 
   .masthead-account {
     border-top: none;
     border-bottom: 1px solid var(--rule);
-    padding: 4px 8px 16px;
-    margin-bottom: 8px;
+    padding: var(--space-1) var(--space-2) var(--space-4);
+    margin-bottom: var(--space-2);
   }
 }
 
@@ -355,8 +222,8 @@ button.secondary:active {
 .section-nav::before {
   content: 'Briefing';
   display: block;
-  padding: 0 10px 6px;
-  font-size: 0.75rem;
+  padding: 0 var(--space-2) var(--space-1);
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--ink-soft);
 }
@@ -364,7 +231,7 @@ button.secondary:active {
 .section-nav ul {
   border-top: none;
   display: grid;
-  gap: 2px;
+  gap: 0;
 }
 
 .section-nav li {
@@ -372,8 +239,8 @@ button.secondary:active {
 }
 
 .section-nav a {
-  padding: 7px 10px;
-  border-radius: 0.6rem;
+  padding: var(--space-2) var(--space-2);
+  border-radius: var(--radius-control);
   color: var(--ink);
 }
 
@@ -388,45 +255,15 @@ button.secondary:active {
   font-weight: 600;
 }
 
-/* --- Task cards in the sidebar -------------------------------------------------*/
-
-.dispatch {
-  margin-top: 0;
-}
-
-.dispatch h3 {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--ink-soft);
-  letter-spacing: 0;
-  padding-inline: 2px;
-}
-
-.task-card {
-  background: var(--paper);
-  border-color: var(--rule);
-  border-radius: var(--radius-control);
-  box-shadow: var(--shadow);
-}
-
-.task-card .task-id {
-  font-variant-numeric: normal;
-  font-size: 0.8rem;
-}
-
-.task-card[data-status='done'] {
-  border-color: color-mix(in srgb, var(--navy) 55%, var(--rule));
-}
-
 /* --- Question bar: LibreChat's composer ----------------------------------------*/
 
 .question-bar {
-  margin-top: 24px;
+  margin-top: var(--space-5);
 }
 
 .question-bar h2 {
-  font-size: 1rem;
-  margin-bottom: 8px;
+  font-size: var(--text-md);
+  margin-bottom: var(--space-2);
 }
 
 .question-row {
@@ -436,9 +273,9 @@ button.secondary:active {
 
 .question-row input {
   flex-basis: 100%;
-  padding: 14px 18px;
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--rule-strong);
-  border-radius: 1.5rem;
+  border-radius: var(--radius-surface);
   background: var(--paper);
   box-shadow: var(--shadow);
 }
@@ -456,10 +293,10 @@ button.secondary:active {
 /* The send button sits inside the composer, at its right edge. */
 .question-row button[type='submit'] {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 50%;
+  right: var(--space-1);
+  transform: translateY(-50%);
   border-radius: 999px;
-  padding: 8px 18px;
 }
 
 /* The approved questions read as LibreChat's starter prompts. */
@@ -467,30 +304,23 @@ button.secondary:active {
   border-radius: 999px;
   border-color: var(--rule);
   background: var(--surface);
-  font-size: 0.9rem;
-  padding: 8px 14px;
+  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-3);
 }
 
 .question-row button.secondary:hover {
   background: var(--surface-hover);
 }
 
-.refusal-card,
-.model-unavailable {
-  background: color-mix(in srgb, var(--alert) 7%, var(--paper));
-  border-color: color-mix(in srgb, var(--alert) 45%, var(--rule));
-  border-radius: var(--radius-control);
-}
-
 /* --- The four figures: a row of cards -------------------------------------------*/
 
 .stat-block {
-  margin-top: 24px;
+  margin-top: var(--space-5);
 }
 
 .stat-row {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--space-3);
   border-block: none;
   margin-top: 0;
 }
@@ -510,7 +340,7 @@ button.secondary:active {
 .skeleton-figure,
 .stat-figure:nth-child(-n + 2),
 .skeleton-figure:nth-child(-n + 2) {
-  padding: 14px 16px;
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--rule);
   border-radius: var(--radius-control);
   background: var(--surface);
@@ -521,7 +351,7 @@ button.secondary:active {
 }
 
 .stat-display {
-  font-size: 1.9rem;
+  font-size: var(--text-2xl);
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--ink);
@@ -534,7 +364,7 @@ button.secondary:active {
 }
 
 .stat-title {
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
   line-height: 1.35;
 }
 
@@ -543,19 +373,13 @@ button.secondary:active {
 }
 
 .demo-note {
-  margin-top: 10px;
+  margin-top: var(--space-2);
 }
 
 /* --- The briefing document ------------------------------------------------------*/
 
 .finding-link {
-  border-radius: 4px;
   text-decoration-color: color-mix(in srgb, var(--navy) 50%, transparent);
-}
-
-.finding-link:hover {
-  color: var(--navy);
-  background: color-mix(in srgb, var(--navy) 12%, transparent);
 }
 
 .finding-list {
@@ -566,15 +390,11 @@ button.secondary:active {
 }
 
 .finding-row {
-  padding: 10px 14px;
+  padding: var(--space-2) var(--space-3);
 }
 
 .finding-list li:last-child .finding-row {
   border-bottom: none;
-}
-
-.finding-row:hover {
-  background: var(--surface);
 }
 
 .office-table {
@@ -615,18 +435,6 @@ button.secondary:active {
   border-radius: var(--radius-surface);
 }
 
-.approve-button {
-  background: var(--gold);
-  border-color: var(--gold);
-  color: var(--paper);
-}
-
-.approve-button:hover,
-.approve-button:active {
-  background: color-mix(in srgb, var(--gold) 85%, var(--ink));
-  color: var(--paper);
-}
-
 .simulated-task,
 .state-panel,
 .confirm-inline,
@@ -640,41 +448,7 @@ button.secondary:active {
   background: var(--paper);
 }
 
-.skeleton {
-  border-radius: 6px;
-  background: linear-gradient(
-    90deg,
-    var(--surface) 25%,
-    var(--surface-hover) 50%,
-    var(--surface) 75%
-  );
-  background-size: 200% 100%;
-}
-
-/* --- Evidence drawer --------------------------------------------------------------*/
-
-.drawer-overlay {
-  background: rgb(0 0 0 / 0.45);
-}
-
-.drawer {
-  border-radius: var(--radius-surface) 0 0 var(--radius-surface);
-  box-shadow: -8px 0 32px rgb(0 0 0 / 0.2);
-}
-
-.drawer-facts dt {
-  color: var(--ink);
-}
-
-.drawer-value {
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-.id-badge {
-  border-radius: 999px;
-  background: var(--surface);
-}
+/* --- Evidence: the formula and record lists sit on the surface ------------------*/
 
 .formula,
 .row-list,
@@ -686,46 +460,8 @@ button.secondary:active {
 
 /* --- Audit log --------------------------------------------------------------------*/
 
-.filter-bar .filter {
-  background: var(--surface);
-  border-color: var(--rule);
-}
-
-.filter-bar .filter:hover {
-  background: var(--surface-hover);
-  border-color: var(--rule);
-}
-
-.filter-bar .filter.active {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--paper);
-}
-
-.event-list {
-  border-top: none;
-  display: grid;
-  gap: 8px;
-}
-
-.event {
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-control);
-  padding: 12px 14px;
-}
-
-.event-type {
-  font-weight: 600;
-  color: var(--ink);
-}
-
 .event-data-refused {
-  border-color: color-mix(in srgb, var(--alert) 45%, var(--rule));
-  background: color-mix(in srgb, var(--alert) 5%, var(--paper));
-}
-
-.event-data-refused .event-type {
-  color: var(--alert);
+  background: var(--alert-wash);
 }
 
 /* --- Sign-in: LibreChat's centred auth card ----------------------------------------*/
@@ -737,7 +473,7 @@ button.secondary:active {
 
 .login-panel {
   margin-top: 0;
-  padding: 32px;
+  padding: var(--space-6);
   border: 1px solid var(--rule);
   border-radius: var(--radius-surface);
   box-shadow: var(--shadow);
@@ -745,41 +481,12 @@ button.secondary:active {
 }
 
 .login-panel h1 {
-  font-size: 1.5rem;
+  font-size: var(--text-xl);
   text-align: center;
 }
 
 .login-lede {
   text-align: center;
-}
-
-.login-panel form input,
-.question-row input,
-.user-table select,
-.add-user-row select,
-.add-user-row input {
-  background: var(--paper);
-  color: var(--ink);
-}
-
-.login-panel form input {
-  padding: 12px 14px;
-  border-color: var(--rule-strong);
-  border-radius: var(--radius-control);
-}
-
-.login-panel form input:focus {
-  border-color: var(--navy);
-}
-
-.login-panel form .primary-button {
-  padding: 12px 16px;
-  background: var(--navy);
-  border-color: var(--navy);
-}
-
-.login-panel form .primary-button:hover {
-  background: color-mix(in srgb, var(--navy) 85%, var(--ink));
 }
 
 .login-notice {

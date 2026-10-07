@@ -19,7 +19,14 @@ endpoint works. Implementations:
     logged, recorded, or returned to the UI; responses carry the label instead.
   - ``CABINET_LLM_REASONING_EFFORT`` — sent as ``reasoning_effort`` (default
     ``low``; set it empty to omit the field). Reasoning models otherwise spend
-    the whole output budget thinking and answer nothing.
+    the whole output budget thinking and answer nothing. A local thinking
+    model served through an OpenAI-compatible server may ignore ``low`` and
+    honour only ``none``, which turns its hidden reasoning off (we measured
+    this; see RUNBOOK.md). Nothing beyond the setting's value is ever sent.
+  - ``CABINET_LLM_MAX_TOKENS`` — the output budget per call, sent as
+    ``max_tokens`` (default 2048, a whole number from 256 to 32768). A
+    thinking model's hidden reasoning counts against it, and running out is
+    ``finish_reason 'length'``, which is unavailability, never a half answer.
   - ``CABINET_LLM_LABEL`` — what the UI shows as the source (default
     ``"live model"``).
   - ``CABINET_LLM_API_KEY`` — the key; or ``CABINET_LLM_API_KEY_FILE`` +
@@ -49,6 +56,14 @@ Other environment configuration:
   ``overwrite`` also replaces existing recordings.
 - ``CABINET_REPLAY_DIR`` — extra replay cache directory, searched first
   (default write target for recordings: ``var/replay/``).
+
+Validation retry: a provider may also offer ``correct(findings, role,
+correction)``, the same call plus one extra user message stating why its
+previous answer failed validation. The analyst and Chief of Staff runners use
+it for at most ``CABINET_VALIDATION_RETRIES`` corrective tries (see
+``cabinet.analysts``). :class:`ChatProvider` and :class:`FakeProvider` offer it.
+:class:`ReplayProvider` does not, by design: a recording was validated when it
+was made, so replay never takes the retry path.
 
 Adding a provider (the D5 seam): write a class that satisfies
 :class:`Provider` — a ``name``/``model_label`` pair plus
@@ -98,6 +113,10 @@ ENV_LLM_MODEL = "CABINET_LLM_MODEL"
 ENV_LLM_LABEL = "CABINET_LLM_LABEL"
 ENV_LLM_REASONING_EFFORT = "CABINET_LLM_REASONING_EFFORT"
 DEFAULT_REASONING_EFFORT = "low"
+ENV_LLM_MAX_TOKENS = "CABINET_LLM_MAX_TOKENS"
+DEFAULT_MAX_TOKENS = 2048
+MIN_MAX_TOKENS = 256
+MAX_MAX_TOKENS = 32768
 ENV_LLM_API_KEY = "CABINET_LLM_API_KEY"
 ENV_LLM_API_KEY_FILE = "CABINET_LLM_API_KEY_FILE"
 ENV_LLM_API_KEY_VAR = "CABINET_LLM_API_KEY_VAR"
@@ -152,6 +171,30 @@ def _reasoning_effort_field() -> dict[str, str]:
     can consume the entire output budget as hidden reasoning."""
     value = os.environ.get(ENV_LLM_REASONING_EFFORT, DEFAULT_REASONING_EFFORT).strip()
     return {"reasoning_effort": value} if value else {}
+
+
+def max_tokens_from_env() -> int:
+    """``CABINET_LLM_MAX_TOKENS`` read at call time, the one place the output
+    budget is decided. Unset or empty gives the default; a value that is not a
+    whole number in range is logged and the default is used."""
+    raw = os.environ.get(ENV_LLM_MAX_TOKENS, "").strip()
+    if not raw:
+        return DEFAULT_MAX_TOKENS
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if not MIN_MAX_TOKENS <= value <= MAX_MAX_TOKENS:
+        logger.warning(
+            "%s=%r is not a whole number from %d to %d; using %d",
+            ENV_LLM_MAX_TOKENS,
+            raw,
+            MIN_MAX_TOKENS,
+            MAX_MAX_TOKENS,
+            DEFAULT_MAX_TOKENS,
+        )
+        return DEFAULT_MAX_TOKENS
+    return value
 
 
 def load_local_env(path: Path | None = None) -> None:
@@ -260,6 +303,20 @@ class ChatProvider:
         return os.environ.get(ENV_LLM_LABEL, DEFAULT_LABEL)
 
     def explain(self, findings: dict[str, Any], role: str) -> Explanation:
+        return self._complete(findings, role, correction=None)
+
+    def correct(
+        self, findings: dict[str, Any], role: str, correction: str
+    ) -> Explanation:
+        """The corrective second try: the same system and user messages as
+        :meth:`explain`, plus one more user message carrying ``correction``
+        (the validator's reason in plain words). The rejected answer is not
+        sent back, and nothing but the correction is added."""
+        return self._complete(findings, role, correction=correction)
+
+    def _complete(
+        self, findings: dict[str, Any], role: str, *, correction: str | None
+    ) -> Explanation:
         base_url = os.environ.get(ENV_LLM_BASE_URL, "").strip()
         model = os.environ.get(ENV_LLM_MODEL, "").strip()
         key = self._resolve_key()
@@ -286,15 +343,18 @@ class ChatProvider:
         from cabinet.analysts import build_prompt
 
         system, user = build_prompt(findings, role)
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+        if correction is not None:
+            messages.append({"role": "user", "content": correction})
         payload = {
             "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            "messages": messages,
             "temperature": 0.2,
             **_reasoning_effort_field(),
-            "max_tokens": 2048,
+            "max_tokens": max_tokens_from_env(),
         }
         url = base_url.rstrip("/") + "/chat/completions"
         data = self._post_with_retry(url, key, payload)
@@ -502,6 +562,13 @@ class FakeProvider:
             text=" ".join(sentences), provider=self.name, model_label=self.model_label
         )
 
+    def correct(
+        self, findings: dict[str, Any], role: str, correction: str
+    ) -> Explanation:
+        """The corrective second try. The stub's answers are valid by
+        construction, so it answers exactly as :meth:`explain` does."""
+        return self.explain(findings, role)
+
     @staticmethod
     def _chief_text(received: dict[str, Any]) -> str:
         """The Chief of Staff's two-section JSON, built from the aggregate
@@ -621,6 +688,26 @@ class RecordingProvider:
 
     def explain(self, findings: dict[str, Any], role: str) -> Explanation:
         return self.inner.explain(findings, role)
+
+    @property
+    def can_correct(self) -> bool:
+        """Whether the wrapped provider takes a corrective second try."""
+        return callable(getattr(self.inner, "correct", None))
+
+    def correct(
+        self, findings: dict[str, Any], role: str, correction: str
+    ) -> Explanation:
+        """Forward the corrective try. Like :meth:`explain`, it never
+        records: the runner saves only the answer that passed validation,
+        keyed to ``findings`` without the correction."""
+        inner_correct = getattr(self.inner, "correct", None)
+        if not callable(inner_correct):
+            raise ProviderUnavailable(
+                f"provider {self.inner.name!r} takes no corrective try",
+                provider=self.inner.name,
+            )
+        result: Explanation = inner_correct(findings, role, correction)
+        return result
 
     def save(
         self, findings: dict[str, Any], role: str, explanation: Explanation

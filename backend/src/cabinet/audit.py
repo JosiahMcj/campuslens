@@ -73,6 +73,20 @@ EVENT_TYPES: tuple[str, ...] = (
     # the message body) so a later retry is never a silent second delivery.
     "task.send_failed",
     "task.sent",
+    # The Financial Aid review queue (per institution). aid.queued: a named
+    # person prepared the queue for an authorized emergency-aid review
+    # (payload: decision_id, dataset_id, count; never a student id).
+    # aid.updated: a person in the aid role (or an admin) changed one row's
+    # status or note (payload: aid_review_id, decision_id, status_from,
+    # status_to, note_changed). Never the note text and never a student id,
+    # since this log outlives the dataset purge that removes the row. The actor
+    # of both is the acting user's email.
+    "aid.queued",
+    "aid.updated",
+    # Explore (cabinet.explore): one answer to a governed question over the
+    # school data. Payload: task_id, question_event_id, the analysis ids of
+    # the steps, their row counts, the planner and writer used. Never a value.
+    "explore.answered",
 )
 
 ENV_VAR = "CABINET_AUDIT_PATH"

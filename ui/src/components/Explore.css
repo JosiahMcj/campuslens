@@ -1,0 +1,290 @@
+/* Explore: answers to specific questions over Demonstration University.
+   Tokens only (declared in index.css); every class starts with explore-. */
+
+.explore-answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.explore-sentences p {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+  line-height: 1.5;
+  max-width: 68ch;
+  text-wrap: pretty;
+}
+
+.explore-sentences p:last-child {
+  margin-bottom: 0;
+}
+
+.explore-link {
+  font-variant-numeric: tabular-nums;
+}
+
+.explore-notes,
+.explore-source,
+.explore-recorded,
+.explore-step-note,
+.explore-read {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
+
+.explore-source {
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.explore-recorded {
+  margin-top: var(--space-2);
+}
+
+/* A question the Cabinet does not answer (counseling records, a single
+   student, a prediction): a calm note, not an error. Red stays for real
+   errors. */
+.explore-declined {
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+}
+
+.explore-declined h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.explore-declined p {
+  margin: 0;
+}
+
+.explore-declined .explore-recorded {
+  margin-top: var(--space-2);
+}
+
+.explore-message {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+}
+
+/* "Working it out…" while the answer is computed. */
+.explore-working {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 34rem;
+}
+
+.explore-working-line {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+/* One-tap questions: under a refusal, and the home screen's "Try" row. */
+.explore-suggestions-title,
+.explore-try-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.explore-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.explore-chip-row > li {
+  max-width: 100%;
+}
+
+.explore-chip {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.explore-try {
+  margin: var(--space-4) 0 var(--space-3);
+  text-align: start;
+}
+
+.explore-try-line {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
+
+/* "How this was answered" and its steps. */
+.explore-how > summary {
+  color: var(--ink);
+}
+
+.explore-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.explore-step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.explore-step-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.explore-params {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
+
+.explore-read-label {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* The table scrolls sideways inside its own box, never the page. */
+.explore-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  /* The sticky first column's layer stays inside the table box, so the
+     docked composer still covers the table as the thread scrolls. */
+  isolation: isolate;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+}
+
+.explore-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Cells stay on one line: a wide table scrolls inside its box instead of
+   growing tall rows of wrapped names. */
+.explore-table th,
+.explore-table td {
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--rule);
+  text-align: start;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.explore-table th {
+  background: var(--surface);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.explore-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* The row label (the first column: a major, a course, a term, a name) stays
+   in view while a narrow table scrolls sideways, so a highlighted figure is
+   never shown without the row it belongs to. It keeps the row's ground. */
+.explore-table th:first-child,
+.explore-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--paper);
+  box-shadow: inset -1px 0 0 var(--rule);
+}
+
+.explore-table th:first-child {
+  background: var(--surface);
+}
+
+.explore-table td.explore-num-cell {
+  text-align: end;
+}
+
+.explore-table td.explore-withheld {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+/* The cell a number opened: highlighted while lit, and outlined while it
+   keeps the focus. */
+.explore-table td:focus-visible,
+.explore-table td:focus {
+  outline: 2px solid var(--navy);
+  outline-offset: -2px;
+}
+
+.explore-table td.explore-cell-lit,
+.explore-table td.explore-cell-lit:first-child {
+  background: var(--navy-wash);
+  box-shadow: inset 0 0 0 2px var(--navy);
+}
+
+.explore-show-all {
+  align-self: flex-start;
+  font-size: var(--text-sm);
+}
+
+.explore-empty {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
+
+.explore-about {
+  margin-top: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
+
+.explore-about p {
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root:not(.reduce-motion) .explore-table td {
+    transition: background-color 200ms ease, box-shadow 200ms ease;
+  }
+}
+
+/* Phones: every control answers a 44 px tap. */
+@media (max-width: 899px) {
+  .explore-chip,
+  .explore-show-all {
+    min-height: var(--tap);
+  }
+
+  .explore-show-all {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .explore-sentences p {
+    font-size: var(--text-md);
+  }
+}

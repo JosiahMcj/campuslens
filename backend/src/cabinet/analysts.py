@@ -24,15 +24,22 @@ they pass unchecked (the system prompt discourages them, and the human
 reviewer is the last line). It also cannot judge whether a true number is
 *relevant* — only that it is real.
 
-A failed validation is logged and returned as unavailable — never shown. A
-successful run logs ``finding.produced``. Only validated output is recorded
-for replay: the runner calls the recorder's ``save`` after validation, so a
-bad live answer can never overwrite a good recording.
+A failed validation gets one corrective try by default
+(``CABINET_VALIDATION_RETRIES``, 0 turns it off): the same inputs plus one
+short message that states the validator's reason in plain words and adds no
+data. The new answer is validated again. A replayed answer never takes this
+path. A validation failure that remains is logged and returned as
+unavailable — never shown. A successful run logs ``finding.produced``, with
+the number of corrective tries in its ``validation_retries`` field. Only
+validated output is recorded for replay: the runner calls the recorder's
+``save`` after validation, so a bad live answer can never overwrite a good
+recording.
 
 The Chief of Staff (``run_chief_of_staff``) follows the same runner pattern
 with two differences. It receives the aggregate findings for the asked
-question's chief dispatch (all of M1–M8 for the default question; row IDs
-stripped, like every role) plus the two analysts' *validated*
+question's chief dispatch (all of M1–M8 for the default question, plus the
+M9 count or its suppressed marker when the institution has authorized it;
+row IDs stripped, like every role) plus the two analysts' *validated*
 explanations — never student rows, never the counseling group — and its gate
 is the aggregate grant (``data.granted`` at level ``aggregate``). It writes
 exactly two briefing sections and answers with a JSON object only,
@@ -51,7 +58,9 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -59,10 +68,12 @@ from typing import Any
 from weakref import WeakKeyDictionary
 
 from cabinet.audit import AuditSink
+from cabinet.counseling import M9_ID
 from cabinet.permissions import (
     ROLE_TASK_FIELDS,
     findings_for_role,
     grant_aggregates,
+    grant_authorized_aggregate,
     normalize_field,
     request_fields,
 )
@@ -150,7 +161,17 @@ SYSTEM_PROMPTS: dict[str, str] = {
 
 
 class OutputRejected(Exception):
-    """The provider's output failed validation and must never be shown."""
+    """The provider's output failed validation and must never be shown.
+
+    ``unknown_finding_ids`` is set when the output cited finding IDs the role
+    did not receive, so the corrective retry can name them in plain words.
+    """
+
+    def __init__(
+        self, message: str, *, unknown_finding_ids: tuple[str, ...] = ()
+    ) -> None:
+        super().__init__(message)
+        self.unknown_finding_ids = unknown_finding_ids
 
 
 @dataclass(frozen=True)
@@ -186,6 +207,9 @@ class AnalystResult:
     # From a re-keyed golden recording: the key the text was first validated
     # under (None for a live answer or an original recording).
     rekeyed_from: str | None = None
+    # Corrective tries made after a validation failure (0 when the first
+    # answer passed or the retry is off).
+    validation_retries: int = 0
 
 
 def build_prompt(findings: dict[str, Any], role: str) -> tuple[str, str]:
@@ -197,6 +221,12 @@ def build_prompt(findings: dict[str, Any], role: str) -> tuple[str, str]:
     "The president asked: …" — carried under ``QUESTION_KEY``; the default
     question's prompt bytes are exactly the pre-registry ones, so its golden
     recordings still match."""
+    if role.startswith("explore_"):
+        # Explore's planner and writer (cabinet.explore.prompts): imported
+        # here, lazily, because explore imports this module's validator.
+        from cabinet.explore.prompts import build_explore_prompt
+
+        return build_explore_prompt(findings, role)
     system = SYSTEM_PROMPTS.get(role)
     if system is None:
         raise ValueError(f"no system prompt for role {role!r}")
@@ -822,8 +852,25 @@ def check_numerals(text: str, findings: dict[str, Any]) -> None:
       need support, never risk scores.
     """
     numbers, dates = allowed_numerals(findings)
-    prose = _strip_dates(_PROSE_ID_RE.sub("", text), dates)
-    student_id = _STUDENT_ID_RE.search(prose)
+    cited = ", ".join(sorted(findings)) or "none"
+    check_numbers_against(_PROSE_ID_RE.sub("", text), numbers, dates, cited)
+
+
+def check_numbers_against(
+    text: str,
+    numbers: set[AllowedNumber],
+    dates: set[date],
+    cited: str,
+    *,
+    student_id_re: re.Pattern[str] = _STUDENT_ID_RE,
+) -> None:
+    """The rules of ``check_numerals`` against an explicit allowed set.
+
+    Explore uses it with the numbers of its computed tables (and its own
+    student-id pattern); ``check_numerals`` with the cited findings'.
+    """
+    prose = _strip_dates(text, dates)
+    student_id = student_id_re.search(prose)
     if student_id:
         raise OutputRejected(
             f"student ID {student_id.group(0)!r} in the output; the analyst "
@@ -835,7 +882,6 @@ def check_numerals(text: str, findings: dict[str, Any]) -> None:
             f"{risk.group(0)!r} language about students is not allowed; "
             "students are people who may need support, never risk scores"
         )
-    cited = ", ".join(sorted(findings)) or "none"
 
     anchors: list[_NumberAnchor] = []
     for match in _NUMERAL_RE.finditer(prose):
@@ -921,11 +967,175 @@ def validate_explanation(text: str, findings: dict[str, Any]) -> list[Claim]:
         if unknown:
             raise OutputRejected(
                 f"claim cites finding(s) {', '.join(unknown)} the analyst did "
-                "not receive"
+                "not receive",
+                unknown_finding_ids=tuple(unknown),
             )
         cited = {fid: findings[fid] for fid in claim.finding_ids}
         check_numerals(claim.source_text or claim.text, cited)
     return claims
+
+
+# --- the corrective retry -------------------------------------------------------
+
+# How many corrective tries a runner makes after the provider's output fails
+# validation. Each one is the same call plus one short message that states the
+# validator's reason in plain words, never any data. 0 turns the retry off.
+ENV_VALIDATION_RETRIES = "CABINET_VALIDATION_RETRIES"
+DEFAULT_VALIDATION_RETRIES = 1
+# Each try can take up to the provider's own time budget, so the setting is
+# capped to keep one briefing within a few minutes of wall time.
+MAX_VALIDATION_RETRIES = 3
+
+_ANALYST_RULE = (
+    "Every claim must end with the ID of each finding it uses, in brackets, "
+    "and every number and date must come from the findings that claim cites."
+)
+
+
+def _chief_rule() -> str:
+    """The Chief of Staff's output rule, restated in a correction."""
+    return (
+        'Answer with a JSON object only: {"executive_summary": "...", '
+        '"limitations": "..."}. The executive summary has at most '
+        f"{MAX_SUMMARY_SENTENCES} sentences. Every sentence must end with the "
+        "IDs of the findings it uses, in one bracket group like [M3, M4], and "
+        "every number and date must come from those findings."
+    )
+
+
+def validation_retries_from_env() -> int:
+    """``CABINET_VALIDATION_RETRIES`` read at run time: default 1, 0 turns the
+    corrective retry off, capped at ``MAX_VALIDATION_RETRIES``. A value that
+    is not a whole number of zero or more falls back to the default."""
+    raw = os.environ.get(ENV_VALIDATION_RETRIES, "").strip()
+    if not raw:
+        return DEFAULT_VALIDATION_RETRIES
+    try:
+        value = int(raw)
+    except ValueError:
+        value = -1
+    if value < 0:
+        logger.warning(
+            "%s=%r is not a whole number of zero or more; using %d",
+            ENV_VALIDATION_RETRIES,
+            raw,
+            DEFAULT_VALIDATION_RETRIES,
+        )
+        return DEFAULT_VALIDATION_RETRIES
+    return min(value, MAX_VALIDATION_RETRIES)
+
+
+def _join_ids(ids: tuple[str, ...]) -> str:
+    if len(ids) == 1:
+        return ids[0]
+    return ", ".join(ids[:-1]) + " and " + ids[-1]
+
+
+def correction_message(exc: OutputRejected, role: str) -> str:
+    """The plain-words correction sent with a corrective try.
+
+    It states why the previous answer failed and restates the role's output
+    rule. It is built only from the validator's reason, which names finding
+    IDs and tokens the model itself wrote, never from the findings, so it
+    cannot carry a value the role did not receive.
+    """
+    if exc.unknown_finding_ids:
+        ids = _join_ids(exc.unknown_finding_ids)
+        opening = (
+            f"Your previous answer cited {ids}, which you did not receive. "
+            "Use only the findings you were given."
+        )
+    else:
+        opening = f"Your previous answer was rejected because {exc}."
+    rule = _chief_rule() if role == CHIEF_OF_STAFF else _ANALYST_RULE
+    return f"{opening} {rule} Write your answer again."
+
+
+def _provider_corrector(
+    provider: Provider,
+) -> Callable[[dict[str, Any], str, str], Explanation] | None:
+    """The provider's ``correct`` method, or None when it offers none (the
+    replay provider, and any provider that only implements ``explain``)."""
+    if isinstance(provider, RecordingProvider) and not provider.can_correct:
+        return None
+    corrector = getattr(provider, "correct", None)
+    return corrector if callable(corrector) else None
+
+
+@dataclass(frozen=True)
+class _Attempts:
+    """What the explain-and-validate loop produced. ``explanation`` and
+    ``validated`` are set only for output that passed validation;
+    ``retries`` counts the corrective tries made; ``rejected`` is the last
+    answer that failed validation (for provenance), never shown."""
+
+    explanation: Explanation | None
+    validated: Any
+    retries: int
+    reason: str | None
+    rejected: Explanation | None = None
+
+
+def _explain_with_retry(
+    provider: Provider,
+    received: dict[str, Any],
+    role: str,
+    validate: Callable[[str], Any],
+    *,
+    task_id: str,
+) -> _Attempts:
+    """Call the provider and validate. On a validation failure, make up to
+    ``CABINET_VALIDATION_RETRIES`` corrective tries with the same inputs plus
+    the plain-words reason, validating each. Only output that passed
+    validation comes back as ``explanation``. A recorded (replayed) answer
+    never takes the retry path, and neither does a provider without
+    ``correct``."""
+    role_name = role.replace("_", " ")
+    allowed = validation_retries_from_env()
+    corrector = _provider_corrector(provider)
+    retries = 0
+    try:
+        explanation = provider.explain(received, role)
+    except ProviderUnavailable as exc:
+        logger.warning("%s unavailable (task %s): %s", role_name, task_id, exc.reason)
+        return _Attempts(None, None, 0, exc.reason)
+    while True:
+        try:
+            validated = validate(explanation.text)
+        except OutputRejected as exc:
+            logger.warning(
+                "%s output rejected (task %s, provider %s, label %s, "
+                "corrective tries so far %d): %s",
+                role_name,
+                task_id,
+                explanation.provider,
+                explanation.model_label,
+                retries,
+                exc,
+            )
+            reason = f"the model's output failed validation: {exc}"
+            if explanation.recorded or corrector is None or retries >= allowed:
+                return _Attempts(None, None, retries, reason, rejected=explanation)
+            retries += 1
+            try:
+                explanation = corrector(received, role, correction_message(exc, role))
+            except ProviderUnavailable as unavailable:
+                logger.warning(
+                    "%s corrective try unavailable (task %s): %s",
+                    role_name,
+                    task_id,
+                    unavailable.reason,
+                )
+                return _Attempts(
+                    None,
+                    None,
+                    retries,
+                    f"{reason}; the corrective try was unavailable: "
+                    f"{unavailable.reason}",
+                    rejected=explanation,
+                )
+            continue
+        return _Attempts(explanation, validated, retries, None)
 
 
 # --- the analyst runner ---------------------------------------------------------
@@ -978,10 +1188,12 @@ def run_analyst(
     question's task for that role when there is one. ``question`` defaults to
     the registry's default question, whose dispatch is the standing
     ``ROLE_FINDINGS`` split — passing nothing is exactly the pre-registry
-    behavior. On success logs
-    ``finding.produced`` and, when the provider is recording, saves the
-    validated response to the replay cache — an answer that failed validation
-    is never recorded. Provider or validation failure returns
+    behavior. Output that fails validation gets up to
+    ``CABINET_VALIDATION_RETRIES`` corrective tries (``_explain_with_retry``).
+    On success logs ``finding.produced`` (with ``validation_retries``) and,
+    when the provider is recording, saves the validated response to the
+    replay cache under the original inputs — an answer that failed
+    validation is never recorded. Provider or validation failure returns
     ``available=False`` with a reason and is logged with the task id;
     unvalidated text is never returned.
     """
@@ -990,44 +1202,32 @@ def run_analyst(
         task_id = f"briefing-{role}"
     received = received_for(question, role, findings_obj)
     granted = _grant_fields_once(role, ROLE_TASK_FIELDS[role], task_id, received, log)
-    role_name = role.replace("_", " ")
 
-    try:
-        explanation: Explanation = provider.explain(received, role)
-    except ProviderUnavailable as exc:
-        logger.warning("%s unavailable (task %s): %s", role_name, task_id, exc.reason)
+    attempts = _explain_with_retry(
+        provider,
+        received,
+        role,
+        lambda text: validate_explanation(text, received),
+        task_id=task_id,
+    )
+    explanation = attempts.explanation
+    if explanation is None:
+        rejected = attempts.rejected
         return AnalystResult(
             available=False,
             text=None,
             claims=[],
-            provider=None,
-            model_label=None,
-            recorded=False,
-            reason=exc.reason,
+            provider=rejected.provider if rejected else None,
+            model_label=rejected.model_label if rejected else None,
+            recorded=rejected.recorded if rejected else False,
+            rekeyed_from=rejected.rekeyed_from if rejected else None,
+            reason=attempts.reason,
+            validation_retries=attempts.retries,
         )
+    claims: list[Claim] = attempts.validated
 
-    try:
-        claims = validate_explanation(explanation.text, received)
-    except OutputRejected as exc:
-        logger.warning(
-            "%s output rejected (task %s, provider %s, label %s): %s",
-            role_name,
-            task_id,
-            explanation.provider,
-            explanation.model_label,
-            exc,
-        )
-        return AnalystResult(
-            available=False,
-            text=None,
-            claims=[],
-            provider=explanation.provider,
-            model_label=explanation.model_label,
-            recorded=explanation.recorded,
-            rekeyed_from=explanation.rekeyed_from,
-            reason=f"the model's output failed validation: {exc}",
-        )
-
+    # Recorded under the original inputs (never the correction), and only
+    # after validation.
     if isinstance(provider, RecordingProvider):
         provider.save(received, role, explanation)
 
@@ -1042,6 +1242,7 @@ def run_analyst(
             "granted_fields": granted,
             "provider": explanation.provider,
             "model_label": explanation.model_label,
+            "validation_retries": attempts.retries,
         },
     )
     return AnalystResult(
@@ -1053,6 +1254,7 @@ def run_analyst(
         recorded=explanation.recorded,
         rekeyed_from=explanation.rekeyed_from,
         reason=None,
+        validation_retries=attempts.retries,
     )
 
 
@@ -1092,6 +1294,8 @@ class ChiefResult:
     # From a re-keyed golden recording: the key the text was first validated
     # under (None for a live answer or an original recording).
     rekeyed_from: str | None = None
+    # Corrective tries made after a validation failure.
+    validation_retries: int = 0
 
 
 # A sentence ends at terminal punctuation followed by whitespace and the start
@@ -1202,10 +1406,15 @@ def chief_received(
     it stays stable when the analysts' texts are replayed from the golden
     recordings."""
     question = question or DEFAULT_QUESTION
+    finding_ids = list(question.dispatch[CHIEF_OF_STAFF])
+    # M9 exists only while the institution's counseling aggregate
+    # authorization is recorded, and it answers the spring registration
+    # question (it is a count within M2), so only Q1 carries it. When it is
+    # absent the payload, and so Q1's replay hash, is exactly what it was.
+    if question.id == DEFAULT_QUESTION.id and M9_ID in findings_obj:
+        finding_ids.append(M9_ID)
     received: dict[str, Any] = {
-        "findings": findings_for_role(
-            CHIEF_OF_STAFF, findings_obj, question.dispatch[CHIEF_OF_STAFF]
-        ),
+        "findings": findings_for_role(CHIEF_OF_STAFF, findings_obj, finding_ids),
         "analyst_explanations": {
             role: analyst_texts[role] for role in sorted(analyst_texts)
         },
@@ -1234,7 +1443,10 @@ def chief_aggregate_fields(received: dict[str, Any]) -> list[str]:
 
 
 def _grant_chief_once(
-    task_id: str, received: dict[str, Any], log: AuditSink
+    task_id: str,
+    received: dict[str, Any],
+    log: AuditSink,
+    findings_obj: dict[str, Any] | None = None,
 ) -> list[str]:
     """The aggregate gate, with ``data.granted`` written at most once per
     (chief, task_id, received hash) for this audit log in this process."""
@@ -1253,6 +1465,19 @@ def _grant_chief_once(
         log,
         analyst_explanations=sorted(received["analyst_explanations"]),
     )
+    if M9_ID in received["findings"] and findings_obj is not None:
+        # The counseling aggregate gets its own event, after the aggregate
+        # grant, so the chain shows it apart: aggregate only, the fields
+        # code read, and the recorded authorization it rests on.
+        m9 = findings_obj[M9_ID]
+        grant_authorized_aggregate(
+            CHIEF_OF_STAFF,
+            M9_ID,
+            list(m9.get("source_fields") or []),
+            dict(m9.get("authorization") or {}),
+            task_id,
+            log,
+        )
     seen.add(key)
     return granted
 
@@ -1271,7 +1496,8 @@ def run_chief_of_staff(
     ``aggregate``) listing the aggregate fields received, before any model
     call; the provider answers with the two-section JSON object; the output
     is parsed strictly and both texts validated against the aggregate
-    findings; only validated output is recorded for replay. Provider or
+    findings, with the same corrective retry as the analysts; only validated
+    output is recorded for replay. Provider or
     validation failure returns ``available=False`` with a reason and is
     logged with the task id; unvalidated text is never returned. Logs no
     ``finding.produced`` — the API logs ``briefing.produced`` once per run.
@@ -1279,48 +1505,32 @@ def run_chief_of_staff(
     pre-registry behavior.
     """
     received = chief_received(findings_obj, analyst_texts, question)
-    _grant_chief_once(task_id, received, log)
+    _grant_chief_once(task_id, received, log, findings_obj)
 
-    try:
-        explanation: Explanation = provider.explain(received, CHIEF_OF_STAFF)
-    except ProviderUnavailable as exc:
-        logger.warning("chief of staff unavailable (task %s): %s", task_id, exc.reason)
+    attempts = _explain_with_retry(
+        provider,
+        received,
+        CHIEF_OF_STAFF,
+        lambda text: validate_chief_output(text, received["findings"]),
+        task_id=task_id,
+    )
+    explanation = attempts.explanation
+    if explanation is None:
+        rejected = attempts.rejected
         return ChiefResult(
             available=False,
             executive_summary=None,
             summary_claims=[],
             limitations=None,
             limitation_claims=[],
-            provider=None,
-            model_label=None,
-            recorded=False,
-            reason=exc.reason,
+            provider=rejected.provider if rejected else None,
+            model_label=rejected.model_label if rejected else None,
+            recorded=rejected.recorded if rejected else False,
+            rekeyed_from=rejected.rekeyed_from if rejected else None,
+            reason=attempts.reason,
+            validation_retries=attempts.retries,
         )
-
-    try:
-        summary_claims, limitation_claims = validate_chief_output(
-            explanation.text, received["findings"]
-        )
-    except OutputRejected as exc:
-        logger.warning(
-            "chief of staff output rejected (task %s, provider %s, label %s): %s",
-            task_id,
-            explanation.provider,
-            explanation.model_label,
-            exc,
-        )
-        return ChiefResult(
-            available=False,
-            executive_summary=None,
-            summary_claims=[],
-            limitations=None,
-            limitation_claims=[],
-            provider=explanation.provider,
-            model_label=explanation.model_label,
-            recorded=explanation.recorded,
-            rekeyed_from=explanation.rekeyed_from,
-            reason=f"the model's output failed validation: {exc}",
-        )
+    summary_claims, limitation_claims = attempts.validated
 
     if isinstance(provider, RecordingProvider):
         provider.save(received, CHIEF_OF_STAFF, explanation)
@@ -1338,4 +1548,5 @@ def run_chief_of_staff(
         rekeyed_from=explanation.rekeyed_from,
         reason=None,
         text=explanation.text,
+        validation_retries=attempts.retries,
     )

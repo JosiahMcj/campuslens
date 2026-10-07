@@ -62,27 +62,53 @@ returns the user and the session's CSRF token. We create the first user with
 `make bootstrap-admin EMAIL=…`, which prints a generated password exactly once
 and never logs it, and further users come from `make user EMAIL=… ROLE=…`.
 
-**Authorization.** There are four roles, where `admin` can do everything and
+**Authorization.** There are five roles, where `admin` can do everything and
 `executive` can ask, approve, read, and read the audit log, and the president
 runs the audit-log walkthrough. `staff` reads briefings and findings and prepares
 and sends approved office messages, with no approval and no audit log, and `reviewer` reads everything including the audit
-log and changes nothing. Every route except `GET /health`, `GET /ready`, and `POST
+log and changes nothing. `aid` is Financial Aid office staff. It reads the
+briefing and findings like staff and works the Financial Aid review queue, and
+it cannot ask, sign off on a decision, prepare or send a message, or read the audit log.
+
+| Role | Ask and sign off | Read briefing and findings | Audit log | Prepare the aid queue | Read the aid queue | Update aid queue rows | Manage users and datasets |
+|---|---|---|---|---|---|---|---|
+| `admin` | yes | yes | yes | yes | yes | yes | yes |
+| `executive` | yes | yes | yes | yes | yes | no | no |
+| `staff` | no | yes | no | yes | no | no | no |
+| `reviewer` | no | yes | yes | no | yes | no | no |
+| `aid` | no | yes | no | no | yes | yes | no |
+
+Every route except `GET /health`, `GET /ready`, and `POST
 /auth/login` requires a session, and each route has an explicit role allow-list
 in `cabinet/security.py` (`ROUTE_ROLES`). No session is a 401, and the wrong
 role is a 403. We write both to the audit log as `data.refused` events, with the
 actor set to the user id, or to `anonymous` when there is no session.
+
+Explore (`docs/EXPLORE.md`) adds `POST /explore` and `GET /explore/catalog` for the
+executive, admin, staff, and reviewer roles, and the aid role gets a 403. Inside the route,
+instructor-level rows go to the executive and admin roles only. Staff and reviewers get
+the course as a whole, and the withheld rows are a `data.refused` event. Explore reads the
+school database through a read-only connection, its SQL is fixed and parameterized, and a
+question only ever chooses an analysis and values from lists.
 
 **CSRF.** Every POST must carry `X-CSRF-Token` equal to the session's token,
 which the UI reads from `GET /auth/me`, and anything else is a 403. In
 production we added a second layer that checks an Origin or Referer header, when
 present, against the request's own host.
 
-**Rate limits.** We run in-process token buckets. Every client IP gets 60
+**Rate limits.** We run in-process token buckets. Every client IP gets 600
 requests per minute across all routes, including the public `/health`,
-`/ready`, and `/auth/login`. `POST /ask` is capped at 5 per minute per session,
-because it spends model calls, and the login throttling above applies on top.
-Over the limit is a 429 with `Retry-After`, and these are single-process
-limits, which the "What is NOT covered" section explains.
+`/ready`, and `/auth/login`. That is generous on purpose, because everyone on
+a campus network can reach us from one shared address. Each signed-in session
+then has its own bucket of 120 requests per minute, which is what paces one
+person. `POST /ask`, `POST /explore` and the dispatch Send are capped at 5 per minute per
+session and per IP, because they spend model calls or send a message, and the
+login throttling above applies on top. Over the limit is a 429 with
+`Retry-After` and the plain message "The Cabinet is busy. Wait a minute and try
+again." The variables `CABINET_RATE_GENERAL_PER_MIN`,
+`CABINET_RATE_SESSION_PER_MIN` and `CABINET_RATE_ASK_PER_MIN` change the three
+limits. These are single-process limits, which the "What is NOT covered"
+section explains.
 
 **Headers and payload hygiene.** Every response carries
 `Content-Security-Policy` (`default-src 'self'; connect-src 'self'; img-src
@@ -109,17 +135,31 @@ modification of retained events, but it cannot detect deletion of whole
 trailing events, so the moved-aside and `.torn-*` files matter and the app
 never deletes them. The torn-tail repair removes only bytes that were never a
 complete event, namely a killed process's partial final line, so it cannot
-break the chain. The vocabulary is fifteen frozen event types, where the
+break the chain. The vocabulary is eighteen frozen event types, where the
 original eight are `question.asked`, `task.assigned`, `data.granted`,
 `data.refused`, `finding.produced`, `briefing.produced`, `decision.approved`,
 and `task.created`, and dataset administration added `dataset.uploaded`,
 `dataset.activated`, and `dataset.deleted`. User administration added
 `admin.changed`, which covers user creation, disable and enable, role changes,
 and now office address book changes, with the payload `action`, target user id,
-`role`, and `by`. The dispatch events are `task.dispatched`, `task.sent`, and
+`role`, and `by`. Recording or revoking the counseling authorization is one
+`admin.changed` event with action `counseling_authorization`, and its payload
+carries `by`, `authorized`, `authorized_by`, and `document_reference` as typed,
+never counseling data. The dispatch events are `task.dispatched`, `task.sent`, and
 `task.send_failed` (a provider refusal or failure, with the error and never the
 message body), and their actor is the named person who composed or sent the
-message.
+message. The Financial Aid review queue added `aid.queued` (decision, dataset,
+and student count, never a student id) and `aid.updated` (row id, decision,
+the status before and after, and whether the note changed, never a student id
+and never the note text), and their actor is the acting user's email. The
+audit log is append-only and outlives the dataset purge, so neither event names
+a student. Explore added `explore.answered`, which closes each answered question with
+the task id, the question event id, the analysis ids of its steps, their row counts, and
+which planner and writer ran, never a value. Explore also writes the existing
+`question.asked` (any student-id-shaped token in the question is replaced first),
+`data.refused` (counseling, one student, or a prediction, refused before planning, and
+withheld instructor rows), and one `data.granted` per step with the analysis id, the fields
+it read, and `aggregate_only: true`.
 
 **User administration.** Institution admins manage their institution's users
 from the Institution screen or `/admin/users`, which requires the admin role
@@ -130,6 +170,22 @@ keeps only its scrypt hash, which is never logged, and no audit payload carries
 it. An admin cannot disable their own account, and an institution's last
 enabled admin can be neither disabled nor demoted. A disabled account cannot
 log in, and its existing session is rejected on the next request.
+
+**The counseling authorization.** `GET` and `PUT
+/admin/institution/counseling-authorization` are admin only, under the same CSRF
+token and rate limits as every other route, and the institution comes from the
+session. Recording needs both the name and title of the person who authorized it
+and the document reference, each at most 200 characters, and anything else is a
+422 that records nothing. Recording or revoking recomputes the findings on the next
+request. A change waits for any question being answered for that institution, and
+after a revoke a stored Chief of Staff section that cited the count is served as
+unavailable until the question is asked again. The authorization never grants a field. The counseling fields stay refused
+to every role, so `POST /governance/request` for `counseling.counseling_notes` is
+refused and logged as `data.refused` exactly as before, authorization or not. What
+it allows is one count computed in code (M9), with no rows and withheld below 10.
+The Chief of Staff's `data.granted` event for it is separate from the aggregate
+grant and records `aggregate_only: true`, the fields read, and the authorization
+reference. No analyst ever receives it.
 
 **Dispatches, the governed execution step.** An approved leadership decision
 can be sent to its responsible office, and only by a named person. We compose
@@ -177,9 +233,45 @@ values redacted. Outside production, a missing secret degrades to an ephemeral k
 sessions do not survive restarts, with a stderr warning rather than a silent
 default.
 
+**The model's output and the corrective retry.** The model sees only the
+findings its role received, and we show nothing it writes until the validator
+passes it. Every claim must cite a finding the role received, and every
+number and date must come from the findings that claim cites. When an answer
+fails, the runner asks the model once more with the same inputs plus one short
+correction that states the validator's reason in plain words, for example
+"Your previous answer cited M7, which you did not receive. Use only the
+findings you were given." The correction names finding IDs and the rule, and
+it never adds a finding value or any other data. We do not send the rejected
+answer back. The second answer goes through the same validator, and a second
+failure leaves the section unavailable, exactly as before. Only a validated
+answer is shown or recorded, and a recording is always keyed to the original
+inputs, never to the correction. `CABINET_VALIDATION_RETRIES` sets the number
+of corrective tries (default 1, capped at 3), and 0 turns the retry off. A
+replayed recording never takes this path, because it was validated when it
+was made. The audit trail carries the count as `validation_retries` on the
+existing `finding.produced` and `briefing.produced` events, with no new event
+type.
+
 **Dependency audits.** `make audit` runs `pip-audit` over the pinned runtime
 requirements and `npm audit --omit=dev` for the UI, and both are currently
 clean, with no advisories and none accepted.
+
+**The Financial Aid review queue.** The queue gives the Financial Aid office
+the facts it needs to start its own review of the students M3 counts, and the
+software makes no determination about any student. `POST
+/decisions/{id}/aid-queue` (executive, staff, and admin, through the
+`/decisions/` prefix rule) prepares it once per decision per dataset, only
+after the emergency-aid review decision is signed off for the active dataset,
+and it answers a loud 409 with a `data.refused` event before that. `GET
+/aid-queue` is open to aid, admin, executive, and reviewer, and staff cannot
+read the rows. `PATCH /aid-queue/{id}` is for aid and admin only, carries the
+CSRF token like every state-changing request, and accepts a status from a
+fixed list and a note of at most 1,000 characters, stored as typed. A row id
+from another institution is a 404. The rows never reach a model, because the
+model payloads are built from the findings alone and the modules that build
+them do not import the queue. A test runs both questions after a note is
+saved and checks that no payload carries a queued student id, a queue field,
+or the note.
 
 ## What is NOT covered
 
@@ -207,7 +299,7 @@ clean, with no advisories and none accepted.
   still records the cabinet role as actor. The dispatch events are the exception
   and the direction of travel. `task.dispatched` and `task.sent` record the
   acting user's email, because a named person sending is the point of the
-  feature.
+  feature. `aid.queued` and `aid.updated` follow the same rule.
 
 ## Data-handling posture
 

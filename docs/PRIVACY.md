@@ -26,6 +26,14 @@ For each institution we hold the following.
   of validated analyst replies used for replay.
 - The office mailboxes the institution's administrator configures for follow-up
   messages, and the dispatch records of messages sent to those offices.
+- The Financial Aid review queue, once someone prepares it for an authorized
+  emergency-aid review. Each row holds one pseudonymous student id from the
+  briefing's M3 finding and the facts the aid office needs to start its own
+  review, namely the qualifying hold's amount, date, and responsible office, the
+  registration status, and the advising status. It never holds a counseling
+  field. Each row also holds the status and the free-text note a person in the
+  Financial Aid office sets, with who set them and when. The software computes
+  nothing about any student in the queue.
 
 Every new institution also starts with a fictional demonstration dataset, which is
 labelled fictional in every response and contains no real students.
@@ -54,6 +62,10 @@ institution's data.
 The institution's own users see the service by role. Administrators manage users and
 datasets, and executives ask questions and approve decisions. Staff read briefings and
 findings. Reviewers read everything, including the audit log, and change nothing.
+Financial Aid staff read the briefing like staff and work the Financial Aid review
+queue. The queue's rows are visible to Financial Aid staff, administrators,
+executives, and reviewers. Only Financial Aid staff and administrators can change a
+row, and staff cannot read the rows at all.
 
 The briefing's support indicators are named rules computed in code, not models. Each
 rule is a simple test, for example an unresolved financial hold under a defined amount
@@ -66,11 +78,60 @@ identifiers only.
 
 We can see the data ourselves for maintenance and backups. That is the full list.
 
+## Explore and the demonstration university
+
+Explore answers questions over Demonstration University, a fictional university that
+exists only as a generated database on our server. No institution's data is in it. The
+same rules we apply to real data hold there.
+
+- **Aggregates only.** Every answer is built from tables of counts, rates, and averages.
+  No answer, table, or audit event carries a student id, and a question about one student
+  is refused before anything runs.
+- **Small groups are withheld.** Any figure about fewer than 10 students reads "fewer than
+  10" and is left out of every ranking.
+- **Counseling is refused.** The database holds no counseling or spiritual-care data, and
+  a question about either is refused before any planning or model call and recorded.
+- **Instructor rows are narrower.** Results about individual instructors go to the
+  executive and admin roles only. Staff and reviewers see the course as a whole. Every
+  instructor name is generated and fictional, and answers say so.
+- **What a model sees.** When a model is configured, it receives the list of approved
+  analyses and the question (to plan), and the finished aggregate tables (to reword the
+  answer). It never receives a student row and never computes a number.
+
+## The counseling figure
+
+Per-student counseling and spiritual-care data is refused to every role and every AI
+employee. That does not change, and it is the default for every institution.
+
+An institution may allow one aggregate figure, and only in writing. When the
+institution's counseling director authorizes it, an administrator records the
+authorization in Institution settings with the director's name and title and a
+reference to the document. The record keeps who entered it and when, and an
+administrator can revoke it the same way. Each change is recorded in the audit log.
+
+While the authorization is recorded, the briefing shows one count, the number of
+continuing students not yet registered who have had any counseling contact this term.
+The count is computed in code. Its source label names the person who authorized it.
+
+- **Minimum group size.** A count under 10 is never shown. The briefing says "fewer
+  than 10" and explains that the count is withheld so no one can be identified.
+- **No rows.** The evidence for the figure shows the authorization and the fields it
+  read, never a student, an identifier, or a note. There is no drill-down.
+- **Never shown, to anyone.** Counseling notes, chaplain contacts, and which students
+  had contact. No role can request those fields, with or without the authorization,
+  and every such request is refused and recorded as before.
+
 ## What leaves the server
 
-Only two things leave the server for the configured model endpoint, namely the aggregate
-findings computed in code from the active dataset and the analysts' validated texts.
-Student rows never leave. The counseling group never leaves.
+For briefings, only two things leave the server for the configured model endpoint,
+namely the aggregate findings computed in code from the active dataset and the analysts'
+validated texts. For Explore, only the analysis catalog, the question, and the computed
+aggregate tables leave, as described above. Student rows never leave. The counseling
+group never leaves. While a counseling authorization is recorded, the Chief of Staff may receive the one counseling count,
+and only when it is 10 or more. A smaller count reaches the model as a marker with
+no number in it. The Financial Aid
+review queue never leaves either. Its rows, its facts, and the office's notes are never
+sent to a model.
 
 The endpoint's own retention terms apply to what it receives, and we name the endpoint to
 each institution on request. The key for the endpoint is ours as operators, never per
@@ -91,7 +152,11 @@ records because they are the proof that a person, not the software, sent each me
 
 ## Retention and deletion
 
-Deleting a dataset is a soft delete, and the data is purged after 30 days. Backups are made with the database's own backup API and rotate on our
+Deleting a dataset is a soft delete, and the data is purged after 30 days. The
+Financial Aid review queue belongs to the dataset it was read from, so its rows and
+notes are purged with that dataset. The audit log keeps that a queue row changed, by
+its row number, with the status before and after. It never keeps the student id or
+the note text, so nothing in it points back to a student once the queue is purged. Backups are made with the database's own backup API and rotate on our
 schedule. You may ask us for full deletion of your institution's data at any time, and
 the audit log then retains only the fact of deletion.
 

@@ -4,7 +4,9 @@
 // Every call goes through apiFetch (ui/src/auth.ts): state-changing requests
 // carry the session's X-CSRF-Token, and a 401 anywhere signs the UI out.
 
-import { ApiError, SessionEndedError, apiDetail, apiFetch } from './auth'
+import type { AidQueueSummary } from './aid'
+import { ApiError, SessionEndedError, apiDetail, apiFetch, retryAfterFrom } from './auth'
+import { exploreResponseFrom, type ExploreCatalog, type ExploreResponse } from './explore'
 import {
   analystFromResponse,
   cabinetBriefingFrom,
@@ -15,6 +17,7 @@ import {
 } from './states'
 
 export type { AnalystBriefing, AuditEvent, CabinetBriefing } from './states'
+export type { ExploreCatalog, ExploreResponse } from './explore'
 
 export interface OfficeHolds {
   office: string
@@ -55,6 +58,23 @@ export interface Finding {
   rules?: IndicatorRuleRow[]
   /** M8 only: pseudonymous student id -> the rule ids that fired for it. */
   row_rules?: Record<string, string[]>
+  /** M9 only: an aggregate with no rows behind it, ever (no drill-down). */
+  aggregate_only?: boolean
+  /** M9 only: true when the count is withheld below the minimum group size. */
+  suppressed?: boolean
+  /** M9 only: the minimum group size below which the count is withheld. */
+  minimum_cell_size?: number
+  /** M9 only: the recorded authorization the figure rests on. */
+  authorization?: FindingAuthorization
+}
+
+/** Who authorized an aggregate in writing, the document, and who recorded
+ * it when (M9, the counseling aggregate). */
+export interface FindingAuthorization {
+  authorized_by: string | null
+  document_reference: string | null
+  recorded_by: string | null
+  recorded_at: string | null
 }
 
 export interface FindingsMeta {
@@ -117,6 +137,9 @@ export interface Decision {
   text: string
   follow_up: { office: string; description: string }
   approved: boolean
+  /** The approver's email and the approval time (ISO), once approved. */
+  approved_by?: string | null
+  approved_at?: string | null
 }
 
 export interface SimulatedTask {
@@ -177,6 +200,7 @@ async function apiGet<T>(path: string): Promise<T> {
     throw new ApiError(
       response.status,
       await apiDetail(response, `GET ${path} failed: HTTP ${response.status}`),
+      retryAfterFrom(response),
     )
   }
   return (await response.json()) as T
@@ -192,6 +216,7 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
     throw new ApiError(
       response.status,
       await apiDetail(response, `POST ${path} failed: HTTP ${response.status}`),
+      retryAfterFrom(response),
     )
   }
   return (await response.json()) as T
@@ -275,6 +300,7 @@ export function fetchCabinetBriefingOnce(
         throw new ApiError(
           response.status,
           await apiDetail(response, `GET /briefing failed: HTTP ${response.status}`),
+      retryAfterFrom(response),
         )
       }
       const body: unknown = await response.json().catch(() => null)
@@ -327,7 +353,11 @@ export interface DispatchInfo {
   office: string
   office_contact: string | null
   approved: boolean
+  approved_by?: string | null
+  approved_at?: string | null
   dispatch: DispatchRecord | null
+  /** The Financial Aid review queue for this decision: counts only. */
+  aid_queue?: AidQueueSummary
 }
 
 export async function fetchDispatch(
@@ -454,4 +484,27 @@ export function refreshEnrollmentBriefing(flags: UiFlags): Promise<AnalystBriefi
 /** "Check again" for the Student Success Analyst's section. */
 export function refreshStudentSuccessBriefing(flags: UiFlags): Promise<AnalystBriefing> {
   return refreshAnalystBriefing('/briefing/student-success', flags)
+}
+
+// --- Explore: specific questions over Demonstration University --------------
+//
+// POST /explore answers from tables reviewed code computed; GET
+// /explore/catalog lists the example questions. The aid role gets a 403 on
+// both, so the page never calls them for that role (canExplore).
+
+export async function postExplore(question: string, flags: UiFlags): Promise<ExploreResponse> {
+  await maybeSlow(flags)
+  return exploreResponseFrom(await apiPost<unknown>('/explore', { question }))
+}
+
+export async function fetchExploreCatalog(flags: UiFlags): Promise<ExploreCatalog> {
+  await maybeSlow(flags)
+  const body = await apiGet<unknown>('/explore/catalog')
+  const examples =
+    typeof body === 'object' && body !== null && Array.isArray((body as { examples?: unknown }).examples)
+      ? (body as { examples: unknown[] }).examples.filter(
+          (item): item is string => typeof item === 'string',
+        )
+      : []
+  return { examples }
 }

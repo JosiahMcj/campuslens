@@ -1,7 +1,11 @@
-import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+// @vitest-environment jsdom
 
-import type { Decision, DispatchInfo } from '../api'
+import { cleanup, fireEvent, render as mount, screen } from '@testing-library/react'
+import { useState } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import type { AuditEvent, Decision, DispatchInfo } from '../api'
 import type { Role } from '../auth'
 import { DecisionPanel, type DispatchUiState } from './DecisionPanel'
 
@@ -27,7 +31,7 @@ const DRAFT: DispatchInfo = {
     to_office: 'Financial Aid',
     channel: 'email',
     subject: 'Approved follow-up for Financial Aid: the eligibility review',
-    body: 'To the Financial Aid office,\n\n18 continuing students (finding M3).',
+    body: 'To the Financial Aid office,\n\n18 continuing students have an unresolved financial hold below $1,000.',
     status: 'draft',
     created_by: 'executive@example.edu',
     created_at: '2026-09-26T12:00:00+00:00',
@@ -61,141 +65,375 @@ function render(
     role?: Role
     decision?: Decision
     dispatches?: Record<string, DispatchUiState>
+    events?: AuditEvent[]
+    approvedTasks?: Parameters<typeof DecisionPanel>[0]['approvedTasks']
+    approveError?: string | null
+    userEmail?: string
   } = {},
 ): string {
   return renderToStaticMarkup(
     <DecisionPanel
       decisions={[options.decision ?? DECISION]}
-      events={[]}
+      events={options.events ?? []}
       canApprove={canApprove}
       role={options.role ?? 'executive'}
-      userEmail="exec@example.edu"
+      userEmail={options.userEmail ?? 'exec@example.edu'}
       approving={false}
-      approveError={null}
-      approvedTasks={{}}
+      approveError={options.approveError ?? null}
+      approvedTasks={options.approvedTasks ?? {}}
       dispatches={options.dispatches ?? {}}
       onApprove={() => {}}
       onPrepareDispatch={() => {}}
       onSendDispatch={() => {}}
-      onOpenEvidence={() => {}}
     />,
   )
 }
 
-describe('DecisionPanel — role gating of Approve', () => {
-  it('offers the Approve button to a role that may approve', () => {
+afterEach(() => cleanup())
+
+describe('DecisionPanel — the decision and Approve', () => {
+  it('says who decides in one line, shows the decision once, and offers Approve', () => {
     const html = render(true)
 
-    expect(html).toContain('approve-button')
-    expect(html).toContain('Approve the review')
-    expect(html).not.toContain('Only an executive can approve this')
+    expect(html).toContain('The Cabinet advises. You decide. Nothing is sent on its own.')
+    expect(html).toContain('btn-approve')
+    expect(html).toContain('>Approve</button>')
+    expect(html.split('Authorize a focused review below the threshold.')).toHaveLength(2)
+    // No event codes, no task ids, no "simulated".
+    expect(html).not.toContain('decision.approved')
+    expect(html).not.toContain('TASK-')
+    expect(html).not.toContain('<code>')
+    expect(html).not.toContain('simulated')
   })
 
-  it('shows "Only an executive can approve this" instead of the button for staff and reviewer', () => {
-    const html = render(false)
+  it('tells staff and reviewers leadership approves, with no "only an executive" hint', () => {
+    const html = render(false, { role: 'staff' })
 
-    expect(html).toContain('Only an executive can approve this')
-    expect(html).not.toContain('approve-button')
-    // The decision itself is never hidden.
+    expect(html).toContain('Waiting for leadership approval.')
+    expect(html).toContain('Leadership decides. Nothing is sent on its own.')
+    expect(html).not.toContain('You decide')
+    expect(html).not.toContain('btn-approve')
+    expect(html).not.toContain('Only an executive')
     expect(html).toContain('Authorize the eligibility review')
+  })
+
+  it('replaces Approve with a gold "Approved by" line, never "Approve again"', () => {
+    const approvedEvent: AuditEvent = {
+      id: 7,
+      ts: '2026-09-26T11:00:00+00:00',
+      type: 'decision.approved',
+      actor: 'executive',
+      payload: { decision_id: DECISION.id },
+    }
+    const html = render(true, { decision: APPROVED, events: [approvedEvent] })
+
+    expect(html).toContain('approved-line')
+    expect(html).toContain('Approved by leadership at Sep 26, ')
+    expect(html).not.toContain('>Approve</button>')
+    expect(html).not.toContain('Approve again')
+  })
+
+  it('names the approver as "you" right after this person approved', () => {
+    const html = render(true, {
+      decision: APPROVED,
+      approvedTasks: {
+        [DECISION.id]: {
+          task: {
+            id: 'TASK-1',
+            decision_id: DECISION.id,
+            office: 'Financial Aid',
+            description: 'x',
+            status: 'open',
+          },
+          created: true,
+        },
+      },
+    })
+    expect(html).toContain('Approved by you')
+  })
+
+  it('uses the approver and time from the API when it sends them', () => {
+    const html = render(true, {
+      decision: {
+        ...APPROVED,
+        approved_by: 'president@example.edu',
+        approved_at: '2026-09-26T11:00:00+00:00',
+      },
+    })
+    expect(html).toContain('Approved by president@example.edu at Sep 26, ')
+  })
+
+  it('says "Approved by you" when the viewer is the approver, never their own address', () => {
+    const html = render(true, {
+      decision: {
+        ...APPROVED,
+        approved_by: 'President@Example.edu',
+        approved_at: '2026-09-26T11:00:00+00:00',
+      },
+      userEmail: 'president@example.edu',
+    })
+    expect(html).toContain('Approved by you at Sep 26, ')
+    expect(html).not.toContain('Approved by President@Example.edu')
+  })
+
+  it('reads the decision copy by role: the executive decides, others read leadership', () => {
+    for (const role of ['staff', 'reviewer'] as const) {
+      const html = render(false, { role })
+      expect(html).toContain('Leadership decides. Nothing is sent on its own.')
+      expect(html).not.toContain('The Cabinet advises. You decide.')
+    }
+    expect(render(true)).toContain('The Cabinet advises. You decide. Nothing is sent on its own.')
+    expect(render(true)).toContain('class="panel-intro"')
+    expect(render(true)).not.toContain('panel-note')
+  })
+
+  it('names the approver to staff too, from the decision or the dispatch state', () => {
+    const fromDecision = render(false, {
+      decision: { ...APPROVED, approved_by: 'president@example.edu' },
+      role: 'staff',
+    })
+    expect(fromDecision).toContain('Approved by president@example.edu')
+    const fromDispatch = render(false, {
+      decision: APPROVED,
+      role: 'staff',
+      dispatches: ready({
+        ...DRAFT,
+        approved_by: 'president@example.edu',
+        approved_at: '2026-09-26T11:00:00+00:00',
+      }),
+    })
+    expect(fromDispatch).toContain('Approved by president@example.edu at Sep 26, ')
+  })
+
+  it('says "Approved by leadership" when the approver is not known yet', () => {
+    const html = render(false, { decision: APPROVED, role: 'staff' })
+    expect(html).toContain('Approved by leadership')
+    expect(html).not.toContain('Only an executive')
+    expect(html).not.toContain('Waiting for leadership approval')
+  })
+
+  it('turns a technical approval error into a plain sentence', () => {
+    const html = render(true, { approveError: 'HTTP 500: Internal Server Error' })
+    expect(html).toContain("That didn&#x27;t work. The approval was not saved.")
+    expect(html).not.toContain('HTTP')
   })
 })
 
-describe('DecisionPanel — the governed execution step', () => {
-  it('offers Prepare once the decision is approved', () => {
+describe('DecisionPanel — next steps', () => {
+  it('offers Prepare once the decision is approved, and not before', () => {
     const html = render(true, { decision: APPROVED })
-
-    expect(html).toContain('dispatch-prepare')
-    expect(html).toContain('Prepare the message to Financial Aid')
-    // No draft exists yet, so no message and no Send.
+    expect(html).toContain('Next steps')
+    expect(html).toContain('Message to Financial Aid:')
+    expect(html).toContain('Not prepared yet')
+    expect(html).toContain('Prepare the message')
     expect(html).not.toContain('dispatch-draft')
-    expect(html).not.toContain('dispatch-send')
-  })
 
-  it('offers no Prepare before approval', () => {
-    const html = render(true)
-
-    expect(html).not.toContain('dispatch-prepare')
+    expect(render(true)).not.toContain('Prepare the message')
   })
 
   it('offers no Prepare to a reviewer', () => {
     const html = render(false, { decision: APPROVED, role: 'reviewer' })
-
-    expect(html).not.toContain('dispatch-prepare')
+    expect(html).not.toContain('Prepare the message')
   })
 
-  it('shows the composed message read-only, with the finding link kept', () => {
-    const html = render(false, {
-      decision: APPROVED,
-      role: 'staff',
-      dispatches: ready(DRAFT),
-    })
+  it('shows To and Subject, with the message itself folded, in plain words', () => {
+    const html = render(false, { decision: APPROVED, role: 'staff', dispatches: ready(DRAFT) })
 
-    expect(html).toContain('dispatch-draft')
-    expect(html).toContain('Message to the office, not yet sent')
+    expect(html).toContain('Prepared, not sent')
     expect(html).toContain('financial-aid@example.edu')
     expect(html).toContain('Approved follow-up for Financial Aid')
-    expect(html).toContain('18 continuing students')
-    // The M3 token renders as an evidence link, like numbers in the briefing.
-    expect(html).toContain('finding-link')
-    expect(html).toContain('Open the evidence for finding M3')
+    expect(html).toContain('Show message')
+    expect(html).toMatch(/<details[^>]*>(?:(?!<\/details>).)*18 continuing students/s)
+    expect(html).not.toContain('finding-link')
+    expect(html.replace(/<[^>]*>/g, ' ')).not.toMatch(/\bM\d\b|finding M|D-spring/)
   })
 
-  it('shows Send as the signed-in staff member, and not to the executive', () => {
-    const staff = render(false, {
-      decision: APPROVED,
-      role: 'staff',
-      dispatches: ready(DRAFT),
-    })
+  it('offers Send to staff (behind a confirmation), and not to the executive', () => {
+    const staff = render(false, { decision: APPROVED, role: 'staff', dispatches: ready(DRAFT) })
     expect(staff).toContain('dispatch-send')
-    expect(staff).toContain('Send as exec@example.edu')
+    expect(staff).toContain('Send…')
 
-    const executive = render(true, {
-      decision: APPROVED,
-      role: 'executive',
-      dispatches: ready(DRAFT),
-    })
-    // The executive sees the draft and the note, never the Send button.
+    const executive = render(true, { decision: APPROVED, dispatches: ready(DRAFT) })
     expect(executive).toContain('dispatch-draft')
     expect(executive).not.toContain('dispatch-send')
-    expect(executive).toContain('A staff member sends this message')
+    expect(executive).toContain('A staff member sends this message.')
   })
 
-  it('warns when the office has no mailbox configured', () => {
+  it('says the office has no mailbox yet, and offers no Send', () => {
     const html = render(false, {
       decision: APPROVED,
       role: 'staff',
       dispatches: ready({ ...DRAFT, office_contact: null }),
     })
-
-    expect(html).toContain('no mailbox configured')
-    expect(html).toContain('No mailbox is configured for Financial Aid')
+    expect(html).toContain('(no mailbox set up yet)')
+    expect(html).toContain(
+      'Financial Aid has no mailbox yet. An administrator adds one in Institution settings before it can be sent.',
+    )
+    expect(html).not.toContain('href="/institution#inst-offices"')
+    expect(html).not.toContain('dispatch-send')
   })
 
-  it('shows who sent it, when, and through which provider — and no Send', () => {
+  it('gives an admin a link to Institution settings, Offices', () => {
     const html = render(false, {
+      decision: APPROVED,
+      role: 'admin',
+      dispatches: ready({ ...DRAFT, office_contact: null }),
+    })
+    expect(html).toContain('href="/institution#inst-offices"')
+    expect(html).toContain('>Institution settings, Offices</a>')
+    expect(html).not.toContain('An administrator adds one')
+  })
+
+  it('shows who sent it and when, with no provider name and no Send', () => {
+    const html = render(false, { decision: APPROVED, role: 'staff', dispatches: ready(SENT) })
+
+    expect(html).toContain('>Sent</span>')
+    expect(html).toContain('Sent by staff@example.edu at Sep 26, ')
+    const own = render(false, {
       decision: APPROVED,
       role: 'staff',
       dispatches: ready(SENT),
+      userEmail: 'staff@example.edu',
     })
-
-    expect(html).toContain('Message sent')
-    expect(html).toContain('Sent by staff@example.edu')
-    expect(html).toContain('through outbox')
+    expect(own).toContain('Sent by you at Sep 26, ')
+    expect(html).not.toContain('outbox')
     expect(html).not.toContain('dispatch-send')
-    expect(html).not.toContain('dispatch-prepare')
+    expect(html).not.toContain('Prepare the message')
+    expect(html).not.toContain('nothing sent')
+  })
+
+  it('keeps a failed send plain, with the provider text folded', () => {
+    const failed: DispatchInfo = {
+      ...DRAFT,
+      dispatch: { ...DRAFT.dispatch!, status: 'failed', error: 'SMTP 550 mailbox unavailable' },
+    }
+    const html = render(false, { decision: APPROVED, role: 'staff', dispatches: ready(failed) })
+    expect(html).toContain('Not sent yet')
+    expect(html).toContain('The last send did not go through. Nothing was delivered.')
+    expect(html).toMatch(/Technical detail(?:(?!<\/details>).)*SMTP 550/s)
+  })
+
+  it('shows the reviewer the draft, never a Send button', () => {
+    const reviewer = render(false, { decision: APPROVED, role: 'reviewer', dispatches: ready(DRAFT) })
+    expect(reviewer).toContain('dispatch-draft')
+    expect(reviewer).not.toContain('dispatch-send')
+  })
+
+  it('shows a failed decision load with Retry instead of Loading forever', () => {
+    const html = renderToStaticMarkup(
+      <DecisionPanel
+        decisions={null}
+        events={[]}
+        canApprove
+        role="executive"
+        userEmail="exec@example.edu"
+        approving={false}
+        approveError={null}
+        approvedTasks={{}}
+        dispatches={{}}
+        onApprove={() => {}}
+        onPrepareDispatch={() => {}}
+        onSendDispatch={() => {}}
+          loadError="Check your connection and try again."
+        onRetry={() => {}}
+      />,
+    )
+    expect(html).toContain("Couldn&#x27;t load the decision.")
+    expect(html).toContain('>Retry</button>')
+    expect(html).not.toContain('Loading the decision')
   })
 })
 
-describe('DecisionPanel — the reviewer and a draft', () => {
-  it('shows the reviewer the draft and the note, never a Send button', () => {
-    const reviewer = render(false, {
-      decision: APPROVED,
-      role: 'reviewer',
-      dispatches: ready(DRAFT),
-    })
-    expect(reviewer).toContain('dispatch-draft')
-    expect(reviewer).not.toContain('dispatch-send')
-    expect(reviewer).toContain('Only staff and administrators can send this message')
+/** The panel with live state, as the app drives it: Send resolves to "sent". */
+function LivePanel({ onSend, onApprove }: { onSend: () => void; onApprove?: () => void }) {
+  const [dispatches, setDispatches] = useState(ready(DRAFT))
+  const [decision, setDecision] = useState<Decision>(onApprove ? DECISION : APPROVED)
+  const [approving, setApproving] = useState(false)
+  return (
+    <DecisionPanel
+      decisions={[decision]}
+      events={[]}
+      canApprove
+      role="admin"
+      userEmail="admin@example.edu"
+      approving={approving}
+      approveError={null}
+      approvedTasks={{}}
+      dispatches={dispatches}
+      onApprove={() => {
+        onApprove?.()
+        setApproving(true)
+        setTimeout(() => {
+          setApproving(false)
+          setDecision(APPROVED)
+        }, 0)
+      }}
+      onPrepareDispatch={() => {}}
+      onSendDispatch={() => {
+        onSend()
+        setDispatches({ [DECISION.id]: { info: DRAFT, busy: 'send', error: null } })
+        setTimeout(() => setDispatches(ready(SENT)), 0)
+      }}
+    />
+  )
+}
+
+describe('DecisionPanel — Send confirmation and focus', () => {
+  it('asks "Send to <office> at <address>?" before sending, and Cancel sends nothing', () => {
+    const onSend = vi.fn()
+    mount(<LivePanel onSend={onSend} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send…' }))
+    const confirm = screen.getByRole('alertdialog')
+    expect(confirm.textContent).toContain('Send to Financial Aid at financial-aid@example.edu?')
+    expect(document.activeElement).toBe(confirm)
+    expect(onSend).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(onSend).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Send…' }))
+  })
+
+  it('cancels the confirmation on Escape (not the panel around it) and returns focus to Send…', () => {
+    const onSend = vi.fn()
+    const outer = vi.fn()
+    mount(
+      <div onKeyDown={outer}>
+        <LivePanel onSend={onSend} />
+      </div>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Send…' }))
+    fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' })
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(outer).not.toHaveBeenCalled()
+    expect(onSend).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Send…' }))
+  })
+
+  it('sends once on Send, keeps the busy button focusable, then focuses the Sent line', async () => {
+    const onSend = vi.fn()
+    mount(<LivePanel onSend={onSend} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Send…' }))
+    const send = screen.getByRole('button', { name: 'Send' })
+    fireEvent.click(send)
+    expect(onSend).toHaveBeenCalledTimes(1)
+    const busy = screen.getByRole('button', { name: 'Sending…' }) as HTMLButtonElement
+    expect(busy.disabled).toBe(false)
+    expect(busy.getAttribute('aria-busy')).toBe('true')
+    fireEvent.click(busy) // a second click while busy does nothing
+    expect(onSend).toHaveBeenCalledTimes(1)
+
+    const sentLine = await screen.findByText(/Sent by staff@example\.edu/)
+    expect(document.activeElement).toBe(sentLine)
+  })
+
+  it('moves focus to the Approved line once the approval lands', async () => {
+    const onApprove = vi.fn()
+    mount(<LivePanel onSend={() => {}} onApprove={onApprove} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+    expect(onApprove).toHaveBeenCalledTimes(1)
+    const line = await screen.findByText(/Approved by leadership/)
+    expect(document.activeElement).toBe(line)
   })
 })
