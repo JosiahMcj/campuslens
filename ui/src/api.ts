@@ -58,6 +58,12 @@ export interface Finding {
   rules?: IndicatorRuleRow[]
   /** M8 only: pseudonymous student id -> the rule ids that fired for it. */
   row_rules?: Record<string, string[]>
+  /** True when the student ids were withheld for this role: only the
+   * executive and admin roles receive them. `row_ids` is then empty in its
+   * usual shape and `row_counts` says how many records sit behind it. */
+  rows_withheld?: boolean
+  /** With `rows_withheld`: the record count, in the shape `row_ids` has. */
+  row_counts?: number | { numerator: number; denominator: number }
   /** M9 only: an aggregate with no rows behind it, ever (no drill-down). */
   aggregate_only?: boolean
   /** M9 only: true when the count is withheld below the minimum group size. */

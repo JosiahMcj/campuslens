@@ -78,6 +78,17 @@ it cannot ask, sign off on a decision, prepare or send a message, or read the au
 | `reviewer` | no | yes | yes | no | yes | no | no |
 | `aid` | no | yes | no | no | yes | yes | no |
 
+**Student ids in the findings.** `GET /findings` is open to every role, but the
+pseudonymous student ids behind each figure (every `row_ids` list, M5's per-office
+`hold_row_ids`, and M8's per-student `row_rules`) go to the `executive` and `admin`
+roles only (`ROW_ROLES` in `cabinet/security.py`), because their work acts on the
+records. For `staff`, `reviewer`, and `aid` the server empties every list in its usual
+shape, removes the per-student indicator map, and adds `rows_withheld: true` and
+`row_counts`, the number of records behind the figure. Those roles keep every figure
+and every per-office and per-indicator count, and the evidence drawer tells them the
+list is shown to executives and administrators only. The cached findings are never
+modified, so the executive's and admin's view stays whole.
+
 Every route except `GET /health`, `GET /ready`, and `POST
 /auth/login` requires a session, and each route has an explicit role allow-list
 in `cabinet/security.py` (`ROUTE_ROLES`). No session is a 401, and the wrong
@@ -156,7 +167,9 @@ audit log is append-only and outlives the dataset purge, so neither event names
 a student. Explore added `explore.answered`, which closes each answered question with
 the task id, the question event id, the analysis ids of its steps, their row counts, and
 which planner and writer ran, never a value. Explore also writes the existing
-`question.asked` (any student-id-shaped token in the question is replaced first),
+`question.asked` (any student-id-shaped token in the question is replaced first, and
+`POST /ask` applies the same redaction to its `question.asked` and `data.refused`
+events before either is written, so a typed id never reaches the chain or a reviewer),
 `data.refused` (counseling, one student, or a prediction, refused before planning, and
 withheld instructor rows), and one `data.granted` per step with the analysis id, the fields
 it read, and `aggregate_only: true`.
@@ -232,6 +245,39 @@ while `make check-config` prints which `CABINET_*` variables are set with all
 values redacted. Outside production, a missing secret degrades to an ephemeral key, so
 sessions do not survive restarts, with a stderr warning rather than a silent
 default.
+
+**The model endpoint.** Teams use a hosted chat-completions endpoint over https:
+`CABINET_LLM_BASE_URL=https://<provider host>/v1`, `CABINET_LLM_MODEL=<model name>`,
+and the key in `CABINET_LLM_API_KEY` (or the variable `CABINET_LLM_API_KEY_VAR` names
+in another env file), in the environment or the gitignored `cabinet.local.env`, never
+committed. With `CABINET_ENV=production` the app refuses to start, with one line on
+stderr, unless the base URL is `https` or plain `http` to a loopback address
+(`127.0.0.1`, `localhost`, `::1`) for a self-hosted model on the same machine, so the
+key and the findings never travel in the clear. An unset base URL still starts, and
+asks then answer unavailable. The model client refuses every redirect: a 3xx answer
+is typed unavailability naming the redirect, the request is never repeated to the
+`Location`, and the `Authorization` header therefore never reaches another host. A
+test runs a real local endpoint that answers 302 and checks that nothing reaches the
+redirect target.
+
+**Small operational counts.** M5 counts unresolved holds per responsible office
+(for example Library 1, Registrar 2), and M8 counts students per support indicator,
+some of them 0. We decided these are operational work counts, not population
+statistics: they tell an office how many items are in its own queue, so the briefing
+and the evidence drawer keep showing them exactly to every signed-in role, as before
+(the student ids behind them go to executives and administrators only, above). They
+are not sent to a model when they are small. Just before a live model call, every
+office count and indicator count under 10 (the same minimum as M9), zero included,
+is replaced by the words "fewer than 10", so the model reads the office list and
+the indicator list with those phrases (`permissions.coarsen_small_counts`, applied
+in `ChatProvider`). Counts of 10 or more, and the M5 and M8 totals, go as before. The
+validator accepts "fewer than 10" (or "fewer than ten") in a claim that cites M5 or
+M8 only while that finding has a count under 10, and a bare "10" is still rejected.
+We applied this to the live prompt only, not to the findings a role receives,
+because those findings are the key of every recorded answer: changing them would
+orphan the committed replay recordings, and they cannot be re-recorded offline. So
+replay keeps working unchanged, and a recorded answer made before this change may
+still name a small office count in the demo. The next live recording will not.
 
 **The model's output and the corrective retry.** The model sees only the
 findings its role received, and we show nothing it writes until the validator
@@ -314,6 +360,25 @@ isolated in storage and on every route. Deleting a dataset is a soft delete,
 and `python -m cabinet.datasets purge-deleted` hard-deletes datasets past the
 30 day retention window. An institution can ask us to delete its data at any
 time, and the audit log then retains only the fact of deletion.
+
+Counseling free text is never stored. An upload (the admin screen or the Ellucian
+import) may carry `counseling.counseling_notes`, but before the document is written
+every note that carries text is replaced by the fixed marker "note on file; text
+removed at upload", and an empty or non-text note becomes null. M9, the authorized
+aggregate, counts a student when a note exists or the chaplain flag is set, so its
+count is the same and the words never reach the disk, a backup, or a model. The
+bundled fictional fixture keeps its five invented notes, because it is committed demo
+data loaded from the repository rather than uploaded, and the refusal of the field is
+real only if the field has content.
+
+Files at rest are readable by the service's own user only. `cabinet.db` is created
+with mode 0600 before SQLite opens it, and an existing one (with any journal, `-wal`,
+or `-shm` file) is tightened to 0600 at startup and by `make migrate`. Dataset
+documents are 0600 in 0700 directories. A backup directory is 0700 and every file in
+it (the database copy, the dataset copies, and `manifest.json`) is 0600, and
+`make restore` writes the database and dataset files back at 0600. The generated
+Demonstration University database for Explore is fictional and is not covered by this
+rule.
 
 ## Reporting a vulnerability
 

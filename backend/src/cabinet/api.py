@@ -189,6 +189,7 @@ from cabinet.auth import (
 from cabinet.counseling import M9_ID, authorization_block, m9_finding
 from cabinet.datasets import UploadError, validate_upload
 from cabinet.explore.api import router as explore_router
+from cabinet.explore.privacy import redact_question
 from cabinet.fixture import parse_fixture
 from cabinet.metrics import findings as compute_findings
 from cabinet.migrations import (
@@ -203,11 +204,13 @@ from cabinet.permissions import (
     ROLE_TASK_FIELDS,
     ROLES,
     FieldRequestRefused,
+    findings_without_rows,
     request_fields,
 )
 from cabinet.provider import (
     Explanation,
     canonical_findings_json,
+    check_production_llm_base_url,
     golden_dir_from_env,
     load_local_env,
     provider_from_env,
@@ -225,6 +228,7 @@ from cabinet.questions import DEMO_DECISION_ID as DEMO_DECISION_ID
 from cabinet.questions import OUT_OF_SCOPE_REFUSAL as OUT_OF_SCOPE_REFUSAL
 from cabinet.security import (
     GENERIC_LOGIN_ERROR,
+    ROW_ROLES,
     CabinetSecurityMiddleware,
     LoginLockout,
 )
@@ -446,6 +450,7 @@ def create_app(
         secret_key, ephemeral_secret = resolve_secret_key(production)
         if production:
             check_production_bind()
+            check_production_llm_base_url()
     except RuntimeError as exc:
         print(f"cabinet: cannot start: {exc}", file=sys.stderr)
         raise SystemExit(1) from None
@@ -736,8 +741,14 @@ def create_app(
     @app.get("/findings")
     def get_findings(request: Request) -> dict[str, Any]:
         """The findings computed from the caller's institution's active
-        dataset (row IDs included, for the evidence drawer)."""
-        return runtime_for(request_institution(request)).findings
+        dataset. The student ids behind each figure (the evidence drawer's
+        records) go to the executive and admin roles only (``ROW_ROLES``);
+        staff, reviewer, and aid get the figures and counts with every id
+        removed (``permissions.findings_without_rows``)."""
+        findings_obj = runtime_for(request_institution(request)).findings
+        if request.scope["cabinet_user"]["role"] in ROW_ROLES:
+            return findings_obj
+        return findings_without_rows(findings_obj)
 
     @app.get("/events")
     def get_events(
@@ -935,11 +946,15 @@ def create_app(
         # bound, and this route runs on every ask).
         max_event_id_before = store.audit_max_id(institution_id)
         question = match_question(body.question)
+        # The audit log never stores a student id a person typed: the same
+        # redaction Explore applies, before anything is written. Matching
+        # ran on the typed text; an approved question has no id to redact.
+        logged_question = redact_question(body.question)
         question_event = audit.append(
             "question.asked",
             actor="executive",
             payload={
-                "question": body.question,
+                "question": logged_question,
                 "question_id": question.id if question is not None else None,
             },
         )
@@ -948,7 +963,7 @@ def create_app(
                 "data.refused",
                 actor="chief_of_staff",
                 payload={
-                    "question": body.question,
+                    "question": logged_question,
                     "reason": OUT_OF_SCOPE_REFUSAL,
                 },
             )
@@ -2258,10 +2273,12 @@ def create_app(
             if isinstance(meta, dict) and meta.get("title")
             else "Uploaded dataset"
         )
+        # The stored bytes carry no counseling note text (validate_upload
+        # removed it); the sha256 is of what is stored.
         dataset = store.add_dataset(
             institution_id,
             name=name,
-            raw=raw,
+            raw=report.stored_raw,
             uploaded_by=str(user["email"]),
             row_counts=report.row_counts,
         )

@@ -55,8 +55,9 @@ for an unresolved financial hold under $1,000, no advising appointment this term
 unresolved holds at more than one office, or registration closing within 14 days.
 A student has indicators when at least one rule fires. The rules never combine
 into a weighting or sum, no model ever sees the per-student detail, and the
-evidence drawer shows exactly which rules fired for each pseudonymous id, with the
-rule's reason.
+evidence drawer shows executives and administrators exactly which rules fired for
+each pseudonymous id, with the rule's reason. Staff, reviewers, and Financial Aid
+staff see the per-rule counts only.
 
 Explore answers specific questions over Demonstration University, the synthetic school
 in `data/school/` ("Which major has the lowest GPA? In that major, what is historically
@@ -158,7 +159,9 @@ shows every step, the fields it read, and its table.
   catalog (`CABINET_EXPLORE_PLANNER=model-first` reverses the order).
 
 The live model is configured in the gitignored `cabinet.local.env` at the repo root.
-Any standard chat-completions endpoint works, and we run a local model. `docs/EXPLORE.md` has
+Any hosted chat-completions endpoint over https works (`CABINET_LLM_BASE_URL`,
+`CABINET_LLM_MODEL`, and the key in `CABINET_LLM_API_KEY`, never committed; see
+RUNBOOK.md). `docs/EXPLORE.md` has
 the analyses, the rules, and the routes.
 
 ## Institutions and datasets
@@ -237,12 +240,12 @@ never by code changes.
 | Variable | Values | Default |
 |---|---|---|
 | `CABINET_PROVIDER` | `chat` \| `replay` \| `fake` | `chat` |
-| `CABINET_LLM_BASE_URL` | base URL of the configured model endpoint | unset |
-| `CABINET_LLM_MODEL` | model id sent to the endpoint (never shown or recorded) | unset |
+| `CABINET_LLM_BASE_URL` | base URL of the hosted chat-completions endpoint, `https://<provider host>/v1`. In production it must be `https` or a loopback address (`127.0.0.1`, `localhost`, `::1`) for a self-hosted model, or startup is refused. Redirects are never followed | unset |
+| `CABINET_LLM_MODEL` | the model name the endpoint expects (never shown or recorded) | unset |
 | `CABINET_LLM_LABEL` | what the UI shows as the source | `live model` |
-| `CABINET_LLM_REASONING_EFFORT` | sent as `reasoning_effort`, since reasoning models otherwise spend the output budget thinking. A local thinking model may ignore `low` and honour only `none`, which turns its hidden reasoning off. Empty omits it | `low` |
+| `CABINET_LLM_REASONING_EFFORT` | sent as `reasoning_effort`, since some reasoning models spend the output budget thinking. Some endpoints ignore `low` and honour only `none`, which turns hidden reasoning off. Empty omits it | `low` |
 | `CABINET_LLM_MAX_TOKENS` | the output budget per call, sent as `max_tokens` (256 to 32768). Hidden reasoning counts against it, and running out makes that section unavailable, never half written | `2048` |
-| `CABINET_LLM_API_KEY` | the endpoint key, environment only, never in the repo | unset |
+| `CABINET_LLM_API_KEY` | the endpoint key from the provider, in the environment or the gitignored `cabinet.local.env`, never committed | unset |
 | `CABINET_LLM_API_KEY_FILE` + `CABINET_LLM_API_KEY_VAR` | read that one variable's line from another env file | unset |
 | `CABINET_RECORD` | `1` records each validated response into `var/replay/`. `overwrite` also replaces existing recordings | off |
 | `CABINET_REPLAY_DIR` | extra replay cache directory, searched first | unset |
@@ -312,8 +315,10 @@ record/replay path are provider-agnostic.
 We validate every analyst output before it is shown. Each claim must carry a finding ID
 the role received (`[M2]` style), and every numeral in the text must equal a value,
 `display`, or comparison number in the received findings
-(`backend/src/cabinet/analysts.py`). The model never receives row IDs, and the
-evidence drawer reads those from `GET /findings`. A failure is logged and returned as
+(`backend/src/cabinet/analysts.py`). The model never receives row IDs. The
+evidence drawer reads those from `GET /findings`, which carries them for the
+executive and admin roles only; for every other role the server empties each list
+and sends `rows_withheld: true` with the record count instead. A failure is logged and returned as
 unavailable, never rendered.
 
 `POST /ask` accepts only the approved questions. The question registry
