@@ -107,7 +107,7 @@ describe('FirstResult', () => {
     const text = screen.getByRole('region', { name: 'Main findings' }).textContent
     expect(text).toContain('Unresolved holds affecting continued enrollment')
     expect(text).toContain('28 unresolved holds')
-    expect(text).toContain('Bursar 20, Registrar 8')
+    expect(text).toContain('Bursar 20, Registrar fewer than 10')
     expect(text).toContain('28 days')
     expect(text).not.toContain('Comparison period')
   })
