@@ -1,3 +1,5 @@
+import { useLayoutEffect, useRef, useState } from 'react'
+
 import { roleDisplayName, type Role, type Session } from '../auth'
 import { fieldLabels } from '../fieldLabels'
 import { findingLabel } from '../findingLabels'
@@ -336,6 +338,45 @@ export function SettingsPanel({
   )
 }
 
+/**
+ * One scope list ("May read" / "Never reads"): clamped to a fixed number of
+ * lines so a long list cannot stretch its row of cards, with a Show all
+ * toggle that appears only when the text really is cut off.
+ */
+function ScopeBlock({ label, text }: { label: string; text: string }) {
+  const ref = useRef<HTMLParagraphElement>(null)
+  const [open, setOpen] = useState(false)
+  const [cut, setCut] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (el === null) return
+    const measure = () => {
+      if (!open) setCut(el.scrollHeight > el.clientHeight + 1)
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [text, open])
+  return (
+    <div className="grant-scope">
+      <p className="grant-scope-label">{label}</p>
+      <p ref={ref} className={`grant-scope-text${open ? ' is-open' : ''}`}>
+        {text}
+      </p>
+      {(cut || open) && (
+        <button
+          type="button"
+          className="grant-scope-toggle"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          {open ? 'Show less' : 'Show all'}
+        </button>
+      )}
+    </div>
+  )
+}
+
 export interface AccessGrant {
   role: string
   fields: string[]
@@ -432,18 +473,18 @@ export function DataAccessPanel({
                 </p>
                 <p className="grant-office">Serves {employee.office}</p>
                 <p className="grant-job">{employee.job}</p>
-                <dl className="grant-scope">
-                  <dt>May read, as totals</dt>
-                  <dd>
-                    {employee.may_read.length > 0
+                <ScopeBlock
+                  label="May read, as totals"
+                  text={
+                    employee.may_read.length > 0
                       ? employee.may_read.join('; ')
                       : employee.no_data
                         ? 'Nothing yet: no data is connected for this office.'
-                        : 'No student data.'}
-                  </dd>
-                  <dt>Never reads</dt>
-                  <dd>{employee.never_reads.join('; ')}</dd>
-                </dl>
+                        : 'No student data.'
+                  }
+                />
+                <ScopeBlock label="Never reads" text={employee.never_reads.join('; ')} />
+                <div className="grant-extras">
                 {employee.outside_scope.length > 0 && (
                   <details className="fold technical-detail">
                     <summary>Outside its job ({employee.outside_scope.length})</summary>
@@ -454,7 +495,6 @@ export function DataAccessPanel({
                     </ul>
                   </details>
                 )}
-                <p className="grant-meta grant-count">{requestsToday(employee.requests_today)}</p>
                 {grant !== undefined && grant.findings.length > 0 && (
                   <p className="grant-meta">
                     Latest run explained: {grant.findings.map((id) => findingLabel(id)).join('; ')}
@@ -483,6 +523,8 @@ export function DataAccessPanel({
                     </details>
                   </details>
                 )}
+                </div>
+                <p className="grant-meta grant-count">{requestsToday(employee.requests_today)}</p>
               </article>
             )
           })}
