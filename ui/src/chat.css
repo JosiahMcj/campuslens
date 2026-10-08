@@ -1721,30 +1721,107 @@
 }
 
 .grant-scope {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0;
-  margin: var(--space-2) 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
   font-size: var(--text-sm);
 }
 
-.grant-scope dt {
+.grant-scope-label {
+  margin: 0;
   font-size: var(--text-xs);
   font-weight: 600;
   color: var(--ink-soft);
 }
 
-.grant-scope dd {
-  margin: 0 0 var(--space-1);
+.grant-scope-text {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+.grant-scope-text.is-open {
+  display: block;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  overflow: visible;
+}
+
+.grant-scope-toggle {
+  margin: 0;
+  padding: var(--space-1) 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--navy);
+  cursor: pointer;
+}
+
+.grant-extras {
+  min-width: 0;
 }
 
 .grant-count {
   font-variant-numeric: tabular-nums;
 }
 
-@media (min-width: 900px) {
+/* Cards share their rows' lines (subgrid), so the title, job, both scope
+   blocks and the footer sit at the same height in every card of a row. */
+.account-panel .grant-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.account-panel .grant-card > * {
+  margin: 0;
+}
+
+.account-panel .grant-extras {
+  flex: 1 1 auto;
+}
+
+.account-panel .grant-extras > * + * {
+  margin-top: var(--space-1);
+}
+
+.account-panel .grant-count {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--rule);
+}
+
+@media (min-width: 800px) {
   .account-panel .grant-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: start;
+    grid-auto-rows: auto;
+    align-items: stretch;
+  }
+  .account-panel .grant-card {
+    display: grid;
+    grid-row: span 7;
+    grid-template-rows: subgrid;
+    row-gap: 0;
+    margin-bottom: var(--space-3);
+  }
+  .account-panel .grant-card > * + * {
+    margin-top: var(--space-2);
+  }
+  .account-panel .grant-card > .grant-office {
+    margin-top: var(--space-1);
+  }
+  .account-panel .grant-card > .grant-count {
+    margin-top: var(--space-2);
+  }
+}
+
+@media (min-width: 1280px) {
+  .account-panel .grant-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
