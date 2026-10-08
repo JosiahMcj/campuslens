@@ -4,6 +4,14 @@
 
 *Governed AI employees helping university leaders turn SIS data into human-centered action.*
 
+**Know your students. Lead your flock.** CampusLens turns fragmented institutional information into clear briefings, informed decisions, and accountable departmental action.
+
+- **Ask anything, get the answer in seconds.** Plain-English questions about students, courses, money and outcomes, answered with a chart, key points, and every number traced to its source.
+- **Decide, and the right office gets the job.** CampusLens proposes the plan; a person approves; the work lands in the responsible department's inbox, where it is acknowledged and tracked.
+- **Student privacy stays safe.** The AI never sees a student's name or ID, groups under 10 are withheld, counseling notes are always refused, and every step is in a tamper-evident audit log.
+
+Team: Sharon Li, Dylan Poirier, Obinna Amadi, Josiah McJunkin.
+
 **Try it live:** https://campuslens.azai.pro (fictional data; the live model is Gloo AI)
 
 1. On the access page, enter the code `orchard juniper willow 44`.
@@ -34,8 +42,6 @@ Open http://127.0.0.1:5200 and sign in as `president@demo.test` with the passwor
 `~/campuslens-demo-accounts.txt`. `REPLAY=1` serves recorded model answers, so no key or
 network is needed; `make stop` shuts both servers down.
 
-**Live demo:** https://campuslens.azai.pro (fictional data; access code and logins above). Anything done in it is a demonstration and is reset from time to time.
-
 We built this for the Gloo AI Hackathon 2026, Track 4: Choose Your Own Adventure (Boulder, Oct 6-8, 2026), and `ROADMAP.md` is the
 plan. In one sentence, CampusLens transforms Ellucian SIS data into an
 executive briefing by coordinating permission-limited AI employees across enrollment and
@@ -46,8 +52,8 @@ We put all logic in a Python backend (FastAPI on `127.0.0.1:8910`, pytest, ruff,
 `.venv/`), and the React + TypeScript UI (Vite on `127.0.0.1:5200` with `strictPort`,
 Vitest, eslint, `tsc`) is the thin interface layer. Everything binds to `127.0.0.1` only.
 
-What runs today is the fixture dataset (`data/fixture.json`, fictional and seeded)
-and the metric functions M1-M9 (`backend/src/cabinet/metrics.py`, contracts in
+What runs today: a fictional medium-to-large university (`data/school/`, about 16,000 students over six years, 60 programs, alumni outcomes, student billing, the university budget and support programs), answered through Explore (any question), the Data page (six years of charts), department overviews and logins for 18 roles, a per-account inbox for alerts and approved decisions, and support programs with honest impact tracking. The president's briefing runs on a separate registration-window snapshot (`data/fixture.json`, fictional and seeded)
+with the metric functions M1-M9 (`backend/src/cabinet/metrics.py`, contracts in
 `CONTRACTS.md`). So are the permission gate, the append-only audit log, the
 governance API, and the dashboard. We built an AI employee for every department (15 in all, with output
 validation). For example, the Enrollment Analyst covers M1, M2 and M7, the Student
