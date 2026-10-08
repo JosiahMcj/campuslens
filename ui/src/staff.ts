@@ -53,6 +53,7 @@ export const EMPLOYEE_TITLES: Readonly<Record<string, string>> = {
   admissions_analyst: 'Admissions Analyst',
   career_outcomes_analyst: 'Career & Alumni Outcomes Analyst',
   advancement_analyst: 'Advancement Analyst',
+  finance_budget_analyst: 'Finance & Budget Analyst',
   it_data_steward: 'IT & Data Steward',
 }
 

@@ -54,6 +54,9 @@ DEPARTMENT_EMPLOYEES = (
     # these two exist with an empty scope until it is.
     "career_outcomes_analyst",
     "advancement_analyst",
+    # The university's own budget (institutional figures, no student
+    # fields), for the people who run it only (BUDGET_AREA below).
+    "finance_budget_analyst",
     # Connections and the data-access audit; never student data.
     "it_data_steward",
 )
@@ -201,6 +204,7 @@ _EMPLOYEE_AGGREGATE_FIELDS: dict[str, tuple[str, ...]] = {
     ),
     "career_outcomes_analyst": (),
     "advancement_analyst": (),
+    "finance_budget_analyst": (),
     "it_data_steward": (),
 }
 
@@ -250,6 +254,7 @@ ROLE_FINDINGS: dict[str, tuple[str, ...]] = {
     "admissions_analyst": (),
     "career_outcomes_analyst": (),
     "advancement_analyst": (),
+    "finance_budget_analyst": (),
     "it_data_steward": (),
 }
 
@@ -334,6 +339,7 @@ ROLE_TASK_FIELDS: dict[str, tuple[str, ...]] = {
     "admissions_analyst": (),
     "career_outcomes_analyst": (),
     "advancement_analyst": (),
+    "finance_budget_analyst": (),
     "it_data_steward": (),
 }
 
@@ -792,9 +798,34 @@ SCHOOL_AREAS: dict[str, tuple[str, ...]] = {
     ),
     # Alumni giving (counted ids only: whether a graduate gave, never who).
     "giving": ("alumni_gifts.student_id (gave or not)", "alumni_gifts.amount"),
+    # Student accounts: charges, payments and payment plans (totals only).
+    "billing": (
+        "student_charges.amount",
+        "student_charges.due_date",
+        "student_charges.term_code",
+        "student_payments.amount",
+        "student_payments.paid_on",
+        "payment_plans.term_code",
+    ),
+    # The university's own budget: institutional figures, no student fields.
+    # Granted only when the person asking may read the budget
+    # (cabinet.explore.finance.BUDGET_ROLES), never by the area alone.
+    "budget": (
+        "budget_lines.budget_amount",
+        "budget_lines.actual_amount",
+        "cost_centers.division",
+        "cost_centers.name",
+        "revenue_lines.source",
+        "revenue_lines.budget_amount",
+        "revenue_lines.actual_amount",
+        "tuition_revenue.gross_tuition",
+        "tuition_revenue.institutional_aid",
+        "tuition_revenue.net_tuition",
+    ),
 }
 
 INSTRUCTOR_AREA = "instructors"
+BUDGET_AREA = "budget"
 
 SCHOOL_FIELD_AREA: dict[str, str] = {
     field: area for area, fields in SCHOOL_AREAS.items() for field in fields
@@ -804,7 +835,9 @@ SCHOOL_FIELD_AREA: dict[str, str] = {
 ROLE_SCHOOL_AREAS: dict[str, tuple[str, ...]] = {
     # The coordinator: receives every employee's checked tables (aggregates),
     # reads no instructor-level rows of its own.
-    "chief_of_staff": tuple(a for a in SCHOOL_AREAS if a != INSTRUCTOR_AREA),
+    "chief_of_staff": tuple(
+        a for a in SCHOOL_AREAS if a not in (INSTRUCTOR_AREA, BUDGET_AREA)
+    ),
     "enrollment_analyst": ("structure", "course_sections", "registration", "entry"),
     "student_success_analyst": ("structure", "outcomes", "holds", "advising"),
     "registrar_analyst": (
@@ -814,7 +847,7 @@ ROLE_SCHOOL_AREAS: dict[str, tuple[str, ...]] = {
         "standing",
         "programs",
     ),
-    "student_accounts_analyst": ("structure", "holds"),
+    "student_accounts_analyst": ("structure", "holds", "billing"),
     "financial_aid_analyst": ("structure", "registration", "aid"),
     "advising_analyst": ("structure", "advising", "programs"),
     "student_life_analyst": ("structure", "campus_life", "holds"),
@@ -835,18 +868,28 @@ ROLE_SCHOOL_AREAS: dict[str, tuple[str, ...]] = {
     "admissions_analyst": ("structure", "entry", "demographics"),
     "career_outcomes_analyst": ("structure", "programs", "career_outcomes"),
     "advancement_analyst": ("structure", "programs", "giving"),
+    "finance_budget_analyst": (BUDGET_AREA,),
     "it_data_steward": (),
 }
 
 
-def school_access_for(role: str, field: str, *, instructor_rows: bool = False) -> str:
+def school_access_for(
+    role: str,
+    field: str,
+    *,
+    instructor_rows: bool = False,
+    budget_rows: bool = False,
+) -> str:
     """AGGREGATE_ONLY when ``role`` may receive aggregates over the school
     field, else REFUSED. Instructor-level fields need ``instructor_rows``
-    (the person asking may see them) as well as the area."""
+    and budget fields ``budget_rows`` (the person asking may see them) as
+    well as the area."""
     area = SCHOOL_FIELD_AREA.get(field)
     if area is None or area not in ROLE_SCHOOL_AREAS.get(role, ()):
         return REFUSED
     if area == INSTRUCTOR_AREA and not instructor_rows:
+        return REFUSED
+    if area == BUDGET_AREA and not budget_rows:
         return REFUSED
     return AGGREGATE_ONLY
 
@@ -858,6 +901,7 @@ def grant_school_fields(
     log: AuditSink,
     *,
     instructor_rows: bool = False,
+    budget_rows: bool = False,
     extra: dict[str, Any] | None = None,
 ) -> list[str]:
     """The Explore gate for one AI employee and one step: logs one
@@ -869,7 +913,10 @@ def grant_school_fields(
     refused = [
         f
         for f in requested
-        if school_access_for(role, f, instructor_rows=instructor_rows) == REFUSED
+        if school_access_for(
+            role, f, instructor_rows=instructor_rows, budget_rows=budget_rows
+        )
+        == REFUSED
     ]
     payload_extra = dict(extra or {})
     if refused:

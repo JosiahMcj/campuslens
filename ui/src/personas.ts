@@ -42,7 +42,7 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
       'What is the 6-year graduation rate for Pell students by college?',
       REGISTRATION,
     ],
-    employees: ['Student Accounts Analyst'],
+    employees: ['Student Accounts Analyst', 'Finance & Budget Analyst'],
   },
   registrar: {
     name: 'Registrar',

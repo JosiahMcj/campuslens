@@ -54,7 +54,7 @@ from cabinet.explore.catalog import (
     may_run,
 )
 from cabinet.explore.execute import StepResult, execute
-from cabinet.explore.finance import BUDGET_REFUSAL
+from cabinet.explore.finance import BUDGET_REFUSAL, BUDGET_ROLES
 from cabinet.explore.planner import (
     EXAMPLE_QUESTIONS,
     GREETING_MESSAGE,
@@ -625,13 +625,18 @@ def _explore(
         # The AI employees who worked the answer, in the order they joined.
         answered_by: list[str] = []
         instructor_rows = role in INSTRUCTOR_ROLES
+        budget_rows = role in BUDGET_ROLES
 
         def granted(
             index: int, analysis_id: str, fields: tuple[str, ...], withheld: bool
         ) -> None:
             params = planned[index].params
             workers = delegate_step(
-                analysis_id, params, fields, instructor_rows=instructor_rows
+                analysis_id,
+                params,
+                fields,
+                instructor_rows=instructor_rows,
+                budget_rows=budget_rows,
             )
             roles = [worker for worker, _ in workers]
             lead = roles[0]
@@ -672,6 +677,7 @@ def _explore(
                     task_id,
                     audit,
                     instructor_rows=instructor_rows,
+                    budget_rows=budget_rows,
                     extra=extra,
                 )
             if withheld:

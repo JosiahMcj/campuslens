@@ -188,7 +188,7 @@ and once for the school-record areas Explore reads (`ROLE_SCHOOL_AREAS`).
 | Enrollment Analyst | Enrollment Management | structure, course sections, registration, entry term | M1, M2, M7 |
 | Student Success Analyst | Student Success | structure, outcomes, holds, advising | M3, M4, M5, M8 |
 | Registrar Analyst | Office of the Registrar | structure, course sections, registration, standing, programs | M1, M2, M6, M7 |
-| Student Accounts Analyst | Finance — Student Accounts (Bursar) | structure, holds and balances | M3, M5 |
+| Student Accounts Analyst | Finance — Student Accounts (Bursar) | structure, holds and balances, student charges, payments and payment plans (past due, collection, aging) | M3, M5 |
 | Financial Aid Analyst | Financial Aid | structure, registration, Pell | M3 |
 | Advising Analyst | Academic Advising | structure, advising, programs | M4 |
 | Student Life Analyst | Student Life | structure, housing and athletics, holds (conduct) | M5 |
@@ -197,6 +197,7 @@ and once for the school-record areas Explore reads (`ROLE_SCHOOL_AREAS`).
 | Admissions Analyst | Admissions | structure, entry term and admit type, student groups | none |
 | Career & Alumni Outcomes Analyst | Career Services & Alumni Relations | structure, program status, first destinations (employment, salary), graduate and medical school | none |
 | Advancement Analyst | Advancement | structure, program status, alumni giving | none |
+| Finance & Budget Analyst | Finance — CFO | the university's budget against actual, revenue by source, tuition discount (institutional figures, no student fields); only when the asker is in `BUDGET_ROLES` (president, finance, admin) | none |
 | IT & Data Steward | IT | no student data (connections and the data-access audit) | none |
 
 Never, for any of them: student names, counseling and chaplain notes,

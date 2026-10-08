@@ -61,7 +61,9 @@ FIXTURE_PATH = REPO_ROOT / "data" / "fixture.json"
 GENERATE = REPO_ROOT / "data" / "school" / "generate.py"
 
 # Alumni outcomes and giving: school-record areas, but no briefing fields.
-ALUMNI = ("career_outcomes_analyst", "advancement_analyst")
+# School-record areas, but no briefing fields: alumni outcomes, giving and
+# the university's budget.
+ALUMNI = ("career_outcomes_analyst", "advancement_analyst", "finance_budget_analyst")
 NO_STUDENT_DATA = ("it_data_steward",)
 
 
@@ -75,7 +77,7 @@ def findings_obj() -> dict[str, Any]:
 
 def test_every_department_has_an_employee_with_a_title_job_and_office() -> None:
     assert (*BRIEFING_ROLES, *DEPARTMENT_EMPLOYEES) == ROLES
-    assert len(ROLES) == 14
+    assert len(ROLES) == 15
     titles = [staff.EMPLOYEES[r].title for r in ROLES]
     assert len(set(titles)) == len(titles)
     for role in ROLES:
@@ -182,6 +184,7 @@ def test_no_employee_can_read_a_student_name() -> None:
     assert set(named) == {
         "academic_programs.name",
         "colleges.name",
+        "cost_centers.name",
         "instructors.first_name",
         "instructors.last_name",
     }
@@ -193,6 +196,14 @@ def test_no_employee_can_read_a_student_name() -> None:
             expected = AGGREGATE_ONLY if role == "academic_affairs_analyst" else REFUSED
             assert school_access_for(role, field, instructor_rows=True) == expected
         assert school_access_for(role, "students.first_name") == REFUSED
+        # The budget only for the Finance & Budget Analyst, and only when
+        # the person asking may read it.
+        assert school_access_for(role, "budget_lines.actual_amount") == REFUSED
+        expected = AGGREGATE_ONLY if role == "finance_budget_analyst" else REFUSED
+        assert (
+            school_access_for(role, "budget_lines.actual_amount", budget_rows=True)
+            == expected
+        )
         assert school_access_for(role, "student_profiles.notes") == REFUSED
 
 
@@ -279,13 +290,17 @@ def _assert_routed_within_scope(
     fields: tuple[str, ...] = (),
     instructor_rows: bool = False,
 ) -> list[tuple[str, tuple[str, ...]]]:
+    # The asker may read the budget here (the budget analyses are refused
+    # to everyone else before routing; see the budget test below).
     workers = staff.delegate_step(
-        analysis_id, params, fields, instructor_rows=instructor_rows
+        analysis_id, params, fields, instructor_rows=instructor_rows, budget_rows=True
     )
     seen: list[str] = []
     for role, role_fields in workers:
         for field in role_fields:
-            access = school_access_for(role, field, instructor_rows=instructor_rows)
+            access = school_access_for(
+                role, field, instructor_rows=instructor_rows, budget_rows=True
+            )
             assert access == AGGREGATE_ONLY, (analysis_id, params, role, field)
         seen.extend(role_fields)
     # Every field the step uses is read by exactly one employee.
@@ -499,10 +514,11 @@ def test_staff_route_lists_everyone_own_department_first_with_todays_counts(
     )
     body = finance.get("/staff").json()
     employees = body["employees"]
-    assert len(employees) == 14
+    assert len(employees) == 15
     assert employees[0]["title"] == "Student Accounts Analyst"
     assert employees[0]["yours"] is True and body["yours"] == [
-        "student_accounts_analyst"
+        "student_accounts_analyst",
+        "finance_budget_analyst",
     ]
     by_role = {e["role"]: e for e in employees}
     assert by_role["student_accounts_analyst"]["requests_today"] == 1
@@ -572,3 +588,30 @@ def test_the_ui_names_every_employee_as_the_api_does() -> None:
     assert {k: v.strip("'") for k, v in entries.items()} == {
         role: e.title for role, e in staff.EMPLOYEES.items()
     }
+
+
+def test_the_budget_belongs_to_the_finance_and_budget_analyst_and_its_roles() -> None:
+    from cabinet.explore.finance import BUDGET_ROLES
+
+    budget = [
+        a
+        for a in ANALYSES
+        if a.id in ("budget_vs_actual", "revenue_by_source", "tuition_discount")
+    ]
+    assert len(budget) == 3
+    for analysis in budget:
+        assert staff.ANALYSIS_OWNER[analysis.id] == "finance_budget_analyst"
+        # Reachable only when the asker's role is in BUDGET_ROLES.
+        assert tuple(analysis.roles or ()) == BUDGET_ROLES
+        workers = staff.delegate_step(analysis.id, {}, analysis.fields_read)
+        assert [r for r, _ in workers] == ["finance_budget_analyst"]
+        with pytest.raises(FieldRequestRefused):
+            grant_school_fields(
+                "finance_budget_analyst",
+                analysis.fields_read,
+                "t",
+                AuditLog(Path("/dev/null")),
+            )
+    # Student-account measures belong to Student Accounts.
+    for measure in ("past_due_balance", "collection_rate", "avg_balance_owed"):
+        assert staff.MEASURE_OWNER[measure] == "student_accounts_analyst"

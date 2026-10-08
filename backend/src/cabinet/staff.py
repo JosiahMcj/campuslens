@@ -159,6 +159,13 @@ EMPLOYEES: dict[str, Employee] = {
             "Advancement",
         ),
         Employee(
+            "finance_budget_analyst",
+            "Finance & Budget Analyst",
+            "Reports the university's budget against actual, revenue by source "
+            "and the tuition discount; for the president and finance only.",
+            "Finance — CFO",
+        ),
+        Employee(
             "it_data_steward",
             "IT & Data Steward",
             "Looks after the outside connections and the data-access audit. "
@@ -175,7 +182,7 @@ assert tuple(EMPLOYEES) == ROLES, "every permissions role has a staff entry"
 # of Staff; roles not listed (admin, staff, reviewer) see the whole staff.
 LOGIN_EMPLOYEES: dict[str, tuple[str, ...]] = {
     ROLE_EXECUTIVE: ("chief_of_staff",),
-    ROLE_FINANCE: ("student_accounts_analyst",),
+    ROLE_FINANCE: ("student_accounts_analyst", "finance_budget_analyst"),
     ROLE_REGISTRAR: ("registrar_analyst",),
     ROLE_STUDENT_LIFE: ("student_life_analyst", "advising_analyst"),
     ROLE_AID: ("financial_aid_analyst",),
@@ -203,6 +210,9 @@ AREA_LABELS: dict[str, str] = {
     "career_outcomes": "Graduates' first destinations, salaries, graduate and "
     "medical school",
     "giving": "Alumni giving",
+    "billing": "Student charges, payments and payment plans",
+    "budget": "The university's budget, revenue and tuition discount "
+    "(institutional figures, no student data)",
 }
 
 # What no AI employee ever reads, whatever its job.
@@ -286,6 +296,8 @@ AREA_OWNER: dict[str, str] = {
     "campus_life": "student_life_analyst",
     "career_outcomes": "career_outcomes_analyst",
     "giving": "advancement_analyst",
+    "billing": "student_accounts_analyst",
+    "budget": "finance_budget_analyst",
 }
 
 # Each reviewed measure of the general analysis, by owning department.
@@ -323,6 +335,13 @@ MEASURE_OWNER: dict[str, str] = {
     "giving_rate": "advancement_analyst",
     "avg_gift": "advancement_analyst",
     "total_giving": "advancement_analyst",
+    "past_due_balance": "student_accounts_analyst",
+    "past_due_students": "student_accounts_analyst",
+    "past_due_90_students": "student_accounts_analyst",
+    "on_time_payment_rate": "student_accounts_analyst",
+    "payment_plan_share": "student_accounts_analyst",
+    "collection_rate": "student_accounts_analyst",
+    "avg_balance_owed": "student_accounts_analyst",
 }
 
 # Each grouping (and filter) of the general analysis, by owning department.
@@ -348,6 +367,7 @@ GROUPING_OWNER: dict[str, str] = {
     "modality": "academic_affairs_analyst",
     "hold": "student_accounts_analyst",
     "gpa_band": "academic_affairs_analyst",
+    "aging": "student_accounts_analyst",
 }
 
 # Each approved analysis, by owning department (the general analysis is
@@ -370,6 +390,11 @@ ANALYSIS_OWNER: dict[str, str] = {
     "holds_by_office": "student_accounts_analyst",
     "advising_coverage": "advising_analyst",
     "credit_hours_by_term": "registrar_analyst",
+    # The university's own budget: only reachable when the person asking
+    # is in BUDGET_ROLES (the catalog and the gate both check).
+    "budget_vs_actual": "finance_budget_analyst",
+    "revenue_by_source": "finance_budget_analyst",
+    "tuition_discount": "finance_budget_analyst",
 }
 
 _ANALYSES_BY_ID = {a.id: a for a in ANALYSES}
@@ -416,6 +441,7 @@ def delegate_step(
     fields: tuple[str, ...],
     *,
     instructor_rows: bool = False,
+    budget_rows: bool = False,
 ) -> list[tuple[str, tuple[str, ...]]]:
     """Who reads which fields for one step, leading employee first. A field in
     the leader's areas stays with the leader; any other goes to the

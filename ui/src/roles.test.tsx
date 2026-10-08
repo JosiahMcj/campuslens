@@ -169,7 +169,7 @@ describe('navigation by role', () => {
     expect(screen.getByText('What is the 6-year graduation rate for Pell students by college?')).toBeTruthy()
     // The home screen names the office's own AI employee.
     expect(document.querySelector('.persona-employee')?.textContent).toBe(
-      'Your AI employee: Student Accounts Analyst',
+      'Your AI employees: Student Accounts Analyst and Finance & Budget Analyst',
     )
     const rows = sidebarRows()
     expect(rows).toContain('Inbox')
@@ -183,7 +183,7 @@ describe('navigation by role', () => {
   it('shows Finance its own AI employee first on the AI employees page, without the audit log', async () => {
     const calls = mockApi('finance')
     render(<App />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Student Accounts Analyst' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Student Accounts Analyst and Finance & Budget Analyst' }))
     const cards = await screen.findAllByRole('article')
     expect(cards[0].getAttribute('aria-label')).toBe('Student Accounts Analyst')
     expect(within(cards[0]).getByText('Your AI employee')).toBeTruthy()
