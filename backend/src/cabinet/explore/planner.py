@@ -55,7 +55,12 @@ from cabinet.explore.catalog import (
     Param,
     Vocab,
 )
-from cabinet.explore.compact import Unresolved, compact_catalog, resolve_plan
+from cabinet.explore.compact import (
+    Unresolved,
+    compact_catalog,
+    fiscal_year,
+    resolve_plan,
+)
 from cabinet.explore.privacy import (
     count_form,
     historical_form,
@@ -98,6 +103,7 @@ def is_small_talk(question: str) -> bool:
     example questions, never planned and never sent to a model."""
     return _SMALL_TALK_RE.match(question) is not None
 
+
 # The owner's example, answered in one plan of three chained steps.
 OWNER_EXAMPLE = (
     "Which major has the lowest GPA? In that major, what is historically the hardest "
@@ -137,6 +143,10 @@ RULE_PHRASINGS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (OWNER_EXAMPLE, ("gpa_by_major", "dfw_by_course", "course_instructors")),
     (OWNER_SHORT, ("gpa_by_major", "dfw_by_course", "course_instructors")),
     ("Which major has the lowest GPA?", ("gpa_by_major",)),
+    ("What is our budget vs actual this year?", ("budget_vs_actual",)),
+    ("Which departments are over budget?", ("budget_vs_actual",)),
+    ("What is our revenue by source?", ("revenue_by_source",)),
+    ("What is our tuition discount rate trend?", ("tuition_discount",)),
     ("Which majors have the highest average GPA?", ("gpa_by_major",)),
     ("What is the average GPA in Nursing?", ("gpa_by_major",)),
     ("What is the average GPA by college?", ("gpa_by_college",)),
@@ -481,10 +491,15 @@ def parse_model_plan(text: str, catalog: Catalog) -> list[Step]:
         raw = json.loads(stripped)
     except ValueError as exc:
         raise PlanInvalid(f"the model's plan is not JSON: {exc}") from None
-    if isinstance(raw, dict) and raw.get("steps") == [] and set(raw) <= {
-        "steps",
-        "reasoning",
-    }:
+    if (
+        isinstance(raw, dict)
+        and raw.get("steps") == []
+        and set(raw)
+        <= {
+            "steps",
+            "reasoning",
+        }
+    ):
         raise PlanDeclined()
     try:
         raw = resolve_plan(raw, catalog)
@@ -629,6 +644,11 @@ def plan_question(
         # planned the hold rate for "have holds and will drop"), so they go
         # first and the model plans only what they cannot map.
         order = RULES_FIRST
+    if order == MODEL_FIRST and _finance_by_rules(question, catalog):
+        # The same for the finance office's questions the rules map (18 of
+        # 18 on the finance set, the model 15 to 16: it left out "by
+        # department" and planned the payment-plan share by term).
+        order = RULES_FIRST
     if order == RULES_ONLY:
         # Never ask a model to plan: a question the rules cannot map gets
         # the example questions at once (a live demo on a slow model).
@@ -655,6 +675,25 @@ def plan_question(
         return PlanOutcome(model_steps, "model")
     steps, notes = rules(question, catalog)
     return PlanOutcome(steps, "rule", reason, notes)
+
+
+_BUDGET_ANALYSES = frozenset(
+    ("budget_vs_actual", "revenue_by_source", "tuition_discount")
+)
+
+
+def _finance_by_rules(question: str, catalog: Catalog) -> bool:
+    """Whether the rules map the question, and only to the university budget
+    or the student-account measures."""
+    steps, _ = rule_plan_detail(question, catalog)
+    return bool(steps) and all(
+        s.analysis_id in _BUDGET_ANALYSES
+        or (
+            s.analysis_id == general.ANALYSIS_ID
+            and s.params.get("measure") in general.ACCOUNT_MEASURES
+        )
+        for s in steps or []
+    )
 
 
 _SCOPE_PARAMS = frozenset(
@@ -1090,6 +1129,9 @@ class _ClausePlanner:
         return (terms[0], None) if terms else (None, None)
 
     def plan(self, text: str) -> Step | None:  # noqa: C901 - one rule per analysis
+        budget = _budget_step(text, self.m.vocab)
+        if budget is not None:
+            return budget
         if _has(_NOT_IN_RECORDS, text):
             return None  # employers and loans are not in the records
         e = self.m.extract(text)
@@ -1383,8 +1425,8 @@ class _ClausePlanner:
                     p["group_by"] = key
                     break
         if ranked:
-            p["order"] = "lowest_first" if _has(r"smallest|fewest", text) else (
-                "highest_first"
+            p["order"] = (
+                "lowest_first" if _has(r"smallest|fewest", text) else ("highest_first")
             )
         if e.majors and p.get("group_by") != "major":
             p["major"] = e.majors[0]
@@ -1444,6 +1486,89 @@ _BIGGEST_WORDS = (
 _LAST_YEAR_WORDS = r"\b(?:last|previous|prior)\s+(?:academic\s+)?year\b"
 
 # --- the general analysis: measure words, grouping words, filter words ------
+
+# --- the university's own budget (cabinet.explore.finance) ------------------
+
+_FY_WORDS = re.compile(
+    r"\b(?:fy\s?\d{2,4}|fiscal(?: year)?\s+\d{4}|(?:this|current|last|previous|"
+    r"prior)(?: fiscal)? year|(?:19|20)\d{2}\s*[-–/]\s*(?:19|20)?\d{2})\b",
+    re.I,
+)
+_TUITION_WORDS = (
+    r"discount(?:ing)? rate|tuition discount|\bdiscount(?:ing)?\b|net tuition|"
+    r"gross tuition|tuition revenue|institutional aid"
+)
+_REVENUE_WORDS = (
+    r"\brevenues?\b|\bincome\b|where (?:does|did) (?:our|the) money come from|"
+    r"\bgifts?\b|\bendowment\b|\bgrants? revenue"
+)
+_BUDGET_WORDS = (
+    r"\bbudget(?:s|ed)?\b|over ?spen|under ?spen|\bspending\b|\bexpenses?\b|"
+    r"\bexpenditures?\b|\bdeficit\b|\bsurplus\b"
+)
+_OVER_WORDS = (
+    r"over (?:the |their |its |our )?budget|over ?spen|exceed\w* (?:the |their |its )?"
+    r"budget|went over|ran over"
+)
+
+
+def _fiscal_year_in(text: str, v: Vocab) -> str | None:
+    match = _FY_WORDS.search(text)
+    if match is None:
+        return None
+    return fiscal_year(match.group(0), v.fiscal_years)
+
+
+def _budget_step(text: str, v: Vocab) -> Step | None:
+    """The university's budget, revenue or tuition discount, when the clause
+    asks about them (never about a student's balance)."""
+    if _has(
+        r"past[- ]due|overdue|owe|balance|payment|\bpaid\b|\bpay\b|"
+        r"student accounts?|collection",
+        text,
+    ):
+        return None
+    p: dict[str, Any] = {}
+    year = _fiscal_year_in(text, v)
+    if _has(_TUITION_WORDS, text):
+        if year is not None:
+            p["fiscal_year"] = year
+        return Step("tuition_discount", p)
+    revenue = _has(_REVENUE_WORDS, text) and not _has(r"\bstudents?\b", text)
+    spending = _has(
+        r"spen|expens|expenditure|over (?:the |their |its |our )?budget|department|"
+        r"division|office|cost cent|deficit",
+        text,
+    )
+    if revenue and not spending:
+        if year is not None:
+            p["fiscal_year"] = year
+        return Step("revenue_by_source", p)
+    if _has(_BUDGET_WORDS, text):
+        if year is not None:
+            p["fiscal_year"] = year
+        if _has(r"department|cost cent|office|\bunits?\b|program", text):
+            p["by"] = "department"
+        elif _has(
+            r"categor|by type|kind of|salar|technology|travel|facilities|"
+            r"operations|scholarships",
+            text,
+        ):
+            p["by"] = "category"
+        elif _has(r"\bfunds?\b", text):
+            p["by"] = "fund"
+        if _has(_OVER_WORDS, text):
+            p["over_budget"] = "yes"
+            p["order"] = "highest_first"
+        elif _has(r"under (?:the |their |its |our )?budget|underspen", text):
+            p["order"] = "lowest_first"
+        return Step("budget_vs_actual", p)
+    if _has(_REVENUE_WORDS, text) and not _has(r"\bstudents?\b", text):
+        if year is not None:
+            p["fiscal_year"] = year
+        return Step("revenue_by_source", p)
+    return None
+
 
 # Graduate outcomes, tried before every other measure: "grad school" is not
 # a graduation rate, and "do grades matter for earning potential" is about
@@ -1508,6 +1633,37 @@ _NOT_IN_RECORDS = (
 
 # Measures only the general analysis computes, in the order they are tried.
 _NEW_MEASURES: tuple[tuple[str, str], ...] = (
+    # Student accounts (the billing tables), before any word they share.
+    (
+        "past_due_90_students",
+        r"(?:more than|over|beyond|at least|past) (?:90|ninety) days|90\+ days|"
+        r"(?:90|ninety) days (?:or more )?(?:past[- ]due|late|overdue|delinquent)",
+    ),
+    (
+        "avg_balance_owed",
+        r"(?:average|avg|mean|typical) (?:past[- ]due |overdue |outstanding )?"
+        r"(?:balance|amount owed|debt)|"
+        r"(?:average|avg) (?:amount )?(?:owed|past[- ]due)",
+    ),
+    (
+        "past_due_students",
+        r"how many\b.*\b(?:are|were|is|have been) (?:past[- ]due|overdue|"
+        r"delinquent|behind)|how many (?:students )?(?:are |were )?(?:past[- ]due|"
+        r"overdue|delinquent|behind)|"
+        r"(?:number|count) of (?:students )?(?:past[- ]due|overdue|delinquent)|"
+        r"students (?:who are |that are )?(?:past[- ]due|overdue|delinquent|behind on)",
+    ),
+    (
+        "on_time_payment_rate",
+        r"on[- ]time payment|pa(?:y|id|ying) on time|pay(?:ing)? late|late payments?",
+    ),
+    ("payment_plan_share", r"payment plans?|installment plans?|installments"),
+    ("collection_rate", r"collection rate|collect(?:ed|ions?)\b"),
+    (
+        "past_due_balance",
+        r"past[- ]due|overdue|delinquen|outstanding balances?|receivables?\b|"
+        r"\baging\b",
+    ),
     *_OUTCOME_MEASURES,
     (
         "time_to_degree",
@@ -1664,6 +1820,8 @@ _GROUPING_WORDS: dict[str, str] = {
     r"(?:non|other|regular)|non[- ]?honors|honors status|by honors",
     "modality": r"modalit|in[- ]person (?:vs\.?|versus|and|or) online|"
     r"online (?:vs\.?|versus|and|or) in[- ]person|delivery mode",
+    "aging": r"\baging\b|by (?:days|how long|how far) past[- ]due|"
+    r"how (?:long|far) past[- ]due|days past[- ]due (?:buckets?|bands?|groups?)",
     "hold": r"hold status|by holds?\b|with (?:and|or|vs\.?|versus) without "
     r"(?:a |any )?holds?|holds? (?:vs\.?|versus|and|or) (?:no|without) holds?",
     # Graduates' final GPA (outcome measures only): "do grades matter".
@@ -1765,6 +1923,11 @@ def _detect_measure(text: str) -> tuple[str | None, bool]:
     return None, False
 
 
+# Counts of students: a group named with one is a filter ("how many first-gen
+# students are past due"), never a comparison.
+_COUNTS_OF_STUDENTS = ("headcount", "past_due_students", "past_due_90_students")
+
+
 def _general_params(text: str, e: _Entities, v: Vocab) -> dict[str, Any] | None:
     """Parameters of ``measure_by_group`` for a clause, or None when the
     clause belongs to another analysis (or to none)."""
@@ -1856,7 +2019,7 @@ def _general_params(text: str, e: _Entities, v: Vocab) -> dict[str, Any] | None:
     params: dict[str, Any] = {"measure": measure_id}
     # A binary attribute named with no grouping ("average GPA of athletes")
     # is compared with the rest; a count ("how many athletes") is filtered.
-    if not group_keys and filters and measure_id != "headcount":
+    if not group_keys and filters and measure_id not in _COUNTS_OF_STUDENTS:
         compare = [
             k
             for k in filters

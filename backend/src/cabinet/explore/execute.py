@@ -26,6 +26,7 @@ from cabinet.explore.catalog import (
     Catalog,
     Column,
     course_summary,
+    may_run,
 )
 from cabinet.explore.planner import Ref, Step
 
@@ -164,6 +165,21 @@ def execute(
     done: list[StepResult] = []
     for index, step in enumerate(steps):
         analysis = ANALYSIS_BY_ID[step.analysis_id]
+        if not may_run(analysis, role):
+            # The API refuses such a plan before it runs; this is the backstop.
+            done.append(
+                StepResult(
+                    index,
+                    analysis,
+                    {},
+                    [],
+                    (),
+                    analysis.columns,
+                    [],
+                    error="this analysis is not available to your role",
+                )
+            )
+            continue
         withheld = analysis.instructor_level and role not in INSTRUCTOR_ROLES
         try:
             params, plain, shown = _resolve(step, analysis, done, catalog, role)

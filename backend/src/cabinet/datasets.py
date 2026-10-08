@@ -163,9 +163,7 @@ def _scan_pii(value: Any, path: str, errors: list[str]) -> None:
             _scan_pii(item, f"{path}[{index}]", errors)
 
 
-def _check_student_record(
-    record: Any, path: str, errors: list[str]
-) -> bool:
+def _check_student_record(record: Any, path: str, errors: list[str]) -> bool:
     """Upload-only checks for one student record.
 
     Returns True when the record carries counseling content — counseling
@@ -188,8 +186,7 @@ def _check_student_record(
         _check_allowed(profile, ALLOWED_PROFILE, f"{path}.profile", errors)
         student_id = profile.get("student_id")
         if isinstance(student_id, str) and not (
-            STRUCTURED_ID_RE.fullmatch(student_id)
-            or OPAQUE_ID_RE.fullmatch(student_id)
+            STRUCTURED_ID_RE.fullmatch(student_id) or OPAQUE_ID_RE.fullmatch(student_id)
         ):
             errors.append(
                 f"{path}.profile.student_id: {student_id!r} is not a "
@@ -269,9 +266,7 @@ def validate_upload(raw: bytes) -> UploadReport:
         if not isinstance(records, list):
             continue
         for index, record in enumerate(records):
-            present = _check_student_record(
-                record, f"$.{list_key}[{index}]", errors
-            )
+            present = _check_student_record(record, f"$.{list_key}[{index}]", errors)
             counseling_present = counseling_present or present
 
     fixture: Fixture | None = None
@@ -288,9 +283,9 @@ def validate_upload(raw: bytes) -> UploadReport:
         fictional = meta.get("fictional") is True
     stored_raw = raw
     if strip_counseling_text(document):
-        stored_raw = (
-            json.dumps(document, indent=2, ensure_ascii=False) + "\n"
-        ).encode("utf-8")
+        stored_raw = (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode(
+            "utf-8"
+        )
     return UploadReport(
         fixture=fixture,
         document=document,

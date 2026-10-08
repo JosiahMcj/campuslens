@@ -178,9 +178,7 @@ def verify_events(events: list[dict[str, Any]], *, scope: str = "") -> list[str]
         if stored is not None and stored != event_hash(event):
             breaks.append(f"{label}: stored hash does not match the event")
         if "prev_hash" in event:
-            expected = (
-                GENESIS_HASH if index == 0 else event_hash(events[index - 1])
-            )
+            expected = GENESIS_HASH if index == 0 else event_hash(events[index - 1])
             if event["prev_hash"] != expected:
                 breaks.append(f"{label}: prev_hash does not match the chain")
     return breaks
@@ -250,9 +248,7 @@ def verify_db(db_path: str | Path) -> list[str]:
     return breaks
 
 
-def export_db(
-    db_path: str | Path, institution_id: int, out_path: str | Path
-) -> int:
+def export_db(db_path: str | Path, institution_id: int, out_path: str | Path) -> int:
     """Write one institution's audit chain as JSONL (the file shape).
 
     Returns the number of events written. The export is a snapshot for
@@ -439,9 +435,7 @@ class AuditLog:
         if self._file_size() != self._last_size:
             self._events = read_events(self._path)
             self._next_id = max(self._next_id, self._recover_next_id())
-        prev_hash = (
-            event_hash(self._events[-1]) if self._events else GENESIS_HASH
-        )
+        prev_hash = event_hash(self._events[-1]) if self._events else GENESIS_HASH
         event: dict[str, Any] = {
             "id": self._next_id,
             "ts": datetime.now(UTC).isoformat(),

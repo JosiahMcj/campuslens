@@ -91,13 +91,16 @@ export function DataPage({ account, onAsk = null, onSend = null }: DataPageProps
     if (ready !== null) saveChoices(account, choices)
   }, [account, choices, ready])
 
+  // A dashboard without student data (the university budget) takes no
+  // student filter or comparison: its charts are asked for plainly.
+  const students = dashboard?.students !== false
   const queries = useMemo(
     () =>
       (dashboard?.charts ?? []).map((chart) => ({
         chart,
-        query: seriesQuery(chart.id, choices.compare, choices.filters),
+        query: students ? seriesQuery(chart.id, choices.compare, choices.filters) : seriesQuery(chart.id, '', {}),
       })),
-    [dashboard, choices.compare, choices.filters],
+    [dashboard, students, choices.compare, choices.filters],
   )
 
   // Fetch the charts not yet loaded, a few at a time.
@@ -215,8 +218,9 @@ export function DataPage({ account, onAsk = null, onSend = null }: DataPageProps
       <p className="data-lede">
         {data.fictional && <span className="data-tag">Fictional data</span>}
         <span>
-          Totals only, never a student's record. A point covering fewer than {data.minimum_cell_size} students
-          is withheld and shown as a gap.
+          {students
+            ? `Totals only, never a student's record. A point covering fewer than ${data.minimum_cell_size} students is withheld and shown as a gap.`
+            : 'Institutional figures, not student records, so no small-group rule applies.'}
         </span>
       </p>
 
@@ -266,46 +270,52 @@ export function DataPage({ account, onAsk = null, onSend = null }: DataPageProps
               ))}
             </select>
           </label>
-          <label className="data-field data-field-wide">
-            <span>Students</span>
-            <select
-              className="field"
-              value={group === null ? '' : `${group[0]}=${group[1]}`}
-              onChange={(e) => {
-                const [key = '', value = ''] = e.target.value.split('=')
-                setGroup(key, value)
-              }}
-            >
-              <option value="">All students</option>
-              {data.filters.map((spec) => (
-                <optgroup key={spec.key} label={spec.label}>
-                  {spec.options.map((o) => (
-                    <option key={o.value} value={`${spec.key}=${o.value}`}>
-                      {o.label}
+          {students && (
+            <>
+              <label className="data-field data-field-wide">
+                <span>Students</span>
+                <select
+                  className="field"
+                  value={group === null ? '' : `${group[0]}=${group[1]}`}
+                  onChange={(e) => {
+                    const [key = '', value = ''] = e.target.value.split('=')
+                    setGroup(key, value)
+                  }}
+                >
+                  <option value="">All students</option>
+                  {data.filters.map((spec) => (
+                    <optgroup key={spec.key} label={spec.label}>
+                      {spec.options.map((o) => (
+                        <option key={o.value} value={`${spec.key}=${o.value}`}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+              <label className="data-field">
+                <span>Compare by</span>
+                <select className="field" value={choices.compare} onChange={(e) => setCompare(e.target.value)}>
+                  <option value="">No comparison</option>
+                  {data.compare.map((c) => (
+                    <option key={c.key} value={c.key}>
+                      {c.label}
                     </option>
                   ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
-          <label className="data-field">
-            <span>Compare by</span>
-            <select className="field" value={choices.compare} onChange={(e) => setCompare(e.target.value)}>
-              <option value="">No comparison</option>
-              {data.compare.map((c) => (
-                <option key={c.key} value={c.key}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </label>
+                </select>
+              </label>
+            </>
+          )}
         </div>
-        <p className="data-hint">
-          Show one group of students, or compare groups. Not both at once: choosing one clears the
-          other, so a group of fewer than {data.minimum_cell_size} students can never be worked out.
-        </p>
+        {students && (
+          <p className="data-hint">
+            Show one group of students, or compare groups. Not both at once: choosing one clears the
+            other, so a group of fewer than {data.minimum_cell_size} students can never be worked out.
+          </p>
+        )}
 
-        {group !== null && (
+        {students && group !== null && (
           <div className="data-chips">
             <span className="data-chips-label">Showing only</span>
             <button
@@ -534,7 +544,12 @@ function ChartBody({
     return null
   })()
   const pick = split !== null ? (series: Series) => onPick(split.key, series) : null
-  const xNoun = data.x_label === 'Term' ? 'Fall and spring terms' : 'Entering classes (fall)'
+  const xNoun =
+    data.x_label === 'Term'
+      ? 'Fall and spring terms'
+      : data.x_label === 'Fiscal year'
+        ? 'Fiscal years (July to June)'
+        : 'Entering classes (fall)'
 
   const ask = onAsk === null ? null : (focus: ChartFocus) => onAsk(data, focus)
   const send = onSend === null ? null : (focus: ChartFocus) => onSend(data, focus)

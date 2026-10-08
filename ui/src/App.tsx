@@ -278,7 +278,9 @@ function pageIntro(page: PanelId, role: Role, fictional: boolean): string | unde
     case 'overview':
       return role === 'executive' || role === 'admin'
         ? "Each department's headline figures for the current term, computed from the records. Groups of fewer than 10 students are withheld. Send any figure to the person who should look at it."
-        : "Your department's headline figures for the current term, computed from the records. Totals only: no student is named, and groups of fewer than 10 are withheld."
+        : role === 'finance'
+          ? "Your department's headline figures for the current term and the university's budget for this fiscal year, computed from the records. Totals only: no student is named, and groups of fewer than 10 are withheld."
+          : "Your department's headline figures for the current term, computed from the records. Totals only: no student is named, and groups of fewer than 10 are withheld."
     case 'inbox':
       return 'Alerts other people sent you, with what they point at, and the alerts you sent. Mark an alert reviewed once you have looked.'
     case 'sessions':

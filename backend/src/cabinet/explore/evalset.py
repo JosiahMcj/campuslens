@@ -351,8 +351,7 @@ FORWARD_SET: tuple[tuple[str, list[Plan] | None], ...] = (
     (
         "at-risk students in nursing",
         [
-            _mbg("dropout_rate", major="NURS")
-            + _mbg("stop_out_rate", major="NURS"),
+            _mbg("dropout_rate", major="NURS") + _mbg("stop_out_rate", major="NURS"),
             _mbg("dropout_rate", major="NURS"),
             _mbg("stop_out_rate", major="NURS"),
         ],
@@ -384,6 +383,130 @@ FORWARD_SET: tuple[tuple[str, list[Plan] | None], ...] = (
     ("what's the weather today", None),
     ("what is S-1234's gpa", None),
 )
+
+
+def _bva(**params: Any) -> list[Plan]:
+    """Budget against actual, with or without the defaults written out (this
+    fiscal year, by division)."""
+    plans: list[Plan] = []
+    for extra in ({}, {"fiscal_year": "FY2026"}):
+        for by in ({}, {"by": "division"}):
+            if "by" in params and by:
+                continue
+            if "fiscal_year" in params and extra:
+                continue
+            plans.append([("budget_vs_actual", {**params, **extra, **by})])
+    return plans
+
+
+def _rev(**params: Any) -> list[Plan]:
+    plans: list[Plan] = [[("revenue_by_source", params)]]
+    if "fiscal_year" not in params:
+        plans.append([("revenue_by_source", {"fiscal_year": "FY2026"})])
+    return plans
+
+
+# The finance office's questions (owner direction 2026-10-07: the university's
+# budget, and student accounts past due). The first eight are the owner's.
+FINANCE_SET: tuple[tuple[str, list[Plan] | None], ...] = (
+    ("What is our budget vs actual this year?", _bva()),
+    (
+        "Which departments are over budget?",
+        _bva(by="department", over_budget="yes"),
+    ),
+    ("What is our tuition discount rate trend?", [[("tuition_discount", {})]]),
+    (
+        "How much net tuition revenue did we make last year?",
+        [[("tuition_discount", {"fiscal_year": "FY2025"})]],
+    ),
+    ("How much is past due?", [_mbg("past_due_balance")]),
+    (
+        "How many students are more than 90 days past due?",
+        [_mbg("past_due_90_students")],
+    ),
+    (
+        "What is the on-time payment rate by college?",
+        [_mbg("on_time_payment_rate", group_by="college")],
+    ),
+    ("How many students are on payment plans?", [_mbg("payment_plan_share")]),
+    ("is athletics over budget", _bva(over_budget="yes") + _bva()),
+    ("where does our money come from", _rev()),
+    ("revenue vs budget for fy2024", _rev(fiscal_year="FY2024")),
+    ("past due balances by aging", [_mbg("past_due_balance", group_by="aging")]),
+    (
+        "whats the avg past due balance for pell students",
+        [
+            _mbg("avg_balance_owed", pell="pell"),
+            _mbg("avg_balance_owed", group_by="pell"),
+        ],
+    ),
+    (
+        "collection rate by class level",
+        [_mbg("collection_rate", group_by="class_level")],
+    ),
+    (
+        "how many first gen students are past due",
+        [_mbg("past_due_students", first_generation="first_generation")],
+    ),
+    (
+        "spending by category last year",
+        [[("budget_vs_actual", {"by": "category", "fiscal_year": "FY2025"})]],
+    ),
+    ("net tuition revenue each year", [[("tuition_discount", {})]]),
+    (
+        "on time payment rate pell vs non pell",
+        [_mbg("on_time_payment_rate", group_by="pell")],
+    ),
+)
+
+# Written after the rules and the prompt were final for the finance set;
+# nothing was tuned on it.
+FINANCE_HELD_OUT: tuple[tuple[str, list[Plan] | None], ...] = (
+    (
+        "how far over budget is athletics this year",
+        _bva() + _bva(over_budget="yes") + _bva(by="department"),
+    ),
+    (
+        "how much did we give away in institutional aid in fy2023",
+        [
+            [("tuition_discount", {"fiscal_year": "FY2023"})],
+            [("revenue_by_source", {"fiscal_year": "FY2023"})],
+        ],
+    ),
+    ("what share of our students pay late", [_mbg("on_time_payment_rate")]),
+    ("total outstanding receivables", [_mbg("past_due_balance")]),
+    (
+        "which college has the most students behind on their bills",
+        [
+            _mbg("past_due_students", group_by="college"),
+            _mbg("past_due_students", group_by="college", order="highest_first"),
+        ],
+    ),
+    (
+        "how did gifts and grants come in against budget last year",
+        [[("revenue_by_source", {"fiscal_year": "FY2025"})]],
+    ),
+    (
+        "what was the discount rate in 2023-24",
+        [[("tuition_discount", {"fiscal_year": "FY2024"})]],
+    ),
+    (
+        "payment plan use by class level",
+        [_mbg("payment_plan_share", group_by="class_level")],
+    ),
+    (
+        "are we spending more than we planned on technology",
+        _bva(by="category") + _bva(by="category", over_budget="yes"),
+    ),
+    (
+        "how much money do pell students owe that's overdue",
+        [
+            _mbg("past_due_balance", pell="pell"),
+            _mbg("past_due_balance", group_by="pell"),
+        ],
+    ),
+)
+
 
 # Graduate outcomes (the owner's questions of 2026-10-07, then casual
 # variants): salaries, grades and earnings, graduate and medical school,
@@ -452,6 +575,8 @@ SETS = {
     "held-out": HELD_OUT,
     "forward": FORWARD_SET,
     "outcomes": OUTCOMES_SET,
+    "finance": FINANCE_SET,
+    "finance-held-out": FINANCE_HELD_OUT,
 }
 
 # Parameters that only shape the table; an extra one is not a wrong plan.

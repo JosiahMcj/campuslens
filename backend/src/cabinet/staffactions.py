@@ -112,9 +112,7 @@ def _plural(count: int, one: str, many: str) -> str:
     return one if count == 1 else many
 
 
-def action_words(
-    finding_id: str, office: str, count: int | None
-) -> dict[str, str]:
+def action_words(finding_id: str, office: str, count: int | None) -> dict[str, str]:
     """The title, the "what to do" sentence and the counted noun of one
     action, in plain words (no finding ids, no field names)."""
     limit = f"${M3_AMOUNT_LIMIT:,.0f}"

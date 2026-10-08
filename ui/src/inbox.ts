@@ -179,6 +179,20 @@ export interface OverviewTable {
   title: string
   columns: { key: string; label: string }[]
   rows: Record<string, string>[]
+  /** The last row is a total (shown set apart). */
+  total_last?: boolean
+  /** Plain sentences under the table. */
+  notes?: string[]
+}
+
+/** A titled part of an overview (the Finance overview's University budget
+ * and Student accounts), with its own figures and tables. */
+export interface OverviewSection {
+  key: string
+  title: string
+  intro: string
+  tiles: OverviewTile[]
+  tables: OverviewTable[]
 }
 
 export interface DepartmentOverview {
@@ -190,6 +204,7 @@ export interface DepartmentOverview {
   minimum_cell_size: number
   tiles: OverviewTile[]
   tables: OverviewTable[]
+  sections?: OverviewSection[]
 }
 
 export async function fetchOverview(department: Department): Promise<DepartmentOverview> {
