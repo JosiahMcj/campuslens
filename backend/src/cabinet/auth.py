@@ -63,10 +63,24 @@ ROLE_AID = "aid"
 # Department accounts (docs/ROLES.md). Each reads the briefing's aggregate
 # figures (never the student ids behind them), asks aggregate Explore
 # questions, and opens its own department overview:
-# Finance / Student Accounts (holds and balances), the Registrar
-# (enrollment, registration and academic standing), and Student Life
-# (retention, advising and first-generation support).
+# Finance (campus budgeting: the university's budget, revenue and tuition
+# discount), Student Accounts (the Bursar: student holds, balances, payment
+# plans), the Registrar (enrollment, registration and academic standing),
+# and Student Life (retention, advising and first-generation support).
 ROLE_FINANCE = "finance"
+ROLE_STUDENT_ACCOUNTS = "studentaccounts"
+# More department accounts, each with its own overview: Admissions, Advising
+# and Student Success, Academic Affairs (the Provost's office), Institutional
+# Research, Career Services, Advancement (alumni giving), International
+# Student Services and Athletics. Financial Aid is the existing ``aid`` role.
+ROLE_ADMISSIONS = "admissions"
+ROLE_ADVISING = "advising"
+ROLE_ACADEMIC_AFFAIRS = "provost"
+ROLE_INSTITUTIONAL_RESEARCH = "ir"
+ROLE_CAREERS = "careers"
+ROLE_ADVANCEMENT = "advancement"
+ROLE_INTERNATIONAL = "international"
+ROLE_ATHLETICS = "athletics"
 ROLE_REGISTRAR = "registrar"
 ROLE_STUDENT_LIFE = "studentlife"
 # IT: the people who run CampusLens for the institution. They manage the
@@ -81,11 +95,33 @@ USER_ROLES: tuple[str, ...] = (
     ROLE_REVIEWER,
     ROLE_AID,
     ROLE_FINANCE,
+    ROLE_STUDENT_ACCOUNTS,
     ROLE_REGISTRAR,
     ROLE_STUDENT_LIFE,
+    ROLE_ADMISSIONS,
+    ROLE_ADVISING,
+    ROLE_ACADEMIC_AFFAIRS,
+    ROLE_INSTITUTIONAL_RESEARCH,
+    ROLE_CAREERS,
+    ROLE_ADVANCEMENT,
+    ROLE_INTERNATIONAL,
+    ROLE_ATHLETICS,
     ROLE_IT,
 )
-DEPARTMENT_ROLES: tuple[str, ...] = (ROLE_FINANCE, ROLE_REGISTRAR, ROLE_STUDENT_LIFE)
+DEPARTMENT_ROLES: tuple[str, ...] = (
+    ROLE_FINANCE,
+    ROLE_STUDENT_ACCOUNTS,
+    ROLE_REGISTRAR,
+    ROLE_STUDENT_LIFE,
+    ROLE_ADMISSIONS,
+    ROLE_ADVISING,
+    ROLE_ACADEMIC_AFFAIRS,
+    ROLE_INSTITUTIONAL_RESEARCH,
+    ROLE_CAREERS,
+    ROLE_ADVANCEMENT,
+    ROLE_INTERNATIONAL,
+    ROLE_ATHLETICS,
+)
 # The accounts an IT person may create, enable, disable and re-role: staff
 # and the department accounts. Admin, executive and IT accounts, the
 # reviewer (who reads the aid queue's per-student rows) and the aid office

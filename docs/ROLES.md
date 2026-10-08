@@ -19,10 +19,19 @@ new role widens that.
 |---|---|---|---|---|
 | President (`president@`) | `executive` | Inbox, every department overview, the full briefing, key figures, evidence, staff actions, decision, data access, Financial Aid review, find a student, audit log, sign-in activity | yes, including instructor-level rows | yes |
 | IT (`it@`) | `it` | Inbox, Accounts, Sign-in activity, Connections, Audit log | **no** | no (no findings at all) |
-| Finance — Student Accounts (`finance@`) | `finance` | Inbox, Finance overview | yes, aggregate only | no |
-| Financial Aid (`aid@`) | `aid` | Inbox, the briefing pages (read only), Financial Aid review | no (unchanged) | no |
+| Finance (`finance@`) | `finance` | Inbox, Finance overview, Data (University budget) | yes, aggregate only (home questions are budget questions) | no |
+| Student Accounts (`studentaccounts@`) | `studentaccounts` | Inbox, Student Accounts overview, Data (Student finances) | yes, aggregate only | no |
+| Financial Aid (`aid@`) | `aid` | Inbox, the briefing pages (read only), Financial Aid review, Financial Aid overview | no (unchanged) | no |
 | Registrar (`registrar@`) | `registrar` | Inbox, Registrar overview | yes, aggregate only | no |
 | Student Life (`studentlife@`) | `studentlife` | Inbox, Student Life overview | yes, aggregate only | no |
+| Admissions (`admissions@`) | `admissions` | Inbox, Admissions overview, Data | yes, aggregate only | no |
+| Advising and Student Success (`advising@`) | `advising` | Inbox, Advising overview, Data | yes, aggregate only | no |
+| Academic Affairs (`provost@`) | `provost` | Inbox, Academic Affairs overview, Data | yes, aggregate only | no |
+| Institutional Research (`ir@`) | `ir` | Inbox, Institutional Research overview, Data | yes, aggregate only | no |
+| Career Services (`careers@`) | `careers` | Inbox, Career Services overview, Data | yes, aggregate only | no |
+| Advancement (`advancement@`) | `advancement` | Inbox, Advancement overview, Data | yes, aggregate only | no |
+| International Student Services (`international@`) | `international` | Inbox, International overview, Data | yes, aggregate only | no |
+| Athletics (`athletics@`) | `athletics` | Inbox, Athletics overview, Data | yes, aggregate only | no |
 | Staff (`staff@`) | `staff` | Inbox and the briefing pages, as before | yes, aggregate only | no |
 | Reviewer (`reviewer@`) | `reviewer` | Inbox, the briefing pages and the audit log, as before | yes, aggregate only | no |
 | Platform admin | `admin` | Everything, as before, plus the inbox and every overview; Institution settings | yes | yes |
@@ -44,8 +53,8 @@ All demonstration sign-ins are `@demo.test`. More detail:
 - **IT** has its own workspace. The UI never requests a finding, the
   briefing, a decision or Explore for IT, and the API refuses IT all of them
   (`READ_ROLES` excludes `it`). IT may add, enable, disable and re-role the
-  department and staff accounts (`IT_MANAGED_ROLES`: finance, registrar,
-  studentlife, staff). Any action on an admin, executive, IT, aid or
+  department and staff accounts (`IT_MANAGED_ROLES`: finance, studentaccounts,
+  registrar, studentlife, the other department accounts, staff). Any action on an admin, executive, IT, aid or
   reviewer account, or any grant of those roles, is a logged 403: the aid
   office and the reviewer read the aid queue's per-student rows. **IT never
   sees a password.** An account IT creates answers without its one-time
@@ -60,29 +69,73 @@ All demonstration sign-ins are `@demo.test`. More detail:
 
 ## Department overviews
 
-`GET /departments/overview?department=finance|registrar|studentlife`
-(`cabinet/departments.py`). The overview is computed in code from the same
-read-only school data Explore uses (`CABINET_SCHOOL_DB`). Each overview has
-four headline figures and two tables for the current term:
+`GET /departments/overview?department=<id>` (`cabinet/departments.py`, and
+`cabinet/departments_more.py` for the later departments). The overview is
+computed in code from the same read-only school data Explore uses
+(`CABINET_SCHOOL_DB`). Each overview has four headline figures and tables for
+the current term. The president and admin open a directory of every
+department (one card each); a department account opens its own.
 
-- **Finance — Student Accounts.** Students with an open account hold, the
-  open balance, the average balance per student, holds placed this term,
-  open holds by office, and students by balance owed.
-  Two more sections follow. **University budget** (the university's own
-  books for the current fiscal year, July to June): spending against budget
-  by division with the variance, revenue by source against budget, net
-  tuition and the tuition discount rate by fiscal year. **Student accounts**
-  (the billing ledger: charges, payments, payment plans): the past-due
-  balance and the students who owe it, past-due balances by days past due,
-  the on-time payment rate and the payment-plan share by college. The
-  budget figures are institutional, not student data, so no small-group
-  rule applies to them; the student-account figures keep it.
+**Finance and Student Accounts are separate** (owner direction 2026-10-07):
+all student money belongs to Student Accounts, all campus budgeting to
+Finance, and neither role reads the other's figures, overview, Data
+dashboard or attachments.
+
+- **Finance** (`finance`, the CFO's office). The university's own books for
+  the current fiscal year, July to June: spending against budget by
+  division, revenue by source against budget, net tuition and the tuition
+  discount rate by fiscal year. Institutional figures, not student data, so
+  no small-group rule applies. Finance reads the University budget
+  dashboard on the Data page and **not** Student finances (default; the
+  owner wants them separate). Its Explore stays aggregate and totals-only
+  like every department, with budget questions as its home examples.
+- **Student Accounts** (`studentaccounts`, the Bursar). Students with an
+  open account hold, the open balance, the average balance per student,
+  holds placed this term, open holds by office, students by balance owed,
+  and a Student accounts section (the billing ledger: past-due balances and
+  aging, the on-time payment rate and payment-plan share by college). It
+  reads the Student finances dashboard (and may split charts by Pell
+  status). It never sees the university budget: the budget Explore
+  analyses, the budget dashboard and the budget overview figures are 403.
 - **Registrar.** Students enrolled this term, the share enrolled full time,
   open Registrar holds, students not in good standing, enrollment by class
   level, and academic standing.
 - **Student Life.** Students living on campus, the share who are first
   generation, students who stopped out this term, the advising no-show rate,
   advising appointments by type, and housing by load.
+- **Admissions.** The entering class (first-time, transfer, share from
+  outside the state); entering classes by admit type, residency and college.
+- **Financial Aid** (`aid`). Pell recipients enrolled and their share, Pell
+  first-generation students, Pell recipients with an open account hold;
+  Pell share by class level and college; Pell by first-generation status.
+  The aid role keeps its own app (review queue) and gets the overview as an
+  added page.
+- **Advising and Student Success.** Advising coverage, students who met an
+  advisor, missed appointments, changes of major; coverage by college,
+  appointments by type, who left without a degree by group.
+- **Academic Affairs (Provost).** D, F and withdrawal rate, sections,
+  average section size, instructors employed; D/F/W by college, the hardest
+  courses (30 or more registrations), section sizes by format, instructors
+  by rank (staff, not students).
+- **Institutional Research.** Enrolled, full-time share, first-year
+  retention of the latest cohort, degrees awarded; fall enrollment,
+  retention and degrees by year.
+- **Career Services.** First-destination survey results, median starting
+  salary (rounded to $500, withheld under 10 salaries), medical school
+  acceptance; outcomes, outcomes by college, graduate programs.
+- **Advancement.** Alumni donors, giving participation, giving in the latest
+  fiscal year, average gift; giving by year and designation, participation
+  by college.
+- **International Student Services.** International students enrolled, their
+  share, the new class, those with an open hold; by college, each fall, by
+  class level.
+- **Athletics.** Athletes enrolled and their share, GPA, first-year
+  retention against other students; GPA, retention, good standing and
+  athletes by class level. No sport-level grouping exists in the data.
+
+Not built: Financial Aid review counts (the review queue lives in the
+Cabinet's store, not the school data) and Housing (it stays a table in
+Student Life).
 
 Every figure is a count, a share or a sum. Any group of fewer than 10
 students reads "Fewer than 10" (the same minimum group size as the
@@ -160,7 +213,7 @@ seen. It never shows a session id or a token.
 
 | Route | Roles |
 |---|---|
-| `GET /departments/overview` | admin, executive, finance, registrar, studentlife (a department account reads its own only) |
+| `GET /departments/overview` | admin, executive, aid and every department account (each reads its own only) |
 | `GET /inbox` | every role |
 | `GET /inbox/recipients` | every role |
 | `POST /inbox` | every role (what can be attached depends on the sender's role) |
@@ -170,7 +223,7 @@ seen. It never shows a session id or a token.
 | `GET/POST /admin/users`, `POST /admin/users/{id}/disable\|enable`, `PATCH /admin/users/{id}` | admin, and now it (department and staff accounts only) |
 | `GET /admin/connections` | admin, and now it |
 | `GET /events` (audit log) | admin, executive, reviewer, and now it |
-| `POST /explore`, `/explore/stream`, `GET /explore/catalog` | admin, executive, staff, reviewer, and now finance, registrar, studentlife |
+| `POST /explore`, `/explore/stream`, `GET /explore/catalog` | admin, executive, staff, reviewer, and now every department account except aid |
 | `GET /findings`, `/briefing`, `/decisions`, `/questions`, `/staff-actions` | every role except it |
 
 ## The AI staff: one AI employee per department
@@ -237,8 +290,8 @@ the Chief of Staff first.
 
 The university's own budget (`data/school/budget.py`: budget against
 actual, revenue, the tuition discount) is shown to the president
-(`executive`), the finance office (`finance`) and the administrator
-(`admin`) only (`BUDGET_ROLES` in `cabinet/explore/finance.py`):
+(`executive`), the Finance office (`finance`) and the administrator
+(`admin`) only (never Student Accounts) (`BUDGET_ROLES` in `cabinet/explore/finance.py`):
 
 - **Explore.** A question another role asks that plans one of the three
   budget analyses (`budget_vs_actual`, `revenue_by_source`,
@@ -252,8 +305,8 @@ actual, revenue, the tuition discount) is shown to the president
   the finance office's Data page (`data_roles.py`). Any other role asking for
   one of its charts gets a 403 and a `data.refused` event. Its charts take no
   student filter or comparison (422).
-- **Finance overview.** Read by finance, the president and the admin, as
-  before; other department accounts get a 403.
+- **Finance overview.** Read by finance, the president and the admin; other
+  department accounts (Student Accounts included) get a 403.
 
 ## Creating the demonstration sign-ins
 
@@ -261,8 +314,10 @@ actual, revenue, the tuition discount) is shown to the president
 make demo-accounts OUT=$HOME/campuslens-demo-accounts.txt
 ```
 
-This creates `president@`, `it@`, `finance@`, `aid@`, `registrar@`,
-`studentlife@`, `staff@` and `reviewer@demo.test` in the bootstrap
+This creates `president@`, `it@`, `finance@`, `studentaccounts@`, `aid@`,
+`admissions@`, `advising@`, `provost@`, `ir@`, `careers@`, `advancement@`,
+`international@`, `athletics@`, `registrar@`, `studentlife@`, `staff@` and
+`reviewer@demo.test` in the bootstrap
 institution (`INSTITUTION=<slug>` for another). Each gets a generated
 password, appended to `OUT` (required; created with mode 600, and never
 written through a symbolic link). Keep that file **outside the
@@ -279,7 +334,7 @@ repository**. The file is checked before any account is created.
   administrators and the person activating, so nobody is locked out.
 
 Add a single account in any role with
-`make user EMAIL=… ROLE=finance|registrar|studentlife|it|…`, or from
+`make user EMAIL=… ROLE=finance|studentaccounts|registrar|studentlife|admissions|…|it`, or from
 **Accounts** (IT) or **Institution settings** (admin).
 
 ## Known and accepted
@@ -297,8 +352,11 @@ Add a single account in any role with
 When the president approves a leadership decision, the server puts it in
 the inbox of every enabled account of the department that owns the
 follow-up (`DEPARTMENT_ROLES` in `cabinet/inbox.py`: Financial Aid → `aid`,
-Bursar → `finance`, Registrar → `registrar`, Student Success →
-`studentlife`), from the president. The message names the decision, the
+Bursar and Student Accounts → `studentaccounts`, Finance → `finance`,
+Admissions → `admissions`, Academic Advising → `advising`, Provost → `provost`,
+Institutional Research → `ir`, Career Services → `careers`, Advancement →
+`advancement`, International Student Services → `international`, Athletics →
+`athletics`, Registrar → `registrar`, Student Success → `studentlife`), from the president. The message names the decision, the
 approved action and the proposed deadline (one week from today, never past
 the registration close date while that is ahead), and lists the briefing
 figures behind it. Only the reference is stored: the figures are re-read

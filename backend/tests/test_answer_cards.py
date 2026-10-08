@@ -350,15 +350,18 @@ def test_approval_lands_in_the_aid_inbox_with_re_read_figures(app: FastAPI) -> N
     assert len(aid.get("/inbox").json()["received"]) == 1
 
 
-def test_holds_decision_goes_to_finance(app: FastAPI) -> None:
+def test_holds_decision_goes_to_student_accounts(app: FastAPI) -> None:
     president = _login(app, "executive")
-    finance = _login(app, "finance")
+    finance = _login(app, "studentaccounts")
+    budget_office = _login(app, "finance", "cfo@test.example")
     president.post(
         "/decisions/approve", json={"decision_id": UNRESOLVED_HOLDS_DECISION_ID}
     )
     received = finance.get("/inbox").json()["received"]
     assert len(received) == 1 and received[0]["snapshot"]["office"] == "Bursar"
     assert [f["id"] for f in received[0]["snapshot"]["figures"]] == ["M5", "M3"]
+    # The Bursar's decision never reaches the budget office.
+    assert budget_office.get("/inbox").json()["received"] == []
 
 
 def test_no_department_account_means_no_message_and_says_so(app: FastAPI) -> None:

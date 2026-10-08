@@ -35,14 +35,24 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
     employees: ['Chief of Staff'],
   },
   finance: {
-    name: 'Finance — Student Accounts',
-    lede: 'Balances, account holds and the students they block, campus wide and in aggregate only.',
+    name: 'Finance',
+    lede: "The university's budget against actual, revenue and the tuition discount rate. The university's own books, in totals.",
+    examples: [
+      'What is our budget vs actual this year?',
+      'Where does our money come from?',
+      'What is our tuition discount rate trend?',
+    ],
+    employees: ['Finance & Budget Analyst'],
+  },
+  studentaccounts: {
+    name: 'Student Accounts',
+    lede: 'Student balances, account holds, past-due amounts and payment plans, campus wide and in aggregate only.',
     examples: [
       HOLDS,
-      'What is the 6-year graduation rate for Pell students by college?',
-      REGISTRATION,
+      'How much is past due?',
+      'How many students are on payment plans?',
     ],
-    employees: ['Student Accounts Analyst', 'Finance & Budget Analyst'],
+    employees: ['Student Accounts Analyst'],
   },
   registrar: {
     name: 'Registrar',
@@ -62,7 +72,87 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
       'What majors have the highest dropout rate?',
       'What is the average GPA of athletes vs non-athletes?',
     ],
-    employees: ['Student Life Analyst', 'Advising Analyst'],
+    employees: ['Student Life Analyst'],
+  },
+  admissions: {
+    name: 'Admissions',
+    lede: 'Entering classes by admit type, residency and college, year over year, in aggregate only.',
+    examples: [
+      'How many new first-time students entered each fall?',
+      'What is first-year retention by residency?',
+      'What is the enrollment trend by year?',
+    ],
+    employees: ['Admissions Analyst'],
+  },
+  advising: {
+    name: 'Advising and Student Success',
+    lede: 'Advising coverage, appointments, changes of major and who leaves without a degree, in aggregate only.',
+    examples: [
+      'How many students have advising holds?',
+      'How many students changed major?',
+      'What is first-year retention by first-generation status?',
+    ],
+    employees: ['Advising Analyst'],
+  },
+  provost: {
+    name: 'Academic Affairs',
+    lede: 'D, F and withdrawal rates, the hardest courses, section sizes and instructors, in aggregate only.',
+    examples: [
+      'Which courses have the highest DFW rates?',
+      'What is the DFW rate by college?',
+      'Which majors have the highest probation rates?',
+    ],
+    employees: ['Academic Affairs Analyst'],
+  },
+  ir: {
+    name: 'Institutional Research',
+    lede: 'Enrollment, retention and degrees awarded over the years, in aggregate only.',
+    examples: [
+      'What is the enrollment trend by year?',
+      'What is first-year retention by college?',
+      'What is the graduation rate by college?',
+    ],
+    employees: ['Institutional Research Analyst'],
+  },
+  careers: {
+    name: 'Career Services',
+    lede: 'What graduates did first, starting salaries and graduate school, in aggregate only.',
+    examples: [
+      'What is the median starting salary by college?',
+      'What share of graduates are employed full time by college?',
+      'What share of graduates went to medical school?',
+    ],
+    employees: ['Career & Alumni Outcomes Analyst'],
+  },
+  advancement: {
+    name: 'Advancement',
+    lede: 'Alumni giving participation and gifts by college and year, in aggregate only.',
+    examples: [
+      'How much have alumni given by fiscal year?',
+      'How many alumni have donated by college?',
+      'How much have alumni given by designation?',
+    ],
+    employees: ['Advancement Analyst'],
+  },
+  international: {
+    name: 'International Student Services',
+    lede: 'International students by college and term, in aggregate only.',
+    examples: [
+      'How many international students are there by college?',
+      'How many international students are there by term?',
+      'What is first-year retention by residency?',
+    ],
+    employees: ['Institutional Research Analyst'],
+  },
+  athletics: {
+    name: 'Athletics',
+    lede: 'Athletes compared with other students: enrollment, GPA, standing and retention, in aggregate only.',
+    examples: [
+      'What is the average GPA of athletes vs non-athletes?',
+      'What is first-year retention for athletes?',
+      'How many athletes are on academic probation?',
+    ],
+    employees: ['Student Life Analyst'],
   },
   aid: {
     name: 'Financial Aid',

@@ -3,10 +3,10 @@
 - ``GET /departments/overview?department=<id>`` — the overview of one
   department, computed in code from the school database (the same
   read-only Demonstration University data Explore reads,
-  ``CABINET_SCHOOL_DB``). A department account (finance, registrar,
-  studentlife) reads its own department only: naming another is a logged
+  ``CABINET_SCHOOL_DB``). A department account (finance, studentaccounts,
+  registrar, studentlife) reads its own department only: naming another is a logged
   403. The president and the admin read every department (the parameter
-  picks one; default Finance). Without the school data the answer is 503
+  picks one; default Student Accounts). Without the school data the answer is 503
   with the same plain sentence Explore gives.
 
 Every figure is a count, a share or a sum over a group. No student id, name
@@ -36,8 +36,18 @@ from fastapi.responses import JSONResponse
 
 from cabinet.auth import (
     DEPARTMENT_ROLES,
+    ROLE_ACADEMIC_AFFAIRS,
+    ROLE_ADMISSIONS,
+    ROLE_ADVANCEMENT,
+    ROLE_ADVISING,
+    ROLE_AID,
+    ROLE_ATHLETICS,
+    ROLE_CAREERS,
     ROLE_FINANCE,
+    ROLE_INSTITUTIONAL_RESEARCH,
+    ROLE_INTERNATIONAL,
     ROLE_REGISTRAR,
+    ROLE_STUDENT_ACCOUNTS,
     ROLE_STUDENT_LIFE,
 )
 from cabinet.counseling import MINIMUM_CELL_SIZE
@@ -54,11 +64,23 @@ router = APIRouter()
 
 # Department id -> the name every screen shows for it.
 DEPARTMENT_NAMES: dict[str, str] = {
-    ROLE_FINANCE: "Finance — Student Accounts",
+    ROLE_FINANCE: "Finance",
+    ROLE_STUDENT_ACCOUNTS: "Student Accounts",
     ROLE_REGISTRAR: "Registrar",
     ROLE_STUDENT_LIFE: "Student Life",
+    ROLE_ADMISSIONS: "Admissions",
+    ROLE_AID: "Financial Aid",
+    ROLE_ADVISING: "Advising and Student Success",
+    ROLE_ACADEMIC_AFFAIRS: "Academic Affairs",
+    ROLE_INSTITUTIONAL_RESEARCH: "Institutional Research",
+    ROLE_CAREERS: "Career Services",
+    ROLE_ADVANCEMENT: "Advancement",
+    ROLE_INTERNATIONAL: "International Student Services",
+    ROLE_ATHLETICS: "Athletics",
 }
-DEPARTMENTS: tuple[str, ...] = DEPARTMENT_ROLES
+# Every department with an overview: the department accounts and the
+# Financial Aid office (whose role predates the department accounts).
+DEPARTMENTS: tuple[str, ...] = (*DEPARTMENT_ROLES, ROLE_AID)
 
 WITHHELD = f"Fewer than {MINIMUM_CELL_SIZE}"
 
@@ -135,7 +157,8 @@ def _latest_term(con: sqlite3.Connection) -> tuple[str, str]:
     return str(row[0]), str(row[1])
 
 
-def _finance(con: sqlite3.Connection, term: str) -> dict[str, Any]:
+def _student_accounts_holds(con: sqlite3.Connection, term: str) -> dict[str, Any]:
+    """The Student Accounts (Bursar) overview: holds and balances."""
     students, holds, balance = con.execute(
         "SELECT COUNT(DISTINCT student_id), COUNT(*), COALESCE(SUM(amount), 0)"
         " FROM person_holds WHERE category = 'financial' AND end_date IS NULL"
@@ -783,8 +806,26 @@ def _student_life(con: sqlite3.Connection, term: str) -> dict[str, Any]:
     }
 
 
+def _finance(con: sqlite3.Connection, term: str) -> dict[str, Any]:
+    """The Finance (campus budgeting) overview: the university budget only.
+    No student account, hold or balance is in it."""
+    budget = _university_budget(con)
+    if budget is None:
+        return {
+            "tiles": [],
+            "tables": [],
+            "intro": fin.BUDGET_MISSING,
+        }
+    return {
+        "tiles": budget["tiles"],
+        "tables": budget["tables"],
+        "intro": budget["intro"],
+    }
+
+
 _BUILDERS = {
     ROLE_FINANCE: _finance,
+    ROLE_STUDENT_ACCOUNTS: _student_accounts_holds,
     ROLE_REGISTRAR: _registrar,
     ROLE_STUDENT_LIFE: _student_life,
 }
@@ -808,13 +849,9 @@ def overview(department: str, db: Path | None = None) -> dict[str, Any]:
     try:
         term, term_name = _latest_term(con)
         body = builder(con, term)
-        if department == ROLE_FINANCE:
-            sections = [
-                s
-                for s in (_university_budget(con), _student_accounts(con, path))
-                if s is not None
-            ]
-            body["sections"] = sections
+        if department == ROLE_STUDENT_ACCOUNTS:
+            account_section = _student_accounts(con, path)
+            body["sections"] = [account_section] if account_section else []
         meta = dict(con.execute("SELECT key, value FROM meta").fetchall())
     except sqlite3.Error:
         raise SchoolDataMissing() from None
@@ -859,7 +896,7 @@ def tile_snapshot(department: str, tile_key: str) -> dict[str, Any] | None:
 def may_read(role: str, department: str) -> bool:
     """A department account reads its own overview; the president and the
     admin read every one (the route table admits only these roles)."""
-    if role in DEPARTMENT_ROLES:
+    if role in DEPARTMENTS:
         return role == department
     return role in ("executive", "admin")
 
@@ -870,7 +907,7 @@ def get_overview(
 ) -> JSONResponse:
     user = request.scope["cabinet_user"]
     role = str(user["role"])
-    wanted = department or (role if role in DEPARTMENT_ROLES else ROLE_FINANCE)
+    wanted = department or (role if role in DEPARTMENTS else ROLE_STUDENT_ACCOUNTS)
     if wanted not in _BUILDERS:
         return JSONResponse(
             status_code=422,
@@ -898,3 +935,21 @@ def get_overview(
         return JSONResponse(
             status_code=503, content={"available": False, "message": exc.args[0]}
         )
+
+
+# The builders for the other departments live in departments_more (it reads
+# the helpers above, so it is imported last).
+from cabinet import departments_more as _more  # noqa: E402
+
+MORE_BUILDERS = {
+    ROLE_ADMISSIONS: _more.admissions,
+    ROLE_AID: _more.financial_aid,
+    ROLE_ADVISING: _more.advising,
+    ROLE_ACADEMIC_AFFAIRS: _more.academic_affairs,
+    ROLE_INSTITUTIONAL_RESEARCH: _more.institutional_research,
+    ROLE_CAREERS: _more.careers,
+    ROLE_ADVANCEMENT: _more.advancement,
+    ROLE_INTERNATIONAL: _more.international,
+    ROLE_ATHLETICS: _more.athletics,
+}
+_BUILDERS.update(MORE_BUILDERS)

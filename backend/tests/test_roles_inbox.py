@@ -21,7 +21,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from cabinet.api import create_app
-from cabinet.departments import WITHHELD, overview, protect
+from cabinet.departments import DEPARTMENTS, WITHHELD, overview, protect
 from cabinet.store import CabinetStore
 from cabinet.users import DEMO_PERSONAS, reset_password
 from cabinet.users import main as users_main
@@ -159,7 +159,7 @@ def test_sessions_lists_counts_never_ids(app: FastAPI) -> None:
 # --- department accounts -------------------------------------------------------
 
 
-@pytest.mark.parametrize("role", ["finance", "registrar", "studentlife"])
+@pytest.mark.parametrize("role", [*DEPARTMENTS])
 def test_department_account_reads_aggregates_and_its_own_overview(
     app: FastAPI, role: str
 ) -> None:
@@ -168,37 +168,49 @@ def test_department_account_reads_aggregates_and_its_own_overview(
     assert findings["M5"]["rows_withheld"] is True
     assert client.get("/students/search", params={"q": "a"}).status_code == 403
     assert client.get("/events").status_code == 403
-    assert client.get("/aid-queue").status_code == 403
     assert client.get("/admin/users").status_code == 403
     assert client.post("/ask", json={"question": "anything"}).status_code == 403
-    assert client.get("/explore/catalog").status_code == 200
+    if role != "aid":
+        assert client.get("/aid-queue").status_code == 403
+        assert client.get("/explore/catalog").status_code == 200
     own = client.get("/departments/overview")
     assert own.status_code == 200
     assert own.json()["department"] == role
     other = "registrar" if role != "registrar" else "finance"
+    if role == "aid":
+        # Financial Aid has no Explore (its work is the queue) and no briefing
+        # rows beyond the briefing figures; the department checks below hold.
+        assert client.get("/explore/catalog").status_code == 403
     refused = client.get("/departments/overview", params={"department": other})
     assert refused.status_code == 403
 
 
 def test_president_reads_every_overview_and_others_do_not(app: FastAPI) -> None:
     president = _login(app, "executive")
-    for department in ("finance", "registrar", "studentlife"):
+    for department in DEPARTMENTS:
         body = president.get("/departments/overview", params={"department": department})
-        assert body.status_code == 200
-        assert len(body.json()["tiles"]) == 4
-    unknown = president.get("/departments/overview", params={"department": "athletics"})
+        assert body.status_code == 200, department
+        assert len(body.json()["tiles"]) == 4, department
+    unknown = president.get("/departments/overview", params={"department": "football"})
     assert unknown.status_code == 422
-    for role in ("staff", "reviewer", "aid", "it"):
+    # No department reads another's overview (budget stays with Finance).
+    for role in DEPARTMENTS:
+        client = _login(app, role)
+        for department in DEPARTMENTS:
+            expected = 200 if department == role else 403
+            got = client.get("/departments/overview", params={"department": department})
+            assert got.status_code == expected, (role, department)
+    for role in ("staff", "reviewer", "it"):
         assert _login(app, role).get("/departments/overview").status_code == 403, role
 
 
 def test_overview_withholds_small_groups_and_carries_no_ids(school_db: Path) -> None:
-    for department in ("finance", "registrar", "studentlife"):
+    for department in DEPARTMENTS:
         data = overview(department, school_db)
         text = repr(data)
-        assert "S-" not in text and "student_id" not in text
-    finance = overview("finance", school_db)
-    offices = finance["tables"][0]["rows"]
+        assert "S-" not in text and "student_id" not in text, department
+    accounts = overview("studentaccounts", school_db)
+    offices = accounts["tables"][0]["rows"]
     # The small school has offices with fewer than 10 students on hold.
     assert any(row["students"] == "Fewer than 10" for row in offices)
 
@@ -207,7 +219,7 @@ def test_overview_without_school_data_is_503(
     app: FastAPI, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("CABINET_SCHOOL_DB", str(tmp_path / "absent.db"))
-    response = _login(app, "finance").get("/departments/overview")
+    response = _login(app, "studentaccounts").get("/departments/overview")
     assert response.status_code == 503
     assert response.json()["available"] is False
 
@@ -348,14 +360,16 @@ def test_attachments_follow_the_sender_role(app: FastAPI) -> None:
         ).status_code
         == 403
     )
-    # Finance may share its own overview figure, not the Registrar's.
+    # Student Accounts may share its own overview figure, not the Registrar's
+    # and not Finance's budget.
+    finance = _login(app, "studentaccounts")
     president_id = _id(president)
     own = finance.post(
         "/inbox",
         json={
             "recipient_id": president_id,
             "note": "Balances are up.",
-            "source": {"kind": "overview", "ref": "finance:open_balance"},
+            "source": {"kind": "overview", "ref": "studentaccounts:open_balance"},
         },
     )
     assert own.status_code == 201
@@ -369,6 +383,39 @@ def test_attachments_follow_the_sender_role(app: FastAPI) -> None:
         },
     )
     assert other.status_code == 403
+    budget = finance.post(
+        "/inbox",
+        json={
+            "recipient_id": president_id,
+            "note": "x",
+            "source": {"kind": "overview", "ref": "finance:budget_spending"},
+        },
+    )
+    assert budget.status_code == 403
+    # Finance shares its budget figure, and may not share a student account one.
+    cfo = _login(app, "finance", "cfo@test.example")
+    assert (
+        cfo.post(
+            "/inbox",
+            json={
+                "recipient_id": president_id,
+                "note": "Spending is on plan.",
+                "source": {"kind": "overview", "ref": "finance:budget_spending"},
+            },
+        ).status_code
+        == 201
+    )
+    assert (
+        cfo.post(
+            "/inbox",
+            json={
+                "recipient_id": president_id,
+                "note": "x",
+                "source": {"kind": "overview", "ref": "studentaccounts:open_balance"},
+            },
+        ).status_code
+        == 403
+    )
 
 
 def test_explore_answer_travels_only_to_roles_allowed_to_read_it(app: FastAPI) -> None:
@@ -517,13 +564,17 @@ def test_reset_password_issues_a_new_password_and_ends_sessions(app: FastAPI) ->
     assert reset_password(store, "nobody@test.example") is None
 
 
+ACCOUNTS_FIGURE = {"kind": "overview", "ref": "studentaccounts:open_balance"}
+
+
 @pytest.mark.parametrize(
     ("sender_role", "recipient_role", "source"),
     [
         ("staff", "it", {"kind": "finding", "ref": "M1"}),
         ("executive", "it", {"kind": "finding", "ref": "M5"}),
-        ("finance", "it", {"kind": "overview", "ref": "finance:open_balance"}),
-        ("executive", "registrar", {"kind": "overview", "ref": "finance:open_balance"}),
+        ("studentaccounts", "it", ACCOUNTS_FIGURE),
+        ("executive", "registrar", ACCOUNTS_FIGURE),
+        ("executive", "finance", ACCOUNTS_FIGURE),
         ("executive", "aid", {"kind": "explore", "question": "GPA by major?"}),
         ("executive", "it", {"kind": "explore", "question": "GPA by major?"}),
     ],
@@ -602,14 +653,14 @@ def test_figures_are_re_read_and_disappear_when_withdrawn(app: FastAPI) -> None:
 
 def test_attachment_is_hidden_from_a_reader_who_lost_the_right(app: FastAPI) -> None:
     president = _login(app, "executive")
-    finance = _login(app, "finance")
+    finance = _login(app, "studentaccounts")
     finance_id = _id(finance)
     president.post(
         "/inbox",
         json={
             "recipient_id": finance_id,
             "note": "x",
-            "source": {"kind": "overview", "ref": "finance:open_balance"},
+            "source": {"kind": "overview", "ref": "studentaccounts:open_balance"},
         },
     )
     store: CabinetStore = app.state.auth
@@ -719,7 +770,7 @@ def _numeric_cells(table: dict[str, Any]) -> list[list[str]]:
     return [[row[key] for key in keys] for row in table["rows"]]
 
 
-@pytest.mark.parametrize("department", ["finance", "registrar", "studentlife"])
+@pytest.mark.parametrize("department", [*DEPARTMENTS])
 def test_no_overview_table_leaves_a_lone_withheld_cell(
     department: str, school_db: Path
 ) -> None:
@@ -737,5 +788,48 @@ def test_no_overview_table_leaves_a_lone_withheld_cell(
             saw_withheld = saw_withheld or hidden > 0
             if len(line) > 1:
                 assert hidden != 1, (department, table["key"], line)
-    # The small school has small groups in every department.
-    assert saw_withheld
+    # The small school has small groups in every department with student
+    # counts (Finance shows only the university's own budget, in dollars).
+    # Institutional Research's trends are large even here.
+    assert saw_withheld or department in ("finance", "ir")
+
+
+# --- the demonstration accounts and the department directory -------------------
+
+
+def test_demo_personas_cover_every_department_once() -> None:
+    roles = [role for _, role, _ in DEMO_PERSONAS]
+    assert len(roles) == len(set(roles))
+    for department in DEPARTMENTS:
+        assert department in roles, department
+    names = {email: name for email, _, name in DEMO_PERSONAS}
+    assert names["finance@demo.test"] == "Finance"
+    assert names["studentaccounts@demo.test"] == "Student Accounts"
+    assert "bursar@demo.test" not in names
+
+
+def test_it_manages_every_department_account_but_not_admin(app: FastAPI) -> None:
+    it = _login(app, "it")
+    for role in DEPARTMENTS:
+        if role == "aid":
+            continue  # the aid office stays with an administrator
+        created = it.post(
+            "/admin/users", json={"email": f"{role}@test.example", "role": role}
+        )
+        assert created.status_code == 201, role
+    assert (
+        it.post(
+            "/admin/users", json={"email": "aid-x@test.example", "role": "aid"}
+        ).status_code
+        == 403
+    )
+
+
+def test_decisions_route_to_the_right_department() -> None:
+    from cabinet.inbox import department_roles
+
+    assert department_roles("Bursar") == ("studentaccounts",)
+    assert department_roles("Student Accounts") == ("studentaccounts",)
+    assert department_roles("Finance") == ("finance",)
+    assert department_roles("Admissions") == ("admissions",)
+    assert department_roles("Financial Aid") == ("aid",)

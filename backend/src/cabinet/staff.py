@@ -33,11 +33,20 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from cabinet.auth import (
+    ROLE_ACADEMIC_AFFAIRS,
+    ROLE_ADMISSIONS,
+    ROLE_ADVANCEMENT,
+    ROLE_ADVISING,
     ROLE_AID,
+    ROLE_ATHLETICS,
+    ROLE_CAREERS,
     ROLE_EXECUTIVE,
     ROLE_FINANCE,
+    ROLE_INSTITUTIONAL_RESEARCH,
+    ROLE_INTERNATIONAL,
     ROLE_IT,
     ROLE_REGISTRAR,
+    ROLE_STUDENT_ACCOUNTS,
     ROLE_STUDENT_LIFE,
 )
 from cabinet.explore import general
@@ -182,10 +191,24 @@ assert tuple(EMPLOYEES) == ROLES, "every permissions role has a staff entry"
 # of Staff; roles not listed (admin, staff, reviewer) see the whole staff.
 LOGIN_EMPLOYEES: dict[str, tuple[str, ...]] = {
     ROLE_EXECUTIVE: ("chief_of_staff",),
-    ROLE_FINANCE: ("student_accounts_analyst", "finance_budget_analyst"),
+    ROLE_FINANCE: ("finance_budget_analyst",),
+    ROLE_STUDENT_ACCOUNTS: ("student_accounts_analyst",),
     ROLE_REGISTRAR: ("registrar_analyst",),
-    ROLE_STUDENT_LIFE: ("student_life_analyst", "advising_analyst"),
+    ROLE_STUDENT_LIFE: ("student_life_analyst",),
     ROLE_AID: ("financial_aid_analyst",),
+    ROLE_ADMISSIONS: ("admissions_analyst",),
+    ROLE_ADVISING: ("advising_analyst",),
+    ROLE_ACADEMIC_AFFAIRS: ("academic_affairs_analyst",),
+    ROLE_INSTITUTIONAL_RESEARCH: ("institutional_research_analyst",),
+    ROLE_CAREERS: ("career_outcomes_analyst",),
+    ROLE_ADVANCEMENT: ("advancement_analyst",),
+    # Athletics data (athlete flag, standing, retention) is read through the
+    # Student Life analyst (campus_life area).
+    ROLE_ATHLETICS: ("student_life_analyst",),
+    # International students: the Institutional Research analyst, whose areas
+    # cover residency (demographics) plus retention and enrollment; the
+    # Admissions analyst has demographics but not outcomes.
+    ROLE_INTERNATIONAL: ("institutional_research_analyst",),
     ROLE_IT: ("it_data_steward",),
 }
 

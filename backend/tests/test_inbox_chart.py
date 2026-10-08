@@ -129,7 +129,7 @@ def test_a_role_that_cannot_read_the_chart_is_refused_and_not_offered(
 ) -> None:
     president = _login(app, "executive")
     registrar = _login(app, "registrar")
-    finance = _login(app, "finance")
+    finance = _login(app, "studentaccounts")
     aid = _login(app, "aid")
     # Pell status is for the finance roles only; the registrar has no
     # finances dashboard at all.
@@ -145,7 +145,7 @@ def test_a_role_that_cannot_read_the_chart_is_refused_and_not_offered(
     ).json()
     roles = {p["role"] for p in people}
     assert "registrar" not in roles and "staff" not in roles
-    assert {"finance", "aid"} <= roles
+    assert {"studentaccounts", "aid"} <= roles and "finance" not in roles
     assert _send(president, _id(finance), "chart=retention_by_pell").status_code == 201
 
     # A sender may only attach a chart their own role may read.

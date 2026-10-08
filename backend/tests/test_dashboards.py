@@ -597,8 +597,10 @@ def test_a_chart_that_cannot_take_the_choice_is_logged_as_refused() -> None:
 
 
 def test_the_department_roles_are_mapped() -> None:
-    assert dashboards_for("finance") == ("finances", "budget")
+    # Finance is the university budget only; Student Accounts is student money only.
+    assert dashboards_for("finance") == ("budget",)
+    assert dashboards_for("studentaccounts") == ("finances",)
     assert dashboards_for("registrar") == ("students",)
     assert dashboards_for("studentlife") == ("students",)
     assert dashboards_for("it") == ()
-    assert "it" not in DATA_ROLES and "finance" in DATA_ROLES
+    assert "it" not in DATA_ROLES and {"finance", "studentaccounts"} <= set(DATA_ROLES)
