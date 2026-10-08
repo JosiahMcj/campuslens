@@ -2,15 +2,14 @@
 """Seeded generator for fictional CampusLens student records.
 
 Every record is invented. No real student, advisor or institution data is
-used; the "ORU" prefix is only an ID format. The one exception is the four
-project team members, who appear by name with made-up, good-standing values. The same seed and count always
-give the same file. Standard library only.
+used; the "DEM" prefix marks demonstration ids. Four fixed, fictional students lead the file
+with made-up, good-standing values. The same seed and count always give the same file. Standard library only.
 
     python3 generate_students.py                      # 5,000 students -> students.json
     python3 generate_students.py --count 500 --seed 7 --out small.json
 
 Record shape:
-    {"studentId": "ORU1001", "name": "Josiah McJunkin", "program": "Computer Science",
+    {"studentId": "DEM1001", "name": "Avery Lindgren", "program": "Computer Science",
      "degreeProgress": 0.56, "currentGPA": 2.31, "previousGPA": 3.12,
      "holds": ["Financial Balance"], "advisor": "Dr. Smith"}
 """
@@ -50,14 +49,13 @@ Mariana Mateo Maya Mei Micah Miguel Naomi Nathan Nia Noah Nora Olivia Omar Palom
 Priya Rafael Rachel Ravi Rebecca Samuel Sanjay Sara Sofia Tariq Tessa Thabo Thomas
 Uche Valeria Victor Wei Xavier Yara Yusuf Zainab Zoe""".split()
 
-# The project team, added by name at the front of the file. They are real
-# people, so their records are fixed and in good standing: no generated GPA
-# drop or hold is ever attached to them.
+# Four fixed, fictional demonstration students at the front of the file, in
+# good standing: no generated GPA drop or hold is ever attached to them.
 TEAM = [
-    ("Josiah McJunkin", 0.62, 3.71, 3.64),
-    ("Obinna Amadi", 0.74, 3.68, 3.59),
-    ("Sharon Li", 0.58, 3.82, 3.80),
-    ("Dylan Poirier", 0.66, 3.57, 3.49),
+    ("Avery Lindgren", 0.62, 3.71, 3.64),
+    ("Marcus Delacroix", 0.74, 3.68, 3.59),
+    ("Priyanka Venkataraman", 0.58, 3.82, 3.80),
+    ("Teodor Wilkins", 0.66, 3.57, 3.49),
 ]
 TEAM_PROGRAM = "Computer Science"
 
@@ -112,7 +110,7 @@ def student(rng, number, advisors, name):
             holds.append(other)
 
     return {
-        "studentId": f"ORU{number}",
+        "studentId": f"DEM{number}",
         "name": name,
         "program": program,
         "degreeProgress": progress(rng),
@@ -146,7 +144,7 @@ def main():
         rows.append(student(rng, args.start + i, advisors, name))
     team_advisor = advisors[TEAM_PROGRAM][0]
     for i, (name, done, current, previous) in enumerate(TEAM[:args.count]):
-        rows[i] = {"studentId": f"ORU{args.start + i}", "name": name,
+        rows[i] = {"studentId": f"DEM{args.start + i}", "name": name,
                    "program": TEAM_PROGRAM, "degreeProgress": done,
                    "currentGPA": current, "previousGPA": previous,
                    "holds": [], "advisor": team_advisor}

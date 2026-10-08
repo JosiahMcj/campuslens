@@ -69,10 +69,20 @@ Nothing is ever sent on its own.
 
 ## How a judge runs it
 
-Setup needs Python 3.12 and Node 22. Run `make setup` once, then `make school-data` to build
-the demonstration university, then `make api REPLAY=1` and `make ui`, and open
-`http://127.0.0.1:5200`. Replay mode serves recorded model answers, so the demo needs no key
-and no network. `RUNBOOK.md` covers production serving and a live model endpoint.
+Setup needs Python 3.12 and Node 22. Run these in order:
+
+```bash
+make setup
+make school-data
+make bootstrap-admin EMAIL=admin@demo.test
+make demo-accounts OUT=$HOME/campuslens-demo-accounts.txt
+make api REPLAY=1
+make ui
+```
+
+Open `http://127.0.0.1:5200` and sign in as `president@demo.test` with the password from
+`~/campuslens-demo-accounts.txt`. Replay mode serves recorded model answers, so the demo needs
+no key and no network. `RUNBOOK.md` covers production serving and a live model endpoint.
 
 ## The data
 

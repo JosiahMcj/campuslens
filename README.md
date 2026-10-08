@@ -4,10 +4,26 @@
 
 *Governed AI employees helping university leaders turn SIS data into human-centered action.*
 
-**Live demo:** https://golden-eagle-cabinet-git-demo-obis-projects-1a457e7e.vercel.app
-(fictional data, recorded answers; anything done in it resets when the host recycles).
+**Run it as a judge** (Python 3.12 and Node 22 on `PATH`; all data is fictional):
 
-We built this for the Gloo AI Hackathon (Boulder, Oct 6-8, 2026), and `ROADMAP.md` is the
+```bash
+make setup
+make school-data
+make bootstrap-admin EMAIL=admin@demo.test
+make demo-accounts OUT=$HOME/campuslens-demo-accounts.txt
+make api REPLAY=1
+make ui
+```
+
+Open http://127.0.0.1:5200 and sign in as `president@demo.test` with the password from
+`~/campuslens-demo-accounts.txt`. `REPLAY=1` serves recorded model answers, so no key or
+network is needed; `make stop` shuts both servers down.
+
+**Earlier build (replay mode):** https://golden-eagle-cabinet-git-demo-obis-projects-1a457e7e.vercel.app
+(fictional data, recorded answers; the current build is run locally with the steps above;
+anything done in the earlier build resets when the host recycles).
+
+We built this for the Gloo AI Hackathon 2026, Track 4: Choose Your Own Adventure (Boulder, Oct 6-8, 2026), and `ROADMAP.md` is the
 plan. In one sentence, CampusLens transforms Ellucian SIS data into an
 executive briefing by coordinating permission-limited AI employees across enrollment and
 student success. It helps university leaders see what matters, understand why, and direct
@@ -18,23 +34,21 @@ We put all logic in a Python backend (FastAPI on `127.0.0.1:8910`, pytest, ruff,
 Vitest, eslint, `tsc`) is the thin interface layer. Everything binds to `127.0.0.1` only.
 
 What runs today is the fixture dataset (`data/fixture.json`, fictional and seeded)
-and the metric functions M1-M7 (`backend/src/cabinet/metrics.py`, contracts in
+and the metric functions M1-M9 (`backend/src/cabinet/metrics.py`, contracts in
 `CONTRACTS.md`). So are the permission gate, the append-only audit log, the
-governance API, and the dashboard. We built all three AI employees with output
-validation. The Enrollment Analyst covers M1, M2 and M7. The Student Success
-Analyst covers M3, M4 and M5. The Chief of Staff dispatches the tasks and merges
-the seven-section briefing. The golden replay runs for both approved questions and
-all three roles are committed in `data/golden/`. Sign-in with five roles and
+governance API, and the dashboard. We built an AI employee for every department (15 in all, with output
+validation). For example, the Enrollment Analyst covers M1, M2 and M7, the Student
+Success Analyst covers M3, M4 and M5, and the Chief of Staff dispatches the tasks and
+merges the seven-section briefing. The golden replay runs for both approved questions and
+all roles are committed in `data/golden/`. Sign-in with 18 roles and
 institution accounts with validated dataset upload are live as well. The human panel approves the leadership decision and
 records it, and the audit log shows every grant and every refusal, including both
 refusal demos. Beside the briefing, five figures show M1 to M4 and M8, and each
 one opens its own evidence panel. Every analyst-written section carries an honest
 source label, "Written by" the role that wrote it, and a small "About this
 answer" detail says whether the text was replayed from an earlier live run or
-written just now. We verified the whole system on the real path against the Day-8
-matrix in `docs/VERIFICATION.md`, and all eight rows pass. The six-beat demo timed
-at 204.9 seconds against the four-minute limit. We documented how to run, stop,
-replay, and reset any of it in `RUNBOOK.md`.
+written just now. We verified the whole system on the real path (`docs/VERIFICATION.md`)
+and documented how to run, stop, replay, and reset any of it in `RUNBOOK.md`.
 
 An approved leadership decision can also go to its responsible office, and only
 a named person can send it. The software composes the message from the verified
@@ -82,10 +96,6 @@ student are refused before any planning, groups under 10 students are withheld, 
 instructor rows go to the executive and admin roles only (`POST /explore`,
 `GET /explore/catalog`, `make school-data` then `make explore-check`, and
 `docs/EXPLORE.md`).
-
-What is left is rehearsal. The demo script and the offline deck in
-`docs/backup-demo.html` are frozen, and the remaining items are the timed
-rehearsals, the backup video, and the pitch.
 
 ## Setup
 
@@ -168,7 +178,7 @@ shows every step, the fields it read, and its table.
   student, or about what a student will do next are refused before anything runs,
   and the refusal is recorded. Groups under 10 students are withheld.
 - **Planning.** With a live model, the model reads a compact catalog (under 3,000
-  tokens) and plans first, in about a second on a local model; its plan is resolved
+  tokens) and plans first, using the live Gloo AI model (`gloo-openai-gpt-4.1-mini` through Gloo's API), in about 1 to 3 s; its plan is resolved
   to catalog values and checked, and the reviewed rule planner answers whenever the
   plan cannot be used or takes longer than 20 s (`CABINET_EXPLORE_PLANNER`:
   `model-first` by default, `rules-first`, or `rules-only`). The measurements are in
@@ -241,8 +251,8 @@ students enrolled each fall, 60 programs in seven colleges, 906 courses, 900 fic
 instructors, about 38,000 pseudonymous students over the six years, and about 920,000
 graded registrations. `make school-data` builds it into `var/school/school.db` (about
 245 MB) in under a minute, and `make school-check` recomputes every GPA and every planted fact in
-`data/school/VERIFY.md` from the raw rows. Nothing in the cabinet reads it yet, and
-a governed question engine will. `data/school/README.md` explains the rest.
+`data/school/VERIFY.md` from the raw rows. Explore (above) and the Data screens read it through governed,
+role-scoped analyses. `data/school/README.md` explains the rest.
 
 ## UI states
 
@@ -273,7 +283,7 @@ Offline, the shell opens and every number on it still needs the API.
 ```
 
 This loads the fixture, derives the as-of date from the data (never the wall clock),
-computes metrics M1-M7 per `CONTRACTS.md`, and prints the findings object as JSON.
+computes metrics M1-M9 per `CONTRACTS.md`, and prints the findings object as JSON.
 Per finding it prints the value, the `display` string (`−4.8 %` style, or `--` per
 the zero-denominator rule), the comparison, the source fields, the row IDs, and the
 definition text. A `meta` block carries the as-of date, the fixture path, and the
@@ -294,6 +304,7 @@ never by code changes.
 | `CABINET_LLM_LABEL` | what the UI shows as the source | `live model` |
 | `CABINET_LLM_REASONING_EFFORT` | sent as `reasoning_effort`, since some reasoning models spend the output budget thinking. Some endpoints ignore `low` and honour only `none`, which turns hidden reasoning off. Empty omits it | `low` |
 | `CABINET_LLM_MAX_TOKENS` | the output budget per call, sent as `max_tokens` (256 to 32768). Hidden reasoning counts against it, and running out makes that section unavailable, never half written | `2048` |
+| `CABINET_LLM_FALLBACK_BASE_URL`, `_MODEL`, `_LABEL`, `_API_KEY` | an optional second model, used only when the primary is unavailable (same rules as the primary settings) | unset |
 | `CABINET_LLM_API_KEY` | the endpoint key from the provider, in the environment or the gitignored `cabinet.local.env`, never committed | unset |
 | `CABINET_LLM_API_KEY_FILE` + `CABINET_LLM_API_KEY_VAR` | read that one variable's line from another env file | unset |
 | `CABINET_RECORD` | `1` records each validated response into `var/replay/`. `overwrite` also replaces existing recordings | off |
@@ -333,7 +344,7 @@ shows the configuration with values redacted, and `make audit` scans the
 dependencies. The threat model and control list live in `docs/SECURITY.md`.
 
 **Gloo AI.** `cabinet.local.env.example` is set up for Gloo AI's guarded endpoint
-(`https://platform.ai.gloo.com/ai/v2/guarded`, model `gloo-qwen-3.7-flash`). Copy it to
+(`https://platform.ai.gloo.com/ai/v1`, model `gloo-openai-gpt-4.1-mini`). Copy it to
 `cabinet.local.env`, paste your key from the Gloo AI Studio console into
 `CABINET_LLM_API_KEY`, and restart. Keep `CABINET_LLM_REASONING_EFFORT=none`: with it the
 planner answers in about 10 s a question, with every plan valid in our checks.
@@ -419,6 +430,10 @@ RUNBOOK.md          setup, run, stop, restart, replay, record, reset
 ## Team
 
 We are Josiah McJunkin, Sharon Li, Dylan Poirier and Obinna Amadi.
+
+## License
+
+MIT; see `LICENSE`.
 
 ## Contributing
 

@@ -15,8 +15,8 @@ from conftest import make_authenticated_client
 
 ROWS: list[dict[str, Any]] = [
     {
-        "studentId": "ORU1001",
-        "name": "Josiah McJunkin",
+        "studentId": "DEM1001",
+        "name": "Josiah McKenna",
         "program": "Computer Science",
         "degreeProgress": 0.62,
         "currentGPA": 3.71,
@@ -25,8 +25,8 @@ ROWS: list[dict[str, Any]] = [
         "advisor": "Dr. Fitzgerald",
     },
     {
-        "studentId": "ORU1002",
-        "name": "Obinna Amadi",
+        "studentId": "DEM1002",
+        "name": "Obiora Amato",
         "program": "Computer Science",
         "degreeProgress": 0.74,
         "currentGPA": 3.68,
@@ -35,7 +35,7 @@ ROWS: list[dict[str, Any]] = [
         "advisor": "Dr. Fitzgerald",
     },
     {
-        "studentId": "ORU1005",
+        "studentId": "DEM1005",
         "name": "Amara Obi",
         "program": "Nursing",
         "degreeProgress": 0.4,
@@ -65,8 +65,8 @@ def test_search_finds_by_name_words_and_returns_the_record(roster: Path) -> None
     assert body["students"][1]["name"] == "Amara Obi"
     assert body["students"][:1] == [
         {
-            "student_id": "ORU1002",
-            "name": "Obinna Amadi",
+            "student_id": "DEM1002",
+            "name": "Obiora Amato",
             "program": "Computer Science",
             "degree_progress": 0.74,
             "degree_progress_display": "74%",
@@ -79,9 +79,9 @@ def test_search_finds_by_name_words_and_returns_the_record(roster: Path) -> None
     ]
     # Either name word, any case; the typed order comes first.
     both = executive.get("/students/search", params={"q": "OBI"}).json()
-    assert [row["name"] for row in both["students"]] == ["Obinna Amadi", "Amara Obi"]
+    assert [row["name"] for row in both["students"]] == ["Obiora Amato", "Amara Obi"]
     # An exact student id matches too; a made-up name matches nobody.
-    by_id = executive.get("/students/search", params={"q": "oru1005"}).json()
+    by_id = executive.get("/students/search", params={"q": "dem1005"}).json()
     assert [row["name"] for row in by_id["students"]] == ["Amara Obi"]
     assert by_id["students"][0]["gpa_change_display"] == "−0.81"
     assert executive.get("/students/search", params={"q": "zzz"}).json()["total"] == 0
@@ -101,7 +101,7 @@ def test_every_search_is_logged_without_the_text_or_a_student(roster: Path) -> N
     assert "student.searched" in EVENT_TYPES
     app = create_app()
     admin = make_authenticated_client(app, role="admin")
-    admin.get("/students/search", params={"q": "McJunkin"})
+    admin.get("/students/search", params={"q": "McKenna"})
     events = admin.get("/events", params={"type": "student.searched"}).json()
     events = events["events"] if isinstance(events, dict) else events
     assert len(events) == 1
@@ -112,7 +112,7 @@ def test_every_search_is_logged_without_the_text_or_a_student(roster: Path) -> N
         "directory": "demonstration",
     }
     logged = json.dumps(events[0])
-    assert "McJunkin" not in logged and "ORU1001" not in logged
+    assert "McKenna" not in logged and "DEM1001" not in logged
 
 
 def test_no_directory_file_is_a_404(
@@ -133,7 +133,7 @@ def test_pure_search_and_display_helpers() -> None:
         for row in ROWS
     ]
     assert [r["name"] for r in search_roster(rows, "  josiah   mc ")] == [
-        "Josiah McJunkin"
+        "Josiah McKenna"
     ]
     assert search_roster(rows, "siah") == []  # the start of a word, not its middle
     assert student_body(ROWS[0])["gpa_change_display"] == "+0.07"

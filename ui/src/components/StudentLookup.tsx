@@ -123,7 +123,7 @@ export function StudentLookup() {
             type="search"
             autoComplete="off"
             spellCheck={false}
-            placeholder="e.g. Obinna Amadi"
+            placeholder="e.g. Obiora Amato"
             value={query}
             aria-invalid={hint !== null}
             aria-describedby={hint !== null ? 'student-query-hint' : undefined}

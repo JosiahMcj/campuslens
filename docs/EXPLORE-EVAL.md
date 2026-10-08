@@ -1,3 +1,5 @@
+> The qwen3:14b rows are development-model measurements (a local model used while building); the live demo uses Gloo AI.
+
 # Explore planner evaluation
 
 How well each planner order maps a person's question to the right analyses, and how
@@ -429,5 +431,5 @@ PYTHONPATH=$PWD/backend/src CABINET_SCHOOL_DB=<the server's school.db> \
   --label model-first --set main --out results.jsonl
 ```
 
-`--set held-out` runs the held-out set, `--set forward` the forward set, `--set outcomes` the graduate outcomes set, and `--only 0 1 2` runs chosen questions. A local model through Ollama needs `CABINET_LLM_API_KEY` set to any value.
+`--set held-out` runs the held-out set, `--set forward` the forward set, `--set outcomes` the graduate outcomes set, and `--only 0 1 2` runs chosen questions.
 Keep runs one at a time: a local model serves one question at a time.
