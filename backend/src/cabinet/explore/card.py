@@ -40,7 +40,7 @@ from typing import Any
 
 from cabinet.counseling import MINIMUM_CELL_SIZE, SUPPRESSED_DISPLAY
 from cabinet.explore import general
-from cabinet.explore.answer import Sentence, _Builder
+from cabinet.explore.answer import Sentence, _Builder, _over_under
 from cabinet.explore.catalog import ANALYSIS_BY_ID, Catalog, Column
 from cabinet.explore.execute import StepHook, StepResult, execute
 from cabinet.explore.planner import Step, rule_plan_detail
@@ -553,7 +553,9 @@ def build_card(
     shape = _main_shape(steps)
     followups = _followups(steps, question, catalog)
     if shape is None:
-        return Card([], None, [], [], followups)
+        return _finance_card(steps, question, followups) or Card(
+            [], None, [], [], followups
+        )
     step = shape.step
     trend_step: StepResult | None = None
     if con is not None:
@@ -808,6 +810,173 @@ def _trend_point(
     _say_change(b, key, row, direction, shape.kind)
     b.t(" from ").c(t, trend.then, "value").t(" in ").c(t, trend.then, "term_name")
     return b.t(".").done()
+
+
+# --- the university's budget -------------------------------------------------------
+#
+# The finance analyses (cabinet.explore.finance) are institutional figures, so
+# their result tables carry no student counts and need no trend read: the
+# fiscal years are already in the table. Every number below is a cell of the
+# answer's own table or of Key figures (a change worked out from two cells).
+
+
+def _fy_change(
+    table: _Table, step: StepResult, now: int, then: int, key: str, kind: str
+) -> int:
+    a = _num(step.cell(now, key)) or 0.0
+    b = _num(step.cell(then, key)) or 0.0
+    return table.add(
+        "Change",
+        f"{step.cell(now, 'fiscal_year')} against {step.cell(then, 'fiscal_year')}",
+        _round(abs(a - b), kind),
+        _pct_change(a, b),
+    )
+
+
+def _wants_net_tuition(question: str) -> bool:
+    q = question.lower()
+    return "discount" not in q and bool(re.search(r"net|revenue|tuition", q))
+
+
+def _tuition_card(
+    step: StepResult, steps: list[StepResult], question: str, followups: dict[str, Any]
+) -> Card:
+    key = "net_tuition" if _wants_net_tuition(question) else "discount_rate"
+    col = _column(step, key)
+    assert col is not None
+    kind = col.kind
+    rows = [i for i in range(len(step.rows)) if _num(step.cell(i, key)) is not None]
+    points: list[tuple[str, Sentence]] = []
+    table = _Table(len(steps), _diff_kind(kind))
+    chart: dict[str, Any] = {
+        "table": step.index,
+        "value": key,
+        "value_label": col.label,
+        "kind": kind,
+        "label": ["fiscal_year"],
+        "series": None,
+        "reference_row": None,
+    }
+    if len(rows) >= 2:
+        first, last = rows[0], rows[-1]
+        b = _Builder(steps)
+        b.t("Latest: ").c(step, last, "fiscal_year").t(", ").c(step, last, key)
+        points.append(("latest", b.t(".").done()))
+        row = _fy_change(table, step, last, first, key, kind)
+        direction = _direction(step, last, first, key)
+        keytab = table.result()
+        b = _Builder(_with_steps(steps, keytab))
+        b.t("Since ").c(step, first, "fiscal_year").t(": ")
+        _say_change(b, keytab, row, direction, kind)
+        points.append(("trend", b.t(", from ").c(step, first, key).t(".").done()))
+        hi = max(rows, key=lambda i: (_num(step.cell(i, key)) or 0.0, -i))
+        if hi not in (first, last):
+            b = _Builder(steps)
+            b.t("Highest: ").c(step, hi, "fiscal_year").t(", ").c(step, hi, key)
+            points.append(("peak", b.t(".").done()))
+        if key == "discount_rate":
+            b = _Builder(steps)
+            b.t("Net tuition revenue in ").c(step, last, "fiscal_year").t(" was ")
+            b.c(step, last, "net_tuition").t(" against a budget of ")
+            points.append(("net", b.c(step, last, "net_tuition_budget").t(".").done()))
+        chart.update(
+            template="trend_line",
+            form="line",
+            trend={
+                "table": step.index,
+                "now_row": last,
+                "then_row": first,
+                "change_table": table.index,
+                "change_row": row,
+                "direction": direction,
+                "then_label": str(step.cell(first, "fiscal_year")),
+            },
+        )
+    elif rows:
+        i = rows[0]
+        b = _Builder(steps)
+        b.t(f"{col.label.removesuffix(' (%)').removesuffix(' ($)')} in ")
+        b.c(step, i, "fiscal_year").t(": ").c(step, i, key)
+        points.append(("value", b.t(".").done()))
+        b = _Builder(steps)
+        b.t("Gross tuition of ").c(step, i, "gross_tuition").t(" less ")
+        b.c(step, i, "institutional_aid").t(
+            " in institutional aid, a discount rate of "
+        )
+        points.append(("aid", b.c(step, i, "discount_rate").t(".").done()))
+        chart.update(template="kpi_number", form="number", table=step.index)
+    else:
+        return Card([], None, [], [], followups)
+    extra = [table.result()] if table.rows else []
+    return Card([s for _, s in points], chart, extra, [], followups)
+
+
+def _budget_card(
+    step: StepResult, steps: list[StepResult], followups: dict[str, Any]
+) -> Card:
+    col = _column(step, "variance_pct")
+    assert col is not None
+    is_total = [
+        bool(r.get("_total")) or r.get("group") == "All expenses" for r in step.rows
+    ]
+    ranked = [
+        i
+        for i in range(len(step.rows))
+        if not is_total[i] and _num(step.cell(i, "variance_pct")) is not None
+    ]
+    total = next((i for i, t in enumerate(is_total) if t), None)
+    points: list[tuple[str, Sentence]] = []
+    if ranked:
+        values = {i: _num(step.cell(i, "variance_pct")) or 0.0 for i in ranked}
+        hi = max(ranked, key=lambda i: (values[i], -i))
+        lo = min(ranked, key=lambda i: (values[i], i))
+        if values[hi] > 0:
+            b = _Builder(steps)
+            b.t(f"Most over budget: {step.rows[hi].get('group')}, ")
+            b.c(step, hi, "actual").t(" spent against ").c(step, hi, "budget")
+            points.append(("highest", _over_under(b, step, hi).t(".").done()))
+        elif len(ranked) > 1:
+            points.append(("highest", Sentence("Every group spent within its budget.")))
+        if values[lo] < 0 and lo != hi:
+            b = _Builder(steps)
+            b.t(f"Furthest under budget: {step.rows[lo].get('group')}, ")
+            b.c(step, lo, "actual").t(" spent against ").c(step, lo, "budget")
+            points.append(("lowest", _over_under(b, step, lo).t(".").done()))
+    if total is not None:
+        b = _Builder(steps)
+        b.t("Overall in ").c(step, total, "fiscal_year").t(": ")
+        b.c(step, total, "actual").t(" spent against a budget of ")
+        b.c(step, total, "budget")
+        points.append(("total", _over_under(b, step, total).t(".").done()))
+    rows = [*ranked, *([total] if total is not None else [])]
+    if not rows:
+        return Card([], None, [], [], followups)
+    chart: dict[str, Any] = {
+        "template": "kpi_number" if len(step.rows) == 1 else "ranking_bar",
+        "form": "number" if len(step.rows) == 1 else "bar",
+        "table": step.index,
+        "value": "variance_pct",
+        "value_label": col.label,
+        "kind": col.kind,
+        "label": ["group"],
+        "series": None,
+        "reference_row": None,
+    }
+    return Card([s for _, s in _cap(points)], chart, [], [], followups)
+
+
+def _finance_card(
+    steps: list[StepResult], question: str, followups: dict[str, Any]
+) -> Card | None:
+    """The card for the tuition and budget analyses, else None."""
+    for step in steps:
+        if step.error or not step.rows:
+            continue
+        if step.analysis.id == "tuition_discount":
+            return _tuition_card(step, steps, question, followups)
+        if step.analysis.id == "budget_vs_actual":
+            return _budget_card(step, steps, followups)
+    return None
 
 
 # --- the chart templates ---------------------------------------------------------

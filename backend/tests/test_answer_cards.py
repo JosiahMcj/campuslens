@@ -414,3 +414,94 @@ def test_holds_decision_says_how_it_relates_to_the_briefing_count() -> None:
         if d["id"] == UNRESOLVED_HOLDS_DECISION_ID
     )["text"]
     assert "None" not in fallback and "come first" in fallback
+
+
+# --- the university budget: tuition and budget-against-actual cards ----------------
+
+
+def test_discount_rate_trend_is_a_line_by_fiscal_year(
+    con: sqlite3.Connection, catalog: Catalog
+) -> None:
+    steps, card = _answer("What is our tuition discount rate trend?", con, catalog)
+    rows = steps[0].rows
+    assert len(rows) >= 2
+    chart = card.chart
+    assert chart is not None and chart["template"] == "trend_line"
+    assert chart["value"] == "discount_rate" and chart["label"] == ["fiscal_year"]
+    assert chart["trend"]["change_table"] == card.extra_steps[-1].index
+    texts = [s.text for s in card.key_points]
+    assert (
+        texts[0] == f"Latest: {rows[-1]['fiscal_year']}, {rows[-1]['discount_rate']}%."
+    )
+    assert texts[1].startswith(f"Since {rows[0]['fiscal_year']}: ")
+    key = card.extra_steps[-1]
+    assert key.rows[0]["change"] == round(
+        abs(rows[-1]["discount_rate"] - rows[0]["discount_rate"]), 1
+    )
+    _check_claims(steps, card)
+
+
+def test_net_tuition_by_year_trends_in_dollars(
+    con: sqlite3.Connection, catalog: Catalog
+) -> None:
+    steps, card = _answer("net tuition revenue each year", con, catalog)
+    assert card.chart is not None and card.chart["template"] == "trend_line"
+    assert card.chart["value"] == "net_tuition" and card.chart["kind"] == "money"
+    assert card.key_points[0].text.startswith("Latest: FY")
+    assert "$" in card.key_points[0].text
+    _check_claims(steps, card)
+
+
+def test_one_year_of_net_tuition_is_a_key_figure(
+    con: sqlite3.Connection, catalog: Catalog
+) -> None:
+    steps, card = _answer(
+        "How much net tuition revenue did we make last year?", con, catalog
+    )
+    assert len(steps[0].rows) == 1
+    assert card.chart is not None and card.chart["template"] == "kpi_number"
+    assert card.chart["value"] == "net_tuition"
+    assert f"${steps[0].rows[0]['net_tuition']:,}" in card.key_points[0].text
+    _check_claims(steps, card)
+
+
+def test_budget_vs_actual_ranks_percent_over_and_under(
+    con: sqlite3.Connection, catalog: Catalog
+) -> None:
+    steps, card = _answer("What is our budget vs actual this year?", con, catalog)
+    rows = steps[0].rows
+    chart = card.chart
+    assert chart is not None and chart["template"] == "ranking_bar"
+    assert chart["value"] == "variance_pct" and chart["kind"] == "pct"
+    texts = [s.text for s in card.key_points]
+    assert any(t.startswith("Overall in ") for t in texts)
+    parts = [r for r in rows if not r.get("_total")]
+    worst = max(parts, key=lambda r: r["variance_pct"])
+    if worst["variance_pct"] > 0:
+        assert texts[0].startswith(f"Most over budget: {worst['group']}, ")
+    _check_claims(steps, card)
+
+
+def test_over_budget_departments_answer_has_a_card(
+    con: sqlite3.Connection, catalog: Catalog
+) -> None:
+    steps, card = _answer("Which departments are over budget?", con, catalog)
+    assert card.chart is not None and card.chart["template"] in (
+        "ranking_bar",
+        "kpi_number",
+    )
+    assert card.key_points
+    assert card.key_points[0].text.startswith("Most over budget: ")
+    _check_claims(steps, card)
+
+
+def test_finance_roles_without_access_get_no_card(
+    con: sqlite3.Connection, catalog: Catalog
+) -> None:
+    planned, _ = rule_plan_detail("What is our tuition discount rate trend?", catalog)
+    assert planned
+    steps = execute(planned, con, catalog, "advisor")
+    card = build_card(
+        steps, "What is our tuition discount rate trend?", con, catalog, "advisor"
+    )
+    assert card.chart is None and card.key_points == []
