@@ -153,7 +153,10 @@ def test_a_named_student_is_guarded_audited_and_never_sent_to_a_model(
     body = _ask(_client(app), question)
     assert body["refused"] is False
     assert body["redirect"] in ("individual_student", "prediction"), body
-    assert secret not in json.dumps(body, ensure_ascii=False)
+    # The AI employees' titles ("Financial Aid Analyst") are fixed words
+    # from the staff directory, never from the question.
+    shown = {k: v for k, v in body.items() if k not in ("answered_by", "delegated_by")}
+    assert secret not in json.dumps(shown, ensure_ascii=False)
     # The model received nothing with the name (here: nothing at all).
     assert not any(secret in text for text in model.received)
     events = _events(app)

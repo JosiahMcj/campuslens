@@ -1056,7 +1056,10 @@ def test_the_audit_event_keeps_the_full_field_list() -> None:
         if e["type"] == "data.granted"
     ]
     assert grants
-    assert "student_profiles.gender" in grants[0]["payload"]["fields_read"]
+    # The employee reads the step's own fields; the event also keeps every
+    # field the step's query touches in building its rows.
+    assert "student_profiles.gender" in grants[0]["payload"]["query_fields"]
+    assert "student_profiles.gender" not in grants[0]["payload"]["fields_read"]
 
 
 def test_fields_used_follows_groupings_and_filters() -> None:

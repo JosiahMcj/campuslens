@@ -915,6 +915,22 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe('an Explore answer', () => {
+  it('says which AI employee answered, small and under the answer', () => {
+    show(exploreResponseFrom({ ...EXEC, answered_by: ['Student Accounts Analyst'], delegated_by: 'Chief of Staff' }))
+    const line = document.querySelector('.explore-answered-by')
+    expect(line?.textContent).toBe('Answered by: Student Accounts Analyst')
+    // After the sentences and the source line, before "How this was answered".
+    expect(line?.previousElementSibling?.className).toBe('explore-source')
+    cleanup()
+    show(exploreResponseFrom({ ...EXEC, answered_by: ['Academic Affairs Analyst', 'Financial Aid Analyst'] }))
+    expect(document.querySelector('.explore-answered-by')?.textContent).toBe(
+      'Answered by: Academic Affairs Analyst and Financial Aid Analyst',
+    )
+    cleanup()
+    show(EXEC)
+    expect(document.querySelector('.explore-answered-by')).toBeNull()
+  })
+
   it('shows the planted values as links, the source line, and no ids', () => {
     show(EXEC)
     for (const value of ['2.62', '41.8%', '56.7%', 'Alicia Shelby (fictional)']) {

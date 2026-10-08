@@ -15,6 +15,9 @@ export interface Persona {
   /** Three questions for the "Try" row; empty keeps the catalog's examples
    * (the president) or means the role does not ask. */
   examples: string[]
+  /** The office's own AI employee(s) (cabinet.staff.LOGIN_EMPLOYEES in the
+   * API), named on a department's home screen. */
+  employees: string[]
 }
 
 const REGISTRATION = 'How much did continuing spring registration change in Spring 2026?'
@@ -29,6 +32,7 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
     name: 'President',
     lede: "Every page and every department's overview. Ask anything about Demonstration University, and send an alert to any office before the meeting.",
     examples: [],
+    employees: ['Chief of Staff'],
   },
   finance: {
     name: 'Finance',
@@ -38,6 +42,7 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
       'Where does our money come from?',
       'What is our tuition discount rate trend?',
     ],
+    employees: ['Finance & Budget Analyst'],
   },
   studentaccounts: {
     name: 'Student Accounts',
@@ -47,6 +52,7 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
       'How much is past due?',
       'How many students are on payment plans?',
     ],
+    employees: ['Student Accounts Analyst'],
   },
   registrar: {
     name: 'Registrar',
@@ -56,6 +62,7 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
       'Which major grew fastest from Fall 2020 to Fall 2025?',
       'Which majors have the highest probation rates?',
     ],
+    employees: ['Registrar Analyst'],
   },
   studentlife: {
     name: 'Student Life',
@@ -65,6 +72,7 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
       'What majors have the highest dropout rate?',
       'What is the average GPA of athletes vs non-athletes?',
     ],
+    employees: ['Student Life Analyst'],
   },
   admissions: {
     name: 'Admissions',
@@ -74,6 +82,7 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
       'What is first-year retention by residency?',
       'What is the enrollment trend by year?',
     ],
+    employees: ['Admissions Analyst'],
   },
   advising: {
     name: 'Advising and Student Success',
@@ -83,6 +92,7 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
       'How many students changed major?',
       'What is first-year retention by first-generation status?',
     ],
+    employees: ['Advising Analyst'],
   },
   provost: {
     name: 'Academic Affairs',
@@ -92,6 +102,7 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
       'What is the DFW rate by college?',
       'Which majors have the highest probation rates?',
     ],
+    employees: ['Academic Affairs Analyst'],
   },
   ir: {
     name: 'Institutional Research',
@@ -101,6 +112,7 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
       'What is first-year retention by college?',
       'What is the graduation rate by college?',
     ],
+    employees: ['Institutional Research Analyst'],
   },
   careers: {
     name: 'Career Services',
@@ -110,6 +122,7 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
       'What share of graduates are employed full time by college?',
       'What share of graduates went to medical school?',
     ],
+    employees: ['Career & Alumni Outcomes Analyst'],
   },
   advancement: {
     name: 'Advancement',
@@ -119,6 +132,7 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
       'How many alumni have donated by college?',
       'How much have alumni given by designation?',
     ],
+    employees: ['Advancement Analyst'],
   },
   international: {
     name: 'International Student Services',
@@ -128,6 +142,7 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
       'How many international students are there by term?',
       'What is first-year retention by residency?',
     ],
+    employees: ['Institutional Research Analyst'],
   },
   athletics: {
     name: 'Athletics',
@@ -137,16 +152,19 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
       'What is first-year retention for athletes?',
       'How many athletes are on academic probation?',
     ],
+    employees: ['Student Life Analyst'],
   },
   aid: {
     name: 'Financial Aid',
     lede: 'The review queue for the students the briefing flags, and alerts sent to your office.',
     examples: [],
+    employees: ['Financial Aid Analyst'],
   },
   it: {
     name: 'IT',
     lede: 'Accounts, sign-in activity, the outside connections and the audit log. Nothing here is about students.',
     examples: [],
+    employees: ['IT & Data Steward'],
   },
 }
 

@@ -990,7 +990,15 @@ def test_audit_events_and_chain(app: FastAPI) -> None:
         "planner",
         "writer",
         "answered",
+        "employees",
     }
+    # The Chief of Staff delegated every step to Academic Affairs, which
+    # read each step's fields as the actor of its own grant.
+    assert answered["employees"] == ["academic_affairs_analyst"]
+    assert {e["actor"] for e in new if e["type"] == "data.granted"} == {
+        "academic_affairs_analyst"
+    }
+    assert all(g["delegated_by"] == "chief_of_staff" for g in grants)
     store: AuthStore = app.state.auth
     assert verify_db(store.path) == []
 

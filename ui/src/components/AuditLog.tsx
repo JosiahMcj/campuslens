@@ -17,6 +17,7 @@ import { fieldLabels } from '../fieldLabels'
 import { findingLabel } from '../findingLabels'
 import { getSession } from '../auth'
 import { formatTimestamp, formatTimestampFull, personName } from '../states'
+import { EMPLOYEE_TITLES } from '../staff'
 import {
   ApprovedIcon,
   GrantedIcon,
@@ -105,6 +106,8 @@ const NO_PEOPLE: People = { key: (actor) => actor, question: () => null }
  * anyone else by email. `actor` is a key from People. */
 function actorName(actor: string, viewerEmail: string | null = null): string {
   if (ROLE_NAMES[actor] !== undefined) return ROLE_NAMES[actor]
+  // Every department's AI employee (staff.ts), by title.
+  if (EMPLOYEE_TITLES[actor] !== undefined) return `the ${EMPLOYEE_TITLES[actor]}`
   if (actor.includes('@')) return personName(actor, viewerEmail)
   if (/^\d+$/.test(actor)) return 'a signed-in person'
   if (actor === 'anonymous') return 'someone who was not signed in'
@@ -262,6 +265,9 @@ function describeEvent(
       if (payload.aggregate_only === true) {
         const read = fieldLabels(list(payload.fields_read))
         add('Fields read', read.join(', '))
+        // An Explore step the Chief of Staff handed to this employee.
+        const by = str(payload.delegated_by)
+        add('Delegated by', by === null ? null : sentenceStart(actorName(by)))
         // Only the counseling figure (M9) rests on a recorded authorization;
         // every other totals-only grant is an answer from the records.
         return {

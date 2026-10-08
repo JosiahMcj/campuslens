@@ -219,11 +219,72 @@ seen. It never shows a session id or a token.
 | `POST /inbox` | every role (what can be attached depends on the sender's role) |
 | `POST /inbox/{id}/read`, `POST /inbox/{id}/reviewed` | every role, recipient only (404 otherwise) |
 | `GET /admin/sessions` | admin, it, executive |
+| `GET /staff` | every role (titles, scopes in words and today's counts; no student data) |
 | `GET/POST /admin/users`, `POST /admin/users/{id}/disable\|enable`, `PATCH /admin/users/{id}` | admin, and now it (department and staff accounts only) |
 | `GET /admin/connections` | admin, and now it |
 | `GET /events` (audit log) | admin, executive, reviewer, and now it |
 | `POST /explore`, `/explore/stream`, `GET /explore/catalog` | admin, executive, staff, reviewer, and now every department account except aid |
 | `GET /findings`, `/briefing`, `/decisions`, `/questions`, `/staff-actions` | every role except it |
+
+## The AI staff: one AI employee per department
+
+Every department has an AI employee (`cabinet/staff.py`; scopes in
+`cabinet/permissions.py`). Each has a title, a one-line job, the human
+office it serves, and a least-privilege scope: aggregates only, no names, no
+free-text notes, never counseling. The scope is written twice, once for the
+briefing's fields (`ROLE_PERMISSIONS`, `ROLE_FINDINGS`, `ROLE_TASK_FIELDS`)
+and once for the school-record areas Explore reads (`ROLE_SCHOOL_AREAS`).
+
+| AI employee | Office it serves | May read (as totals) | Briefing figures |
+|---|---|---|---|
+| Chief of Staff | President's Office | every area but instructor rows; delegates, then writes the summary | M1–M8, plus M9 when authorized |
+| Enrollment Analyst | Enrollment Management | structure, course sections, registration, entry term | M1, M2, M7 |
+| Student Success Analyst | Student Success | structure, outcomes, holds, advising | M3, M4, M5, M8 |
+| Registrar Analyst | Office of the Registrar | structure, course sections, registration, standing, programs | M1, M2, M6, M7 |
+| Student Accounts Analyst | Finance — Student Accounts (Bursar) | structure, holds and balances, student charges, payments and payment plans (past due, collection, aging) | M3, M5 |
+| Financial Aid Analyst | Financial Aid | structure, registration, Pell | M3 |
+| Advising Analyst | Academic Advising | structure, advising, programs | M4 |
+| Student Life Analyst | Student Life | structure, housing and athletics, holds (conduct) | M5 |
+| Academic Affairs Analyst | Academic Affairs (Provost) | structure, course sections, grades; instructor rows only when the president or the admin asks | M7 |
+| Institutional Research Analyst | Institutional Research | structure, registration, programs, outcomes, entry, student groups | M1, M2, M7 |
+| Admissions Analyst | Admissions | structure, entry term and admit type, student groups | none |
+| Career & Alumni Outcomes Analyst | Career Services & Alumni Relations | structure, program status, first destinations (employment, salary), graduate and medical school | none |
+| Advancement Analyst | Advancement | structure, program status, alumni giving | none |
+| Finance & Budget Analyst | Finance — CFO | the university's budget against actual, revenue by source, tuition discount (institutional figures, no student fields); only when the asker is in `BUDGET_ROLES` (president, finance, admin) | none |
+| IT & Data Steward | IT | no student data (connections and the data-access audit) | none |
+
+Never, for any of them: student names, counseling and chaplain notes,
+free-text notes, one student's record. The counseling count (M9) reaches the
+Chief of Staff only, and only when it is authorized, as before.
+
+**Routing.** The Chief of Staff delegates each Explore step to the employee
+whose department owns it: every measure (`MEASURE_OWNER`), grouping
+(`GROUPING_OWNER`) and analysis (`ANALYSIS_OWNER`) has an owner. A grouping
+or filter outside the leading employee's areas brings in its owner, so
+"D, F or withdrawal rate by Pell status" is worked by the Academic Affairs
+Analyst (grades) and the Financial Aid Analyst (Pell), each reading only
+its own fields. The live trace shows the hand-off ("Chief of Staff →
+Student Accounts Analyst: Holds by office"), and the answer says who worked
+it ("Answered by: Student Accounts Analyst").
+
+**Audit.** Each employee working a step is the actor of its own
+`data.granted` event, listing the fields it read (`aggregate_only: true`,
+`delegated_by: chief_of_staff`). `permissions.grant_school_fields` refuses a
+field outside the employee's areas before anything is read. The leading
+employee's event also keeps `query_fields`, everything the step's query
+touched in building its rows. `explore.answered` stays with the Chief of
+Staff and lists the employees. A counseling question is denied by name: the
+employee it was put to (by its topic words, else the signed-in department's
+own, else the Chief of Staff) is the refusal's actor.
+
+**The page.** "AI employees and data access" (`GET /staff`, every role)
+shows a card for each employee: title, office, job, what it may read, what
+it never reads, the areas outside its job, and how many requests it handled
+today (distinct tasks in its `data.granted`/`data.refused` events today).
+Department accounts see their own employee first and now have this page in
+their sidebar; each department's home screen names its employee ("Your AI
+employee: Student Accounts Analyst"). The president sees every employee,
+the Chief of Staff first.
 
 ## The university budget
 

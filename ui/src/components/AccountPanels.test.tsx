@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import type { Session } from '../auth'
+import type { StaffEmployee } from '../staff'
 import { DataAccessPanel, ProfilePanel, SettingsPanel } from './AccountPanels'
 
 describe('SettingsPanel', () => {
@@ -39,6 +40,52 @@ afterEach(() => {
   cleanup()
 })
 
+const employee = (overrides: Partial<StaffEmployee>): StaffEmployee => ({
+  role: 'registrar_analyst',
+  title: 'Registrar Analyst',
+  job: 'Reports registration, academic standing, credit hours and course sections.',
+  office: 'Office of the Registrar',
+  may_read: ['Majors, colleges, class levels and terms', 'Academic standing (probation and suspension)'],
+  never_reads: ['Student names', 'Counseling and chaplain notes', 'Free-text notes', "One student's record"],
+  outside_scope: ['Pell status', 'Holds and balances owed, by office'],
+  findings: ['M1'],
+  no_data: false,
+  yours: false,
+  requests_today: 0,
+  ...overrides,
+})
+
+const STAFF: StaffEmployee[] = [
+  employee({
+    role: 'student_accounts_analyst',
+    title: 'Student Accounts Analyst',
+    job: 'Reports account holds and balances owed, by office.',
+    office: 'Finance — Student Accounts (Bursar)',
+    may_read: ['Majors, colleges, class levels and terms', 'Holds and balances owed, by office'],
+    outside_scope: ['Pell status', 'Advising appointments'],
+    yours: true,
+    requests_today: 3,
+  }),
+  employee({
+    role: 'student_success_analyst',
+    title: 'Student Success Analyst',
+    job: 'Explains what stands in students’ way: holds, missing advising appointments, stop-outs and support indicators.',
+    office: 'Student Success',
+    requests_today: 1,
+  }),
+  employee({}),
+  employee({
+    role: 'advancement_analyst',
+    title: 'Advancement Analyst',
+    job: 'Will report giving and alumni engagement once that data is connected.',
+    office: 'Advancement',
+    may_read: [],
+    never_reads: ['Any student record', 'Counseling and chaplain notes', 'Free-text notes', "One student's record"],
+    outside_scope: [],
+    no_data: true,
+  }),
+]
+
 describe('DataAccessPanel', () => {
   const grants = [
     {
@@ -50,7 +97,7 @@ describe('DataAccessPanel', () => {
   ]
 
   it('names figures and fields plainly, raw names folded', () => {
-    const html = renderToStaticMarkup(<DataAccessPanel grants={grants} />)
+    const html = renderToStaticMarkup(<DataAccessPanel staff={STAFF} grants={grants} />)
     expect(html).toContain('Latest run explained: Not yet registered, with a hold under $1,000;')
     expect(html).toContain('<li>Hold amount</li>')
     expect(html).not.toContain('Findings: M3')
@@ -60,26 +107,53 @@ describe('DataAccessPanel', () => {
     expect(html).not.toMatch(/model/i)
   })
 
-  it('gives each AI employee a one-line job, before and after a run', () => {
-    for (const html of [
-      renderToStaticMarkup(<DataAccessPanel grants={null} />),
-      renderToStaticMarkup(<DataAccessPanel grants={grants} />),
-    ]) {
-      for (const name of ['Enrollment Analyst', 'Student Success Analyst', 'Chief of Staff']) {
-        expect(html).toContain(name)
-      }
-      expect(html.match(/class="grant-job"/g)).toHaveLength(3)
-      expect(html).toContain('Explains the registration figures')
-      expect(html).toContain('holds, missing advising appointments and support indicators')
-      expect(html).toContain('writes the summary and its limits')
-    }
-    expect(renderToStaticMarkup(<DataAccessPanel grants={null} />)).toContain(
-      'Ask a question to see exactly what each employee was given.',
+  it('shows every employee as a card: title, office, job, scope, never-reads and today', () => {
+    render(<DataAccessPanel staff={STAFF} grants={null} />)
+    const cards = screen.getAllByRole('article')
+    expect(cards.map((card) => card.getAttribute('aria-label'))).toEqual([
+      'Student Accounts Analyst',
+      'Student Success Analyst',
+      'Registrar Analyst',
+      'Advancement Analyst',
+    ])
+    const own = within(cards[0])
+    expect(own.getByText('Your AI employee')).toBeTruthy()
+    expect(own.getByText('Serves Finance — Student Accounts (Bursar)')).toBeTruthy()
+    expect(own.getByText('Reports account holds and balances owed, by office.')).toBeTruthy()
+    expect(own.getByText('May read, as totals')).toBeTruthy()
+    expect(own.getByText(/Holds and balances owed, by office$/)).toBeTruthy()
+    expect(own.getByText('Never reads')).toBeTruthy()
+    expect(own.getByText(/^Student names; Counseling and chaplain notes/)).toBeTruthy()
+    expect(own.getByText('Handled 3 requests today')).toBeTruthy()
+    expect(own.getByText('Outside its job (2)')).toBeTruthy()
+    expect(within(cards[1]).getByText('Handled 1 request today')).toBeTruthy()
+    expect(within(cards[2]).getByText('No requests today')).toBeTruthy()
+    expect(within(cards[2]).queryByText('Your AI employee')).toBeNull()
+    const none = within(cards[3])
+    expect(none.getByText('No data connected yet')).toBeTruthy()
+    expect(none.getByText('Nothing yet: no data is connected for this office.')).toBeTruthy()
+    expect(none.queryByText(/Outside its job/)).toBeNull()
+    expect(screen.getByText('Ask an approved briefing question to see exactly what each briefing employee was given.')).toBeTruthy()
+  })
+
+  it('leaves out the "ask a question" note for roles without briefing runs', () => {
+    const html = renderToStaticMarkup(<DataAccessPanel staff={STAFF} />)
+    expect(html).not.toContain('to see exactly what each')
+    expect(html.match(/class="grant-job"/g)).toHaveLength(4)
+  })
+
+  it('says it is loading, then offers Retry when the employees cannot be loaded', () => {
+    expect(renderToStaticMarkup(<DataAccessPanel staff={null} />)).toContain('Loading the AI employees…')
+    const failed = renderToStaticMarkup(
+      <DataAccessPanel staff={null} staffError="Check your connection and try again." onRetryStaff={() => {}} />,
     )
+    expect(failed).toContain('Couldn&#x27;t load the AI employees. Check your connection and try again.')
+    expect(failed).toContain('>Retry</button>')
+    expect(failed).not.toContain('Loading the AI employees')
   })
 
   it('says in the People table who may ask questions and who sees instructor names', () => {
-    const html = renderToStaticMarkup(<DataAccessPanel grants={null} />)
+    const html = renderToStaticMarkup(<DataAccessPanel staff={STAFF} grants={null} />)
     const ask = 'Ask any question about students, courses and majors (totals only)'
     const rows = html.match(/<tr><th scope="row">[^<]+<\/th><td>[^<]*<\/td><\/tr>/g) ?? []
     expect(rows).toHaveLength(18)
@@ -97,10 +171,15 @@ describe('DataAccessPanel', () => {
 
   it('shows a failed load with Retry, not the empty text', () => {
     const html = renderToStaticMarkup(
-      <DataAccessPanel grants={null} error="Check your connection and try again." onRetry={() => {}} />,
+      <DataAccessPanel
+        staff={STAFF}
+        grants={null}
+        error="Check your connection and try again."
+        onRetry={() => {}}
+      />,
     )
     expect(html).toContain('>Retry</button>')
-    expect(html).not.toContain('Ask a question to see')
+    expect(html).not.toContain('to see exactly what each')
   })
 })
 
