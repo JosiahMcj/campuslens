@@ -82,6 +82,16 @@ def _matrix(
     }
 
 
+def _rate_hidden(rows: list[tuple[str, int, int]]) -> list[bool]:
+    """Per row, whether the size or the share is withheld.
+
+    The remainder (whole minus part) is protected with the part, so a tiny
+    remainder cannot be read off a high share.
+    """
+    mask = protect([[whole, part, whole - part] for _, whole, part in rows])
+    return [any(row) for row in mask]
+
+
 def _rates(
     key: str,
     title: str,
@@ -91,12 +101,11 @@ def _rates(
     rows: list[tuple[str, int, int]],
 ) -> dict[str, Any]:
     """Rows of (label, group size, part of it); shows the size and the share."""
-    mask = protect([[whole, part] for _, whole, part in rows])
+    mask = protect([[whole, part, whole - part] for _, whole, part in rows])
     out = []
-    for (label, whole, part), (whole_hidden, part_hidden) in zip(
-        rows, mask, strict=True
-    ):
-        hidden = whole_hidden or part_hidden
+    for (label, whole, part), cells in zip(rows, mask, strict=True):
+        hidden = any(cells)
+        whole_hidden = hidden
         out.append(
             {
                 "group": label,
@@ -334,10 +343,6 @@ def financial_aid(con: sqlite3.Connection, term: str) -> dict[str, Any]:
         " WHERE e.term_code = ? AND e.status = 'enrolled'",
         (term,),
     ).fetchone()
-    (financial_holds,) = con.execute(
-        "SELECT COUNT(DISTINCT student_id) FROM person_holds"
-        " WHERE category = 'financial' AND end_date IS NULL"
-    ).fetchone()
     pell = int(pell or 0)
     tiles = [
         _tile(
@@ -362,7 +367,7 @@ def financial_aid(con: sqlite3.Connection, term: str) -> dict[str, Any]:
             "pell_with_hold",
             "Pell recipients with an open account hold",
             _count(int(pell_hold or 0)),
-            f"Of {_count(int(financial_holds))} students with an open account hold in all.",
+            "",
         ),
     ]
     levels = [
@@ -1058,7 +1063,7 @@ def international(con: sqlite3.Connection, term: str) -> dict[str, Any]:
     ).fetchone()
     (financial,) = con.execute(
         "SELECT COUNT(DISTINCT h.student_id) FROM person_holds h JOIN students s ON s.student_id = h.student_id"
-        " WHERE s.residency = 'international' AND h.end_date IS NULL"
+        " WHERE s.residency = 'international' AND h.end_date IS NULL AND h.category != 'financial'"
     ).fetchone()
     tiles = [
         _tile(
@@ -1083,7 +1088,7 @@ def international(con: sqlite3.Connection, term: str) -> dict[str, Any]:
             "international_holds",
             "International students with an open hold",
             _count(int(financial)),
-            "Any office's hold still open.",
+            "Any open hold other than a financial one.",
         ),
     ]
     trend = []
@@ -1160,12 +1165,17 @@ def athletics(con: sqlite3.Connection, term: str) -> dict[str, Any]:
     a_n, a_gpa, a_good = groups[1]
     n_n, n_gpa, n_good = groups[0]
 
-    def gpa(n: int, value: Any) -> str:
-        return (
-            WITHHELD
-            if n < MINIMUM_CELL_SIZE or value is None
-            else f"{float(value):.2f}"
-        )
+    gpa_hidden = [h for (h,) in protect([[a_n], [n_n]])]
+
+    def gpa(value: Any, hidden: bool) -> str:
+        return WITHHELD if hidden or value is None else f"{float(value):.2f}"
+
+    a_gpa_text = gpa(a_gpa, gpa_hidden[0])
+    n_gpa_text = gpa(n_gpa, gpa_hidden[1])
+    ret_hidden = _rate_hidden([("a", aw, ap), ("n", nw, np_)])
+
+    def rate(part: int, whole: int, hidden: bool) -> str:
+        return WITHHELD if hidden else _share(part, whole)
 
     tiles = [
         _tile(
@@ -1183,19 +1193,20 @@ def athletics(con: sqlite3.Connection, term: str) -> dict[str, Any]:
         _tile(
             "athlete_gpa",
             "Athletes' average GPA",
-            gpa(a_n, a_gpa),
-            f"Cumulative. Other students: {gpa(n_n, n_gpa)}.",
+            a_gpa_text,
+            f"Cumulative. Other students: {n_gpa_text}.",
         ),
         _tile(
             "athlete_retention",
             "Athletes' first-year retention",
-            _share(ap, aw),
-            f"First-time athletes who came back the next fall. Other students: {_share(np_, nw)}.",
+            rate(ap, aw, ret_hidden[0]),
+            "First-time athletes who came back the next fall. Other students: "
+            f"{rate(np_, nw, ret_hidden[1])}.",
         ),
     ]
     compare = [
-        ("Athletes", a_n, gpa(a_n, a_gpa)),
-        ("Other students", n_n, gpa(n_n, n_gpa)),
+        ("Athletes", a_n, a_gpa_text),
+        ("Other students", n_n, n_gpa_text),
     ]
     retention_rows = [
         ("Athletes", aw, ap),
