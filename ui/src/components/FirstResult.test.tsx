@@ -91,6 +91,34 @@ describe('FirstResult', () => {
     }
   })
 
+  it('shows the holds findings and scope for the unresolved-holds question', () => {
+    const findings: Findings = {
+      ...FINDINGS,
+      M5: {
+        ...finding('M5', '28 unresolved holds'),
+        value: [
+          { office: 'Bursar', count: 20, hold_row_ids: [] },
+          { office: 'Registrar', count: 8, hold_row_ids: [] },
+        ],
+      },
+      M6: finding('M6', '28 days'),
+    }
+    show({ findings, questionId: 'unresolved-holds' })
+    const text = screen.getByRole('region', { name: 'Main findings' }).textContent
+    expect(text).toContain('Unresolved holds affecting continued enrollment')
+    expect(text).toContain('28 unresolved holds')
+    expect(text).toContain('Bursar 20, Registrar fewer than 10')
+    expect(text).toContain('28 days')
+    expect(text).not.toContain('Comparison period')
+  })
+
+  it('scopes the registration answer and labels the snapshot as fictional', () => {
+    show()
+    const text = screen.getByRole('region', { name: 'Main findings' }).textContent
+    expect(text).toContain('Spring registration window · continuing students not yet registered')
+    expect(text).toContain('Fictional snapshot dated Nov 20, 2026.')
+  })
+
   it('names the human-owned next step, its office and the proposed deadline', () => {
     show()
     const section = screen.getByRole('region', { name: 'Main findings' })
