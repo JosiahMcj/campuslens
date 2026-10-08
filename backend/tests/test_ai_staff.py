@@ -590,7 +590,9 @@ def test_the_ui_names_every_employee_as_the_api_does() -> None:
     }
 
 
-def test_the_budget_belongs_to_the_finance_and_budget_analyst_and_its_roles() -> None:
+def test_the_budget_belongs_to_the_finance_and_budget_analyst_and_its_roles(
+    tmp_path: Path,
+) -> None:
     from cabinet.explore.finance import BUDGET_ROLES
 
     budget = [
@@ -610,7 +612,7 @@ def test_the_budget_belongs_to_the_finance_and_budget_analyst_and_its_roles() ->
                 "finance_budget_analyst",
                 analysis.fields_read,
                 "t",
-                AuditLog(Path("/dev/null")),
+                AuditLog(tmp_path / "audit.jsonl"),
             )
     # Student-account measures belong to Student Accounts.
     for measure in ("past_due_balance", "collection_rate", "avg_balance_owed"):
