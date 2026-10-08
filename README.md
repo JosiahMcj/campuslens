@@ -4,7 +4,7 @@
 
 *Governed AI employees helping university leaders turn SIS data into human-centered action.*
 
-**Know your students. Lead your flock.** CampusLens turns fragmented institutional information into clear briefings, informed decisions, and accountable departmental action.
+**Know your campus. Lead your flock.** CampusLens turns fragmented institutional information into clear briefings, informed decisions, and accountable departmental action.
 
 - **Ask anything, get the answer in seconds.** Plain-English questions about students, courses, money and outcomes, answered with a chart, key points, and every number traced to its source.
 - **Decide, and the right office gets the job.** CampusLens proposes the plan; a person approves; the work lands in the responsible department's inbox, where it is acknowledged and tracked.
