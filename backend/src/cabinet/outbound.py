@@ -205,9 +205,7 @@ class SmtpProvider:
                     context=ssl.create_default_context(),
                 )
             else:
-                smtp = smtplib.SMTP(
-                    self.host, self.port, timeout=SMTP_TIMEOUT_SECONDS
-                )
+                smtp = smtplib.SMTP(self.host, self.port, timeout=SMTP_TIMEOUT_SECONDS)
                 smtp.starttls(context=ssl.create_default_context())
             with smtp:
                 smtp.login(self.user, password)
@@ -259,8 +257,7 @@ class MisconfiguredSmtpProvider:
 
     def send(self, **kwargs: str | int) -> str:
         raise OutboundError(
-            "the smtp provider is not configured; missing: "
-            + ", ".join(self.missing)
+            "the smtp provider is not configured; missing: " + ", ".join(self.missing)
         )
 
 
@@ -320,8 +317,7 @@ def outbound_from_env(
             host=settings[ENV_SMTP_HOST],
             port=int(settings[ENV_SMTP_PORT]),
             from_addr=settings[ENV_SMTP_FROM],
-            user=os.environ.get(ENV_SMTP_USER, "").strip()
-            or settings[ENV_SMTP_FROM],
+            user=os.environ.get(ENV_SMTP_USER, "").strip() or settings[ENV_SMTP_FROM],
             password_file=Path(settings[ENV_SMTP_PASSWORD_FILE]),
         )
     raise RuntimeError(

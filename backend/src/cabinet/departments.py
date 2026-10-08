@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -40,8 +41,11 @@ from cabinet.auth import (
     ROLE_STUDENT_LIFE,
 )
 from cabinet.counseling import MINIMUM_CELL_SIZE
+from cabinet.explore import finance as fin
+from cabinet.explore import general
 from cabinet.explore.catalog import (
     SchoolDataMissing,
+    catalog_for,
     connect_readonly,
     school_db_path,
 )
@@ -84,8 +88,7 @@ def protect(matrix: list[list[int]]) -> list[list[bool]]:
     ]
     width = max((len(row) for row in matrix), default=0)
     lines += [
-        [(r, c) for r in range(len(matrix)) if c < len(matrix[r])]
-        for c in range(width)
+        [(r, c) for r in range(len(matrix)) if c < len(matrix[r])] for c in range(width)
     ]
     changed = True
     while changed:
@@ -234,6 +237,340 @@ def _finance(con: sqlite3.Connection, term: str) -> dict[str, Any]:
                     {"key": "students", "label": "Students"},
                 ],
                 "rows": bands,
+            },
+        ],
+    }
+
+
+def _dollars(amount: float) -> str:
+    """An institutional figure: millions with one decimal ("$406.8 million")."""
+    sign = "−" if amount < 0 else ""
+    return f"{sign}${abs(amount) / 1e6:,.1f} million"
+
+
+def _signed_pct(value: float) -> str:
+    if value == 0:
+        return "on budget"
+    return f"{abs(value):.1f}% {'over' if value > 0 else 'under'}"
+
+
+def _money_hundreds(amount: float, students: int) -> str:
+    """A student-account dollar sum: withheld under the minimum group size,
+    else rounded to the nearest $100 (as Explore rounds it)."""
+    if students < MINIMUM_CELL_SIZE:
+        return WITHHELD
+    return f"${int(round(amount / 100.0)) * 100:,}"
+
+
+def _university_budget(con: sqlite3.Connection) -> dict[str, Any] | None:
+    """The university's own budget (no students in it, so no small-cell
+    rule): this fiscal year's spending and revenue against budget by
+    division and source, and the tuition discount rate each year."""
+    if not fin.has_budget(con):
+        return None
+    year = fin.fiscal_years(con)[-1]
+    spend, _ = fin.budget_vs_actual(con, {"fiscal_year": year})
+    revenue, notes = fin.revenue_by_source(con, {"fiscal_year": year})
+    tuition, _ = fin.tuition_discount(con, {})
+    total = spend[-1]
+    net = revenue[-1]
+    this, before = tuition[-1], tuition[-2] if len(tuition) > 1 else tuition[-1]
+    surplus = net["actual"] - total["actual"]
+    tiles = [
+        _tile(
+            "budget_spending",
+            f"Spending against budget, {year}",
+            _dollars(total["actual"]),
+            f"Budget {_dollars(total['budget'])}: "
+            f"{_signed_pct(total['variance_pct'])}.",
+        ),
+        _tile(
+            "budget_net_revenue",
+            f"Net revenue, {year}",
+            _dollars(net["actual"]),
+            f"Budget {_dollars(net['budget'])}: {_signed_pct(net['variance_pct'])}. "
+            + (
+                f"A deficit of {_dollars(-surplus)}."
+                if surplus < 0
+                else f"A surplus of {_dollars(surplus)}."
+            ),
+        ),
+        _tile(
+            "budget_net_tuition",
+            f"Net tuition revenue, {year}",
+            _dollars(this["net_tuition"]),
+            f"Gross tuition {_dollars(this['gross_tuition'])} less institutional aid "
+            f"{_dollars(this['institutional_aid'])}.",
+        ),
+        _tile(
+            "budget_discount_rate",
+            f"Tuition discount rate, {year}",
+            f"{this['discount_rate']:.1f}%",
+            f"{before['discount_rate']:.1f}% in {before['fiscal_year']}. Institutional "
+            "aid as a share of gross tuition.",
+        ),
+    ]
+    by_division = [
+        {
+            "division": r["group"],
+            "budget": f"${r['budget']:,}",
+            "actual": f"${r['actual']:,}",
+            "variance": ("+" if r["variance"] > 0 else "−" if r["variance"] < 0 else "")
+            + f"${abs(r['variance']):,}",
+            "variance_pct": _signed_pct(r["variance_pct"]),
+        }
+        for r in spend
+    ]
+    gross_revenue = sum(r["actual"] for r in revenue[:-1] if r["actual"] > 0)
+    mix = [
+        {
+            "source": r["group"],
+            "budget": ("−" if r["budget"] < 0 else "") + f"${abs(r['budget']):,}",
+            "actual": ("−" if r["actual"] < 0 else "") + f"${abs(r['actual']):,}",
+            "share": f"{100 * r['actual'] / gross_revenue:.1f}%"
+            if r["actual"] > 0 and not r.get("_total")
+            else "—",
+        }
+        for r in revenue
+    ]
+    trend = [
+        {
+            "fiscal_year": r["fiscal_year"],
+            "student_terms": f"{r['student_terms']:,}",
+            "gross": _dollars(r["gross_tuition"]),
+            "aid": _dollars(r["institutional_aid"]),
+            "net": _dollars(r["net_tuition"]),
+            "rate": f"{r['discount_rate']:.1f}%",
+        }
+        for r in tuition
+    ]
+    money = [
+        {"key": "budget", "label": "Budget"},
+        {"key": "actual", "label": "Actual"},
+    ]
+    return {
+        "key": "university_budget",
+        "title": "University budget",
+        "intro": (
+            f"{year}, July to June. "
+            + " ".join(n for n in notes if "preliminary" in n)
+            + " The university's own books, not student records: shown to the "
+            "president, the finance office and the administrator only."
+        ).strip(),
+        "tiles": tiles,
+        "tables": [
+            {
+                "key": "budget_by_division",
+                "total_last": True,
+                "title": f"Spending against budget by division, {year}",
+                "columns": [
+                    {"key": "division", "label": "Division"},
+                    *money,
+                    {"key": "variance", "label": "Actual less budget"},
+                    {"key": "variance_pct", "label": "Over or under"},
+                ],
+                "rows": by_division,
+            },
+            {
+                "key": "revenue_mix",
+                "total_last": True,
+                "title": f"Revenue by source, {year}",
+                "columns": [
+                    {"key": "source", "label": "Source"},
+                    *money,
+                    {"key": "share", "label": "Share of gross revenue"},
+                ],
+                "rows": mix,
+            },
+            {
+                "key": "discount_trend",
+                "title": "Tuition discount rate by fiscal year",
+                "columns": [
+                    {"key": "fiscal_year", "label": "Fiscal year"},
+                    {"key": "student_terms", "label": "Student terms"},
+                    {"key": "gross", "label": "Gross tuition"},
+                    {"key": "aid", "label": "Institutional aid"},
+                    {"key": "net", "label": "Net tuition"},
+                    {"key": "rate", "label": "Discount rate"},
+                ],
+                "rows": trend,
+            },
+        ],
+    }
+
+
+AGING_LABELS = {
+    "1_30": "1 to 30 days",
+    "31_60": "31 to 60 days",
+    "61_90": "61 to 90 days",
+    "over_90": "More than 90 days",
+}
+
+
+def _student_accounts(con: sqlite3.Connection, path: Path) -> dict[str, Any] | None:
+    """The billing ledger (charges, payments, payment plans): computed with
+    Explore's own measures, so the figures, the rounding and the small-group
+    rules are the same in both places."""
+    if not general.has_billing(con):
+        return None
+    v = catalog_for(con, path).vocab
+
+    def run(p: dict[str, Any]) -> list[dict[str, Any]]:
+        return general.run(con, p, v)[0]
+
+    def one(measure: str) -> dict[str, Any] | None:
+        rows = run({"measure": measure})
+        return rows[0] if rows else None
+
+    on_time = one("on_time_payment_rate")
+    plan = one("payment_plan_share")
+    (asof,) = con.execute("SELECT MAX(end_date) FROM academic_periods").fetchone()
+    (last_due,) = con.execute("SELECT MAX(due_date) FROM student_charges").fetchone()
+    regular = [t for t, season in v.term_season.items() if season != "Summer"]
+    term_name = v.terms[regular[-1]]
+    # One pass over the past-due balances (the past_due_* measures' own row
+    # set and definitions, read once instead of once per figure).
+    by_age: dict[str, tuple[set[str], float]] = {}
+    everyone: set[str] = set()
+    late_90: set[str] = set()
+    owed = 0.0
+    for sid, aging, days, amount in con.execute(
+        general.UNIT_SQL["account"]
+        + " SELECT b.sid, b.aging, b.days_past_due, b.balance FROM b"
+        " WHERE b.past_due = 1",
+        {"term_from": regular[0], "term_to": regular[-1]},
+    ):
+        ids, total = by_age.get(aging, (set(), 0.0))
+        ids.add(sid)
+        by_age[aging] = (ids, total + float(amount))
+        everyone.add(sid)
+        owed += float(amount)
+        if days > 90:
+            late_90.add(sid)
+
+    def hundreds(amount: float) -> str:
+        return f"${int(round(amount / 100.0)) * 100:,}"
+
+    def pct_of(row: dict[str, Any] | None) -> str:
+        return WITHHELD if row is None else f"{row['value']:.1f}%"
+
+    tiles = [
+        _tile(
+            "accounts_past_due_balance",
+            "Past-due balance on student accounts",
+            _money_hundreds(owed, len(everyone)),
+            f"Unpaid after the due date, as of {asof}. Nothing is written off in "
+            "these records. Rounded to the nearest $100.",
+        ),
+        _tile(
+            "accounts_past_due_students",
+            "Students with a past-due balance",
+            _count(len(everyone)),
+            f"{_count(len(late_90))} of them more than 90 days past due.",
+        ),
+        _tile(
+            "accounts_on_time",
+            f"Paid on time, {term_name}",
+            pct_of(on_time),
+            "Paid in full by the due date, or on a payment plan.",
+        ),
+        _tile(
+            "accounts_payment_plans",
+            f"On a payment plan, {term_name}",
+            pct_of(plan),
+            (
+                f"{plan['numerator']:,} of {plan['denominator']:,} students billed."
+                if plan is not None
+                else ""
+            ),
+        ),
+    ]
+    present = [code for code in AGING_LABELS if code in by_age]
+    mask = dict(
+        zip(
+            present,
+            (m[0] for m in protect([[len(by_age[c][0])] for c in present])),
+            strict=True,
+        )
+    )
+    aging_rows = []
+    empty: list[str] = []
+    for code, label in AGING_LABELS.items():
+        if code not in by_age:
+            empty.append(label.lower())
+            aging_rows.append({"age": label, "students": "None", "balance": "—"})
+            continue
+        ids, amount = by_age[code]
+        hidden = mask[code]
+        aging_rows.append(
+            {
+                "age": label,
+                "students": _shown(len(ids), hidden),
+                "balance": WITHHELD if hidden else hundreds(amount),
+            }
+        )
+    college_rows = []
+    rates = {
+        r.get("college"): r
+        for r in run({"measure": "on_time_payment_rate", "group_by": "college"})
+    }
+    plans = {
+        r.get("college"): r
+        for r in run({"measure": "payment_plan_share", "group_by": "college"})
+    }
+    for code, name in sorted(v.colleges.items(), key=lambda kv: kv[1]):
+        rate, share = rates.get(code), plans.get(code)
+        college_rows.append(
+            {
+                "college": name,
+                "billed": WITHHELD if rate is None else f"{rate['denominator']:,}",
+                "on_time": pct_of(rate),
+                "plan": pct_of(share),
+            }
+        )
+    notes = [
+        "Each billed term's balance is aged from its own due date. A student with "
+        "balances of different ages is counted in each row."
+    ]
+    if empty and last_due:
+        gap = (date.fromisoformat(asof) - date.fromisoformat(last_due)).days
+        notes.append(
+            f"No balance is {' or '.join(empty)} past due. Each term's charges fall "
+            f"due on one date, and the latest, {last_due}, was {gap} days before "
+            f"the records end ({asof}), so every unpaid balance is at least {gap} "
+            "days past due."
+        )
+    return {
+        "key": "student_accounts",
+        "title": "Student accounts",
+        "intro": (
+            "Charges, payments and payment plans on students' accounts (the "
+            "billing ledger), separate from the account holds above. Groups under "
+            f"{MINIMUM_CELL_SIZE} students are withheld."
+        ),
+        "tiles": tiles,
+        "tables": [
+            {
+                "key": "accounts_aging",
+                "title": f"Past-due balances by days past due, as of {asof}",
+                "columns": [
+                    {"key": "age", "label": "Days past due"},
+                    {"key": "students", "label": "Students"},
+                    {"key": "balance", "label": "Balance"},
+                ],
+                "rows": aging_rows,
+                "notes": notes,
+            },
+            {
+                "key": "accounts_by_college",
+                "title": f"On-time payment and payment plans by college, {term_name}",
+                "columns": [
+                    {"key": "college", "label": "College"},
+                    {"key": "billed", "label": "Students billed"},
+                    {"key": "on_time", "label": "Paid on time"},
+                    {"key": "plan", "label": "On a payment plan"},
+                ],
+                "rows": college_rows,
             },
         ],
     }
@@ -471,6 +808,13 @@ def overview(department: str, db: Path | None = None) -> dict[str, Any]:
     try:
         term, term_name = _latest_term(con)
         body = builder(con, term)
+        if department == ROLE_FINANCE:
+            sections = [
+                s
+                for s in (_university_budget(con), _student_accounts(con, path))
+                if s is not None
+            ]
+            body["sections"] = sections
         meta = dict(con.execute("SELECT key, value FROM meta").fetchall())
     except sqlite3.Error:
         raise SchoolDataMissing() from None
@@ -496,7 +840,10 @@ def tile_snapshot(department: str, tile_key: str) -> dict[str, Any] | None:
     if department not in _BUILDERS:
         return None
     data = overview(department)
-    tile = next((t for t in data["tiles"] if t["key"] == tile_key), None)
+    tiles = [*data["tiles"]]
+    for section in data.get("sections", []):
+        tiles.extend(section["tiles"])
+    tile = next((t for t in tiles if t["key"] == tile_key), None)
     if tile is None:
         return None
     return {

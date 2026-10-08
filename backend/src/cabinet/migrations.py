@@ -230,9 +230,7 @@ def _migration_2(conn: sqlite3.Connection) -> None:
     computed from (activating a new dataset must invalidate both), and index
     the audit log for the per-type latest-event lookups."""
     for table in ("briefings", "decisions"):
-        columns = {
-            str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")
-        }
+        columns = {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")}
         if "dataset_id" not in columns:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN dataset_id INTEGER")
         if "dataset_sha256" not in columns:
@@ -453,9 +451,7 @@ def _migration_7(conn: sqlite3.Connection) -> None:
     first: a database that already carries a column (a hand repair, or a
     retried migration) is upgraded without a "duplicate column" failure.
     """
-    existing = {
-        str(row[1]) for row in conn.execute("PRAGMA table_info(institutions)")
-    }
+    existing = {str(row[1]) for row in conn.execute("PRAGMA table_info(institutions)")}
     for name, declaration in COUNSELING_AUTHORIZATION_COLUMNS:
         if name not in existing:
             conn.execute(f"ALTER TABLE institutions ADD COLUMN {name} {declaration}")

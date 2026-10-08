@@ -29,6 +29,7 @@ import json
 import statistics
 import threading
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qsl, urlencode
@@ -39,12 +40,14 @@ from fastapi.responses import JSONResponse
 
 from cabinet.counseling import MINIMUM_CELL_SIZE
 from cabinet.data_roles import (
+    BUDGET,
     CAMPUS,
     FINANCES,
     STUDENTS,
     attribute_allowed,
     dashboards_for,
 )
+from cabinet.explore import finance as fin
 from cabinet.explore import general
 from cabinet.explore.catalog import (
     SchoolDataMissing,
@@ -347,6 +350,43 @@ CHARTS: tuple[Chart, ...] = (
         split="pell",
         cohorts="g4",
     ),
+    # Student accounts (the billing tables; hidden without them)
+    _c(
+        "accounts_on_time",
+        FINANCES,
+        "Paid on time",
+        M["on_time_payment_rate"],
+        "term",
+        "line",
+    ),
+    _c(
+        "accounts_payment_plans",
+        FINANCES,
+        "On a payment plan",
+        M["payment_plan_share"],
+        "term",
+        "line",
+    ),
+    _c(
+        "accounts_collection",
+        FINANCES,
+        "Collected of billed",
+        M["collection_rate"],
+        "term",
+        "line",
+        note="Dollars paid by the end of the records (May 8, 2026) over dollars "
+        "billed for each term.",
+    ),
+    _c(
+        "accounts_past_due",
+        FINANCES,
+        "Still past due, by term billed",
+        M["past_due_balance"],
+        "term",
+        "bar",
+        note="What is still unpaid from each term's bill as of the end of the "
+        "records. Nothing is written off, so older terms keep their balances.",
+    ),
     # Campus life and academics
     _c(
         "on_campus",
@@ -402,13 +442,216 @@ DASHBOARDS: dict[str, dict[str, str]] = {
     },
     FINANCES: {
         "title": "Student finances",
-        "intro": "Financial holds, balances owed, and how Pell recipients fare.",
+        "intro": "Financial holds, balances owed, how Pell recipients fare, and how "
+        "students pay their bills.",
+    },
+    BUDGET: {
+        "title": "University budget",
+        "intro": "The university's own books by fiscal year (July to June): spending "
+        "and revenue against budget, and tuition after the discount. Not student "
+        "data, so the student filters do not apply.",
     },
     CAMPUS: {
         "title": "Campus life and academics",
         "intro": "Housing, athletics, course loads, grades and advising.",
     },
 }
+
+# --- the university budget dashboard ------------------------------------------------
+#
+# The university's own books, by fiscal year: no student is in them, so there
+# is no small-cell rule and no student filter. Each chart returns the same
+# shape as a student chart (x = fiscal years, carrying the academic year the
+# page's year range slices by), so the page draws it with the same component.
+
+
+@dataclass(frozen=True)
+class BudgetChart:
+    id: str
+    title: str
+    form: str
+    kind: str  # dollars, pct, or pct_fit (a percentage on an axis fitted to the data)
+    value_label: str
+    definition: str
+
+
+BUDGET_CHARTS: tuple[BudgetChart, ...] = (
+    BudgetChart(
+        "budget_spending",
+        "Spending against budget",
+        "bar",
+        "dollars",
+        "Spending ($)",
+        "Expenses in every fund (operating, auxiliary and restricted), the adopted "
+        "budget against actual spending.",
+    ),
+    BudgetChart(
+        "budget_divisions",
+        "Spending as a share of budget, by division",
+        "line",
+        "pct_fit",
+        "Actual as a share of budget (%)",
+        "Each division's actual spending as a percentage of its budget: above 100 is "
+        "over budget. The divisions that strayed furthest from budget are shown, "
+        "with all spending for reference.",
+    ),
+    BudgetChart(
+        "budget_revenue",
+        "Net revenue against budget",
+        "bar",
+        "dollars",
+        "Net revenue ($)",
+        "All revenue less institutional aid (the tuition discount), budget against "
+        "actual.",
+    ),
+    BudgetChart(
+        "budget_tuition",
+        "Gross and net tuition revenue",
+        "line",
+        "dollars",
+        "Tuition revenue ($)",
+        "Gross tuition is the tuition billed (it moves with enrollment); net tuition "
+        "is gross tuition less institutional aid.",
+    ),
+    BudgetChart(
+        "budget_discount",
+        "Tuition discount rate",
+        "line",
+        "pct_fit",
+        "Discount rate (%)",
+        "Institutional aid as a share of gross tuition.",
+    ),
+)
+BUDGET_CHARTS_BY_ID = {c.id: c for c in BUDGET_CHARTS}
+MAX_DIVISION_SERIES = 6
+
+
+def budget_series(con: Any, chart: BudgetChart) -> dict[str, Any]:
+    """One budget chart (raises fin.BudgetMissing without the records)."""
+    if not fin.has_budget(con):
+        raise fin.BudgetMissing(fin.BUDGET_MISSING)
+    years = con.execute(
+        "SELECT fiscal_year, academic_year, status FROM fiscal_years ORDER BY 1"
+    ).fetchall()
+    # Short labels ("FY21", like "Fall '20" on the term charts) fit six bars
+    # side by side on a phone.
+    xs = [{"key": fy, "label": f"FY{fy[-2:]}", "year": ay} for fy, ay, _ in years]
+    notes = [
+        f"{fy} is preliminary: the books are not closed and June is estimated."
+        for fy, _, status in years
+        if status == "preliminary"
+    ]
+
+    def points(values: dict[str, float]) -> list[dict[str, Any]]:
+        return [
+            {"x": x["key"], "value": values[x["key"]], "status": "ok"}
+            if x["key"] in values
+            else {"x": x["key"], "value": None, "status": "none"}
+            for x in xs
+        ]
+
+    def pair(sql: str) -> tuple[dict[str, float], dict[str, float]]:
+        budget: dict[str, float] = {}
+        actual: dict[str, float] = {}
+        for fy, b, a in con.execute(sql):
+            budget[fy], actual[fy] = int(b), int(a)
+        return budget, actual
+
+    series: list[dict[str, Any]] = []
+    if chart.id in ("budget_spending", "budget_revenue"):
+        sql = (
+            "SELECT fiscal_year, SUM(budget_amount), SUM(actual_amount) "
+            "FROM budget_lines GROUP BY 1"
+            if chart.id == "budget_spending"
+            else "SELECT fiscal_year, SUM(CASE source WHEN 'institutional_aid' THEN "
+            "-budget_amount ELSE budget_amount END), SUM(CASE source WHEN "
+            "'institutional_aid' THEN -actual_amount ELSE actual_amount END) "
+            "FROM revenue_lines GROUP BY 1"
+        )
+        budget, actual = pair(sql)
+        series = [
+            {"key": "budget", "label": "Budget", "slot": 0, "points": points(budget)},
+            {"key": "actual", "label": "Actual", "slot": 1, "points": points(actual)},
+        ]
+    elif chart.id == "budget_tuition":
+        gross: dict[str, float] = {}
+        net: dict[str, float] = {}
+        for fy, g, n in con.execute(
+            "SELECT fiscal_year, gross_tuition, net_tuition FROM tuition_revenue"
+        ):
+            gross[fy], net[fy] = int(g), int(n)
+        series = [
+            {
+                "key": "gross",
+                "label": "Gross tuition",
+                "slot": 0,
+                "points": points(gross),
+            },
+            {"key": "net", "label": "Net tuition", "slot": 1, "points": points(net)},
+        ]
+    elif chart.id == "budget_discount":
+        rate = {
+            fy: round(100.0 * float(r), 1)
+            for fy, r in con.execute(
+                "SELECT fiscal_year, discount_rate FROM tuition_revenue"
+            )
+        }
+        series = [
+            {"key": "all", "label": "Discount rate", "slot": 0, "points": points(rate)}
+        ]
+    else:  # budget_divisions
+        share: dict[str, dict[str, float]] = {}
+        for division, fy, b, a in con.execute(
+            "SELECT c.division, b.fiscal_year, SUM(b.budget_amount), "
+            "SUM(b.actual_amount) FROM budget_lines b JOIN cost_centers c "
+            "USING (cost_center_id) GROUP BY 1, 2"
+        ):
+            share.setdefault(str(division), {})[fy] = round(100.0 * a / b, 1)
+        furthest = sorted(
+            share,
+            key=lambda d: (-max(abs(v - 100.0) for v in share[d].values()), d),
+        )[:MAX_DIVISION_SERIES]
+        for slot, division in enumerate(sorted(furthest)):
+            series.append(
+                {
+                    "key": division,
+                    "label": division,
+                    "slot": slot,
+                    "points": points(share[division]),
+                }
+            )
+        budget, actual = pair(
+            "SELECT fiscal_year, SUM(budget_amount), SUM(actual_amount) "
+            "FROM budget_lines GROUP BY 1"
+        )
+        overall = {fy: round(100.0 * actual[fy] / budget[fy], 1) for fy in budget}
+        series.append(
+            {
+                "key": "all",
+                "label": "All spending",
+                "slot": None,
+                "points": points(overall),
+            }
+        )
+        notes.append(
+            f"The {len(furthest)} of {len(share)} divisions furthest from their budget "
+            "in any year are shown."
+        )
+    return {
+        "chart": chart.id,
+        "title": chart.title,
+        "form": chart.form,
+        "kind": chart.kind,
+        "value_label": chart.value_label,
+        "definition": chart.definition,
+        "x_label": "Fiscal year",
+        "x": xs,
+        "split": None,
+        "series": series,
+        "notes": notes,
+        "minimum_cell_size": MINIMUM_CELL_SIZE,
+    }
+
 
 # What a chart may be narrowed by (one value each), and what it may be split
 # by: every grouping with at most eight groups (the chart palette's size).
@@ -632,6 +875,8 @@ def _point(
         out["value"] = int(round((median or 0.0) / step) * step)
     elif m.kind == "count":
         out["value"] = int(cell.num)
+    elif m.kind == "dollars" and m.unit == "account":
+        out["value"] = int(round(cell.num / 100.0)) * 100
     elif m.kind == "dollars":
         out["value"] = round(cell.num, 2)
     elif not cell.den:
@@ -824,7 +1069,7 @@ def compute(
             )
     if m.unit == "cohort" and not chart.all_entrants and attr != "admit_type":
         notes.append("Entering students are first-time students.")
-    if m.kind == "pct":
+    if m.kind == "pct" and m.id != "collection_rate":  # dollars, not people
         notes.append(
             "A rate is also withheld when fewer than 10 are counted either way "
             "(for example fewer than 10 who returned, or fewer than 10 who did "
@@ -990,17 +1235,35 @@ def get_dashboards(request: Request) -> JSONResponse:
     finally:
         con.close()
     warm(dashboards_for(role))
+    try:
+        con = connect_readonly()
+    except SchoolDataMissing:
+        return _missing()
+    try:
+        billing, budget = general.has_billing(con), fin.has_budget(con)
+    finally:
+        con.close()
+
+    def charts_of(board: str) -> list[dict[str, str]]:
+        if board == BUDGET:
+            return [
+                {"id": c.id, "title": c.title, "form": c.form} for c in BUDGET_CHARTS
+            ]
+        return [
+            {"id": c.id, "title": c.title, "form": c.form}
+            for c in CHARTS
+            if c.dashboard == board and (billing or c.measure.unit != "account")
+        ]
+
     boards = [
         {
             "id": board,
             **DASHBOARDS[board],
-            "charts": [
-                {"id": c.id, "title": c.title, "form": c.form}
-                for c in CHARTS
-                if c.dashboard == board
-            ],
+            "students": board != BUDGET,
+            "charts": charts_of(board),
         }
         for board in dashboards_for(role)
+        if board != BUDGET or budget
     ]
     return JSONResponse(
         content={
@@ -1054,6 +1317,9 @@ def _series(request: Request) -> JSONResponse:
         )
         return _error(status, message)
 
+    budget_chart = BUDGET_CHARTS_BY_ID.get(chart_id)
+    if budget_chart is not None:
+        return _budget_chart(request, budget_chart, refuse)
     chart = CHARTS_BY_ID.get(chart_id)
     if chart is None:
         return refuse(404, "There is no such chart.", "unknown_chart")
@@ -1108,6 +1374,17 @@ def _series(request: Request) -> JSONResponse:
             "A chart narrows to one group or compares groups, not both at once.",
             "one_attribute",
         )
+    if chart.measure.unit == "account":
+        try:
+            con = connect_readonly()
+        except SchoolDataMissing:
+            return _missing()
+        try:
+            billing = general.has_billing(con)
+        finally:
+            con.close()
+        if not billing:
+            return refuse(404, general.BILLING_MISSING, "not_in_data")
     try:
         result = cached_series(chart, filters, compare)
     except SchoolDataMissing:
@@ -1269,3 +1546,50 @@ def chart_attachment(ref: str) -> dict[str, Any] | None:
         "at": parsed.at,
         "focus_series": parsed.series,
     }
+
+
+def _budget_chart(
+    request: Request,
+    chart: BudgetChart,
+    refuse: Callable[[int, str, str], JSONResponse],
+) -> JSONResponse:
+    """One university budget chart: the budget roles only, no student filter."""
+    user = request.scope["cabinet_user"]
+    role = str(user["role"])
+    if BUDGET not in dashboards_for(role):
+        return refuse(
+            403, "This chart is not on a dashboard for your role.", "role_dashboard"
+        )
+    keys = [k for k, _ in request.query_params.multi_items() if k != "chart"]
+    if keys:
+        return refuse(
+            422,
+            "The university budget charts are not student data: they take no "
+            "student filter or comparison.",
+            "invalid_request",
+        )
+    try:
+        con = connect_readonly()
+    except SchoolDataMissing:
+        return _missing()
+    try:
+        result = budget_series(con, chart)
+    except fin.BudgetMissing as exc:
+        return refuse(404, str(exc), "not_in_data")
+    finally:
+        con.close()
+    request.app.state.auth.audit_for(int(user["institution_id"])).append(
+        "data.granted",
+        actor=str(user["email"]),
+        payload={
+            "route": "/data/series",
+            "analysis_id": "data_page",
+            "dashboard": BUDGET,
+            "chart": chart.id,
+            "filters": {},
+            "compare": None,
+            "fields_read": ["budget_lines", "revenue_lines", "tuition_revenue"],
+            "aggregate_only": True,
+        },
+    )
+    return JSONResponse(content=result)

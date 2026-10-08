@@ -361,6 +361,63 @@ suppression then also withholds the 3.50 to 4.00 band, since the total is publis
 That is the privacy rule working; `VERIFY.md` has the full figures (62.7% at 3.50 and
 up against 37.7% below).
 
+## Finance (2026-10-07)
+
+The finance office's questions, on the full-scale school with the billing and budget
+tables (`/tmp` throwaway server, the `finance@` demonstration account, template writer,
+one question at a time, local qwen3:14b with hidden reasoning off for model first):
+
+- **`--set finance`, 18 questions**: the owner's eight ("What is our budget vs actual this
+  year?", "Which departments are over budget?", "What is our tuition discount rate
+  trend?", "How much net tuition revenue did we make last year?", "How much is past
+  due?", "How many students are more than 90 days past due?", "What is the on-time
+  payment rate by college?", "How many students are on payment plans?") and ten casual
+  variants. The rules were tuned on it.
+- **`--set finance-held-out`, 10 questions**, written after the rules and the prompt were
+  final for the first set.
+
+| Planner order | Finance (18) | Finance held-out (10) |
+|---|---|---|
+| Rules only, first build | 15 (83%) | — |
+| Model first, the model planning every question | 16 (89%), median 1.2 s | — |
+| Rules only, after tuning | 18 (100%), median 0.2 s | 8 (80%) |
+| Rules only, final | 18 (100%), median 0.2 s, p90 0.8 s | 10 (100%), median 0.1 s |
+| Model first, final (finance questions to the rules first) | 18 (100%), median 0.2 s | 10 (100%), median 0.1 s |
+
+The model's misses, when it planned the finance questions itself: "Which departments are
+over budget?" without "by department" (twice, also after the purpose line named it), and
+"How many students are on payment plans?" as the share by term. Like forward questions,
+a question the rules map to the budget analyses or the student-account measures now goes
+to the rules first, and the model plans only what they cannot map. The held-out set's two
+first misses ("total outstanding receivables", unanswered, and "are we spending more than
+we planned on technology", not split by category) were fixed after that run (receivables
+and category words); the final held-out score is therefore no longer blind.
+
+**The compact catalog.** The catalog was 11,993 characters before this work, 7 under the
+12,000 limit. The finance lines (three analysis lines, seven measure lines, the days past
+due grouping) were paid for by listing the student-account measures and the groupings
+once (in MEASURES and GROUPINGS, not again as `measure_by_group` choices), writing the row
+count as `top: n` (code rounds it to an offered count), dropping short major names the
+resolver already maps (psych, bio, chem, nurses, mech e, business) from SYNONYMS, and the
+headcount-growth default sentence (its defaults are shown with its parameters). It is now
+11,987 characters (net −6). Two cheaper cuts were tried and rejected because the model got
+worse: removing the measure list from `measure_by_group`'s parameters ("do athletes have
+lower gpas than everyone else" became two steps, twice) and shortening the ordering rule
+("which 1000 level courses fail the most students" ranked lowest first). The same day,
+model first against the same school:
+
+| Code | Main (56) | Held-out (22) | Forward (12) |
+|---|---|---|---|
+| Before (75c32ee) | 56 (100%), median 1.0 s | 21 (95%) | — |
+| This branch | 55 (98%), median 1.0 s, p90 2.2 s | 20 (91%), median 1.1 s | 12 (100%) |
+
+The main miss is "how are the engineering students doing grade wise" (four steps, one per
+major), which the earlier code also missed in one of two reruns that day; the extra
+held-out miss, "how many first gen students do we have" grouped instead of filtered,
+passed on one of two reruns. Rules only, the main set is 51 of 56 for the `finance@`
+account (the instructor question is shown only to the executive and admin) and 20 of 22
+held-out, as before.
+
 ## Re-running
 
 With a server running and a user who may use Explore:

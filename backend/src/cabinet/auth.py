@@ -116,10 +116,10 @@ def session_ttl() -> timedelta:
         hours = float("nan")
     if not math.isfinite(hours) or hours <= 0:
         raise RuntimeError(
-            f"{ENV_SESSION_TTL_HOURS} must be a positive number of hours; "
-            f"got {raw!r}"
+            f"{ENV_SESSION_TTL_HOURS} must be a positive number of hours; got {raw!r}"
         )
     return timedelta(hours=hours)
+
 
 # scrypt parameters: N=2**14, r=8, p=1 is the RFC 7914 "interactive login"
 # profile (~16 MiB of memory per hash, tens of milliseconds per attempt).

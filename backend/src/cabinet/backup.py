@@ -115,9 +115,7 @@ def _row_total(conn: sqlite3.Connection) -> int:
             (table,),
         ).fetchone()
         if present:
-            total += int(
-                conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-            )
+            total += int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
     return total
 
 
@@ -157,9 +155,7 @@ def create_backup(
         else:
             out = Path(out_dir)
         if out.exists():
-            raise SystemExit(
-                f"backup: {out} already exists; backups are never reused"
-            )
+            raise SystemExit(f"backup: {out} already exists; backups are never reused")
         out.mkdir(parents=True, mode=BACKUP_DIR_MODE)
         _make_private(out)
 

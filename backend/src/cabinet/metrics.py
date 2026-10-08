@@ -174,9 +174,7 @@ def m3_financial_hold_under_1000(fixture: Fixture) -> CountResult:
             row_ids=[],
         )
     m2_ids = set(m2.row_ids)
-    rows = [
-        s for s in fixture.students if _sid(s) in m2_ids and m3_qualifying_holds(s)
-    ]
+    rows = [s for s in fixture.students if _sid(s) in m2_ids and m3_qualifying_holds(s)]
     return CountResult(
         value=len(rows),
         reason=None,

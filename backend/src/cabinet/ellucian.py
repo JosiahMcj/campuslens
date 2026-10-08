@@ -228,8 +228,7 @@ def validate_resource_config(resources: dict[str, dict[str, Any]]) -> None:
         version = spec.get("version")
         if isinstance(version, bool) or not isinstance(version, int) or version < 1:
             raise EthosError(
-                f"resource {key!r}: version must be a positive integer, "
-                f"got {version!r}"
+                f"resource {key!r}: version must be a positive integer, got {version!r}"
             )
 
 
@@ -452,12 +451,11 @@ class EthosClient:
             except urllib.error.HTTPError as exc:
                 # One sanitized line: a server error body could carry
                 # newlines (log injection) or record text (kept short).
-                detail = " ".join(
-                    exc.read().decode("utf-8", errors="replace").split()
-                )[:200]
+                detail = " ".join(exc.read().decode("utf-8", errors="replace").split())[
+                    :200
+                ]
                 reason = _redact(
-                    f"{what} failed: HTTP {exc.code} "
-                    f"({detail.strip() or 'no detail'})",
+                    f"{what} failed: HTTP {exc.code} ({detail.strip() or 'no detail'})",
                     self._api_key,
                     self._token,
                 )
@@ -475,14 +473,9 @@ class EthosClient:
                     self._api_key,
                     self._token,
                 )
-                if (
-                    isinstance(exc.reason, TimeoutError)
-                    or attempt == self.max_retries
-                ):
+                if isinstance(exc.reason, TimeoutError) or attempt == self.max_retries:
                     raise EthosError(reason) from None
-                self._sleep(
-                    min(BACKOFF_BASE_SECONDS * 2**attempt, BACKOFF_CAP_SECONDS)
-                )
+                self._sleep(min(BACKOFF_BASE_SECONDS * 2**attempt, BACKOFF_CAP_SECONDS))
         raise EthosError(reason)  # pragma: no cover - the loop exits above
 
     def _get_page(self, path: str, version: int, offset: int) -> list[Any]:
@@ -658,8 +651,7 @@ def _enrollment_from(sap: dict[str, Any], period: dict[str, Any]) -> dict[str, A
         "term": str(period["code"]),
         "registration_status": _status(sap.get("registrationStatus")),
         "registered_credit_hours": int(hours)
-        if isinstance(hours, (int, float))
-        and not isinstance(hours, bool)
+        if isinstance(hours, (int, float)) and not isinstance(hours, bool)
         else 0,
         "registration_date": registered.isoformat() if registered else None,
     }
@@ -800,9 +792,7 @@ def build_export_document(
         if str(record.get("status", "")).strip().lower() != "completed":
             continue  # a cancelled appointment never counts (CONTRACTS.md M4)
         person_id = _ref_id(record, "student")
-        day = _opt_iso_date(
-            record.get("startOn"), field="student-appointments.startOn"
-        )
+        day = _opt_iso_date(record.get("startOn"), field="student-appointments.startOn")
         if person_id is None or day is None:
             continue
         previous = last_completed_by_person.get(person_id)
@@ -843,8 +833,7 @@ def build_export_document(
             in_session_start = start
     if in_session is None:
         raise EthosError(
-            "no academic period in session at the as-of date "
-            f"({as_of.isoformat()})"
+            f"no academic period in session at the as-of date ({as_of.isoformat()})"
         )
     in_session_end = _required_date(in_session, "endOn", resource="academic-periods")
 
@@ -882,9 +871,7 @@ def build_export_document(
             "continuing": record.get("continuing") is True,
         }
 
-    def prior_term_status(
-        saps: dict[str, dict[str, Any]], baseline_code: str
-    ) -> str:
+    def prior_term_status(saps: dict[str, dict[str, Any]], baseline_code: str) -> str:
         """The person's registration status in the baseline term: term code
         -> period -> period id -> the person's record for that period."""
         baseline = by_code.get(baseline_code)
@@ -929,9 +916,7 @@ def build_export_document(
                         "prior_year_equivalent_date": _year_before(
                             equivalent
                         ).isoformat(),
-                        "prior_term_status": prior_term_status(
-                            saps, prior_prior_code
-                        ),
+                        "prior_term_status": prior_term_status(saps, prior_prior_code),
                         "baseline": prior_prior_code,
                     },
                 }
@@ -1043,8 +1028,7 @@ def render_export(result: ExportResult) -> bytes:
     """Serialize the export document; keys sorted, matching the fixture's
     stored shape."""
     return (
-        json.dumps(result.document, indent=2, sort_keys=True, ensure_ascii=False)
-        + "\n"
+        json.dumps(result.document, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     ).encode("utf-8")
 
 
@@ -1079,8 +1063,7 @@ def _write_export(export_dir: Path, slug: str, term: str, raw: bytes) -> Path:
             os.fsync(handle.fileno())
         return path
     raise EthosError(
-        f"could not create a unique export file in {export_dir} "
-        "after 3 attempts"
+        f"could not create a unique export file in {export_dir} after 3 attempts"
     )
 
 
