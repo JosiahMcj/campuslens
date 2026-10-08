@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from cabinet import interventions as _iv
 from cabinet.counseling import MINIMUM_CELL_SIZE, SUPPRESSED_DISPLAY
 from cabinet.explore import finance as _finance
 from cabinet.explore import general as _general
@@ -1805,6 +1806,12 @@ def _measure_by_group(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> R
         rows, notes, columns = _general.run(con, p, v)
     except _general.GeneralError as exc:
         raise AnalysisError(str(exc)) from None
+    except sqlite3.OperationalError:
+        # A school database built before a table this measure reads (the
+        # support-program records) was added.
+        raise AnalysisError(
+            "this measure needs a newer school database; run make school-data"
+        ) from None
     entity = {"major": "major", "college": "college", "term": "term"}
     return Result(
         rows,
@@ -1932,6 +1939,200 @@ MEASURE_BY_GROUP = Analysis(
     ),
     _measure_by_group,
 )
+
+# --- support programs (cabinet.interventions): aggregate reach and impact --------
+
+PROGRAM_LABELS = {
+    "ai_tutoring": "AI tutoring and coaching",
+    "theology_bridge": "Theology and ministry funding bridge",
+    "fit_advising": "Early major-fit advising",
+}
+_P_PROGRAM = Param(
+    "program",
+    "Program",
+    "choice",
+    required=True,
+    choices=_iv.PROGRAM_IDS,
+    choice_labels=PROGRAM_LABELS,
+    shown="Program: {}",
+)
+
+
+def _cell(value: Any) -> Any:
+    return SUPPRESSED_DISPLAY if value is None else value
+
+
+def _program_impact(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Result:
+    try:
+        report = _iv.impact(con, str(p["program"]))
+    except _iv.ProgramsMissing:
+        raise AnalysisError(
+            "the school data has no support programs; run make school-data"
+        ) from None
+    outcome_key = p.get("outcome") or report["program"]["outcomes"][0]
+    match = [o for o in report["outcomes"] if o["key"] == outcome_key]
+    if not match:
+        raise AnalysisError(
+            f"{report['program']['name']} does not record {outcome_key}"
+        )
+    o = match[0]
+    kind = o["kind"]
+    diff_kind = "points" if kind == "pct" else "gpa"
+    rows: list[dict[str, Any]] = []
+    small: set[tuple[int, str]] = set()
+    for index, c in enumerate(o["comparisons"]):
+        row = {
+            "comparison": c["label"],
+            "group_a": c["a"]["label"],
+            "n_a": _cell(c["a"]["n"]),
+            "value_a": _cell(c["a"]["value"]),
+            "group_b": c["b"]["label"],
+            "n_b": _cell(c["b"]["n"]),
+            "value_b": _cell(c["b"]["value"]),
+            "difference": _cell(c["difference"]),
+            "low": _cell(c["low"]),
+            "high": _cell(c["high"]),
+        }
+        rows.append(row)
+        for side in c["small"]:
+            small.add((index, f"n_{side}"))
+    notes = [
+        f"{o['label']}, over {o['among']}. {o['verdict']} {report['caveat']}",
+        *(f"{c['label']}: {c['sentence']}" for c in o["comparisons"]),
+        "Low and high are a 95 % range for the difference: chance alone would "
+        "rarely put it outside.",
+        report["source"],
+        report["caveat"],
+    ]
+    if report["planted"]:
+        notes.append(report["planted"])
+    columns = (
+        Column("comparison", "Comparison"),
+        Column("group_a", "Group"),
+        Column("n_a", "Students", "count"),
+        Column("value_a", o["label"], kind),
+        Column("group_b", "Compared with"),
+        Column("n_b", "Students", "count"),
+        Column("value_b", o["label"], kind),
+        Column("difference", "Difference", diff_kind),
+        Column("low", "Low", diff_kind),
+        Column("high", "High", diff_kind),
+    )
+    return Result(rows, notes, columns, small=small)
+
+
+def _program_reach(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Result:
+    program_id = str(p["program"])
+    try:
+        report = _iv.reach(con, program_id)
+    except _iv.ProgramsMissing:
+        raise AnalysisError(
+            "the school data has no support programs; run make school-data"
+        ) from None
+    term = p.get("term")
+    if term and v.term_season.get(term) == "Summer":
+        raise AnalysisError("the programs run in fall and spring terms only")
+    by_term = {t["term"]: t for t in report["terms"]}
+    rows: list[dict[str, Any]] = []
+    terms = [term] if term else [t["term"] for t in report["terms"]]
+    for code in terms:
+        known = by_term.get(code)
+        eligible = _iv.eligible_count(con, program_id, code)
+        rows.append(
+            {
+                "term": code,
+                "term_name": v.terms.get(code, code),
+                "eligible": _cell(eligible if eligible >= MINIMUM_CELL_SIZE else None),
+                "accepted": _cell(known["accepted"]) if known else "not offered yet",
+                "take_up": _cell(known["take_up_pct"]) if known else "not offered yet",
+            }
+        )
+    prog = report["program"]
+    notes = [
+        f"Eligibility rule: {prog['rule']}",
+        f"Offer: {prog['offer']} Run by {prog['owner_office']} since "
+        f"{prog['start_term_name']}.",
+        "Eligible students are counted from the rule applied to the records; who "
+        "took part comes from the program's own records.",
+    ]
+    columns = (
+        Column("term", "Term code", entity="term"),
+        Column("term_name", "Term"),
+        Column("eligible", "Eligible students", "count"),
+        Column("accepted", "Took part", "count"),
+        Column("take_up", "Take-up (%)", "pct"),
+    )
+    small = {
+        (i, "eligible")
+        for i, r in enumerate(rows)
+        if r["eligible"] == SUPPRESSED_DISPLAY
+    }
+    return Result(rows, notes, columns, small=small)
+
+
+PROGRAM_IMPACT = Analysis(
+    "program_impact",
+    "How program participants compare",
+    "One support program's outcome (the program's main outcome unless another is "
+    "named) compared three ways: everyone eligible before and after it started, "
+    "participants against non-participants, and the same within bands of similar "
+    "GPA, each with a 95 % range.",
+    (
+        _P_PROGRAM,
+        Param(
+            "outcome",
+            "Outcome",
+            "choice",
+            choices=tuple(_iv.OUTCOMES),
+            choice_labels={k: o.label.lower() for k, o in _iv.OUTCOMES.items()},
+            shown="Outcome: {}",
+        ),
+    ),
+    (
+        "support_programs (rule, offer, start term)",
+        "support_program_terms (eligible, offered, accepted, follow-up outcomes)",
+    ),
+    (
+        Column("comparison", "Comparison"),
+        Column("group_a", "Group"),
+        Column("n_a", "Students", "count"),
+        Column("value_a", "Value", "pct"),
+        Column("group_b", "Compared with"),
+        Column("n_b", "Students", "count"),
+        Column("value_b", "Value", "pct"),
+        Column("difference", "Difference", "points"),
+        Column("low", "Low", "points"),
+        Column("high", "High", "points"),
+    ),
+    _program_impact,
+)
+
+PROGRAM_REACH = Analysis(
+    "program_reach",
+    "Who a support program reaches",
+    "Students eligible under a support program's rule and how many took part, "
+    "each term since it started, or in one term.",
+    (_P_PROGRAM, Param("term", "Term", "term")),
+    (
+        "student_term_records.program_code",
+        "student_term_records.cumulative_gpa",
+        "person_holds.category",
+        "person_holds.term_code",
+        "final_grades.grade",
+        "program_requirements.requirement_type",
+        "student_academic_programs.status",
+        "support_program_terms (accepted)",
+    ),
+    (
+        Column("term", "Term code", entity="term"),
+        Column("term_name", "Term"),
+        Column("eligible", "Eligible students", "count"),
+        Column("accepted", "Took part", "count"),
+        Column("take_up", "Take-up (%)", "pct"),
+    ),
+    _program_reach,
+)
+
 
 ANALYSES: tuple[Analysis, ...] = (
     Analysis(
@@ -2479,6 +2680,8 @@ ANALYSES: tuple[Analysis, ...] = (
     ),
     MEASURE_BY_GROUP,
     *BUDGET_ANALYSES,
+    PROGRAM_IMPACT,
+    PROGRAM_REACH,
 )
 
 ANALYSIS_BY_ID: dict[str, Analysis] = {a.id: a for a in ANALYSES}

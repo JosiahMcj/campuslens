@@ -157,7 +157,11 @@ by section modality) are refused by the same allow-list for both planners.
 | average credits earned | Cumulative credit hours earned, each student once at their latest term |
 | dropout rate | Left without a degree, not enrolled in either of the next two fall or spring terms or since, and not found enrolled at another college. Students enrolled Fall 2020 to Spring 2026, in the major of their latest term; a student last enrolled in Fall 2025 without a degree is left out (too recent to tell) |
 | transfer-out rate | Left without a degree and later found enrolled at another college |
-| major-change rate | Students who changed major at least once |
+| major-change rate | Students who changed major at least once, counted in the major of their latest term |
+| major change-out rate | Of the students ever in a major, the share who left it for another major (counted in the major they left; "What % of students change majors, by major?") |
+| attrition rate | Of the students ever in a major, the share who left the university from it without a degree, transfers out included ("What is the attrition rate for each major?") |
+| early major-fit rate | First-time fall entrants who, in their first year, earned a D, F or W in two or more courses their major requires or changed major twice; major as at entry |
+| first-year D, F or withdrawal rate in major courses | First-time students' graded registrations in their first fall and spring, in courses their major requires |
 | Pell, first-generation, international, part-time, on-campus share | Share of enrolled students in the term |
 | probation and suspension rates | Share of enrolled student terms ending on probation (or continued probation), or in suspension |
 | stop-out rate | Fall and spring student terms, without a degree that term, after which the student was not enrolled in the next fall or spring term |
@@ -201,6 +205,22 @@ hardest class?" runs the general analysis, then the hardest required course of i
 major. The answer names the top group, its figure with its counts, the figure for all
 students, and, for dropout, stop-out, retention, and graduation rates, the definition
 in one plain sentence.
+
+## Support programs
+
+Two more analyses read the support programs (`cabinet.interventions`;
+`data/school/interventions.py` builds their records). `program_impact` answers
+"Did the AI tutoring program work?" and "Is the theology funding bridge helping?" with
+three labelled comparisons for each of the program's outcomes: everyone the rule
+named before the program against everyone it named since; participants against
+non-participants (naive); and participants against non-participants with a similar GPA
+(fairer), each with a 95 % range and the line "This comparison isn't a randomized
+trial." `program_reach` answers "How many students are eligible for tutoring this
+term?": eligible students counted from the rule applied to the records, and how many
+took part. Both are aggregate; any group under 10 is withheld with its partner. The
+per-student outreach lists are never an Explore answer; they live on the Support
+programs page (`cabinet.outreach`) for the executive, the admin and the program's
+office, need a person's approval, are audited, and send nothing.
 
 ## How an answer is computed
 

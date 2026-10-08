@@ -144,7 +144,8 @@ def test_schema_tables_and_counts(small: dict[str, Any]) -> None:
     report: dict[str, Any] = small["reports"][0]
     assert by_name(report)["schema"]["ok"], by_name(report)["schema"]["detail"]
     counts: dict[str, int] = report["counts"]
-    assert len(counts) == 28
+    # 28 documented tables and the 2 support-program tables (interventions.py).
+    assert len(counts) == 30
     for table in OUTCOME_TABLES:
         assert counts[table] > 0, table
     assert counts["academic_periods"] == 17

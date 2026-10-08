@@ -229,6 +229,8 @@ AREA_LABELS: dict[str, str] = {
     "aid": "Pell status",
     "holds": "Holds and balances owed, by office",
     "advising": "Advising appointments",
+    "support_programs": "Support programs: their rules, take-up and follow-up "
+    "outcomes (totals)",
     "campus_life": "Housing and athletics",
     "career_outcomes": "Graduates' first destinations, salaries, graduate and "
     "medical school",
@@ -316,6 +318,7 @@ AREA_OWNER: dict[str, str] = {
     "aid": "financial_aid_analyst",
     "holds": "student_accounts_analyst",
     "advising": "advising_analyst",
+    "support_programs": "student_success_analyst",
     "campus_life": "student_life_analyst",
     "career_outcomes": "career_outcomes_analyst",
     "giving": "advancement_analyst",
@@ -331,6 +334,10 @@ MEASURE_OWNER: dict[str, str] = {
     "dropout_rate": "student_success_analyst",
     "transfer_out_rate": "institutional_research_analyst",
     "major_change_rate": "advising_analyst",
+    "major_change_out_rate": "advising_analyst",
+    "major_attrition_rate": "institutional_research_analyst",
+    "fit_flag_rate": "advising_analyst",
+    "first_year_major_dfw_rate": "academic_affairs_analyst",
     "pell_share": "financial_aid_analyst",
     "first_gen_share": "admissions_analyst",
     "international_share": "admissions_analyst",
@@ -418,6 +425,9 @@ ANALYSIS_OWNER: dict[str, str] = {
     "budget_vs_actual": "finance_budget_analyst",
     "revenue_by_source": "finance_budget_analyst",
     "tuition_discount": "finance_budget_analyst",
+    # Support programs (cabinet.interventions): aggregates only.
+    "program_impact": "student_success_analyst",
+    "program_reach": "student_success_analyst",
 }
 
 _ANALYSES_BY_ID = {a.id: a for a in ANALYSES}

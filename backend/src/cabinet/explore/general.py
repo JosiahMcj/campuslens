@@ -79,6 +79,7 @@ ALL_UNITS = frozenset(
         "registration",
         "account",
         "alumni",
+        "spell",
     }
 )
 PERSON_UNITS = ALL_UNITS
@@ -563,6 +564,83 @@ MEASURES: dict[str, Measure] = {
             "Changed major",
             "Students",
             "latest",
+        ),
+        Measure(
+            "major_change_out_rate",
+            "major change-out rate",
+            "spell",
+            "pct",
+            "SUM(b.changed_out)",
+            "COUNT(*)",
+            "1 = 1",
+            "Of the students who were in the major at any time from Fall 2020 to "
+            "Spring 2026, the share who left it for another major at the "
+            "university. A student who was in two majors is counted in each; "
+            "students still in the major count as not having changed.",
+            "Left the major for another (%)",
+            "Changed to another major",
+            "Students in the major",
+            "latest",
+            short="It counts students who were ever in the major and later switched "
+            "to a different one.",
+        ),
+        Measure(
+            "major_attrition_rate",
+            "attrition rate",
+            "spell",
+            "pct",
+            "SUM(b.left_univ)",
+            "COUNT(*)",
+            "b.left_univ IS NOT NULL",
+            "Of the students who were in the major at any time from Fall 2020 to "
+            "Spring 2026, the share who left the university while in it without a "
+            "degree (withdrew, stopped out and had not returned by Spring 2026, or "
+            "were dismissed), including students who went on to another college. "
+            "Students whose last term was Fall 2025 are left out (too recent to "
+            "tell).",
+            "Left the university (%)",
+            "Left the university",
+            "Students in the major",
+            "latest",
+            short="Attrition here means leaving the university from the major, "
+            "without a degree.",
+        ),
+        Measure(
+            "fit_flag_rate",
+            "early major-fit rate",
+            "cohort",
+            "pct",
+            "SUM(EXISTS (SELECT 1 FROM support_program_terms x "
+            "WHERE x.program_id = 'fit_advising' AND x.student_id = b.sid))",
+            "COUNT(*)",
+            "b.term IN (SELECT term_code FROM academic_periods)",
+            "First-time students who entered in a fall term from Fall 2020 to Fall "
+            "2025 and, in their first year, earned a D, F or W in two or more "
+            "courses their major requires or changed major twice (the early "
+            "major-fit rule). Majors are as at entry.",
+            "Met the early fit rule (%)",
+            "Met the rule",
+            "Entering students",
+            "cohort",
+            short="The early fit rule flags first-year students with repeated D, F "
+            "or W grades in courses their major requires, or repeated changes of "
+            "major.",
+        ),
+        Measure(
+            "first_year_major_dfw_rate",
+            "first-year D, F or withdrawal rate in major courses",
+            "registration",
+            "pct",
+            "SUM(b.dfw)",
+            "COUNT(*)",
+            "b.first_year = 1 AND b.major_course = 1",
+            "Graded registrations of first-time students in their first year (their "
+            "first fall and spring terms), in courses their major requires as major "
+            "or support courses, ending in D+, D, F, or W.",
+            "First-year D, F or W in major courses (%)",
+            "D, F, or W",
+            "Graded registrations",
+            "window",
         ),
         Measure(
             "pell_share",
@@ -1060,6 +1138,19 @@ _MEASURE_FIELDS: dict[str, tuple[str, ...]] = {
     "dropout_rate": ("students.enrollment_status", _ELSEWHERE),
     "transfer_out_rate": ("students.enrollment_status", _ELSEWHERE),
     "major_change_rate": ("student_academic_programs.status",),
+    "major_change_out_rate": ("student_academic_programs.status",),
+    "major_attrition_rate": (
+        "student_academic_programs.status",
+        "student_term_records (enrolled the next fall or not)",
+    ),
+    # The rule itself is applied when the program records are built
+    # (support_program_terms); the measure counts who met it.
+    "fit_flag_rate": ("support_program_terms (met the early fit rule)",),
+    "first_year_major_dfw_rate": (
+        "final_grades.grade",
+        "program_requirements.requirement_type",
+        "students.entry_term",
+    ),
     "pell_share": ("students.pell_recipient",),
     "first_gen_share": ("students.first_generation",),
     "international_share": ("students.residency",),
@@ -1112,6 +1203,7 @@ _UNIT_FIELDS: dict[str, tuple[str, ...]] = {
     "registration": ("section_registrations.term_code", "courses.grade_mode"),
     "account": ("student_charges.term_code",),
     "alumni": ("student_academic_programs.end_term", "academic_periods.end_date"),
+    "spell": ("student_academic_programs.program_code",),
 }
 
 
@@ -1303,6 +1395,36 @@ WITH b AS (
         ON e.student_id = sap.student_id AND e.term_code = sap.end_term
     WHERE sap.status = 'graduated' AND sap.end_term BETWEEN :term_from AND :term_to
 )""",
+    "spell": f"""
+WITH spell AS (
+    SELECT sap.student_id, sap.program_code, sap.status, sap.end_term,
+        (SELECT MAX(r.term_code) FROM student_term_records r
+         WHERE r.student_id = sap.student_id AND r.program_code = sap.program_code
+           AND r.term_code >= sap.start_term
+           AND (sap.end_term IS NULL OR r.term_code <= sap.end_term)) AS last_term
+    FROM student_academic_programs sap
+),
+last_any AS (
+    SELECT student_id, MAX(term_code) AS last_term FROM student_term_records
+    GROUP BY student_id
+),
+b AS (
+    SELECT sp.student_id AS sid, sp.last_term AS term, {_TERM_COLS}, {_PERSON_COLS},
+        sp.status = 'changed' AS changed_out,
+        CASE WHEN sp.status IN ('changed', 'graduated', 'active') THEN 0
+             WHEN la.last_term > sp.last_term THEN 0
+             WHEN la.last_term = :dropout_cutoff THEN NULL
+             ELSE 1 END AS left_univ
+    FROM spell sp
+    JOIN student_term_records t
+        ON t.student_id = sp.student_id AND t.term_code = sp.last_term
+    JOIN students st ON st.student_id = sp.student_id
+    JOIN student_profiles p ON p.student_id = sp.student_id
+    JOIN academic_programs ap ON ap.program_code = sp.program_code
+    JOIN last_any la ON la.student_id = sp.student_id
+    LEFT JOIN student_term_enrollment e
+        ON e.student_id = sp.student_id AND e.term_code = sp.last_term
+)""",
     "account": f"""
 WITH asof AS (SELECT MAX(end_date) AS d FROM academic_periods),
 chg AS (
@@ -1361,7 +1483,15 @@ b AS (
 WITH b AS (
     SELECT r.student_id AS sid, r.term_code AS term, {_TERM_COLS}, {_PERSON_COLS},
         s.modality AS modality,
-        g.grade IN ('D+', 'D', 'F', 'W') AS dfw, g.grade = 'W' AS w
+        g.grade IN ('D+', 'D', 'F', 'W') AS dfw, g.grade = 'W' AS w,
+        (st.entry_type = 'first_time' AND r.term_code IN (st.entry_term,
+            CASE substr(st.entry_term, 5, 2)
+                WHEN '10' THEN substr(st.entry_term, 1, 4) || '20'
+                ELSE (CAST(substr(st.entry_term, 1, 4) AS INTEGER) + 1) || '10'
+            END)) AS first_year,
+        EXISTS (SELECT 1 FROM program_requirements pr
+                WHERE pr.program_code = t.program_code AND pr.course_id = s.course_id
+                  AND pr.requirement_type IN ('major', 'support')) AS major_course
     FROM final_grades g
     JOIN section_registrations r ON r.registration_id = g.registration_id
     JOIN sections s ON s.section_id = r.section_id

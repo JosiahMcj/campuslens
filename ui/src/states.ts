@@ -317,6 +317,7 @@ export const PAGE_SLUGS = {
   aid: 'financial-aid-review',
   students: 'find-a-student',
   data: 'data',
+  interventions: 'support-programs',
   profile: 'profile',
   settings: 'settings',
   overview: 'department-overview',
@@ -839,6 +840,11 @@ export const EVENT_TYPES = [
   'inbox.sent',
   'inbox.read',
   'inbox.reviewed',
+  // Support-program outreach lists (counts and list ids, never a student id).
+  'outreach.prepared',
+  'outreach.decided',
+  'outreach.viewed',
+  'outreach.updated',
 ] as const
 
 export interface AuditEvent {

@@ -229,6 +229,9 @@ ROUTE_ROLES: dict[tuple[str, str], tuple[str, ...]] = {
     # The AI employees (cabinet.staff): titles, jobs, scopes in plain words
     # and how many requests each handled today. No student data.
     ("GET", "/staff"): ALL_ROLES,
+    # Support programs (cabinet.outreach): the aggregate page is open to
+    # every role.
+    ("GET", "/interventions"): READ_ROLES,
 }
 
 # Prefix rules, checked when the exact table misses (routes with path
@@ -260,6 +263,14 @@ ROUTE_ROLE_PREFIXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     # One inbox message by id: mark it read or reviewed. Every role; the
     # route answers 404 unless the caller is the message's recipient.
     ("POST", "/inbox/", ALL_ROLES),
+    # Support-program outreach lists name students: the executive and admin
+    # (ROW_ROLES) and the aid role, which the route narrows to the program
+    # its office runs (the theology funding bridge). Approving is the
+    # executive's or admin's; the decision route narrows itself.
+    ("POST", "/interventions/", ROW_ROLES + (ROLE_AID,)),
+    ("GET", "/outreach/", ROW_ROLES + (ROLE_AID,)),
+    ("POST", "/outreach/", ROW_ROLES + (ROLE_AID,)),
+    ("PATCH", "/outreach/", ROW_ROLES + (ROLE_AID,)),
 )
 
 # No session needed: liveness, readiness, and login itself.

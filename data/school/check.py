@@ -114,6 +114,19 @@ BUDGET_COLUMNS: dict[str, list[str]] = {
                         "institutional_aid", "net_tuition", "discount_rate"],
 }
 
+# The support-program tables (interventions.py), added after the core tables
+# from their own seeded stream. The canonical hash covers the core tables
+# above only, so it still proves the documented university; the program
+# tables have their own hash.
+PROGRAM_COLUMNS: dict[str, list[str]] = {
+    "support_programs": ["program_id", "name", "eligibility_rule", "offer", "owner_office",
+                         "start_term", "primary_outcome", "secondary_outcome"],
+    "support_program_terms": ["program_id", "student_id", "term_code", "period",
+                              "gpa_at_eligibility", "offered", "accepted", "term_gpa",
+                              "returned_next_term", "financial_hold_next_term",
+                              "changed_major_next_term"],
+}
+
 POINTS10 = {"A": 40, "A-": 37, "B+": 33, "B": 30, "B-": 27, "C+": 23, "C": 20, "C-": 17,
             "D+": 13, "D": 10, "F": 0}
 PASSING = {"A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "P"}
@@ -164,12 +177,15 @@ def canonical_hash(con: sqlite3.Connection, only: tuple[str, ...] | None = None)
     """sha256 over every table's rows (or the tables in ``only``) in a fixed
     order (file bytes may differ). Every table includes the billing and
     finance tables written on top; ``ORIGINAL_TABLES`` are the 24 simulated
-    ones."""
+    ones. The support-program tables are left out (they have their own
+    ``programs_sha256``), so they never move the documented hash."""
     h = hashlib.sha256()
     tables = [r[0] for r in con.execute(
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
     for t in tables:
         if only is not None and t not in only:
+            continue
+        if only is None and t in PROGRAM_COLUMNS:
             continue
         cols = [r[1] for r in con.execute(f'PRAGMA table_info("{t}")')]
         order = ", ".join(f'"{c}"' for c in cols)
@@ -197,17 +213,18 @@ class Checker:
     # ------------------------------------------------------------ schema
     def check_schema(self) -> None:
         problems = []
-        for table, cols in {**EXPECTED_COLUMNS, **BILLING_COLUMNS, **BUDGET_COLUMNS}.items():
+        for table, cols in {**EXPECTED_COLUMNS, **BILLING_COLUMNS, **BUDGET_COLUMNS, **PROGRAM_COLUMNS}.items():
             got = [r[1] for r in self.q(f'PRAGMA table_info("{table}")')]
             if got != cols:
                 problems.append(f"{table}: {got}")
         extra = sorted({r[0] for r in self.q("SELECT name FROM sqlite_master WHERE type='table'")}
-                       - set(EXPECTED_COLUMNS) - set(BILLING_COLUMNS) - set(BUDGET_COLUMNS))
+                       - set(EXPECTED_COLUMNS) - set(BILLING_COLUMNS) - set(BUDGET_COLUMNS)
+                       - set(PROGRAM_COLUMNS))
         if extra:
             problems.append(f"unexpected tables {extra}")
         self.record("schema", not problems, "; ".join(problems) or
                     f"{len(EXPECTED_COLUMNS)} core, {len(BILLING_COLUMNS)} billing and "
-                    f"{len(BUDGET_COLUMNS)} finance tables, "
+                    f"{len(BUDGET_COLUMNS)} finance and {len(PROGRAM_COLUMNS)} support-program tables, "
                     "columns as documented")
         fk = self.q("PRAGMA foreign_key_check")
         self.record("foreign_keys", not fk, f"{len(fk)} dangling references")
@@ -1167,6 +1184,31 @@ class Checker:
         self.record("planted_exact", not diffs, "; ".join(diffs) or
                     f"all {len(expected)} planted facts and the canonical hash match VERIFY.md")
 
+    def check_programs(self) -> None:
+        """The support-program records: offers only from the start term, and
+        every outcome of a non-participant copied exactly from the core tables."""
+        start = self.q("SELECT MIN(start_term) FROM support_programs")[0][0]
+        bad_offer = self.q(
+            "SELECT COUNT(*) FROM support_program_terms WHERE (term_code < ? AND "
+            "(offered = 1 OR accepted IS NOT NULL OR period != 'before')) OR (term_code >= ? "
+            "AND (offered = 0 OR accepted IS NULL OR period != 'after'))", (start, start))[0][0]
+        nxt = ("CASE substr(p.term_code, 5, 2) WHEN '10' THEN substr(p.term_code, 1, 4) || '20' "
+               "ELSE (CAST(substr(p.term_code, 1, 4) AS INTEGER) + 1) || '10' END")
+        mismatch = self.q(f"""
+            SELECT COUNT(*) FROM support_program_terms p
+            LEFT JOIN student_term_enrollment e ON e.student_id = p.student_id
+                AND e.term_code = {nxt}
+            JOIN student_term_records t ON t.student_id = p.student_id
+                AND t.term_code = p.term_code
+            WHERE COALESCE(p.accepted, 0) = 0 AND (
+                p.returned_next_term IS NOT
+                    (CASE WHEN e.status IS NULL OR e.status = 'graduated' THEN NULL
+                          WHEN e.status = 'enrolled' THEN 1 ELSE 0 END)
+                OR (p.program_id = 'ai_tutoring' AND p.term_gpa IS NOT t.term_gpa))""")[0][0]
+        self.record("support_programs", bad_offer == 0 and mismatch == 0,
+                    f"{bad_offer} offers outside the program period, {mismatch} non-participant "
+                    "outcomes that differ from the core tables")
+
     def run(self) -> dict[str, Any]:
         self.check_schema()
         self.check_privacy()
@@ -1180,14 +1222,17 @@ class Checker:
         self.check_outcomes()
         self.check_billing()
         self.check_budget()
+        self.check_programs()
         values = self.planted()
         values.update(self.planted_outcomes())
         digest = canonical_hash(self.con)
         original = canonical_hash(self.con, ORIGINAL_TABLES)
         self.check_planted_exact(values, digest, original)
         counts = {t: self.q(f'SELECT COUNT(*) FROM "{t}"')[0][0] for t in EXPECTED_COLUMNS}
+        counts.update({t: self.q(f'SELECT COUNT(*) FROM "{t}"')[0][0] for t in PROGRAM_COLUMNS})
         return {"meta": self.meta, "counts": counts, "checks": self.results, "planted": values,
                 "canonical_sha256": digest, "original_tables_sha256": original,
+                "programs_sha256": canonical_hash(self.con, tuple(PROGRAM_COLUMNS)),
                 "ok": all(r["ok"] for r in self.results)}
 
 

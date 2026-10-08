@@ -219,6 +219,7 @@ from cabinet.migrations import (
     recorded_versions,
 )
 from cabinet.outbound import OutboundError, outbound_from_env
+from cabinet.outreach import router as outreach_router
 from cabinet.permissions import (
     ROLE_FINDINGS,
     ROLE_TASK_FIELDS,
@@ -2859,6 +2860,7 @@ def create_app(
     app.include_router(explore_router)  # POST /explore, GET /explore/catalog
     # GET /staff-actions, PATCH /staff-actions/{id}, POST .../notes, .../send
     app.include_router(staff_actions_router)
+    app.include_router(outreach_router)  # /interventions, /outreach/{id}
     app.include_router(connections_router)  # GET /admin/connections
     app.include_router(roster_router)  # GET /students/search
     app.include_router(dashboards_router)  # GET /data/dashboards, /data/series
