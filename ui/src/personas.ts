@@ -15,6 +15,9 @@ export interface Persona {
   /** Three questions for the "Try" row; empty keeps the catalog's examples
    * (the president) or means the role does not ask. */
   examples: string[]
+  /** The office's own AI employee(s) (cabinet.staff.LOGIN_EMPLOYEES in the
+   * API), named on a department's home screen. */
+  employees: string[]
 }
 
 const REGISTRATION = 'How much did continuing spring registration change in Spring 2026?'
@@ -29,6 +32,7 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
     name: 'President',
     lede: "Every page and every department's overview. Ask anything about Demonstration University, and send an alert to any office before the meeting.",
     examples: [],
+    employees: ['Chief of Staff'],
   },
   finance: {
     name: 'Finance — Student Accounts',
@@ -38,6 +42,7 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
       'What is the 6-year graduation rate for Pell students by college?',
       REGISTRATION,
     ],
+    employees: ['Student Accounts Analyst', 'Finance & Budget Analyst'],
   },
   registrar: {
     name: 'Registrar',
@@ -47,6 +52,7 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
       'Which major grew fastest from Fall 2020 to Fall 2025?',
       'Which majors have the highest probation rates?',
     ],
+    employees: ['Registrar Analyst'],
   },
   studentlife: {
     name: 'Student Life',
@@ -56,16 +62,19 @@ const PERSONAS: Partial<Record<Role, Persona>> = {
       'What majors have the highest dropout rate?',
       'What is the average GPA of athletes vs non-athletes?',
     ],
+    employees: ['Student Life Analyst', 'Advising Analyst'],
   },
   aid: {
     name: 'Financial Aid',
     lede: 'The review queue for the students the briefing flags, and alerts sent to your office.',
     examples: [],
+    employees: ['Financial Aid Analyst'],
   },
   it: {
     name: 'IT',
     lede: 'Accounts, sign-in activity, the outside connections and the audit log. Nothing here is about students.',
     examples: [],
+    employees: ['IT & Data Steward'],
   },
 }
 

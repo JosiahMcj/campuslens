@@ -1,6 +1,7 @@
 import { roleDisplayName, type Role, type Session } from '../auth'
 import { fieldLabels } from '../fieldLabels'
 import { findingLabel } from '../findingLabels'
+import type { StaffEmployee } from '../staff'
 import { setPrefs, usePrefs, type Motion, type TextSize, type ThemeChoice } from '../theme'
 
 /** What each human role may do, mirroring the API's role table (auth.ts). */
@@ -287,44 +288,38 @@ export interface AccessGrant {
   aggregate: boolean
 }
 
-const EMPLOYEE_NAMES: Record<string, string> = {
-  enrollment_analyst: 'Enrollment Analyst',
-  student_success_analyst: 'Student Success Analyst',
-  chief_of_staff: 'Chief of Staff',
-}
-
-/** Each AI employee's job, in one plain line, in the order they work. */
-const EMPLOYEE_JOBS: Record<string, string> = {
-  enrollment_analyst:
-    'Explains the registration figures: who has registered and how that compares with last year.',
-  student_success_analyst:
-    'Explains what stands in students’ way: holds, missing advising appointments and support indicators.',
-  chief_of_staff:
-    'Assigns the analysts, then writes the summary and its limits from their checked work, using totals only.',
-}
-
-/** The three AI employees in working order, then any other role a grant
- * names (never dropped silently). */
-function employeeRoles(grants: AccessGrant[] | null): string[] {
-  const roles = Object.keys(EMPLOYEE_NAMES)
-  for (const grant of grants ?? []) {
-    if (!roles.includes(grant.role)) roles.push(grant.role)
-  }
-  return roles
+/** Each employee's request count today, in words. */
+function requestsToday(count: number): string {
+  if (count === 0) return 'No requests today'
+  return `Handled ${count} ${count === 1 ? 'request' : 'requests'} today`
 }
 
 /**
- * The Data access panel: the cabinet's data boundary in one place. For each
- * AI employee, its job in one line, then the findings and the fields its
- * latest task was granted (from the audit log or the ask response, never
- * assumed); then what each human role may do. No AI employee receives student names or identifiers.
+ * The "AI employees and data access" page: one card for each department's
+ * AI employee (from GET /staff, the signed-in department's own first): its
+ * title, the office it serves, its job, what it may read (always as
+ * totals), what it may never read, the data outside its job, and how many
+ * requests it handled today. For the briefing's employees, what the latest
+ * run gave each (from the audit log or the ask response, never assumed).
+ * Then what each human role may do. No AI employee receives student names
+ * or identifiers.
  */
 export function DataAccessPanel({
+  staff,
+  staffError = null,
+  onRetryStaff,
   grants,
   error = null,
   onRetry,
 }: {
-  grants: AccessGrant[] | null
+  /** Every AI employee, in the order to show them; null while loading. */
+  staff: StaffEmployee[] | null
+  /** The employees could not be loaded: a plain sentence, with Retry. */
+  staffError?: string | null
+  onRetryStaff?: () => void
+  /** What each briefing employee was given on the latest run; undefined
+   * for roles that do not run the briefing (no "ask a question" note). */
+  grants?: AccessGrant[] | null
   /** The latest run's grants could not be loaded: a plain sentence, shown
    * with Retry instead of the "ask a question" empty text. */
   error?: string | null
@@ -335,6 +330,21 @@ export function DataAccessPanel({
       {/* The page's introduction comes from the page header (SidePanel's
           intro), like every other page's. */}
       <h3 className="panel-subhead">AI employees</h3>
+      {staffError !== null && (
+        <div className="state-error state-panel error-panel" role="alert">
+          <p>Couldn't load the AI employees. {staffError}</p>
+          {onRetryStaff !== undefined && (
+            <button type="button" className="btn-secondary secondary" onClick={onRetryStaff}>
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+      {staffError === null && staff === null && (
+        <p className="panel-text state-empty" role="status">
+          Loading the AI employees…
+        </p>
+      )}
       {error !== null && (
         <div className="state-error state-panel error-panel" role="alert">
           <p>Couldn't load what each employee was given. {error}</p>
@@ -345,55 +355,84 @@ export function DataAccessPanel({
           )}
         </div>
       )}
-      {error === null && (grants === null || grants.length === 0) && (
+      {staff !== null && error === null && grants !== undefined && (grants === null || grants.length === 0) && (
         <p className="panel-text state-empty">
-          Ask a question to see exactly what each employee was given.
+          Ask an approved briefing question to see exactly what each briefing employee was given.
         </p>
       )}
-      <div className="grant-list">
-        {employeeRoles(grants).map((role) => {
-          const grant = grants?.find((item) => item.role === role)
-          return (
-            <div key={role} className="grant-card">
-              <p className="grant-name">
-                {EMPLOYEE_NAMES[role] ?? role}
-                {grant?.aggregate === true && <span className="grant-tag">Totals only</span>}
-              </p>
-              {EMPLOYEE_JOBS[role] !== undefined && (
-                <p className="grant-job">{EMPLOYEE_JOBS[role]}</p>
-              )}
-              {grant !== undefined && grant.findings.length > 0 && (
-                <p className="grant-meta">
-                  Latest run explained: {grant.findings.map((id) => findingLabel(id)).join('; ')}
+      {staff !== null && (
+        <div className="grant-list">
+          {staff.map((employee) => {
+            const grant = grants?.find((item) => item.role === employee.role)
+            return (
+              <article
+                key={employee.role}
+                className={`grant-card${employee.yours ? ' is-yours' : ''}`}
+                aria-label={employee.title}
+              >
+                <p className="grant-name">
+                  {employee.title}
+                  {employee.yours && <span className="grant-tag grant-tag-yours">Your AI employee</span>}
+                  {employee.no_data && <span className="grant-tag">No data connected yet</span>}
                 </p>
-              )}
-              {grant !== undefined && (
-                <details className="fold technical-detail">
-                  <summary>
-                    {grant.aggregate ? 'Totals it was given' : 'Data it was given'} (
-                    {grant.fields.length})
-                  </summary>
-                  <ul className="plain-list">
-                    {fieldLabels(grant.fields).map((label) => (
-                      <li key={label}>{label}</li>
-                    ))}
-                  </ul>
+                <p className="grant-office">Serves {employee.office}</p>
+                <p className="grant-job">{employee.job}</p>
+                <dl className="grant-scope">
+                  <dt>May read, as totals</dt>
+                  <dd>
+                    {employee.may_read.length > 0
+                      ? employee.may_read.join('; ')
+                      : employee.no_data
+                        ? 'Nothing yet: no data is connected for this office.'
+                        : 'No student data.'}
+                  </dd>
+                  <dt>Never reads</dt>
+                  <dd>{employee.never_reads.join('; ')}</dd>
+                </dl>
+                {employee.outside_scope.length > 0 && (
                   <details className="fold technical-detail">
-                    <summary>Technical detail</summary>
-                    <ul className="field-list">
-                      {grant.fields.map((field) => (
-                        <li key={field}>
-                          <code>{field}</code>
-                        </li>
+                    <summary>Outside its job ({employee.outside_scope.length})</summary>
+                    <ul className="plain-list">
+                      {employee.outside_scope.map((label) => (
+                        <li key={label}>{label}</li>
                       ))}
                     </ul>
                   </details>
-                </details>
-              )}
-            </div>
-          )
-        })}
-      </div>
+                )}
+                <p className="grant-meta grant-count">{requestsToday(employee.requests_today)}</p>
+                {grant !== undefined && grant.findings.length > 0 && (
+                  <p className="grant-meta">
+                    Latest run explained: {grant.findings.map((id) => findingLabel(id)).join('; ')}
+                  </p>
+                )}
+                {grant !== undefined && (
+                  <details className="fold technical-detail">
+                    <summary>
+                      {grant.aggregate ? 'Totals it was given' : 'Data it was given'} (
+                      {grant.fields.length})
+                    </summary>
+                    <ul className="plain-list">
+                      {fieldLabels(grant.fields).map((label) => (
+                        <li key={label}>{label}</li>
+                      ))}
+                    </ul>
+                    <details className="fold technical-detail">
+                      <summary>Technical detail</summary>
+                      <ul className="field-list">
+                        {grant.fields.map((field) => (
+                          <li key={field}>
+                            <code>{field}</code>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  </details>
+                )}
+              </article>
+            )
+          })}
+        </div>
+      )}
 
       <h3 className="panel-subhead">People</h3>
       <table className="role-table">

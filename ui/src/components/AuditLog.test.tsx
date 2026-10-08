@@ -282,6 +282,25 @@ describe('AuditLog — grants, refusals, people and paging', () => {
     expect(other).not.toContain('counseling')
   })
 
+  it('names each department employee a step was delegated to', () => {
+    mount({
+      events: [
+        event(1, 'data.granted', 'student_accounts_analyst', {
+          task_id: 'explore-1',
+          step: 0,
+          analysis_id: 'holds_by_office',
+          delegated_by: 'chief_of_staff',
+          aggregate_only: true,
+          fields_read: ['person_holds.amount'],
+        }),
+      ],
+    })
+    const text = document.querySelector('#event-1')?.textContent ?? ''
+    expect(text).toContain('The Student Accounts Analyst was given totals for 1 field')
+    expect(text).toContain('The Chief of Staff')
+    expect(text).not.toContain('CampusLens was given')
+  })
+
   it('says a single-student question was answered with group totals, and names an off-topic refusal', () => {
     mount({
       events: [

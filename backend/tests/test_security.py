@@ -448,6 +448,8 @@ def test_every_protected_route_is_in_the_role_table() -> None:
         ("GET", "/inbox"),
         ("GET", "/inbox/recipients"),
         ("POST", "/inbox"),
+        # The AI employees and their requests today (tests/test_ai_staff.py).
+        ("GET", "/staff"),
     }
     assert set(ROUTE_ROLES) == expected
 

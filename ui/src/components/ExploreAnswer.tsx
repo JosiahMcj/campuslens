@@ -28,6 +28,7 @@ import {
   planQuestion,
 } from '../answerCard'
 import { FIELD_LABELS, fieldLabels, normalizeField } from '../fieldLabels'
+import { answeredByLine } from '../staff'
 import { AnswerChart } from './AnswerChart'
 import './AnswerCard.css'
 import './Explore.css'
@@ -466,6 +467,7 @@ export function ExploreAnswer({
 
   const notes = answerNotes(response)
   const source = sourceLabel(response.source)
+  const answeredBy = answeredByLine(response.answered_by)
   const planned = plannerLabel(response.planner)
   const fellBack = (response.fallbacks ?? []).length > 0
   const card = response.card
@@ -529,6 +531,7 @@ export function ExploreAnswer({
       )}
 
       {source !== null && <p className="explore-source">{source}</p>}
+      {answeredBy !== null && <p className="explore-answered-by">{answeredBy}</p>}
 
       <details
         id={evidenceId}

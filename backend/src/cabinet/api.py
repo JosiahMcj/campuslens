@@ -254,6 +254,7 @@ from cabinet.security import (
     CabinetSecurityMiddleware,
     LoginLockout,
 )
+from cabinet.staff import router as staff_router
 from cabinet.staffactions_api import router as staff_actions_router
 from cabinet.store import AidReviewConflict, CabinetStore, StoreError
 from cabinet.webui import ApiPrefixMiddleware, SpaStaticFiles, ui_dist_from_env
@@ -2863,6 +2864,7 @@ def create_app(
     app.include_router(dashboards_router)  # GET /data/dashboards, /data/series
     # GET /departments/overview (cabinet.departments)
     app.include_router(departments_router)
+    app.include_router(staff_router)  # GET /staff (the AI employees)
     # GET/POST /inbox, /inbox/recipients, /inbox/{id}/read|reviewed,
     # GET /admin/sessions (cabinet.inbox)
     app.include_router(inbox_router)
