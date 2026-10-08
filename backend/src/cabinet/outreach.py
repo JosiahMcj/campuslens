@@ -116,6 +116,11 @@ def overview(con: sqlite3.Connection) -> dict[str, Any]:
         impact = iv.impact(con, p["id"])
         reach.pop("program", None)
         impact.pop("program", None)
+        # Which side of a withheld comparison is the small one is for the
+        # Explore table's wording only; the page never needs it.
+        for o in impact["outcomes"]:
+            for c in o["comparisons"]:
+                c.pop("small", None)
         items.append({**p, "reach": reach, "impact": impact})
     out: dict[str, Any] = {
         "current_term": current,
@@ -296,7 +301,9 @@ def post_outreach(program_id: str, request: Request) -> JSONResponse:
     try:
         try:
             iv.program(con, program_id)
-        except iv.ProgramsMissing:
+        except (iv.ProgramsMissing, KeyError):
+            # No program tables, or tables without this program (an older
+            # school database): the same plain sentence either way.
             raise HTTPException(status_code=503, detail=PROGRAMS_MISSING) from None
         term = iv.current_term(con)
         rows = iv.eligible_students(con, program_id, term)
@@ -384,12 +391,24 @@ def post_decision(
     status = "approved" if body.decision == "approve" else "declined"
     store = _store(request)
     with store._lock:
-        store._conn.execute(
+        cursor = store._conn.execute(
             "UPDATE outreach_lists SET status = ?, decided_by = ?, decided_at = ? "
             "WHERE id = ? AND status = 'pending_approval'",
             (status, str(user["email"]), _now(), row["id"]),
         )
         store._conn.commit()
+        changed = cursor.rowcount
+    if changed == 0:
+        # Someone else decided it between our read and this write: their
+        # decision stands, and no second event is written.
+        current = _list_row(store, int(user["institution_id"]), int(row["id"]))
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": "this list was already decided",
+                "list": _list_body(current),
+            },
+        )
     updated = _list_row(store, int(user["institution_id"]), int(row["id"]))
     event = store.audit_append(
         int(user["institution_id"]),

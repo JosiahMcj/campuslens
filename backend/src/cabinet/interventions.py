@@ -309,10 +309,16 @@ def reach(con: sqlite3.Connection, program_id: str) -> dict[str, Any]:
     ).fetchall()
     terms = []
     total_n = total_acc = 0
+    # The total is the sum of the terms, so a total shown beside one withheld
+    # term would give that term away by subtraction: any withheld term
+    # withholds the matching total (eligible, or took part and take-up).
+    any_term_hidden = any_eligible_hidden = False
     for term, n, offered, accepted in rows:
         accepted = int(accepted or 0)
         declined = int(n) - accepted
         hide = accepted < MINIMUM_CELL_SIZE or declined < MINIMUM_CELL_SIZE
+        any_term_hidden = any_term_hidden or hide
+        any_eligible_hidden = any_eligible_hidden or int(n) < MINIMUM_CELL_SIZE
         total_n += int(n)
         total_acc += accepted
         terms.append(
@@ -328,7 +334,9 @@ def reach(con: sqlite3.Connection, program_id: str) -> dict[str, Any]:
     current = current_term(con)
     now = eligible_count(con, program_id, current)
     total_hide = (
-        total_acc < MINIMUM_CELL_SIZE or total_n - total_acc < MINIMUM_CELL_SIZE
+        any_term_hidden
+        or total_acc < MINIMUM_CELL_SIZE
+        or total_n - total_acc < MINIMUM_CELL_SIZE
     )
     return {
         "program": p,
@@ -337,7 +345,7 @@ def reach(con: sqlite3.Connection, program_id: str) -> dict[str, Any]:
         "eligible_now": _shown(now),
         "terms": terms,
         "total": {
-            "eligible": _shown(total_n),
+            "eligible": None if any_eligible_hidden else _shown(total_n),
             "accepted": None if total_hide else total_acc,
             "take_up_pct": None
             if total_hide or not total_n
@@ -457,26 +465,26 @@ def _matched(
     return {"a": a, "b": b, "diff": diff, "se": math.sqrt(var), "extra": extra}
 
 
-def _verdict(outcome: Outcome, fair: dict[str, Any]) -> str:
-    """One plain sentence from the fairer comparison's 95 % range."""
+def _verdict(outcome: Outcome, fair: dict[str, Any]) -> tuple[str, str]:
+    """(tone, one plain sentence) from the fairer comparison's 95 % range.
+    The tone is better, worse, unclear or withheld."""
     if fair["withheld"] or fair["difference"] is None:
-        return "Too few students to compare fairly yet."
+        return "withheld", "Too few students to compare fairly yet."
     low, high = fair["low"], fair["high"]
-    helped = low > 0 if outcome.better == "higher" else high < 0
-    hurt = high < 0 if outcome.better == "higher" else low > 0
-    if helped:
-        return (
-            "Likely helping: participants did better than similar students who "
-            "did not take part, by more than chance alone would explain."
+    better = low > 0 if outcome.better == "higher" else high < 0
+    worse = high < 0 if outcome.better == "higher" else low > 0
+    if better:
+        return "better", (
+            "Participants did better than similar students who did not take "
+            "part, by more than chance alone would explain."
         )
-    if hurt:
-        return (
-            "Worth a closer look: participants did worse than similar students "
-            "who did not take part."
+    if worse:
+        return "worse", (
+            "Participants did worse than similar students who did not take part."
         )
-    return (
-        "Not clear yet: the difference from similar students is within what "
-        "chance alone could produce."
+    return "unclear", (
+        "No clear difference yet: participants and similar students who did not "
+        "take part are within what chance alone could produce."
     )
 
 
@@ -562,6 +570,7 @@ def impact(con: sqlite3.Connection, program_id: str) -> dict[str, Any]:
             comparisons[-1]["a"]["n"] = comparisons[-1]["b"]["n"] = None
         if not comparisons[-1]["withheld"]:
             comparisons[-1]["b"]["value"] = m["extra"].get("b_value_reweighted")
+        tone, verdict = _verdict(outcome, comparisons[-1])
         outcomes_out.append(
             {
                 "key": key,
@@ -570,7 +579,8 @@ def impact(con: sqlite3.Connection, program_id: str) -> dict[str, Any]:
                 "better": outcome.better,
                 "among": outcome.among,
                 "comparisons": comparisons,
-                "verdict": _verdict(outcome, comparisons[-1]),
+                "tone": tone,
+                "verdict": verdict,
             }
         )
     return {

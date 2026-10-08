@@ -551,3 +551,168 @@ def test_an_older_school_database_says_to_rebuild(
             )
     finally:
         con.close()
+
+
+# --- review fixes: no subtraction leak, concurrent decisions, wording --------------
+
+
+def _reach_db(path: Path, counts: list[tuple[str, int, int]]) -> sqlite3.Connection:
+    """A school database with only what ``reach`` reads: per term, (term,
+    eligible, took part)."""
+    con = sqlite3.connect(path)
+    con.executescript(
+        """
+        CREATE TABLE academic_periods (term_code TEXT, name TEXT, season TEXT,
+            sequence INTEGER);
+        CREATE TABLE support_programs (program_id TEXT, name TEXT,
+            eligibility_rule TEXT, offer TEXT, owner_office TEXT, start_term TEXT,
+            primary_outcome TEXT, secondary_outcome TEXT);
+        CREATE TABLE support_program_terms (program_id TEXT, student_id TEXT,
+            term_code TEXT, period TEXT, offered INTEGER, accepted INTEGER);
+        """
+    )
+    for i, (term, _, _) in enumerate(counts):
+        con.execute(
+            "INSERT INTO academic_periods VALUES (?, ?, ?, ?)",
+            (term, term, "Fall" if term.endswith("10") else "Spring", i),
+        )
+    con.execute(
+        "INSERT INTO support_programs VALUES ('theology_bridge', 'Bridge', 'r', 'o', "
+        "'Financial Aid', ?, 'returned_next_term', 'financial_hold_next_term')",
+        (counts[0][0],),
+    )
+    for term, eligible, took in counts:
+        for k in range(eligible):
+            con.execute(
+                "INSERT INTO support_program_terms VALUES "
+                "('theology_bridge', ?, ?, 'after', 1, ?)",
+                (f"S-{term}{k:03d}", term, 1 if k < took else 0),
+            )
+    con.commit()
+    return con
+
+
+def _recoverable(report: dict[str, Any], key: str) -> list[str]:
+    """Terms whose withheld ``key`` the shown terms and total give away."""
+    terms = report["terms"]
+    total = report["total"][key]
+    hidden = [t for t in terms if t[key] is None]
+    if total is None or not hidden:
+        return []
+    shown = sum(t[key] for t in terms if t[key] is not None)
+    # One hidden term is the total minus the rest; several hidden terms
+    # reveal their sum, which is also a leak when it is under the minimum.
+    if len(hidden) == 1 or total - shown < MINIMUM_CELL_SIZE:
+        return [t["term"] for t in hidden]
+    return []
+
+
+def test_a_withheld_term_is_never_recoverable_from_the_total(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review's case: Spring 2026 'took part' withheld (8 declined) while
+    the other terms and the total were shown, so 39 = 181 - 58 - 40 - 44."""
+    monkeypatch.setattr(iv, "eligible_count", lambda con, program, term: 47)
+    con = _reach_db(
+        tmp_path / "reach.db",
+        [
+            ("202510", 73, 58),
+            ("202520", 52, 40),
+            ("202610", 60, 44),
+            ("202620", 47, 39),
+        ],
+    )
+    report = iv.reach(con, "theology_bridge")
+    assert report["terms"][-1]["accepted"] is None  # 8 declined
+    assert report["total"]["accepted"] is None
+    assert report["total"]["take_up_pct"] is None
+    assert _recoverable(report, "accepted") == []
+    # A term with fewer than 10 eligible withholds the total eligible too.
+    con2 = _reach_db(tmp_path / "small.db", [("202510", 60, 30), ("202520", 6, 3)])
+    small = iv.reach(con2, "theology_bridge")
+    assert small["terms"][-1]["eligible"] is None
+    assert small["total"]["eligible"] is None
+    assert _recoverable(small, "eligible") == []
+
+
+def test_no_withheld_reach_cell_is_recoverable_in_the_generated_data(
+    con: sqlite3.Connection,
+) -> None:
+    for program in iv.PROGRAM_IDS:
+        report = iv.reach(con, program)
+        assert _recoverable(report, "accepted") == [], program
+        assert _recoverable(report, "eligible") == [], program
+
+
+def test_verdicts_compare_without_claiming_cause(con: sqlite3.Connection) -> None:
+    for program in iv.PROGRAM_IDS:
+        for o in iv.impact(con, program)["outcomes"]:
+            assert o["tone"] in ("better", "worse", "unclear", "withheld")
+            assert "helping" not in o["verdict"].lower()
+            assert "working" not in o["verdict"].lower()
+
+
+def test_a_concurrent_decision_is_a_409_with_no_second_event(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import cabinet.outreach as outreach
+
+    executive = make_authenticated_client(app, role="executive")
+    listed = executive.post("/interventions/fit_advising/outreach").json()["list"]
+    stale = outreach._list_row(app.state.auth, _institution_id(app), int(listed["id"]))
+    assert (
+        executive.post(
+            f"/outreach/{listed['id']}/decision", json={"decision": "approve"}
+        ).status_code
+        == 200
+    )
+    before = len(_events(app, "outreach.decided"))
+    # The second request read the list while it was still pending.
+    real = outreach._list_row
+    calls = {"n": 0}
+
+    def first_stale(store: Any, institution: int, list_id: int) -> Any:
+        calls["n"] += 1
+        return stale if calls["n"] == 1 else real(store, institution, list_id)
+
+    monkeypatch.setattr(outreach, "_list_row", first_stale)
+    raced = executive.post(
+        f"/outreach/{listed['id']}/decision", json={"decision": "decline"}
+    )
+    assert raced.status_code == 409
+    assert raced.json()["list"]["status"] == "approved"
+    assert len(_events(app, "outreach.decided")) == before
+
+
+def _institution_id(app: FastAPI) -> int:
+    store: AuthStore = app.state.auth
+    institution = store.institution_by_slug("bootstrap")
+    assert institution is not None
+    return int(institution["id"])
+
+
+def test_a_school_database_without_the_program_says_to_rebuild(
+    app: FastAPI, school_db: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old = tmp_path / "partial.db"
+    src = sqlite3.connect(school_db)
+    dst = sqlite3.connect(old)
+    src.backup(dst)
+    src.close()
+    dst.execute("DELETE FROM support_programs WHERE program_id = 'fit_advising'")
+    dst.commit()
+    dst.close()
+    monkeypatch.setenv("CABINET_SCHOOL_DB", str(old))
+    response = make_authenticated_client(app, role="executive").post(
+        "/interventions/fit_advising/outreach"
+    )
+    assert response.status_code == 503
+    assert "make school-data" in response.json()["detail"]
+
+
+def test_the_page_payload_carries_no_small_side_marker(app: FastAPI) -> None:
+    body = make_authenticated_client(app, role="executive").get("/interventions").json()
+    for p in body["programs"]:
+        for o in p["impact"]["outcomes"]:
+            for c in o["comparisons"]:
+                assert "small" not in c

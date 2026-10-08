@@ -35,6 +35,7 @@ function program(overrides: Partial<Program> = {}): Program {
       eligible_now: 4114,
       terms: [
         { term: '202510', term_name: 'Fall 2024', eligible: 3564, offered: 3564, accepted: 2050, take_up_pct: 57.5 },
+        { term: '202620', term_name: 'Spring 2026', eligible: 47, offered: 47, accepted: null, take_up_pct: null },
       ],
       total: { eligible: 15539, accepted: 8938, take_up_pct: 57.5 },
     },
@@ -46,7 +47,8 @@ function program(overrides: Partial<Program> = {}): Program {
           kind: 'gpa',
           better: 'higher',
           among: 'eligible students with a term GPA',
-          verdict: 'Likely helping: participants did better than similar students.',
+          tone: 'better',
+          verdict: 'Participants did better than similar students who did not take part.',
           comparisons: [
             {
               method: 'naive',
@@ -120,9 +122,13 @@ describe('InterventionsPage', () => {
     expect(await screen.findByRole('heading', { name: 'AI tutoring and coaching' })).toBeTruthy()
     expect(screen.getByText(/bottom 30 %/)).toBeTruthy()
     expect(screen.getByText(/weekly coaching check-in/)).toBeTruthy()
-    expect(screen.getByText(/Likely helping/)).toBeTruthy()
+    expect(screen.getByText(/Participants did better than similar students/)).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'How participants compare' })).toBeTruthy()
     expect(screen.getByText("This comparison isn't a randomized trial.")).toBeTruthy()
     expect(screen.getByText('+0.15')).toBeTruthy()
+    // A withheld term is hatched and named, never drawn as zero.
+    expect(screen.getByText('47 eligible; took part withheld')).toBeTruthy()
+    expect(document.querySelector('.iv-bar-withheld')).not.toBeNull()
     expect(screen.getByText('Withheld: a group is under 10 students.')).toBeTruthy()
     // A role without per-student rows sees no outreach button.
     expect(screen.queryByRole('button', { name: 'Prepare outreach list' })).toBeNull()

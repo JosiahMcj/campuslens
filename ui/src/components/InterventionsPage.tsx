@@ -139,13 +139,13 @@ function ProgramCard({
         </div>
       </div>
       <ReachBars program={p} />
-      <h3 className="iv-subhead">Is it working?</h3>
+      <h3 className="iv-subhead">How participants compare</h3>
       {p.impact.outcomes.map((o) => (
-        <OutcomePanel key={o.key} outcome={o} />
+        <OutcomePanel key={o.key} outcome={o} caveat={p.impact.caveat} />
       ))}
       <div className="iv-caveat">
         <p>
-          <strong>{p.impact.caveat}</strong> {p.impact.source}
+          {p.impact.source}
         </p>
         {p.impact.planted && <p className="iv-planted">{p.impact.planted}</p>}
       </div>
@@ -169,6 +169,8 @@ function ReachBars({ program: p }: { program: Program }) {
         {terms.map((t) => {
           const eligible = t.eligible ?? 0
           const took = t.accepted ?? 0
+          // A withheld figure is never drawn as zero: the bar is hatched.
+          const withheld = t.eligible === null || t.accepted === null
           return (
             <li key={t.term} className="iv-bar-row">
               <span className="iv-bar-term">{t.term_name}</span>
@@ -179,15 +181,23 @@ function ReachBars({ program: p }: { program: Program }) {
                   t.accepted,
                 )} took part`}
               >
-                <span className="iv-bar-eligible" style={{ inlineSize: `${(100 * eligible) / max}%` }}>
+                {withheld ? (
                   <span
-                    className="iv-bar-took"
-                    style={{ inlineSize: eligible ? `${(100 * took) / eligible}%` : '0%' }}
+                    className="iv-bar-eligible iv-bar-withheld"
+                    style={{ inlineSize: t.eligible === null ? '100%' : `${(100 * eligible) / max}%` }}
                   />
-                </span>
+                ) : (
+                  <span className="iv-bar-eligible" style={{ inlineSize: `${(100 * eligible) / max}%` }}>
+                    <span className="iv-bar-took" style={{ inlineSize: `${(100 * took) / eligible}%` }} />
+                  </span>
+                )}
               </span>
               <span className="iv-bar-figure">
-                {countWords(t.accepted)} of {countWords(t.eligible)}
+                {withheld
+                  ? t.eligible === null
+                    ? 'withheld (fewer than 10)'
+                    : `${countWords(t.eligible)} eligible; took part withheld`
+                  : `${countWords(t.accepted)} of ${countWords(t.eligible)}`}
               </span>
             </li>
           )
@@ -196,6 +206,7 @@ function ReachBars({ program: p }: { program: Program }) {
       <p className="iv-legend">
         <span className="iv-key iv-key-took" aria-hidden="true" /> took part
         <span className="iv-key iv-key-eligible" aria-hidden="true" /> eligible, did not
+        <span className="iv-key iv-key-withheld" aria-hidden="true" /> withheld (a group under 10)
       </p>
     </figure>
   )
@@ -207,24 +218,28 @@ const METHOD_SHORT: Record<Comparison['method'], string> = {
   matched: 'Took part or not, similar GPA (fairer)',
 }
 
-function OutcomePanel({ outcome: o }: { outcome: OutcomeImpact }) {
+function OutcomePanel({ outcome: o, caveat }: { outcome: OutcomeImpact; caveat: string }) {
   const shown = o.comparisons.filter((c) => !c.withheld && c.low !== null && c.high !== null)
   const reach = Math.max(
     o.kind === 'pct' ? 2 : 0.05,
     ...shown.flatMap((c) => [Math.abs(c.low ?? 0), Math.abs(c.high ?? 0)]),
   )
   const scale = (v: number) => 50 + (45 * v) / reach
-  const verdictClass = o.verdict.startsWith('Likely')
-    ? 'iv-verdict iv-verdict-good'
-    : o.verdict.startsWith('Worth')
-      ? 'iv-verdict iv-verdict-bad'
-      : 'iv-verdict'
+  const verdictClass =
+    o.tone === 'better'
+      ? 'iv-verdict iv-verdict-good'
+      : o.tone === 'worse'
+        ? 'iv-verdict iv-verdict-bad'
+        : 'iv-verdict'
   return (
     <div className="iv-outcome">
       <h4>
         {o.label} <span className="iv-among">({o.among})</span>
       </h4>
-      <p className={verdictClass}>{o.verdict}</p>
+      <div className={verdictClass}>
+        <p>{o.verdict}</p>
+        <p className="iv-verdict-caveat">{caveat}</p>
+      </div>
       <ul className="iv-comparisons">
         {o.comparisons.map((c) => (
           <li key={c.method} className={c.method === 'matched' ? 'iv-cmp iv-cmp-fair' : 'iv-cmp'}>

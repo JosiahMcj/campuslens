@@ -1997,7 +1997,7 @@ def _program_impact(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Res
         for side in c["small"]:
             small.add((index, f"n_{side}"))
     notes = [
-        f"{o['label']}, over {o['among']}. {o['verdict']}",
+        f"{o['label']}, over {o['among']}. {o['verdict']} {report['caveat']}",
         *(f"{c['label']}: {c['sentence']}" for c in o["comparisons"]),
         "Low and high are a 95 % range for the difference: chance alone would "
         "rarely put it outside.",
@@ -2072,7 +2072,7 @@ def _program_reach(con: sqlite3.Connection, p: dict[str, Any], v: Vocab) -> Resu
 
 PROGRAM_IMPACT = Analysis(
     "program_impact",
-    "Did a support program work",
+    "How program participants compare",
     "One support program's outcome (the program's main outcome unless another is "
     "named) compared three ways: everyone eligible before and after it started, "
     "participants against non-participants, and the same within bands of similar "

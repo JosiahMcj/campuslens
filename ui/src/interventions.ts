@@ -33,6 +33,7 @@ export interface OutcomeImpact {
   better: 'higher' | 'lower'
   among: string
   comparisons: Comparison[]
+  tone: 'better' | 'worse' | 'unclear' | 'withheld'
   verdict: string
 }
 

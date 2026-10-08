@@ -89,7 +89,10 @@ students a program's rule names is prepared only by an executive, an administrat
 or the program's own office (Financial Aid staff, for the theology and ministry
 funding bridge). It waits for an executive or administrator to approve it; preparing,
 approving, opening and updating it are each recorded in the audit log without any
-student id; and nothing is sent to a student. The eligibility rules are plain tests
+student id; and nothing is sent to a student. For the demonstration, the person who
+prepared a list may also approve it (a president working alone can show the whole
+flow); the audit log names who prepared and who approved, so an institution that wants
+two people can check it there. The eligibility rules are plain tests
 anyone can read, not risk scores, and no program row ever goes to a model.
 
 We can see the data ourselves for maintenance and backups. That is the full list.

@@ -413,3 +413,27 @@
     color: var(--ink-soft);
   }
 }
+
+.iv-bar-withheld,
+.iv-key-withheld {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--rule-strong) 0 4px,
+    transparent 4px 8px
+  );
+}
+
+.iv-key-withheld {
+  margin-left: var(--space-3);
+  border: 1px solid var(--rule-strong);
+}
+
+.iv-verdict p {
+  margin: 0;
+}
+
+.iv-verdict-caveat {
+  margin-top: var(--space-1);
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+}
