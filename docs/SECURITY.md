@@ -355,7 +355,7 @@ or the note.
   exist yet, so an admin recreates a user, from the CLI or the Institution
   screen, and hands over the new one-time password.
 - **Per-user audit attribution of business events.** Who asked and who approved
-  still records the cabinet role as actor. The dispatch events are the exception
+  still records the CampusLens role as actor. The dispatch events are the exception
   and the direction of travel. `task.dispatched` and `task.sent` record the
   acting user's email, because a named person sending is the point of the
   feature. `aid.queued`, `aid.updated` and the `action.*` events follow the same rule.

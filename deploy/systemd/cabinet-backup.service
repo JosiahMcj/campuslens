@@ -10,14 +10,14 @@ Description=CampusLens backup (snapshot + rotation)
 Type=oneshot
 User=cabinet
 Group=cabinet
-WorkingDirectory=/opt/golden-eagle-cabinet
+WorkingDirectory=/opt/campuslens
 # The same env file as cabinet.service: the backup must see the same
 # CABINET_DB (and friends), or it snapshots the wrong path.
-EnvironmentFile=-/etc/golden-eagle/cabinet.env
-ExecStart=/opt/golden-eagle-cabinet/deploy/backup.sh
+EnvironmentFile=-/etc/campuslens/cabinet.env
+ExecStart=/opt/campuslens/deploy/backup.sh
 
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/opt/golden-eagle-cabinet/var
+ReadWritePaths=/opt/campuslens/var
 ProtectHome=true
 PrivateTmp=true

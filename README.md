@@ -4,7 +4,22 @@
 
 *Governed AI employees helping university leaders turn SIS data into human-centered action.*
 
-**Run it as a judge** (Python 3.12 and Node 22 on `PATH`; all data is fictional):
+**Try it live:** https://campuslens.azai.pro (fictional data; the live model is Gloo AI)
+
+1. On the access page, enter the code `orchard juniper willow 44`.
+2. Sign in with any of these demo accounts:
+
+| Account | Email | Password | What you'll see |
+|---|---|---|---|
+| President | `president@demo.test` | `lead-your-flock-2026` | Everything: the briefing, Explore, the Data page, every department's overview, decisions and the inbox |
+| Finance (CFO) | `finance@demo.test` | `gPIIAPjunoIFzJdA` | The university budget: spending against budget, revenue, the tuition discount rate |
+| Student Accounts | `studentaccounts@demo.test` | `3Y6HauBw9kObziUv` | Student money: holds, past-due balances, payment plans |
+| Advising and Student Success | `advising@demo.test` | `V4J0D_nP0snQ_0DD` | A success coach's view: student-group trends on the Data page and its own AI employee |
+| Registrar | `registrar@demo.test` | `TbsnTVP_qWDqVWoE` | Registration and standing |
+
+Try: *"What should I know about spring registration?"*, then *"Which part of this plan requires an executive decision from me?"*, or *"What majors have the highest dropout rate?"*. Approving a decision sends it to the department's inbox inside CampusLens only; nothing is emailed. The demo resets from time to time.
+
+**Or run it yourself** (Python 3.12 and Node 22 on `PATH`; all data is fictional):
 
 ```bash
 make setup

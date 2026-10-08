@@ -2,9 +2,9 @@
 # on Linux.
 #
 # Install (as the operator, once the paths below match the machine):
-#   sudo useradd --system --home /opt/golden-eagle-cabinet cabinet
+#   sudo useradd --system --home /opt/campuslens cabinet
 #   sudo cp deploy/systemd/cabinet.service /etc/systemd/system/
-#   sudo install -m 0600 -o cabinet /dev/null /etc/golden-eagle/cabinet.env
+#   sudo install -m 0600 -o cabinet /dev/null /etc/campuslens/cabinet.env
 #     # then write CABINET_SECRET_KEY=... and the CABINET_LLM_* lines into it
 #   sudo systemctl daemon-reload && sudo systemctl enable --now cabinet
 #
@@ -24,12 +24,12 @@ Wants=network-online.target
 Type=simple
 User=cabinet
 Group=cabinet
-WorkingDirectory=/opt/golden-eagle-cabinet
+WorkingDirectory=/opt/campuslens
 Environment=CABINET_ENV=production
 Environment=CABINET_BIND=127.0.0.1:8910
 Environment=CABINET_TRUSTED_PROXY=127.0.0.1
-EnvironmentFile=-/etc/golden-eagle/cabinet.env
-ExecStart=/opt/golden-eagle-cabinet/deploy/run-production.sh
+EnvironmentFile=-/etc/campuslens/cabinet.env
+ExecStart=/opt/campuslens/deploy/run-production.sh
 Restart=always
 RestartSec=3
 
@@ -37,7 +37,7 @@ RestartSec=3
 # logs), no privilege escalation, private /tmp, no access to home dirs.
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/opt/golden-eagle-cabinet/var
+ReadWritePaths=/opt/campuslens/var
 ProtectHome=true
 PrivateTmp=true
 

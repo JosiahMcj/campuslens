@@ -342,7 +342,7 @@ plugin to use when the edge must limit too.
 The service definitions are validated but never installed by this repo, and
 `deploy/checklist.md` has the install commands.
 
-- macOS runs `deploy/launchd/com.goldeneagle.cabinet.plist` with `RunAtLoad`,
+- macOS runs `deploy/launchd/com.campuslens.app.plist` with `RunAtLoad`,
   `KeepAlive`, the working directory, `CABINET_LOCAL_ENV` pointing at the env
   file (secrets are not in the plist), stdout and stderr log paths, and
   `AbandonProcessGroup`, and we lint it with `plutil -lint`.
@@ -352,7 +352,7 @@ The service definitions are validated but never installed by this repo, and
   verify it on the target host with `systemd-analyze verify`.
 
 Both `cd` to the deploy directory and exec `deploy/run-production.sh`, and we
-edit the `/opt/golden-eagle-cabinet` paths to the real location. The env file
+edit the `/opt/campuslens` paths to the real location. The env file
 (0600, service user) carries `CABINET_SECRET_KEY` and the `CABINET_LLM_*`
 settings. `CABINET_LOCAL_ENV` makes the app read it from anywhere, with the
 real environment still winning.
@@ -362,7 +362,7 @@ real environment still winning.
 `deploy/backup.sh` runs `make backup` and rotates `var/backups/` to the newest
 14 snapshots. Only timestamp-shaped directories are rotated, and the
 `*.pre-restore-*` asides are never touched. We schedule it with
-`deploy/launchd/com.goldeneagle.cabinet-backup.plist` (daily at `03:17` local)
+`deploy/launchd/com.campuslens.app-backup.plist` (daily at `03:17` local)
 or `deploy/systemd/cabinet-backup.timer` (same schedule, `Persistent=true` so
 a missed run catches up). The restore drill and the rotation of the model key
 are in `deploy/checklist.md`, the full first-deploy walkthrough.
@@ -501,7 +501,7 @@ member, the executive, or an admin can prepare a review queue for the office
 from the decision panel ("Prepare the Financial Aid review queue"). The queue
 holds one row per M3 student, with the facts the office needs to start its
 own review. Those facts are the qualifying hold's amount, date, and office,
-the registration status, and the advising status. The cabinet makes no
+the registration status, and the advising status. CampusLens makes no
 determination about any student. The office records its own status (open,
 in review, or closed) and a free-text note for each row.
 

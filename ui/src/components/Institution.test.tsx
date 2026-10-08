@@ -204,7 +204,7 @@ function renderInstitution(section?: string) {
   window.history.replaceState(null, '', section !== undefined ? `#${section}` : window.location.pathname)
   return render(
     <Institution
-      institutionName="Golden Eagle College"
+      institutionName="Demonstration College"
       activeDataset={null}
       currentUserEmail="admin@example.edu"
       onDataChanged={() => {}}

@@ -5,7 +5,7 @@
 # (default 14) snapshots in the backups directory (<db dir>/backups, i.e.
 # var/backups/ by default).
 #
-# Driven by deploy/launchd/com.goldeneagle.cabinet-backup.plist on macOS or
+# Driven by deploy/launchd/com.campuslens.app-backup.plist on macOS or
 # deploy/systemd/cabinet-backup.timer on Linux — or by hand:
 #   deploy/backup.sh
 #

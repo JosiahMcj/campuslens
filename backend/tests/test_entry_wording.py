@@ -232,7 +232,7 @@ def test_migration_8_renames_the_old_name_and_keeps_the_slug(tmp_path: Path) -> 
 
 
 def test_migration_8_leaves_a_name_an_admin_chose(tmp_path: Path) -> None:
-    conn = _database_at_version_7(tmp_path / "cabinet.db", "Golden Eagle University")
+    conn = _database_at_version_7(tmp_path / "cabinet.db", "Demonstration University")
     try:
         conn.execute(
             "INSERT INTO institutions (name, slug, created_at)"
@@ -240,7 +240,7 @@ def test_migration_8_leaves_a_name_an_admin_chose(tmp_path: Path) -> None:
         )
         conn.commit()
         assert migrate(conn) == [8, 9, 10, 11, 12]
-        assert _name(conn) == "Golden Eagle University"
+        assert _name(conn) == "Demonstration University"
         # Another institution that happens to carry the old name keeps it:
         # only the bootstrap slug is the demonstration institution.
         assert _name(conn, "other") == "Bootstrap Institution"

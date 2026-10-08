@@ -312,7 +312,7 @@ office, need a person's approval, are audited, and send nothing.
 4. **Write** (`explore/answer.py`). A template builds one to four sentences from the
    tables, and every number in them is a table cell. With a live provider the model may
    reword them. It receives only the tables and must answer `{"sentences": [...]}`. Each
-   sentence then passes the cabinet's numeral validator (`analysts.check_numbers_against`):
+   sentence then passes CampusLens's numeral validator (`analysts.check_numbers_against`):
    every number must be a cell value, rates in percent form, no student id, and no risk
    language. A number may also be the one rounded form the template writes for that cell
    (`answer.reader_number`: a GPA to 2 decimals, half up, so 2.623 reads 2.62; a percentage
