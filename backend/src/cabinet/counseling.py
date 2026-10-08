@@ -182,9 +182,7 @@ def m9_model_view(finding: dict[str, Any]) -> dict[str, Any]:
             "id": M9_ID,
             "title": M9_TITLE,
             "value": None,
-            "display": (
-                SUPPRESSED_MODEL_DISPLAY if suppressed else "not available"
-            ),
+            "display": (SUPPRESSED_MODEL_DISPLAY if suppressed else "not available"),
             "suppressed": suppressed,
         }
     return {

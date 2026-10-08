@@ -94,9 +94,7 @@ def _i2_no_advising_this_term(record: StudentRecord, context: RuleContext) -> bo
 
 
 def _i3_holds_across_offices(record: StudentRecord, _context: RuleContext) -> bool:
-    offices = {
-        hold.responsible_office for hold in record.holds if not hold.resolved
-    }
+    offices = {hold.responsible_office for hold in record.holds if not hold.resolved}
     return len(offices) >= 2
 
 

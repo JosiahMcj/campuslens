@@ -74,6 +74,9 @@ PURPOSE: dict[str, str] = {
     "program_impact": "is a support program working or helping (AI tutoring, "
     "theology funding bridge, major-fit advising)",
     "program_reach": "students eligible for a support program, and take-up",
+    "budget_vs_actual": "spending vs budget",
+    "revenue_by_source": "revenue vs budget",
+    "tuition_discount": "tuition, discount rate",
 }
 
 # One line per measure of measure_by_group.
@@ -107,6 +110,13 @@ MEASURE_LINES: dict[str, str] = {
     "graduates": "number of graduates",
     "dfw_rate": "D, F or withdrawal rate",
     "withdrawal_rate": "course withdrawal rate",
+    "past_due_balance": "$ past due",
+    "past_due_students": "students past due",
+    "past_due_90_students": "over 90 days",
+    "on_time_payment_rate": "paid on time",
+    "payment_plan_share": "on a plan",
+    "collection_rate": "$ paid/billed",
+    "avg_balance_owed": "avg $ past due",
     "knowledge_rate": "share of surveyed graduates who answered",
     "employment_rate": "share of surveyed graduates employed",
     "median_salary": "median starting salary (what graduates make, earnings)",
@@ -117,11 +127,11 @@ MEASURE_LINES: dict[str, str] = {
     "total_giving": "total dollars alumni gave",
 }
 
-# Short names people use, beyond the names in the lists.
+# Short names people use, beyond the names in the lists. (Short major names
+# the resolver maps itself, such as psych, bio, chem, nurses, mech e and
+# business, are not repeated here: the model may write them as they are.)
 SYNONYMS = (
-    "CS, comp sci = Computer Science; mech e, mechanical = Mechanical "
-    "Engineering; psych = Psychology; bio = Biology; chem = Chemistry; nurses = "
-    "Nursing; business = Business Administration; engineering (the college) = "
+    "CS, comp sci = Computer Science; engineering (the college) = "
     "CEC; freshmen, first-years = class_level "
     "Freshman; grads = graduates; kids = students; DFW = D, F or withdrawal; "
     "first gen = first_generation; this semester, now, currently = the current "
@@ -138,12 +148,6 @@ EXAMPLES: tuple[tuple[str, str], ...] = (
         '"major": "History"}}]}',
     ),
     (
-        "how many sophomores were enrolled each term",
-        '{"reasoning": "Sophomore counts over time.", "steps": '
-        '[{"analysis_id": "measure_by_group", "params": {"measure": "headcount", '
-        '"class_level": "Sophomore", "group_by": "term"}}]}',
-    ),
-    (
         "which major has the most students on probation, and what is its "
         "toughest course and who teaches it",
         '{"reasoning": "Rank majors by probation, then the hardest course that '
@@ -153,12 +157,6 @@ EXAMPLES: tuple[tuple[str, str], ...] = (
         '{"major_required": {"from_step": 0, "column": "major"}}}, '
         '{"analysis_id": "course_instructors", "params": {"course": '
         '{"from_step": 1, "column": "course"}}}]}',
-    ),
-    (
-        "stop out rate for out of state women",
-        '{"reasoning": "One rate for one group: out-of-state women.", "steps": '
-        '[{"analysis_id": "measure_by_group", "params": {"measure": '
-        '"stop_out_rate", "residency": "out_of_state", "gender": "female"}}]}',
     ),
     (
         "how did calculus 2 do over the years",
@@ -227,6 +225,7 @@ _KIND_TYPES = {
     "instructor": "instructor name",
     "academic_year": "academic year, e.g. 2024-2025",
     "entry_cohort": "entry cohort, e.g. 2021-2022",
+    "fiscal_year": "FY",
 }
 
 
@@ -237,7 +236,7 @@ def _param_text(param: Param, catalog: Catalog) -> str:
     if param.name == "group_by" and param.choices == general.GROUPING_KEYS:
         return "group_by: an id from GROUPINGS"
     if param.name == "top":
-        return "top"
+        return "top: n"  # rounded up to an offered count (_round_top)
     if param.name == "outcome":
         return "outcome (optional)"
     if param.name == "order" and tuple(param.choices) == ORDER_LOW_HIGH:
@@ -284,7 +283,7 @@ def _build(catalog: Catalog) -> str:
     lines = [
         INTRO,
         "",
-        "ANALYSES (id: purpose. params; * = required; top: 5|10|20|50; order: "
+        "ANALYSES (id: purpose. params; * = required; order: "
         "lowest_first|highest_first unless listed):",
     ]
     filter_keys = set(general.GROUPING_KEYS) - {"term"}
@@ -305,6 +304,8 @@ def _build(catalog: Catalog) -> str:
         ]
         if analysis.id == general.ANALYSIS_ID:
             params.insert(3, "any grouping below as a filter: one of its values")
+        if analysis.id in ("budget_vs_actual", "revenue_by_source", "tuition_discount"):
+            params = [p for p in params if p.startswith(("fiscal_year", "by", "over"))]
         purpose = PURPOSE.get(analysis.id, analysis.title)
         lines.append(f"- {analysis.id}: {purpose}. " + "; ".join(params))
     lines.append("")
@@ -322,7 +323,7 @@ def _build(catalog: Catalog) -> str:
         elif key == "gpa_band":
             values_text = "graduates' final GPA: " + "|".join(values)
         else:
-            values_text = "|".join(values)
+            values_text = "days past due" if key == "aging" else "|".join(values)
         lines.append(f"- {key}: {values_text}")
     lines.append("")
     lines.append(
@@ -569,6 +570,34 @@ def _academic_year(text: str, options: tuple[str, ...]) -> str | None:
     return _year_range(raw, options)
 
 
+_THIS_YEAR = re.compile(r"^(?:this|current|the current|latest)(?: fiscal)? year$|^now$")
+_LAST_YEAR = re.compile(r"^(?:last|previous|prior)(?: fiscal)? year$")
+
+
+def fiscal_year(text: str, years: tuple[str, ...]) -> str | None:
+    """A fiscal year from "FY2025", "FY25", "fiscal 2025", "2025", "2024-2025",
+    "2024-25", "this year" or "last year" (the fiscal year ends in June of
+    the year named)."""
+    if not years:
+        return None
+    raw = _norm(text)
+    if _THIS_YEAR.match(raw):
+        return years[-1]
+    if _LAST_YEAR.match(raw):
+        return years[-2] if len(years) > 1 else None
+    match = re.fullmatch(r"(?:fy|fiscal(?: year)?)\s*(\d{4}|\d{2})", raw)
+    if match:
+        year = match.group(1)
+        end = int(year) if len(year) == 4 else 2000 + int(year)
+    else:
+        match = re.fullmatch(r"(\d{4})(?:\s+(?:20)?(\d{2}))?", raw)
+        if not match:
+            return None
+        end = int(match.group(1)) + (1 if match.group(2) else 0)
+    value = f"FY{end}"
+    return value if value in years else None
+
+
 def _choice(param: Param, value: Any) -> Any:
     if any(str(c) == str(value) for c in param.choices):
         return value
@@ -620,6 +649,8 @@ def _resolve_value(param: Param, value: Any, catalog: Catalog) -> Any:
         resolved = _academic_year(value, v.academic_years)
     elif param.kind == "entry_cohort":
         resolved = _academic_year(value, v.entry_cohorts)
+    elif param.kind == "fiscal_year":
+        resolved = fiscal_year(value, v.fiscal_years)
     elif param.kind == "category":
         resolved = next(
             (

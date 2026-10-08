@@ -623,25 +623,22 @@ def _drivers(ctx: Context, d: Derived) -> dict[str, Any]:
     rows = [
         [
             "Registration is behind last year",
-            f"{_count(d.current_registered)} continuing students registered against {_count(d.prior_registered)} at the same point last year ({m1.get('display', 'not available')})"
+            f"{_count(d.current_registered)} continuing students registered against {_count(d.prior_registered)} at the same point last year ({m1.get('display', 'not available')})",
         ],
         ["Continuing students not yet registered", _count(m2)],
-        [
-            f"Unresolved financial hold under {limit}",
-            f"{_count(m3)} of {_count(m2)}"
-        ],
+        [f"Unresolved financial hold under {limit}", f"{_count(m3)} of {_count(m2)}"],
         ["No advising appointment this term", f"{_count(m4)} of {_count(m2)}"],
         [
             "Both a small-balance hold and no advising",
-            f"{_derived_count(d.multi_barrier)} of {_count(m2)}"
+            f"{_derived_count(d.multi_barrier)} of {_count(m2)}",
         ],
         [
             "No recorded barrier at all",
-            f"{_derived_count(d.no_indicator)} of {_count(m2)}"
+            f"{_derived_count(d.no_indicator)} of {_count(m2)}",
         ],
         [
             "Registered credit hours against last year",
-            str((f.get("M7") or {}).get("display", "not available"))
+            str((f.get("M7") or {}).get("display", "not available")),
         ],
     ]
     blocks: list[dict[str, Any]] = [
@@ -773,7 +770,11 @@ def _support(ctx: Context, d: Derived) -> dict[str, Any]:
                 )
     if d.unregistered_by_program:
         shown = suppress(d.unregistered_by_program)
-        visible = [(name, shown[name]) for name, _ in d.unregistered_by_program if shown[name][0].isdigit()]
+        visible = [
+            (name, shown[name])
+            for name, _ in d.unregistered_by_program
+            if shown[name][0].isdigit()
+        ]
         if visible:
             blocks.append(
                 table(
@@ -790,7 +791,9 @@ def _support(ctx: Context, d: Derived) -> dict[str, Any]:
                     LABEL_FACT,
                     (
                         f"By program, they are spread across {d.unregistered_programs} programs and no program has {MINIMUM_CELL_SIZE} or more of them, so program counts are withheld."
-                        if all(n < MINIMUM_CELL_SIZE for _, n in d.unregistered_by_program)
+                        if all(
+                            n < MINIMUM_CELL_SIZE for _, n in d.unregistered_by_program
+                        )
                         else f"By program, they are spread across {d.unregistered_programs} programs. Program counts are withheld, because showing the larger ones would reveal a group under {MINIMUM_CELL_SIZE}."
                     ),
                     ["M2"],
@@ -1490,7 +1493,9 @@ def figure_names(ids: Any) -> str:
 
 
 def _plain_definition(text: str) -> str:
-    return re.sub(r"\bM(\d)\b", lambda m: f"({FIGURE_NAMES.get(m.group(0), m.group(0))})", text)
+    return re.sub(
+        r"\bM(\d)\b", lambda m: f"({FIGURE_NAMES.get(m.group(0), m.group(0))})", text
+    )
 
 
 def field_label(path: str) -> str:
@@ -1672,9 +1677,7 @@ def _event_words(event: dict[str, Any]) -> str:
         return "Question asked"
     if kind == "task.assigned":
         role = EMPLOYEE_TITLES.get(str(payload.get("role")), "an AI employee")
-        return (
-            f"Task assigned to the {role} ({len(payload.get('findings') or [])} figures, totals only)"
-        )
+        return f"Task assigned to the {role} ({len(payload.get('findings') or [])} figures, totals only)"
     if kind == "data.granted":
         fields = (
             payload.get("fields")

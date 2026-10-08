@@ -39,6 +39,8 @@ from statistics import NormalDist
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import billing as B  # noqa: E402
+import budget as BUD  # noqa: E402
 import catalog as C  # noqa: E402
 import interventions as IV  # noqa: E402
 
@@ -1892,6 +1894,8 @@ def write_db(g: Generator, out: Path) -> None:
     con.executemany("INSERT INTO graduate_enrollment VALUES (?,?,?,?)", grad_enroll)
     con.executemany("INSERT INTO medical_school_applications VALUES (?,?,?,?)", med_apps)
     con.executemany("INSERT INTO alumni_gifts VALUES (?,?,?,?,?,?)", gifts)
+    B.build_billing(con, SEED)  # student billing (billing.py), its own stream
+    BUD.write_tables(con, SEED)  # university finances (budget.py), its own stream
     # Support programs (interventions.py): two added tables, read from the
     # rows above; nothing above changes.
     IV.write_tables(con, SEED)

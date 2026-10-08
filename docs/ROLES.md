@@ -68,6 +68,15 @@ four headline figures and two tables for the current term:
 - **Finance — Student Accounts.** Students with an open account hold, the
   open balance, the average balance per student, holds placed this term,
   open holds by office, and students by balance owed.
+  Two more sections follow. **University budget** (the university's own
+  books for the current fiscal year, July to June): spending against budget
+  by division with the variance, revenue by source against budget, net
+  tuition and the tuition discount rate by fiscal year. **Student accounts**
+  (the billing ledger: charges, payments, payment plans): the past-due
+  balance and the students who owe it, past-due balances by days past due,
+  the on-time payment rate and the payment-plan share by college. The
+  budget figures are institutional, not student data, so no small-group
+  rule applies to them; the student-account figures keep it.
 - **Registrar.** Students enrolled this term, the share enrolled full time,
   open Registrar holds, students not in good standing, enrollment by class
   level, and academic standing.
@@ -163,6 +172,28 @@ seen. It never shows a session id or a token.
 | `POST /explore`, `/explore/stream`, `GET /explore/catalog` | admin, executive, staff, reviewer, and now finance, registrar, studentlife |
 | `GET /findings`, `/briefing`, `/decisions`, `/questions`, `/staff-actions` | every role except it |
 
+## The university budget
+
+The university's own budget (`data/school/budget.py`: budget against
+actual, revenue, the tuition discount) is shown to the president
+(`executive`), the finance office (`finance`) and the administrator
+(`admin`) only (`BUDGET_ROLES` in `cabinet/explore/finance.py`):
+
+- **Explore.** A question another role asks that plans one of the three
+  budget analyses (`budget_vs_actual`, `revenue_by_source`,
+  `tuition_discount`) is a 403 with "The university budget is shown to the
+  president, the finance office and the administrator only." and a
+  `data.refused` event (category `institutional_budget`) before anything is
+  read. The executor refuses such a step as well. Student-account totals
+  (past due, on-time payment, payment plans) are aggregate student data and
+  answer for every Explore role, with the usual small-group rules.
+- **Data page.** The University budget dashboard is on the president's and
+  the finance office's Data page (`data_roles.py`). Any other role asking for
+  one of its charts gets a 403 and a `data.refused` event. Its charts take no
+  student filter or comparison (422).
+- **Finance overview.** Read by finance, the president and the admin, as
+  before; other department accounts get a 403.
+
 ## Creating the demonstration sign-ins
 
 ```bash
@@ -199,3 +230,35 @@ Add a single account in any role with
 - **IT's audit log includes question text.** The audit log records each
   question as asked (student-id-shaped tokens redacted), and IT reads the
   audit log. The questions are about the school, never answers or rows.
+
+## Approved decisions reach the department
+
+When the president approves a leadership decision, the server puts it in
+the inbox of every enabled account of the department that owns the
+follow-up (`DEPARTMENT_ROLES` in `cabinet/inbox.py`: Financial Aid → `aid`,
+Bursar → `finance`, Registrar → `registrar`, Student Success →
+`studentlife`), from the president. The message names the decision, the
+approved action and the proposed deadline (one week from today, never past
+the registration close date while that is ahead), and lists the briefing
+figures behind it. Only the reference is stored: the figures are re-read
+from the current data each time it is opened, never a student row, and the
+message reads "no longer available" once another dataset is active. One
+`inbox.sent` event per recipient carries `reason: "decision.approved"`. The
+department clicks **Acknowledge**; the decision card shows each account as
+delivered, opened or acknowledged. Nothing is emailed. These messages are
+stored as kind `note` with the reference `decision:<id>` (the inbox table's
+check constraint predates them) and shown as kind `decision`.
+
+## Answer cards under Explore answers
+
+Every Explore answer carries a card computed in code
+(`cabinet/explore/card.py`): two to four key points (highest, lowest, the
+gap from the whole, the change since the same term a year earlier, the
+withheld groups), each number a link to its table cell; one chart from a
+fixed template registry (`CHART_TEMPLATES`; the gallery is at `/dev/charts`);
+and the buttons Send to department, Show trend, Break it down, Make a plan
+and See evidence. Show trend and Break it down only offer questions the rule
+planner has already answered the same way. Make a plan asks the seven-day
+plan follow-up for registration answers (president and admin), and otherwise
+shows a short proposed list that is never saved or sent. The reviewer gets
+no Make a plan.

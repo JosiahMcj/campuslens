@@ -44,6 +44,17 @@ export interface ExploreSnapshot {
   quoted_by_sender?: boolean
 }
 
+/** An approved leadership decision sent to its department, re-read from the
+ * current findings whenever it is shown. */
+export interface DecisionSnapshot {
+  decision_id: string
+  title: string
+  office: string
+  action: string
+  due: string | null
+  figures: FindingSnapshot[]
+  dataset: string | null
+}
 /** A Data page chart, computed again for the reader whenever the alert is
  * shown: the series as the reader's role may see them, the group the sender
  * narrowed to, and the term (`at`, an x key) and group (`focus_series`) they
@@ -55,7 +66,7 @@ export interface ChartSnapshot extends ChartData {
   focus_series: string | null
 }
 
-export type SourceKind = 'note' | 'finding' | 'overview' | 'explore' | 'chart'
+export type SourceKind = 'note' | 'finding' | 'overview' | 'explore' | 'chart' | 'decision'
 
 export interface InboxMessage {
   id: number
@@ -65,7 +76,13 @@ export interface InboxMessage {
   review_by: string | null
   source_kind: SourceKind
   source_ref: string | null
-  snapshot: FindingSnapshot | OverviewSnapshot | ExploreSnapshot | ChartSnapshot | null
+  snapshot:
+    | FindingSnapshot
+    | OverviewSnapshot
+    | ExploreSnapshot
+    | ChartSnapshot
+    | DecisionSnapshot
+    | null
   /** False when the attachment is no longer there for this reader (the
    * figure was withdrawn, or their role may no longer read it). */
   attachment_available?: boolean
@@ -162,6 +179,20 @@ export interface OverviewTable {
   title: string
   columns: { key: string; label: string }[]
   rows: Record<string, string>[]
+  /** The last row is a total (shown set apart). */
+  total_last?: boolean
+  /** Plain sentences under the table. */
+  notes?: string[]
+}
+
+/** A titled part of an overview (the Finance overview's University budget
+ * and Student accounts), with its own figures and tables. */
+export interface OverviewSection {
+  key: string
+  title: string
+  intro: string
+  tiles: OverviewTile[]
+  tables: OverviewTable[]
 }
 
 export interface DepartmentOverview {
@@ -173,6 +204,7 @@ export interface DepartmentOverview {
   minimum_cell_size: number
   tiles: OverviewTile[]
   tables: OverviewTable[]
+  sections?: OverviewSection[]
 }
 
 export async function fetchOverview(department: Department): Promise<DepartmentOverview> {
@@ -203,7 +235,7 @@ export async function fetchSessions(): Promise<SessionRow[]> {
 
 /** A message's state for its sender: Sent, Read or Reviewed. */
 export function deliveryLabel(message: InboxMessage): string {
-  if (message.reviewed_at !== null) return 'Reviewed'
+  if (message.reviewed_at !== null) return message.source_kind === 'decision' ? 'Acknowledged' : 'Reviewed'
   if (message.read_at !== null) return 'Read'
   return 'Not opened yet'
 }

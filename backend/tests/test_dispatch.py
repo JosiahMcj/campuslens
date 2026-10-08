@@ -23,7 +23,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from cabinet.api import create_app
+from cabinet.api import create_app, proposed_due_from
 from cabinet.audit import EVENT_TYPES
 from cabinet.migrations import migrate, recorded_versions
 from cabinet.outbound import (
@@ -248,13 +248,13 @@ def test_get_dispatch_reports_approval_and_contact_state() -> None:
     assert before["approved_by"] is None
     assert before["approved_at"] is None
     # No email delivery is configured in tests: the state says so, and the
-    # fictional dataset carries a proposed deadline (data date + 7 days,
-    # capped at the day registration closes).
+    # fictional dataset carries a proposed deadline (today + 7 days, capped
+    # at the day registration closes while that day is still ahead).
     assert before["delivery"] == "outbox"
     meta = admin.get("/findings").json()["meta"]
-    proposed = date.fromisoformat(before["proposed_due"])
-    assert proposed > date.fromisoformat(meta["as_of"])
-    assert proposed <= date.fromisoformat(meta["terms"]["registration_close_date"])
+    assert before["proposed_due"] == proposed_due_from(
+        date.today(), meta["terms"]["registration_close_date"]
+    )
 
     _approve(admin)
     _compose(admin)
@@ -736,3 +736,15 @@ def test_a_loose_smtp_password_file_is_refused(
     assert response.status_code == 503
     assert "readable by group or others" in response.json()["detail"]
     assert _FakeSmtp.instances == []
+
+
+def test_proposed_due_counts_from_today_capped_at_a_future_close() -> None:
+    today = date(2026, 10, 7)
+    assert proposed_due_from(today, None) == "2026-10-14"
+    # Registration closes before the week is out: the close date.
+    assert proposed_due_from(today, "2026-10-10") == "2026-10-10"
+    # Registration closes later: a week from today.
+    assert proposed_due_from(today, "2026-11-30") == "2026-10-14"
+    # The close date has passed: a week from today, never a past date.
+    assert proposed_due_from(today, "2026-01-23") == "2026-10-14"
+    assert proposed_due_from(today, "2026-10-07") == "2026-10-14"

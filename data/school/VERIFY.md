@@ -123,6 +123,11 @@ recorded before the outcome tables existed, so every row of those 24 tables, inc
 `meta` (the generator version is still 3), is byte for byte what it was. Facts 1 to 8
 are therefore unchanged as well, and `check.py` compares both hashes.
 
+`canonical_sha256` covers every table, including the student billing tables (`billing.py`)
+and the university finance tables (`budget.py`) written last, each from its own random
+stream; they are not in `original_tables_sha256`. The outcome facts 9 to 14 are unchanged
+by them.
+
 ## How the generator produces them
 
 - Grades come from one latent score per registration: student ability, a program shift
@@ -367,7 +372,7 @@ paste the `planted` section, `canonical_sha256`, and `original_tables_sha256` of
     "athletes_participation_pct": 13.0,
     "non_athletes_participation_pct": 10.2
   },
-  "canonical_sha256": "18e09671427b075f8693780c471b51e0dae6d14ebd4b7708febeb3021fef430c",
+  "canonical_sha256": "7fb78888cacf5c691f952cb8ae1cb4f1b3b502fec51870a0f8c8d45e61cacf87",
   "original_tables_sha256": "4df6c6378721b0c1cb487ee51528a580f24626f363f9da2ab6df11d43d0cb234"
 }
 ```

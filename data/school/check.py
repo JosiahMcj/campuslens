@@ -90,6 +90,30 @@ EXPECTED_COLUMNS: dict[str, list[str]] = {
 ORIGINAL_TABLES = tuple(list(EXPECTED_COLUMNS)[:24])
 OUTCOME_TABLES = tuple(list(EXPECTED_COLUMNS)[24:])
 
+# The student billing tables (billing.py, applied at the end of generation).
+# Kept apart from EXPECTED_COLUMNS so the JSON counts keep the 24 simulated
+# tables; the schema check still requires these, with exactly these columns.
+BILLING_COLUMNS: dict[str, list[str]] = {
+    "student_charges": ["charge_id", "student_id", "term_code", "category", "amount",
+                        "due_date"],
+    "student_payments": ["payment_id", "student_id", "term_code", "amount", "paid_on",
+                         "method"],
+    "payment_plans": ["student_id", "term_code", "installments", "enrolled_on"],
+}
+
+# The university finance tables (budget.py, written after billing). Like the
+# billing tables they are outside EXPECTED_COLUMNS, so the canonical hash and
+# the JSON counts keep the 24 simulated tables.
+BUDGET_COLUMNS: dict[str, list[str]] = {
+    "fiscal_years": ["fiscal_year", "academic_year", "start_date", "end_date", "status"],
+    "cost_centers": ["cost_center_id", "name", "division", "college_code", "subject_code"],
+    "budget_lines": ["fiscal_year", "cost_center_id", "fund", "category", "budget_amount",
+                     "actual_amount"],
+    "revenue_lines": ["fiscal_year", "source", "fund", "budget_amount", "actual_amount"],
+    "tuition_revenue": ["fiscal_year", "student_terms", "credit_hours", "gross_tuition",
+                        "institutional_aid", "net_tuition", "discount_rate"],
+}
+
 # The support-program tables (interventions.py), added after the core tables
 # from their own seeded stream. The canonical hash covers the core tables
 # above only, so it still proves the documented university; the program
@@ -150,15 +174,18 @@ def pct(n: int, d: int) -> float:
 
 
 def canonical_hash(con: sqlite3.Connection, only: tuple[str, ...] | None = None) -> str:
-    """sha256 over the documented tables' rows (or the tables in ``only``) in
-    a fixed order (file bytes may differ). The support-program tables have
-    their own hash, so they never move the documented one."""
+    """sha256 over every table's rows (or the tables in ``only``) in a fixed
+    order (file bytes may differ). Every table includes the billing and
+    finance tables written on top; ``ORIGINAL_TABLES`` are the 24 simulated
+    ones. The support-program tables are left out (they have their own
+    ``programs_sha256``), so they never move the documented hash."""
     h = hashlib.sha256()
-    wanted = set(EXPECTED_COLUMNS) if only is None else set(only)
     tables = [r[0] for r in con.execute(
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
     for t in tables:
-        if t not in wanted:
+        if only is not None and t not in only:
+            continue
+        if only is None and t in PROGRAM_COLUMNS:
             continue
         cols = [r[1] for r in con.execute(f'PRAGMA table_info("{t}")')]
         order = ", ".join(f'"{c}"' for c in cols)
@@ -186,17 +213,19 @@ class Checker:
     # ------------------------------------------------------------ schema
     def check_schema(self) -> None:
         problems = []
-        for table, cols in {**EXPECTED_COLUMNS, **PROGRAM_COLUMNS}.items():
+        for table, cols in {**EXPECTED_COLUMNS, **BILLING_COLUMNS, **BUDGET_COLUMNS, **PROGRAM_COLUMNS}.items():
             got = [r[1] for r in self.q(f'PRAGMA table_info("{table}")')]
             if got != cols:
                 problems.append(f"{table}: {got}")
         extra = sorted({r[0] for r in self.q("SELECT name FROM sqlite_master WHERE type='table'")}
-                       - set(EXPECTED_COLUMNS) - set(PROGRAM_COLUMNS))
+                       - set(EXPECTED_COLUMNS) - set(BILLING_COLUMNS) - set(BUDGET_COLUMNS)
+                       - set(PROGRAM_COLUMNS))
         if extra:
             problems.append(f"unexpected tables {extra}")
         self.record("schema", not problems, "; ".join(problems) or
-                    f"{len(EXPECTED_COLUMNS)} core and {len(PROGRAM_COLUMNS)} support-program "
-                    "tables, columns as documented")
+                    f"{len(EXPECTED_COLUMNS)} core, {len(BILLING_COLUMNS)} billing and "
+                    f"{len(BUDGET_COLUMNS)} finance and {len(PROGRAM_COLUMNS)} support-program tables, "
+                    "columns as documented")
         fk = self.q("PRAGMA foreign_key_check")
         self.record("foreign_keys", not fk, f"{len(fk)} dangling references")
 
@@ -521,6 +550,107 @@ class Checker:
                             AND c.grade_mode = 'standard' {extra}""",
                       (course, *args))[0]
         return int(d), int(n)
+
+    def check_billing(self) -> None:
+        """Student billing tables (billing.py): existence, references, amounts, dates."""
+        have = {r[0] for r in self.q("SELECT name FROM sqlite_master WHERE type='table'")}
+        missing = [t for t in BILLING_COLUMNS if t not in have]
+        if missing:
+            self.record("billing", False, f"missing billing tables {sorted(missing)}")
+            return
+        problems: list[str] = []
+        for table in BILLING_COLUMNS:
+            unknown_students = self.q(f"""SELECT COUNT(*) FROM {table} WHERE student_id
+                NOT IN (SELECT student_id FROM students)""")[0][0]
+            unknown_terms = self.q(f"""SELECT COUNT(*) FROM {table} WHERE term_code
+                NOT IN (SELECT term_code FROM academic_periods)""")[0][0]
+            if unknown_students:
+                problems.append(f"{table}: {unknown_students} unknown student_id")
+            if unknown_terms:
+                problems.append(f"{table}: {unknown_terms} unknown term_code")
+        for table in ("student_charges", "student_payments", "payment_plans"):
+            unenrolled = self.q(f"""SELECT COUNT(*) FROM {table} WHERE NOT EXISTS
+                (SELECT 1 FROM student_term_enrollment e WHERE e.student_id = {table}.student_id
+                 AND e.term_code = {table}.term_code AND e.status = 'enrolled')""")[0][0]
+            if unenrolled:
+                problems.append(f"{table}: {unenrolled} pairs not enrolled in "
+                                "student_term_enrollment")
+        bad_charges = self.q("""SELECT COUNT(*) FROM student_charges
+            WHERE amount <= 0 OR amount IS NULL
+               OR category NOT IN ('tuition', 'housing', 'fees', 'meal_plan')
+               OR due_date IS NULL OR date(due_date) IS NULL OR date(due_date) != due_date""")[0][0]
+        if bad_charges:
+            problems.append(f"student_charges: {bad_charges} bad amount, category, or due_date")
+        bad_payments = self.q("""SELECT COUNT(*) FROM student_payments
+            WHERE amount <= 0 OR amount IS NULL
+               OR method NOT IN ('card', 'ach', 'aid_disbursement', 'payment_plan',
+                                 'third_party')
+               OR paid_on IS NULL OR date(paid_on) IS NULL OR date(paid_on) != paid_on""")[0][0]
+        if bad_payments:
+            problems.append(f"student_payments: {bad_payments} bad amount, method, or paid_on")
+        bad_plans = self.q("""SELECT COUNT(*) FROM payment_plans
+            WHERE installments < 1 OR installments IS NULL
+               OR enrolled_on IS NULL OR date(enrolled_on) IS NULL
+               OR date(enrolled_on) != enrolled_on""")[0][0]
+        if bad_plans:
+            problems.append(f"payment_plans: {bad_plans} bad installments or enrolled_on")
+        counts = {t: self.q(f"SELECT COUNT(*) FROM {t}")[0][0] for t in BILLING_COLUMNS}
+        self.record("billing", not problems,
+                    "; ".join(problems) or
+                    f"charges {counts['student_charges']}, payments {counts['student_payments']}, "
+                    f"plans {counts['payment_plans']}: references, amounts, dates ok")
+
+    def check_budget(self) -> None:
+        """University finance tables (budget.py): net tuition is gross less aid,
+        the tuition rows agree with the revenue lines and with the tuition
+        billed to students, and every amount is a whole, non-negative dollar."""
+        problems: list[str] = []
+        bad_net = self.q("SELECT COUNT(*) FROM tuition_revenue"
+                         " WHERE net_tuition != gross_tuition - institutional_aid"
+                         " OR discount_rate != ROUND(1.0 * institutional_aid / gross_tuition, 4)")[0][0]
+        if bad_net:
+            problems.append(f"{bad_net} fiscal years where net != gross - aid")
+        disagree = self.q("""SELECT COUNT(*) FROM tuition_revenue t WHERE
+            gross_tuition != (SELECT actual_amount FROM revenue_lines r WHERE r.fiscal_year =
+                t.fiscal_year AND r.source = 'gross_tuition')
+            OR institutional_aid != (SELECT actual_amount FROM revenue_lines r WHERE
+                r.fiscal_year = t.fiscal_year AND r.source = 'institutional_aid')""")[0][0]
+        if disagree:
+            problems.append(f"{disagree} fiscal years where tuition_revenue != revenue_lines")
+        have = {r[0] for r in self.q("SELECT name FROM sqlite_master WHERE type='table'")}
+        billed = 0 if "student_charges" not in have else self.q(
+            """SELECT COUNT(*) FROM tuition_revenue t JOIN fiscal_years f
+            USING (fiscal_year) WHERE t.gross_tuition < (SELECT ROUND(COALESCE(SUM(c.amount), 0))
+                FROM student_charges c JOIN academic_periods p USING (term_code)
+                WHERE p.academic_year = f.academic_year AND c.category = 'tuition') - 1""")[0][0]
+        if billed:
+            problems.append(f"{billed} fiscal years with less gross tuition than billed")
+        negative = self.q("""SELECT (SELECT COUNT(*) FROM budget_lines WHERE budget_amount < 0
+            OR actual_amount < 0 OR typeof(budget_amount) != 'integer'
+            OR typeof(actual_amount) != 'integer')
+            + (SELECT COUNT(*) FROM revenue_lines WHERE budget_amount < 0 OR actual_amount < 0)""")[0][0]
+        if negative:
+            problems.append(f"{negative} negative or fractional amounts")
+        rates = [r[0] for r in self.q("SELECT discount_rate FROM tuition_revenue"
+                                       " ORDER BY fiscal_year")]
+        if not rates or rates[-1] <= rates[0]:
+            problems.append(f"planted: the discount rate does not rise ({rates})")
+        over = self.q("""SELECT b.fiscal_year FROM budget_lines b JOIN cost_centers c
+            USING (cost_center_id) WHERE c.division = 'Athletics'
+            GROUP BY b.fiscal_year HAVING SUM(actual_amount) > SUM(budget_amount)""")
+        if not {"FY2025", "FY2026"} <= {r[0] for r in over}:
+            problems.append("planted: Athletics is not over budget in FY2025 and FY2026")
+        if "alumni_gifts" in have:
+            short = self.q("""SELECT COUNT(*) FROM (SELECT 'FY' || fiscal_year AS fy,
+                    SUM(amount) AS alumni FROM alumni_gifts GROUP BY fiscal_year) a
+                WHERE a.alumni > (SELECT COALESCE(SUM(actual_amount), 0) FROM revenue_lines r
+                                  WHERE r.fiscal_year = a.fy AND r.source = 'gifts')""")[0][0]
+            if short:
+                problems.append(f"{short} fiscal years whose alumni gifts exceed gift revenue")
+        years = self.q("SELECT COUNT(*) FROM fiscal_years")[0][0]
+        self.record("budget", not problems and years == 6, "; ".join(problems) or
+                    f"{years} fiscal years: net tuition = gross - aid, ties to revenue lines and "
+                    "billed tuition, whole non-negative dollars")
 
     def planted(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -1090,6 +1220,8 @@ class Checker:
         self.check_distributions()
         self.check_enrollment_history()
         self.check_outcomes()
+        self.check_billing()
+        self.check_budget()
         self.check_programs()
         values = self.planted()
         values.update(self.planted_outcomes())

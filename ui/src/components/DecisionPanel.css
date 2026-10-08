@@ -46,3 +46,27 @@
   font-size: var(--text-sm);
   color: var(--ink-soft);
 }
+
+/* The approved decision in the owning department's inbox. */
+.decision-delivery {
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.decision-delivery h4 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.decision-delivery-list {
+  margin: 0 0 var(--space-2);
+  padding-left: 1.2rem;
+  font-size: var(--text-sm);
+}
+
+.decision-delivery-list li[data-status='acknowledged'] strong {
+  color: var(--series-6);
+}
