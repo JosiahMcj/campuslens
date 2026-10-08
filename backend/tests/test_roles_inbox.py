@@ -833,3 +833,49 @@ def test_decisions_route_to_the_right_department() -> None:
     assert department_roles("Finance") == ("finance",)
     assert department_roles("Admissions") == ("admissions",)
     assert department_roles("Financial Aid") == ("aid",)
+
+
+# --- overview privacy review fixes ---------------------------------------------
+
+
+def test_rate_table_withholds_a_small_remainder() -> None:
+    from cabinet.departments_more import _rates
+
+    table = _rates(
+        "k", "t", "g", "n", "r", [("Good standing", 12, 11), ("Big", 100, 60)]
+    )
+    small, big = table["rows"]
+    # 12 students at 11 in good standing would reveal 1 student outside it.
+    assert small["rate"] == WITHHELD
+    assert "%" in big["rate"] or big["rate"] == WITHHELD
+    for row in table["rows"]:
+        assert "92%" not in row["rate"]
+
+
+def test_athletics_tiles_match_their_tables(school_db: Path) -> None:
+    data = overview("athletics", school_db)
+    tiles = {t["key"]: t for t in data["tiles"]}
+    tables = {t["key"]: t for t in data["tables"]}
+    gpa_other = tables["gpa_comparison"]["rows"][1]["value"]
+    assert tiles["athlete_gpa"]["note"].endswith(f"Other students: {gpa_other}.")
+    ret_other = tables["retention_comparison"]["rows"][1]["rate"]
+    assert tiles["athlete_retention"]["note"].endswith(f"Other students: {ret_other}.")
+
+
+def test_international_holds_exclude_financial_and_aid_has_no_campus_total(
+    school_db: Path,
+) -> None:
+    import sqlite3
+
+    con = sqlite3.connect(school_db)
+    (expected,) = con.execute(
+        "SELECT COUNT(DISTINCT h.student_id) FROM person_holds h JOIN students s"
+        " ON s.student_id = h.student_id WHERE s.residency = 'international'"
+        " AND h.end_date IS NULL AND h.category != 'financial'"
+    ).fetchone()
+    con.close()
+    tiles = {t["key"]: t for t in overview("international", school_db)["tiles"]}
+    shown = tiles["international_holds"]["display"]
+    assert shown == WITHHELD or shown.replace(",", "") == str(expected)
+    aid = {t["key"]: t for t in overview("aid", school_db)["tiles"]}
+    assert "in all" not in aid["pell_with_hold"]["note"]
