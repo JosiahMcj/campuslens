@@ -1,7 +1,7 @@
 # Ellucian Ethos connector
 
 How the institution's student-information system (Ellucian Banner, reached
-through the Ellucian Ethos Integration API) feeds the cabinet without any
+through the Ellucian Ethos Integration API) feeds CampusLens without any
 identifiable student record ever entering it. The connector is
 `backend/src/cabinet/ellucian.py` (standard library only: `urllib`, `hmac`,
 `hashlib`, `json`), run as `make import-ethos` (RUNBOOK.md). Tests and demos

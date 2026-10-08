@@ -181,7 +181,7 @@ def create_backup(
         copied[str(relative)] = _sha256(target)
 
     manifest = {
-        "tool": "golden-eagle-cabinet backup",
+        "tool": "campuslens backup",
         "version": 1,
         "created_at": datetime.now(UTC).isoformat(),
         "cabinet_db_sha256": _sha256(out / "cabinet.db"),

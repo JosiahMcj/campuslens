@@ -1,26 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  deploy/launchd/com.goldeneagle.cabinet-backup.plist — daily backup with
+  deploy/launchd/com.campuslens.app-backup.plist — daily backup with
   rotation: deploy/backup.sh at 03:17 local, keeping the newest 14.
 
   Install (as the operator):
-    cp deploy/launchd/com.goldeneagle.cabinet-backup.plist ~/Library/LaunchAgents/
-    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.goldeneagle.cabinet-backup.plist
+    cp deploy/launchd/com.campuslens.app-backup.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.campuslens.app-backup.plist
 
-  Replace /opt/golden-eagle-cabinet with the deploy location. Validate:
-    plutil -lint deploy/launchd/com.goldeneagle.cabinet-backup.plist
+  Replace /opt/campuslens with the deploy location. Validate:
+    plutil -lint deploy/launchd/com.campuslens.app-backup.plist
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.goldeneagle.cabinet-backup</string>
+	<string>com.campuslens.app-backup</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/opt/golden-eagle-cabinet/deploy/backup.sh</string>
+		<string>/opt/campuslens/deploy/backup.sh</string>
 	</array>
 	<key>WorkingDirectory</key>
-	<string>/opt/golden-eagle-cabinet</string>
+	<string>/opt/campuslens</string>
 	<!-- The same env file as the app plist: launchd cannot source a file,
 	     so it points at it and deploy/backup.sh loads it — the backup must
 	     see the same CABINET_DB (and friends), or it snapshots the wrong
@@ -28,7 +28,7 @@
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>CABINET_LOCAL_ENV</key>
-		<string>/etc/golden-eagle/cabinet.env</string>
+		<string>/etc/campuslens/cabinet.env</string>
 	</dict>
 	<key>StartCalendarInterval</key>
 	<dict>
@@ -38,8 +38,8 @@
 		<integer>17</integer>
 	</dict>
 	<key>StandardOutPath</key>
-	<string>/opt/golden-eagle-cabinet/var/backup.log</string>
+	<string>/opt/campuslens/var/backup.log</string>
 	<key>StandardErrorPath</key>
-	<string>/opt/golden-eagle-cabinet/var/backup.error.log</string>
+	<string>/opt/campuslens/var/backup.error.log</string>
 </dict>
 </plist>

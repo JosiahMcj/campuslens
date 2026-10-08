@@ -4,7 +4,30 @@
 
 *Governed AI employees helping university leaders turn SIS data into human-centered action.*
 
-**Run it as a judge** (Python 3.12 and Node 22 on `PATH`; all data is fictional):
+**Know your students. Lead your flock.** CampusLens turns fragmented institutional information into clear briefings, informed decisions, and accountable departmental action.
+
+- **Ask anything, get the answer in seconds.** Plain-English questions about students, courses, money and outcomes, answered with a chart, key points, and every number traced to its source.
+- **Decide, and the right office gets the job.** CampusLens proposes the plan; a person approves; the work lands in the responsible department's inbox, where it is acknowledged and tracked.
+- **Student privacy stays safe.** The AI never sees a student's name or ID, groups under 10 are withheld, counseling notes are always refused, and every step is in a tamper-evident audit log.
+
+Team: Sharon Li, Dylan Poirier, Obinna Amadi, Josiah McJunkin.
+
+**Try it live:** https://campuslens.azai.pro (fictional data; the live model is Gloo AI)
+
+1. On the access page, enter the code `orchard juniper willow 44`.
+2. Sign in with any of these demo accounts:
+
+| Account | Email | Password | What you'll see |
+|---|---|---|---|
+| President | `president@demo.test` | `lead-your-flock-2026` | Everything: the briefing, Explore, the Data page, every department's overview, decisions and the inbox |
+| Finance (CFO) | `finance@demo.test` | `gPIIAPjunoIFzJdA` | The university budget: spending against budget, revenue, the tuition discount rate |
+| Student Accounts | `studentaccounts@demo.test` | `3Y6HauBw9kObziUv` | Student money: holds, past-due balances, payment plans |
+| Advising and Student Success | `advising@demo.test` | `V4J0D_nP0snQ_0DD` | A success coach's view: student-group trends on the Data page and its own AI employee |
+| Registrar | `registrar@demo.test` | `TbsnTVP_qWDqVWoE` | Registration and standing |
+
+Try: *"What should I know about spring registration?"*, then *"Which part of this plan requires an executive decision from me?"*, or *"What majors have the highest dropout rate?"*. Approving a decision sends it to the department's inbox inside CampusLens only; nothing is emailed. The demo resets from time to time.
+
+**Or run it yourself** (Python 3.12 and Node 22 on `PATH`; all data is fictional):
 
 ```bash
 make setup
@@ -19,10 +42,6 @@ Open http://127.0.0.1:5200 and sign in as `president@demo.test` with the passwor
 `~/campuslens-demo-accounts.txt`. `REPLAY=1` serves recorded model answers, so no key or
 network is needed; `make stop` shuts both servers down.
 
-**Earlier build (replay mode):** https://golden-eagle-cabinet-git-demo-obis-projects-1a457e7e.vercel.app
-(fictional data, recorded answers; the current build is run locally with the steps above;
-anything done in the earlier build resets when the host recycles).
-
 We built this for the Gloo AI Hackathon 2026, Track 4: Choose Your Own Adventure (Boulder, Oct 6-8, 2026), and `ROADMAP.md` is the
 plan. In one sentence, CampusLens transforms Ellucian SIS data into an
 executive briefing by coordinating permission-limited AI employees across enrollment and
@@ -33,8 +52,8 @@ We put all logic in a Python backend (FastAPI on `127.0.0.1:8910`, pytest, ruff,
 `.venv/`), and the React + TypeScript UI (Vite on `127.0.0.1:5200` with `strictPort`,
 Vitest, eslint, `tsc`) is the thin interface layer. Everything binds to `127.0.0.1` only.
 
-What runs today is the fixture dataset (`data/fixture.json`, fictional and seeded)
-and the metric functions M1-M9 (`backend/src/cabinet/metrics.py`, contracts in
+What runs today: a fictional medium-to-large university (`data/school/`, about 16,000 students over six years, 60 programs, alumni outcomes, student billing, the university budget and support programs), answered through Explore (any question), the Data page (six years of charts), department overviews and logins for 18 roles, a per-account inbox for alerts and approved decisions, and support programs with honest impact tracking. The president's briefing runs on a separate registration-window snapshot (`data/fixture.json`, fictional and seeded)
+with the metric functions M1-M9 (`backend/src/cabinet/metrics.py`, contracts in
 `CONTRACTS.md`). So are the permission gate, the append-only audit log, the
 governance API, and the dashboard. We built an AI employee for every department (15 in all, with output
 validation). For example, the Enrollment Analyst covers M1, M2 and M7, the Student

@@ -2,7 +2,7 @@
 
 One pass, in order, for a new production host. Everything is environment or
 files under the deploy directory; no code changes per deployment.
-`/opt/golden-eagle-cabinet` below is the deploy location — substitute your
+`/opt/campuslens` below is the deploy location — substitute your
 own, and edit the same path into the plist/unit files.
 
 ## 1. Host and domain
@@ -17,7 +17,7 @@ own, and edit the same path into the plist/unit files.
 ## 2. Configuration (secrets never in the repo)
 
 - [ ] Env file written, mode 0600, owned by the service user — default
-      `/etc/golden-eagle/cabinet.env` (referenced by `CABINET_LOCAL_ENV` in
+      `/etc/campuslens/cabinet.env` (referenced by `CABINET_LOCAL_ENV` in
       the launchd plist and by `EnvironmentFile=` in the systemd unit):
       ```
       CABINET_SECRET_KEY=<from: python3 -c "import secrets; print(secrets.token_hex(32))">
@@ -38,7 +38,7 @@ own, and edit the same path into the plist/unit files.
 ## 3. Build and service
 
 - [ ] `make build` — `ui/dist` written.
-- [ ] Service installed and running: `deploy/launchd/com.goldeneagle.cabinet.plist`
+- [ ] Service installed and running: `deploy/launchd/com.campuslens.app.plist`
       (macOS) or `deploy/systemd/cabinet.service` (Linux). `make serve` is
       the same command by hand, for a foreground check.
 - [ ] `curl -fs http://127.0.0.1:8910/ready` answers `{"ready": true}` —
@@ -67,7 +67,7 @@ own, and edit the same path into the plist/unit files.
 
 ## 6. Backups
 
-- [ ] Backup timer installed: `deploy/launchd/com.goldeneagle.cabinet-backup.plist`
+- [ ] Backup timer installed: `deploy/launchd/com.campuslens.app-backup.plist`
       or `deploy/systemd/cabinet-backup.timer` (daily 03:17, keeps 14).
 - [ ] One manual run: `deploy/backup.sh` — the new `var/backups/<timestamp>/`
       carries a `manifest.json` and the command reported hashes verified.
@@ -81,7 +81,7 @@ own, and edit the same path into the plist/unit files.
 ## 7. Where things are
 
 - Access log: JSON lines on the service's stdout — `journalctl -u cabinet -f`
-  (systemd) or `/opt/golden-eagle-cabinet/var/api.access.log` (launchd).
+  (systemd) or `/opt/campuslens/var/api.access.log` (launchd).
   Every response carries `X-Request-ID`; that id is the join key into the
   access log. Startup errors: `api.error.log` / the same journal.
 - Durable state: `var/cabinet.db` + `var/data/` (both inside every backup).
@@ -91,7 +91,7 @@ own, and edit the same path into the plist/unit files.
 
 1. Write the new key into the env file (`CABINET_LLM_API_KEY`, or the file
    `CABINET_LLM_API_KEY_FILE` points at).
-2. Restart the service: `launchctl kickstart -k gui/$(id -u)/com.goldeneagle.cabinet`
+2. Restart the service: `launchctl kickstart -k gui/$(id -u)/com.campuslens.app`
    or `sudo systemctl restart cabinet`. In-flight sessions survive (the
    session secret did not change); a request mid-restart is retried by the
    UI's poll.
@@ -101,7 +101,7 @@ own, and edit the same path into the plist/unit files.
 ## 9. Taking the service down safely
 
 - Planned stop: `sudo systemctl stop cabinet` or
-  `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.goldeneagle.cabinet.plist`.
+  `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.campuslens.app.plist`.
   SIGTERM shuts uvicorn down gracefully (in-flight requests finish, up to
   10 s). Never `kill -9`: SQLite is safe against it, but a request then
   dies mid-flight.

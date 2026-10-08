@@ -1,39 +1,39 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  deploy/launchd/com.goldeneagle.cabinet.plist — keep CampusLens running
+  deploy/launchd/com.campuslens.app.plist — keep CampusLens running
   across reboots on macOS.
 
   Install (as the operator, once the paths below match the machine):
-    cp deploy/launchd/com.goldeneagle.cabinet.plist ~/Library/LaunchAgents/
-    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.goldeneagle.cabinet.plist
+    cp deploy/launchd/com.campuslens.app.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.campuslens.app.plist
   For a system daemon use /Library/LaunchDaemons and `sudo launchctl
   bootstrap system/...` — adjust paths and ownership accordingly.
 
   Paths in this file are absolute on purpose: launchd expands nothing.
-  Replace /opt/golden-eagle-cabinet with the deploy location. Secrets are
+  Replace /opt/campuslens with the deploy location. Secrets are
   NOT in this file: CABINET_LOCAL_ENV points at the env file (0600, owned by
   the service user) that carries CABINET_SECRET_KEY and the CABINET_LLM_*
   settings.
 
-  Validate: plutil -lint deploy/launchd/com.goldeneagle.cabinet.plist
+  Validate: plutil -lint deploy/launchd/com.campuslens.app.plist
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.goldeneagle.cabinet</string>
+	<string>com.campuslens.app</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/opt/golden-eagle-cabinet/deploy/run-production.sh</string>
+		<string>/opt/campuslens/deploy/run-production.sh</string>
 	</array>
 	<key>WorkingDirectory</key>
-	<string>/opt/golden-eagle-cabinet</string>
+	<string>/opt/campuslens</string>
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>CABINET_ENV</key>
 		<string>production</string>
 		<key>CABINET_LOCAL_ENV</key>
-		<string>/etc/golden-eagle/cabinet.env</string>
+		<string>/etc/campuslens/cabinet.env</string>
 		<key>CABINET_BIND</key>
 		<string>127.0.0.1:8910</string>
 		<key>CABINET_TRUSTED_PROXY</key>
@@ -50,8 +50,8 @@
 	<!-- The app's access log is JSON lines on stdout; startup and stderr
 	     land in the error log. Rotate both with newsyslog or logrotate. -->
 	<key>StandardOutPath</key>
-	<string>/opt/golden-eagle-cabinet/var/api.access.log</string>
+	<string>/opt/campuslens/var/api.access.log</string>
 	<key>StandardErrorPath</key>
-	<string>/opt/golden-eagle-cabinet/var/api.error.log</string>
+	<string>/opt/campuslens/var/api.error.log</string>
 </dict>
 </plist>
