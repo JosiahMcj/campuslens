@@ -42,6 +42,7 @@ from cabinet.explore.privacy import (
 )
 from cabinet.explore.prompts import build_explore_prompt
 from cabinet.provider import Explanation
+from cabinet.staff import asked_of, denial_message
 from conftest import make_authenticated_client
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -340,7 +341,11 @@ def test_counseling_never_gives_a_figure(
     ):
         body = _ask(_client(app), question)
         assert body["refused"] is False and body["redirect"] == "counseling"
-        assert body["message"] == counseling_message("chief_of_staff")
+        # The denial names the AI employee the question was put to: its
+        # topic's (GPA: Academic Affairs; probation: the Registrar), else
+        # the Chief of Staff, the president's own.
+        employee = asked_of(question, "executive")
+        assert body["message"] == denial_message(employee)
         assert body["message"].startswith("Access denied.")
         assert "recorded in the audit log" in body["message"]
         assert body["answer"] == [] and body["steps"] == []

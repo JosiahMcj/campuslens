@@ -1141,13 +1141,11 @@ _MEASURE_FIELDS: dict[str, tuple[str, ...]] = {
     "major_change_out_rate": ("student_academic_programs.status",),
     "major_attrition_rate": (
         "student_academic_programs.status",
-        "student_term_records (last term enrolled)",
+        "student_term_records (enrolled the next fall or not)",
     ),
-    "fit_flag_rate": (
-        "final_grades.grade",
-        "program_requirements.requirement_type",
-        "student_academic_programs.status",
-    ),
+    # The rule itself is applied when the program records are built
+    # (support_program_terms); the measure counts who met it.
+    "fit_flag_rate": ("support_program_terms (met the early fit rule)",),
     "first_year_major_dfw_rate": (
         "final_grades.grade",
         "program_requirements.requirement_type",

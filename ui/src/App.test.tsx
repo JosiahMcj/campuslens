@@ -118,6 +118,39 @@ function json(body: unknown, status = 200, headers: Record<string, string> = {})
   })
 }
 
+/** GET /staff: the Chief of Staff and one department employee. */
+const STAFF = {
+  yours: ['chief_of_staff'],
+  employees: [
+    {
+      role: 'chief_of_staff',
+      title: 'Chief of Staff',
+      job: "Hands each question to the right department's analyst, then writes the summary and its limits from their checked totals.",
+      office: "President's Office",
+      may_read: ['Majors, colleges, class levels and terms'],
+      never_reads: ['Student names', 'Counseling and chaplain notes'],
+      outside_scope: [],
+      findings: ['M1'],
+      no_data: false,
+      yours: true,
+      requests_today: 1,
+    },
+    {
+      role: 'registrar_analyst',
+      title: 'Registrar Analyst',
+      job: 'Reports registration, academic standing, credit hours and course sections.',
+      office: 'Office of the Registrar',
+      may_read: ['Academic standing (probation and suspension)'],
+      never_reads: ['Student names'],
+      outside_scope: ['Pell status'],
+      findings: ['M1'],
+      no_data: false,
+      yours: false,
+      requests_today: 0,
+    },
+  ],
+}
+
 /** The API: every route answers like a healthy server unless overridden. */
 function mockApi(overrides: Record<string, Handler> = {}) {
   const calls: string[] = []
@@ -143,6 +176,8 @@ function mockApi(overrides: Record<string, Handler> = {}) {
         return json({ institution: 'Demonstration University (fictional)', examples: EXAMPLES })
       case '/explore':
         return json(EXPLORE_ANSWER)
+      case '/staff':
+        return json(STAFF)
       default:
         return json({ detail: 'not found' }, 404)
     }
@@ -653,7 +688,7 @@ describe('the briefing before any question', () => {
     // The work line opens the one AI employees panel, with each job named.
     fireEvent.click(screen.getByRole('button', { name: /Showing the latest briefing/ }))
     const dialog = await screen.findByRole('region', { name: 'AI employees and data access' })
-    expect(within(dialog).getByText(/writes the summary and its limits/)).toBeTruthy()
+    expect(await within(dialog).findByText(/writes the summary and its limits/)).toBeTruthy()
   })
 })
 
