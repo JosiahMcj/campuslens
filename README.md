@@ -344,7 +344,7 @@ shows the configuration with values redacted, and `make audit` scans the
 dependencies. The threat model and control list live in `docs/SECURITY.md`.
 
 **Gloo AI.** `cabinet.local.env.example` is set up for Gloo AI's guarded endpoint
-(`https://platform.ai.gloo.com/ai/v2/guarded`, model `gloo-qwen-3.7-flash`). Copy it to
+(`https://platform.ai.gloo.com/ai/v1`, model `gloo-openai-gpt-4.1-mini`). Copy it to
 `cabinet.local.env`, paste your key from the Gloo AI Studio console into
 `CABINET_LLM_API_KEY`, and restart. Keep `CABINET_LLM_REASONING_EFFORT=none`: with it the
 planner answers in about 10 s a question, with every plan valid in our checks.
