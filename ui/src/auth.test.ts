@@ -221,6 +221,15 @@ describe('canSeeAuditLog — the audit-log gate for every role', () => {
       finance: false,
       registrar: false,
       studentlife: false,
+      studentaccounts: false,
+      admissions: false,
+      advising: false,
+      provost: false,
+      ir: false,
+      careers: false,
+      advancement: false,
+      international: false,
+      athletics: false,
       it: true,
     }
     for (const role of Object.keys(expected) as Role[]) {
@@ -240,6 +249,15 @@ describe('the Financial Aid review queue gates, matching the API table', () => {
       finance: { read: false, edit: false, act: false },
       registrar: { read: false, edit: false, act: false },
       studentlife: { read: false, edit: false, act: false },
+      studentaccounts: { read: false, edit: false, act: false },
+      admissions: { read: false, edit: false, act: false },
+      advising: { read: false, edit: false, act: false },
+      provost: { read: false, edit: false, act: false },
+      ir: { read: false, edit: false, act: false },
+      careers: { read: false, edit: false, act: false },
+      advancement: { read: false, edit: false, act: false },
+      international: { read: false, edit: false, act: false },
+      athletics: { read: false, edit: false, act: false },
       it: { read: false, edit: false, act: false },
     }
     for (const role of Object.keys(expected) as Role[]) {

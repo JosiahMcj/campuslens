@@ -508,17 +508,16 @@ def test_counseling_asked_of_a_department_names_its_employee(app: FastAPI) -> No
 def test_staff_route_lists_everyone_own_department_first_with_todays_counts(
     app: FastAPI,
 ) -> None:
-    finance = make_authenticated_client(app, role="finance")
-    finance.post(
+    accounts = make_authenticated_client(app, role="studentaccounts")
+    accounts.post(
         "/explore", json={"question": "Which offices hold the most active holds?"}
     )
-    body = finance.get("/staff").json()
+    body = accounts.get("/staff").json()
     employees = body["employees"]
     assert len(employees) == 15
     assert employees[0]["title"] == "Student Accounts Analyst"
     assert employees[0]["yours"] is True and body["yours"] == [
-        "student_accounts_analyst",
-        "finance_budget_analyst",
+        "student_accounts_analyst"
     ]
     by_role = {e["role"]: e for e in employees}
     assert by_role["student_accounts_analyst"]["requests_today"] == 1
@@ -540,14 +539,23 @@ def test_staff_route_lists_everyone_own_department_first_with_todays_counts(
     assert by_role["student_accounts_analyst"]["may_read"][1] == (
         "Holds and balances owed, by office"
     )
-    # The president sees the Chief of Staff first; student life its two.
+    # The president sees the Chief of Staff first; student life its one.
     president = make_authenticated_client(app, role="executive").get("/staff").json()
     assert president["employees"][0]["title"] == "Chief of Staff"
     life = make_authenticated_client(app, role="studentlife").get("/staff").json()
     assert [e["title"] for e in life["employees"][:2]] == [
         "Student Life Analyst",
-        "Advising Analyst",
+        "Chief of Staff",
     ]
+    fin = make_authenticated_client(app, role="finance").get("/staff").json()
+    assert fin["yours"] == ["finance_budget_analyst"]
+    # Every login role has its own employee (athletics shares Student Life's,
+    # international shares Institutional Research's).
+    from cabinet import staff as _staff
+    from cabinet.auth import DEPARTMENT_ROLES
+
+    for role in DEPARTMENT_ROLES:
+        assert _staff.LOGIN_EMPLOYEES[role]
     it = make_authenticated_client(app, role="it").get("/staff")
     assert it.status_code == 200
     assert it.json()["employees"][0]["title"] == "IT & Data Steward"

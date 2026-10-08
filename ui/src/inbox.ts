@@ -204,6 +204,8 @@ export interface DepartmentOverview {
   minimum_cell_size: number
   tiles: OverviewTile[]
   tables: OverviewTable[]
+  /** A line under the term (Finance: whose books these are). */
+  intro?: string
   sections?: OverviewSection[]
 }
 
@@ -277,7 +279,7 @@ export function useInboxUnread(): [number, () => void] {
   return [unread, refresh]
 }
 
-/** "Finance — Student Accounts (finance@demo.test)": who an alert reaches. */
+/** "Student Accounts (studentaccounts@demo.test)": who an alert reaches. */
 export function recipientLabel(person: InboxPerson): string {
   return `${roleDisplayName(person.role)} (${person.email})`
 }

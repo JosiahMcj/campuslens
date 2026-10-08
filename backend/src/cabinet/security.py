@@ -110,7 +110,7 @@ BODY_CAP_OVERRIDES: tuple[tuple[str, int], ...] = (
 )
 
 # --- roles (docs/ROLES.md has the table of who sees what) --------------------
-# The department accounts: Finance / Student Accounts, the Registrar and
+# The department accounts: Finance, Student Accounts, the Registrar and
 # Student Life (cabinet.auth.DEPARTMENT_ROLES). Each reads the briefing's
 # aggregate figures, asks aggregate Explore questions and opens its own
 # department overview.
@@ -152,7 +152,7 @@ USER_ADMIN_ROLES = (ROLE_ADMIN, ROLE_IT)
 SESSION_VIEW_ROLES = (ROLE_ADMIN, ROLE_IT, ROLE_EXECUTIVE)
 # The department overviews (cabinet.departments): each department account
 # reads its own; the president and the admin read every one.
-OVERVIEW_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, *DEPARTMENT_ROLES)
+OVERVIEW_ROLES = (ROLE_ADMIN, ROLE_EXECUTIVE, ROLE_AID, *DEPARTMENT_ROLES)
 # The Financial Aid review queue holds per-student rows, so it is narrower
 # than READ_ROLES: the aid office works it, the admin manages it, and the
 # executive and reviewer may watch it. Staff may create it from the decision

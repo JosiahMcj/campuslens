@@ -78,7 +78,7 @@ institution:
 	$(PYBIN)/python -m cabinet.institutions add --name "$(NAME)" --slug "$(SLUG)"
 
 user:
-	@if [ -z "$(EMAIL)" ] || [ -z "$(ROLE)" ]; then echo "usage: make user EMAIL=... ROLE=admin|executive|staff|reviewer|aid|finance|registrar|studentlife|it [INSTITUTION=slug]" >&2; exit 2; fi
+	@if [ -z "$(EMAIL)" ] || [ -z "$(ROLE)" ]; then echo "usage: make user EMAIL=... ROLE=admin|executive|staff|reviewer|aid|finance|studentaccounts|registrar|studentlife|it [INSTITUTION=slug]" >&2; exit 2; fi
 	@if [ -n "$(INSTITUTION)" ]; then \
 		$(PYBIN)/python -m cabinet.users add --email "$(EMAIL)" --role "$(ROLE)" --institution "$(INSTITUTION)"; \
 	else \
@@ -101,7 +101,8 @@ demo-mailboxes:
 	fi
 
 # Demonstration only: one sign-in per demonstration persona (docs/ROLES.md):
-# president@, it@, finance@, aid@, registrar@, studentlife@, staff@ and
+# president@, it@, finance@, studentaccounts@, aid@, the other department logins,
+# registrar@, studentlife@, staff@ and
 # reviewer@demo.test. Existing accounts are left alone (never reset). The
 # generated passwords are appended to OUT (required; created mode 600, never
 # through a symbolic link; keep it OUTSIDE the repository). Refuses unless the

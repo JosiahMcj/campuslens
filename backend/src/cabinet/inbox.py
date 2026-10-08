@@ -15,7 +15,7 @@
     definition are re-read from the institution's current findings, never
     its student ids, and a figure that no longer exists is "no longer
     available". The counseling aggregate (M9) is never sent.
-  - ``{"kind": "overview", "ref": "finance:open_balance"}`` — one figure of a
+  - ``{"kind": "overview", "ref": "studentaccounts:open_balance"}`` — one figure of a
     department overview (``cabinet.departments``), likewise re-read on show.
   - ``{"kind": "chart", "ref": "chart=retention&college=ENG&at=2024-2025"}`` —
     a Data page chart, optionally one term (``at``) and one group
@@ -48,7 +48,8 @@
 **Approved decisions reach the owning department.** When the president
 approves a leadership decision (``POST /decisions/approve``), the server
 sends one message to every enabled account of the department that owns the
-follow-up (``DEPARTMENT_ROLES``: Financial Aid -> aid, Bursar -> finance,
+follow-up (``DEPARTMENT_ROLES``: Financial Aid -> aid, Bursar -> studentaccounts,
+Finance -> finance,
 Registrar -> registrar, Student Success -> studentlife), from the approver,
 with ``source_ref`` ``decision:<decision id>``. Only the reference, the
 dataset it was approved on and the proposed deadline are stored: the
@@ -190,8 +191,19 @@ DECISION_REF_PREFIX = "decision:"
 # that department.
 DEPARTMENT_ROLES: dict[str, tuple[str, ...]] = {
     "Financial Aid": ("aid",),
-    "Bursar": ("finance",),
-    "Student Accounts": ("finance",),
+    "Bursar": ("studentaccounts",),
+    "Student Accounts": ("studentaccounts",),
+    "Finance": ("finance",),
+    "Admissions": ("admissions",),
+    "Academic Advising": ("advising",),
+    "Advising": ("advising",),
+    "Provost": ("provost",),
+    "Academic Affairs": ("provost",),
+    "Institutional Research": ("ir",),
+    "Career Services": ("careers",),
+    "Advancement": ("advancement",),
+    "International Student Services": ("international",),
+    "Athletics": ("athletics",),
     "Registrar": ("registrar",),
     "Student Success": ("studentlife",),
     "Student Life": ("studentlife",),
