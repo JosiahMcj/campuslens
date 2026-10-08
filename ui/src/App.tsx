@@ -2006,6 +2006,7 @@ function BriefingPage({
             role={role}
             decision={decisions?.[0] ?? null}
             dispatch={decisions?.[0] != null ? (dispatches[decisions[0].id]?.info ?? null) : null}
+            questionId={lastAccepted?.question_id}
             onOpenEvidence={openEvidence}
             onReviewNextSteps={() => {
               const target = document.getElementById('reply-next-steps')
