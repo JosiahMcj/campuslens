@@ -510,3 +510,47 @@
   margin: 0 0 var(--space-5);
   color: var(--ink-soft);
 }
+
+/* The president's directory of department overviews. */
+.department-directory {
+  list-style: none;
+  margin: 0 0 var(--space-4, 1rem);
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-3, 0.75rem);
+}
+
+.department-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 100%;
+  height: 100%;
+  text-align: left;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border, #d0d5dd);
+  border-radius: 0.5rem;
+  background: var(--surface, transparent);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.department-card:hover,
+.department-card:focus-visible {
+  border-color: var(--accent, currentColor);
+}
+
+.department-card-name {
+  font-weight: 600;
+}
+
+.department-card-about {
+  font-size: 0.875rem;
+  opacity: 0.8;
+}
+
+.department-back {
+  margin-bottom: var(--space-3, 0.75rem);
+}

@@ -197,10 +197,10 @@ athletes, part-time study, D/F/W rates, probation and advising.
   their browser.
 - **Roles.** One table, `backend/src/cabinet/data_roles.py`: the executive sees every
   dashboard, Financial Aid sees student finances, staff and reviewers see students, the
-  admin has no Data page; the finance, registrar, student life and IT roles are mapped
+  admin has no Data page; the department roles are mapped (finance: the budget; student accounts: student finances)
   too. Pell status is a financial attribute: only the executive, Financial Aid and
-  finance may narrow or compare by it. A new role gets dashboards with one line there
-  (for example `"finance": ("finances",)`) plus one in `DATA_PAGE_ROLES`
+  student accounts may narrow or compare by it. A new role gets dashboards with one line there
+  (for example `"studentaccounts": ("finances",)`) plus one in `DATA_PAGE_ROLES`
   (`ui/src/dataPage.ts`) for the sidebar row.
 - **Privacy.** Totals only, through Explore's measure machinery (`cabinet/explore/general.py`):
   a point over fewer than 10 students, or one that would let a group that small be worked
@@ -311,8 +311,8 @@ never by code changes.
 
 **Security.** Every route except `/health` and `/ready` requires a logged-in
 user with the right role. The roles are admin, executive, staff, reviewer,
-aid (Financial Aid staff), the department accounts finance, registrar and
-studentlife, and it, and the executive reads the institution's audit log. Each
+aid (Financial Aid staff), the department accounts (finance, studentaccounts, registrar, studentlife, admissions,
+advising, provost, ir, careers, advancement, international, athletics), and it, and the executive reads the institution's audit log. Each
 sign-in sees its own pages, and anyone can send an alert to another account's
 inbox (docs/ROLES.md; `make demo-accounts OUT=…` creates the demonstration
 personas). Sessions are

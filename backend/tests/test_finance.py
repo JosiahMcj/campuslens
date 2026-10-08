@@ -288,8 +288,9 @@ def test_without_billing_or_budget_the_measures_say_so(no_billing_db: Path) -> N
         assert general.run(con, {"measure": "headcount"}, v)[0]
     finally:
         con.close()
+    assert departments.overview("studentaccounts", no_billing_db)["sections"] == []
     body = departments.overview("finance", no_billing_db)
-    assert body["sections"] == []
+    assert body["tiles"] == [] and "not in this school database" in body["intro"]
 
 
 # --- Explore: routing and answers -----------------------------------------------
@@ -400,7 +401,14 @@ def test_budget_roles_read_the_budget_in_explore(app: FastAPI, role: str) -> Non
     )
 
 
-@pytest.mark.parametrize("role", ["staff", "reviewer", "registrar", "studentlife"])
+@pytest.mark.parametrize("role", [
+        "staff",
+        "reviewer",
+        "registrar",
+        "studentlife",
+        "studentaccounts",
+        "admissions",
+    ])
 def test_other_roles_are_refused_the_budget(app: FastAPI, role: str) -> None:
     client = _client(app, role)
     response = client.post(
@@ -416,25 +424,53 @@ def test_other_roles_are_refused_the_budget(app: FastAPI, role: str) -> None:
     assert ok.status_code == 200 and ok.json()["answer"]
 
 
-def test_finance_overview_has_both_sections(app: FastAPI) -> None:
+def test_finance_overview_is_the_budget_and_student_accounts_the_ledger(
+    app: FastAPI,
+) -> None:
     body = _client(app, "finance").get("/departments/overview").json()
-    titles = [s["title"] for s in body["sections"]]
-    assert titles == ["University budget", "Student accounts"]
-    accounts = body["sections"][1]
-    aging = next(t for t in accounts["tables"] if t["key"] == "accounts_aging")
+    assert body["name"] == "Finance" and "sections" not in body
+    assert body["tiles"][0]["key"] == "budget_spending"
+    assert [t["key"] for t in body["tables"]] == [
+        "budget_by_division",
+        "revenue_mix",
+        "discount_trend",
+    ]
+    # No student account, hold or balance on the budget office's page.
+    text = repr(body).lower()
+    assert "hold" not in text and "past due" not in text and "payment plan" not in text
+    accounts = _client(app, "studentaccounts").get("/departments/overview").json()
+    assert accounts["name"] == "Student Accounts"
+    assert [s["title"] for s in accounts["sections"]] == ["Student accounts"]
+    assert "budget" not in repr(accounts).lower()
+    aging = next(
+        t for t in accounts["sections"][0]["tables"] if t["key"] == "accounts_aging"
+    )
     shown = [r["students"] for r in aging["rows"]]
     assert all(
         s in ("None", departments.WITHHELD) or int(s.replace(",", "")) >= 10
         for s in shown
     )
-    # Other departments get no sections, and registrar may not read Finance.
+    # Other departments get no sections, and neither may read the other's.
     registrar = _client(app, "registrar")
     assert "sections" not in registrar.get("/departments/overview").json()
     assert registrar.get("/departments/overview?department=finance").status_code == 403
+    for me, other in (("finance", "studentaccounts"), ("studentaccounts", "finance")):
+        refused = _client(app, me).get(f"/departments/overview?department={other}")
+        assert refused.status_code == 403
 
 
 def test_budget_dashboard_is_finance_and_executive_only(app: FastAPI) -> None:
-    for role in ("finance", "executive"):
+    # Finance sees the budget and no student finances; the president both.
+    finance_boards = [
+        d["id"]
+        for d in _client(app, "finance").get("/data/dashboards").json()["dashboards"]
+    ]
+    assert finance_boards == ["budget"]
+    finance = _client(app, "finance")
+    assert finance.get("/data/series?chart=accounts_past_due").status_code == 403
+    accounts = _client(app, "studentaccounts")
+    assert accounts.get("/data/series?chart=budget_spending").status_code == 403
+    for role in ("executive",):
         client = _client(app, role)
         boards = {
             d["id"]: d for d in client.get("/data/dashboards").json()["dashboards"]
@@ -452,7 +488,7 @@ def test_budget_dashboard_is_finance_and_executive_only(app: FastAPI) -> None:
             client.get("/data/series?chart=budget_spending&pell=pell").status_code
             == 422
         )
-    for role in ("aid", "staff", "registrar"):
+    for role in ("aid", "staff", "registrar", "studentaccounts"):
         client = _client(app, role)
         ids = [d["id"] for d in client.get("/data/dashboards").json()["dashboards"]]
         assert "budget" not in ids
@@ -461,7 +497,7 @@ def test_budget_dashboard_is_finance_and_executive_only(app: FastAPI) -> None:
 
 
 def test_account_chart_rounds_and_withholds(app: FastAPI) -> None:
-    client = _client(app, "finance")
+    client = _client(app, "studentaccounts")
     data = client.get("/data/series?chart=accounts_past_due").json()
     values = [p["value"] for p in data["series"][0]["points"] if p["status"] == "ok"]
     assert values and all(v % 100 == 0 for v in values)

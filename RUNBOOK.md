@@ -64,7 +64,8 @@ institution is shown as "Demonstration University" and keeps the slug
 `bootstrap`.
 `make institution` adds another tenant, and `make user` adds a login in one of
 nine roles: admin, executive, staff, reviewer, aid (the Financial Aid office),
-the department accounts finance, registrar and studentlife, and it (docs/ROLES.md
+the department accounts (finance, studentaccounts, registrar, studentlife and the
+rest listed there), and it (docs/ROLES.md
 says what each one sees). Every new
 institution is seeded with the fictional demonstration dataset ("Demonstration
 (fictional)"), so the demo and onboarding work from the first login.

@@ -11,8 +11,17 @@ export type Role =
   | 'reviewer'
   | 'aid'
   | 'finance'
+  | 'studentaccounts'
   | 'registrar'
   | 'studentlife'
+  | 'admissions'
+  | 'advising'
+  | 'provost'
+  | 'ir'
+  | 'careers'
+  | 'advancement'
+  | 'international'
+  | 'athletics'
   | 'it'
 
 /** Every role, in the order the account lists show them. */
@@ -21,24 +30,79 @@ export const ALL_ROLES: readonly Role[] = [
   'admin',
   'it',
   'finance',
+  'studentaccounts',
   'aid',
   'registrar',
   'studentlife',
+  'admissions',
+  'advising',
+  'provost',
+  'ir',
+  'careers',
+  'advancement',
+  'international',
+  'athletics',
   'staff',
   'reviewer',
 ]
 
 /** The department accounts (docs/ROLES.md): each has its own overview. */
-export type Department = 'finance' | 'registrar' | 'studentlife'
-export const DEPARTMENTS: readonly Department[] = ['finance', 'registrar', 'studentlife']
+export type Department =
+  | 'finance'
+  | 'studentaccounts'
+  | 'registrar'
+  | 'studentlife'
+  | 'admissions'
+  | 'advising'
+  | 'provost'
+  | 'ir'
+  | 'careers'
+  | 'advancement'
+  | 'international'
+  | 'athletics'
+  | 'aid'
 
+/** Every department with an overview, in the order the directory shows them. */
+export const DEPARTMENTS: readonly Department[] = [
+  'finance',
+  'studentaccounts',
+  'registrar',
+  'studentlife',
+  'admissions',
+  'advising',
+  'provost',
+  'ir',
+  'careers',
+  'advancement',
+  'international',
+  'athletics',
+  'aid',
+]
+
+/** The department accounts (each has its own overview and the department
+ * pages only). Financial Aid keeps its review-queue app and gets the
+ * overview as an added page, so it is not listed here. */
 export function isDepartment(role: Role): role is Department {
-  return role === 'finance' || role === 'registrar' || role === 'studentlife'
+  return role !== 'aid' && (DEPARTMENTS as readonly string[]).includes(role)
 }
 
 /** The accounts IT may create, enable, disable and re-role. Matches
  * IT_MANAGED_ROLES in the API. */
-export const IT_MANAGED_ROLES: readonly Role[] = ['finance', 'registrar', 'studentlife', 'staff']
+export const IT_MANAGED_ROLES: readonly Role[] = [
+  'finance',
+  'studentaccounts',
+  'registrar',
+  'studentlife',
+  'admissions',
+  'advising',
+  'provost',
+  'ir',
+  'careers',
+  'advancement',
+  'international',
+  'athletics',
+  'staff',
+]
 
 export interface SessionUser {
   id: number
@@ -292,6 +356,7 @@ export function canReadBriefing(role: Role): boolean {
 /** The department overviews: each department account reads its own; the
  * president and the admin read every one. Matches OVERVIEW_ROLES. */
 export function overviewDepartments(role: Role): Department[] {
+  if (role === 'aid') return ['aid']
   if (isDepartment(role)) return [role]
   return role === 'executive' || role === 'admin' ? [...DEPARTMENTS] : []
 }
@@ -339,11 +404,29 @@ export function roleDisplayName(role: Role): string {
     case 'it':
       return 'IT'
     case 'finance':
-      return 'Finance — Student Accounts'
+      return 'Finance'
+    case 'studentaccounts':
+      return 'Student Accounts'
     case 'registrar':
       return 'Registrar'
     case 'studentlife':
       return 'Student Life'
+    case 'admissions':
+      return 'Admissions'
+    case 'advising':
+      return 'Advising and Student Success'
+    case 'provost':
+      return 'Academic Affairs'
+    case 'ir':
+      return 'Institutional Research'
+    case 'careers':
+      return 'Career Services'
+    case 'advancement':
+      return 'Advancement'
+    case 'international':
+      return 'International Student Services'
+    case 'athletics':
+      return 'Athletics'
     case 'staff':
       return 'Staff'
     case 'reviewer':

@@ -12,10 +12,28 @@ import {
 
 import './Roles.css'
 
+/** One line under each department's name in the president's directory. */
+const DEPARTMENT_ABOUT: Record<Department, string> = {
+  finance: "The university's budget against actual, revenue and the tuition discount rate.",
+  studentaccounts: 'Student balances, account holds, past-due amounts and payment plans.',
+  registrar: 'Registration, enrollment by level and academic standing.',
+  studentlife: 'Retention, housing and first-generation support.',
+  admissions: 'Entering classes by admit type, residency and college.',
+  advising: 'Advising coverage, appointments, changes of major and stop-outs.',
+  provost: 'D, F and withdrawal rates, the hardest courses and section sizes.',
+  ir: 'Enrollment, retention and degrees awarded over the years.',
+  careers: 'First destinations, starting salaries and graduate school.',
+  advancement: 'Alumni giving participation and gifts.',
+  international: 'International students by college and term.',
+  athletics: 'Athletes compared with other students.',
+  aid: 'Pell recipients by class level and college.',
+}
+
 /**
  * One department's overview: four headline figures and two tables, all
  * aggregate (groups under the minimum size read "Fewer than 10"), and for
- * Finance two more sections (the university budget, and student accounts).
+ * Student Accounts a second section (the billing ledger). Finance shows the
+ * university budget as its figures and tables.
  * A department account sees its own; the president and the admin switch
  * between every department. Each figure can be sent to someone's inbox.
  */
@@ -26,7 +44,10 @@ export function DepartmentOverview({
   departments: Department[]
   onSendAlert: ((source: AlertSource) => void) | null
 }) {
-  const [department, setDepartment] = useState<Department>(departments[0])
+  // With several departments the page opens on the directory (null).
+  const [department, setDepartment] = useState<Department | null>(
+    departments.length > 1 ? null : departments[0],
+  )
   const [state, setState] = useState<
     { kind: 'loading' } | { kind: 'ready'; data: Overview } | { kind: 'error'; message: string }
   >({ kind: 'loading' })
@@ -41,27 +62,34 @@ export function DepartmentOverview({
   }, [])
 
   useEffect(() => {
+    if (department === null) return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the fetch's setState lands after an await
     void load(department)
   }, [department, load])
 
+  if (department === null) {
+    return (
+      <div className="overview">
+        <ul className="department-directory" aria-label="Departments">
+          {departments.map((which) => (
+            <li key={which}>
+              <button type="button" className="department-card" onClick={() => setDepartment(which)}>
+                <span className="department-card-name">{roleDisplayName(which)}</span>
+                <span className="department-card-about">{DEPARTMENT_ABOUT[which]}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )
+  }
+
   return (
     <div className="overview">
       {departments.length > 1 && (
-        <div className="inbox-tabs" role="tablist" aria-label="Department">
-          {departments.map((which) => (
-            <button
-              key={which}
-              type="button"
-              role="tab"
-              className="inbox-tab"
-              aria-selected={which === department}
-              onClick={() => setDepartment(which)}
-            >
-              {roleDisplayName(which)}
-            </button>
-          ))}
-        </div>
+        <button type="button" className="link-button department-back" onClick={() => setDepartment(null)}>
+          All departments
+        </button>
       )}
       {state.kind === 'loading' && (
         <div role="status" aria-busy="true" className="panel-skeleton">
@@ -85,6 +113,7 @@ export function DepartmentOverview({
             {state.data.fictional ? ' · fictional data' : ''} · groups under{' '}
             {state.data.minimum_cell_size} students are withheld
           </p>
+          {state.data.intro && <p className="hint">{state.data.intro}</p>}
           <Tiles tiles={state.data.tiles} department={state.data.department} onSendAlert={onSendAlert} />
           {state.data.tables.map((table) => (
             <OverviewTableView key={table.key} table={table} />

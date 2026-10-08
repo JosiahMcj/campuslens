@@ -82,7 +82,7 @@ describe('DataAccessPanel', () => {
     const html = renderToStaticMarkup(<DataAccessPanel grants={null} />)
     const ask = 'Ask any question about students, courses and majors (totals only)'
     const rows = html.match(/<tr><th scope="row">[^<]+<\/th><td>[^<]*<\/td><\/tr>/g) ?? []
-    expect(rows).toHaveLength(9)
+    expect(rows).toHaveLength(18)
     for (const row of rows) {
       // Every role that can ask has the line; Financial Aid and IT do not.
       const cannotAsk =

@@ -5,7 +5,7 @@ role may request) and the security middleware (``cabinet.security``: which
 roles may call the Data routes at all) read. A role with no dashboards is
 refused the Data routes (403) and has no Data page.
 
-To give a new role dashboards, add one entry, e.g. for a finance office::
+To give a new role dashboards, add one entry, e.g. for a new department::
 
     "registrar": ("students",),
 
@@ -45,12 +45,23 @@ ROLE_DASHBOARDS: dict[str, tuple[str, ...]] = {
     ROLE_REVIEWER: (STUDENTS,),
     # The administrator manages the system, not the figures.
     ROLE_ADMIN: (),
-    # The department roles (added on the role-logins branch; inert until
-    # those roles exist): finance sees student finances, the registrar and
-    # student life see students, IT sees none.
-    "finance": (FINANCES, BUDGET),
+    # The department roles: Student Accounts sees student finances (never
+    # the university budget), Finance sees the university budget (never
+    # student finances), the registrar and student life see students, IT
+    # sees none.
+    "finance": (BUDGET,),
+    "studentaccounts": (FINANCES,),
     "registrar": (STUDENTS,),
     "studentlife": (STUDENTS,),
+    # The other departments read student totals; none sees money or budget.
+    "admissions": (STUDENTS,),
+    "advising": (STUDENTS,),
+    "provost": (STUDENTS,),
+    "ir": (STUDENTS,),
+    "careers": (STUDENTS,),
+    "advancement": (STUDENTS,),
+    "international": (STUDENTS,),
+    "athletics": (STUDENTS,),
     "it": (),
 }
 
@@ -58,7 +69,7 @@ ROLE_DASHBOARDS: dict[str, tuple[str, ...]] = {
 # roles may narrow or split a chart by them (any chart, not only the
 # finance dashboard). Every other attribute is open to every Data role.
 RESTRICTED_ATTRIBUTES: dict[str, tuple[str, ...]] = {
-    "pell": (ROLE_EXECUTIVE, ROLE_AID, "finance"),
+    "pell": (ROLE_EXECUTIVE, ROLE_AID, "studentaccounts"),
 }
 
 

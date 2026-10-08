@@ -10,8 +10,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
 import { resetBriefingOnce } from './api'
-import { clearSession } from './auth'
+import { DEPARTMENTS, clearSession } from './auth'
 import { AuditLog } from './components/AuditLog'
+import { DepartmentOverview } from './components/DepartmentOverview'
 import { InboxPage } from './components/InboxPage'
 import { AccountsPage } from './components/ItPages'
 import { SendAlertDialog } from './components/SendAlertDialog'
@@ -51,7 +52,7 @@ const FINDINGS = {
 const MESSAGE = {
   id: 7,
   from: { id: 2, email: 'president@demo.test', role: 'executive' },
-  to: { id: 9, email: 'finance@demo.test', role: 'finance' },
+  to: { id: 9, email: 'studentaccounts@demo.test', role: 'studentaccounts' },
   note: 'Please look at the holds before the cabinet meeting.',
   review_by: '2026-10-15',
   source_kind: 'finding',
@@ -126,19 +127,31 @@ afterEach(() => {
 })
 
 describe('navigation by role', () => {
-  it('shows Finance only its department pages, its greeting and its three questions', async () => {
+  it('shows Finance only its department pages, its greeting and its three budget questions', async () => {
     mockApi('finance')
     render(<App />)
     expect(await screen.findByText('What would you like to know?')).toBeTruthy()
-    expect(screen.getAllByText('Finance — Student Accounts').length).toBeGreaterThan(0)
-    expect(await screen.findByText('Which offices hold the most active holds?')).toBeTruthy()
-    expect(screen.getByText('What is the 6-year graduation rate for Pell students by college?')).toBeTruthy()
+    expect(screen.getAllByText('Finance').length).toBeGreaterThan(0)
+    expect(await screen.findByText('What is our budget vs actual this year?')).toBeTruthy()
+    expect(screen.getByText('Where does our money come from?')).toBeTruthy()
+    expect(screen.getByText('What is our tuition discount rate trend?')).toBeTruthy()
     const rows = sidebarRows()
     expect(rows).toContain('Inbox')
     expect(rows).toContain('Department overview')
     for (const hidden of ['Full briefing', 'Decision', 'Audit log', 'Staff actions', 'Data access']) {
       expect(rows).not.toContain(hidden)
     }
+  })
+
+  it('shows Student Accounts its greeting and its three student-money questions', async () => {
+    mockApi('studentaccounts')
+    render(<App />)
+    expect(await screen.findByText('What would you like to know?')).toBeTruthy()
+    expect(screen.getAllByText('Student Accounts').length).toBeGreaterThan(0)
+    expect(await screen.findByText('Which offices hold the most active holds?')).toBeTruthy()
+    expect(screen.getByText('How much is past due?')).toBeTruthy()
+    expect(screen.getByText('How many students are on payment plans?')).toBeTruthy()
+    expect(sidebarRows()).toContain('Department overview')
   })
 
   it('shows the president every page plus the inbox, the overviews and sign-in activity', async () => {
@@ -185,6 +198,34 @@ describe('navigation by role', () => {
   })
 })
 
+describe('the department directory', () => {
+  it('opens on a card for every department and goes back to the directory', async () => {
+    mockApi('executive', {
+      '/departments/overview': (url) =>
+        json({
+          department: url.includes('athletics') ? 'athletics' : 'finance',
+          name: url.includes('athletics') ? 'Athletics' : 'Finance',
+          term: { code: '202620', name: 'Spring 2026' },
+          fictional: true,
+          institution: 'Demonstration University',
+          minimum_cell_size: 10,
+          tiles: [{ key: 'athletes', label: 'Athletes enrolled', display: '30', note: '' }],
+          tables: [],
+        }),
+    })
+    render(<DepartmentOverview departments={[...DEPARTMENTS]} onSendAlert={null} />)
+    const cards = await screen.findAllByRole('button', { name: /./ })
+    expect(cards.length).toBe(DEPARTMENTS.length)
+    for (const name of ['Finance', 'Student Accounts', 'Admissions', 'Athletics', 'Academic Affairs']) {
+      expect(screen.getByRole('button', { name: new RegExp(name) })).toBeTruthy()
+    }
+    fireEvent.click(screen.getByRole('button', { name: /Athletics/ }))
+    expect(await screen.findByText('Athletes enrolled')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'All departments' }))
+    expect(await screen.findByRole('list', { name: 'Departments' })).toBeTruthy()
+  })
+})
+
 describe('the inbox', () => {
   it('opens an alert (marked read), shows what it points at, and marks it reviewed', async () => {
     const posted: string[] = []
@@ -228,7 +269,7 @@ describe('the inbox', () => {
     })
     render(<InboxPage onChanged={() => undefined} onAsk={null} />)
     fireEvent.click(await screen.findByRole('tab', { name: 'Sent' }))
-    expect(await screen.findByText(/To Finance — Student Accounts/)).toBeTruthy()
+    expect(await screen.findByText(/To Student Accounts/)).toBeTruthy()
     expect(screen.getByText('Read')).toBeTruthy()
   })
 
@@ -282,7 +323,7 @@ describe('Send alert', () => {
         asked = url
         return (
         json([
-          { id: 9, email: 'finance@demo.test', role: 'finance' },
+          { id: 9, email: 'studentaccounts@demo.test', role: 'studentaccounts' },
           { id: 10, email: 'registrar@demo.test', role: 'registrar' },
         ])
         )
@@ -310,7 +351,7 @@ describe('Send alert', () => {
       target: { value: '2026-10-15' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Send alert' }))
-    expect(await screen.findByText(/Sent to Finance — Student Accounts/)).toBeTruthy()
+    expect(await screen.findByText(/Sent to Student Accounts/)).toBeTruthy()
     // The picker asked only for the people allowed to read this figure.
     expect(asked).toBe('/api/inbox/recipients?kind=finding&ref=M5')
     expect(body).toEqual({
@@ -333,7 +374,7 @@ describe('the audit log', () => {
             ts,
             type: 'inbox.sent',
             actor: 'president@demo.test',
-            payload: { message_id: 7, recipient_id: 9, recipient_role: 'finance', source_kind: 'finding', source_ref: 'M5', has_review_by: true },
+            payload: { message_id: 7, recipient_id: 9, recipient_role: 'studentaccounts', source_kind: 'finding', source_ref: 'M5', has_review_by: true },
           },
           { id: 2, ts, type: 'inbox.read', actor: 'finance@demo.test', payload: { message_id: 7, sender_id: 2 } },
           { id: 3, ts, type: 'inbox.reviewed', actor: 'finance@demo.test', payload: { message_id: 7, sender_id: 2 } },
@@ -346,7 +387,7 @@ describe('the audit log', () => {
       />,
     )
     expect(
-      screen.getByText(/sent an alert to Finance — Student Accounts about a briefing figure\./),
+      screen.getByText(/sent an alert to Student Accounts about a briefing figure\./),
     ).toBeTruthy()
     expect(screen.getByText(/opened an alert\./)).toBeTruthy()
     expect(screen.getByText(/marked an alert reviewed\./)).toBeTruthy()
@@ -375,8 +416,17 @@ describe('IT accounts', () => {
     const role = (await screen.findByLabelText('Role')) as HTMLSelectElement
     expect([...role.options].map((option) => option.value)).toEqual([
       'finance',
+      'studentaccounts',
       'registrar',
       'studentlife',
+      'admissions',
+      'advising',
+      'provost',
+      'ir',
+      'careers',
+      'advancement',
+      'international',
+      'athletics',
       'staff',
     ])
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'bursar@demo.test' } })

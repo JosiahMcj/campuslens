@@ -72,8 +72,17 @@ export function canExplore(role: Role): boolean {
     role === 'staff' ||
     role === 'reviewer' ||
     role === 'finance' ||
+    role === 'studentaccounts' ||
     role === 'registrar' ||
-    role === 'studentlife'
+    role === 'studentlife' ||
+    role === 'admissions' ||
+    role === 'advising' ||
+    role === 'provost' ||
+    role === 'ir' ||
+    role === 'careers' ||
+    role === 'advancement' ||
+    role === 'international' ||
+    role === 'athletics'
   )
 }
 

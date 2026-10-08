@@ -18,10 +18,20 @@ export const DATA_PAGE_ROLES: readonly string[] = [
   'aid',
   'staff',
   'reviewer',
-  // The department roles (role-logins branch): inert until those roles exist.
+  // The department roles. Finance sees the university budget, Student Accounts
+  // the student finances (mirrors data_roles.py).
   'finance',
+  'studentaccounts',
   'registrar',
   'studentlife',
+  'admissions',
+  'advising',
+  'provost',
+  'ir',
+  'careers',
+  'advancement',
+  'international',
+  'athletics',
 ]
 
 export function canSeeDataPage(role: Role | string | null): boolean {
