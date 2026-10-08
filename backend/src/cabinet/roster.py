@@ -103,7 +103,7 @@ def student_body(row: dict[str, Any]) -> dict[str, Any]:
 
 def search_roster(rows: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
     """Students whose name matches: every word typed must start a word of
-    the name ("obi am" finds Obinna Amadi). An exact student id also
+    the name ("obi am" finds Obiora Amato). An exact student id also
     matches. Names whose words start with the typed words in the same order
     come first, then the rest, each by name."""
     text = " ".join(query.lower().split())

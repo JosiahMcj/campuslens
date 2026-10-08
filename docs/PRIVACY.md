@@ -193,6 +193,5 @@ The threat model, the controls in place, and what is not covered yet are documen
 
 ## Contact
 
-Email us at contact@example.edu, a placeholder mailbox that will be replaced with our real
-mailbox before the service goes live. For security reports, use the address given in
+Contact the team listed in the README. For security reports, see
 [SECURITY.md](SECURITY.md).

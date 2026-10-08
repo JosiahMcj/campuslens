@@ -14,8 +14,8 @@ vi.mock('../students', () => ({
 import { StudentLookup } from './StudentLookup'
 
 const OBINNA = {
-  student_id: 'ORU1002',
-  name: 'Obinna Amadi',
+  student_id: 'DEM1002',
+  name: 'Obiora Amato',
   program: 'Computer Science',
   degree_progress: 0.74,
   degree_progress_display: '74%',
@@ -28,7 +28,7 @@ const OBINNA = {
 
 function result(overrides: Partial<StudentSearch> = {}): StudentSearch {
   return {
-    query: 'obinna',
+    query: 'obiora',
     total: 1,
     shown: 1,
     directory_size: 5000,
@@ -59,14 +59,14 @@ describe('StudentLookup', () => {
     searchStudents.mockResolvedValue(result())
     render(<StudentLookup />)
     // Typing alone never searches: each search is an audit entry.
-    fireEvent.change(screen.getByLabelText('Student name'), { target: { value: ' Obinna ' } })
+    fireEvent.change(screen.getByLabelText('Student name'), { target: { value: ' Obiora ' } })
     expect(searchStudents).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Search' }))
     expect(searchStudents).toHaveBeenCalledTimes(1)
-    expect(searchStudents).toHaveBeenCalledWith('Obinna')
+    expect(searchStudents).toHaveBeenCalledWith('Obiora')
 
-    const card = (await screen.findByRole('heading', { name: 'Obinna Amadi' })).closest('li')!
-    expect(card.textContent).toContain('ORU1002')
+    const card = (await screen.findByRole('heading', { name: 'Obiora Amato' })).closest('li')!
+    expect(card.textContent).toContain('DEM1002')
     expect(card.textContent).toContain('ProgramComputer Science')
     expect(card.textContent).toContain('AdvisorDr. Fitzgerald')
     expect(card.textContent).toContain('74%')
@@ -104,7 +104,7 @@ describe('StudentLookup', () => {
   it('shows a plain error when the search fails', async () => {
     searchStudents.mockRejectedValue(new Error('boom'))
     render(<StudentLookup />)
-    search('obinna')
+    search('obiora')
     expect((await screen.findByRole('alert')).textContent).toContain(
       "Couldn't search the directory.",
     )

@@ -395,7 +395,6 @@ rule.
 
 ## Reporting a vulnerability
 
-Email us at **contact@example.edu**, a placeholder mailbox that we will replace
-with our real mailbox before go-live. Please include the route, the role you
+Contact the team listed in the README. Please include the route, the role you
 were logged in as, and a reproduction, and do not open a public issue for a
 vulnerability.
