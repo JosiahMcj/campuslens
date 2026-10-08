@@ -81,6 +81,7 @@ import { SidePanel } from './components/SidePanel'
 import { DataPage, type ChartAsk } from './components/DataPage'
 import { canSeeDataPage } from './dataPage'
 import { StaffActionsPage } from './components/StaffActionsPage'
+import { InterventionsPage } from './components/InterventionsPage'
 import { LensMark } from './components/LensMark'
 import { Thinking } from './components/Thinking'
 import { BackIcon, MenuIcon } from './components/icons'
@@ -238,6 +239,7 @@ const WIDE_PAGES: ReadonlySet<PanelId> = new Set<PanelId>([
   'inbox',
   'sessions',
   'data',
+  'interventions',
 ])
 
 /**
@@ -288,6 +290,8 @@ function pageIntro(page: PanelId, role: Role, fictional: boolean): string | unde
     case 'accounts':
     case 'connections':
       return undefined
+    case 'interventions':
+      return 'Support offered early to students who meet a plain rule, how many it reaches, and an honest look at whether it works. Lists of students are prepared, approved by a person and recorded; nothing is sent to anyone.'
     case 'aid':
       return canEditAidQueue(role)
         ? 'Facts for the Financial Aid office to start its own review. CampusLens decides nothing about any student; a person in the office sets each status and note.'
@@ -700,6 +704,9 @@ function BriefingPage({
   const aidQueue = canSeeAidQueue(role)
   // The directory is demonstration data: offered only with the fictional set.
   const studentSearch = canSearchStudents(role) && fictional
+  // Support programs: the president, the admin, and the Financial Aid office
+  // (which runs the theology and ministry funding bridge).
+  const supportPrograms = role === 'executive' || role === 'admin' || role === 'aid'
   // Department accounts and the inbox (docs/ROLES.md).
   const persona = personaFor(role)
   const department = isDepartment(role)
@@ -1465,6 +1472,7 @@ function BriefingPage({
         ...(aidQueue ? (['aid'] as PanelId[]) : []),
         ...(studentSearch ? (['students'] as PanelId[]) : []),
         ...(canSeeDataPage(role) ? (['data'] as PanelId[]) : []),
+        ...(supportPrograms ? (['interventions'] as PanelId[]) : []),
         ...(audit ? (['audit'] as PanelId[]) : []),
         ...(canSeeSessions(role) ? (['sessions'] as PanelId[]) : []),
       ]
@@ -1580,6 +1588,7 @@ function BriefingPage({
     aid: 'Financial Aid review',
     students: 'Find a student',
     data: 'Data',
+    interventions: 'Support programs',
     profile: 'Profile',
     settings: 'Settings',
     overview: department && persona !== null ? persona.name : 'Department overviews',
@@ -2408,6 +2417,7 @@ function BriefingPage({
             <AidQueuePanel canEdit={canEditAidQueue(role)} onOpenDecision={() => openPanel('decision')} />
           )}
           {shownPanel === 'students' && studentSearch && <StudentLookup />}
+          {shownPanel === 'interventions' && <InterventionsPage />}
           {shownPanel === 'data' && canSeeDataPage(role) && (
             <DataPage
               account={session.user.email}

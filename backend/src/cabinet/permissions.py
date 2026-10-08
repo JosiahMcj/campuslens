@@ -733,6 +733,7 @@ SCHOOL_AREAS: dict[str, tuple[str, ...]] = {
         "courses.subject_code",
         "courses.title",
         "program_requirements.course_id",
+        "program_requirements.requirement_type",
     ),
     "registration": (
         "section_registrations.student_id (counted)",
@@ -786,6 +787,15 @@ SCHOOL_AREAS: dict[str, tuple[str, ...]] = {
         "person_holds.end_date",
     ),
     "advising": ("student_appointments.status", "student_appointments.term_code"),
+    # Support programs (cabinet.interventions): each program's rule and offer,
+    # and its follow-up records as totals (who took part is counted, never
+    # named).
+    "support_programs": (
+        "support_programs (rule, offer, start term)",
+        "support_program_terms (eligible, offered, accepted, follow-up outcomes)",
+        "support_program_terms (accepted)",
+        "support_program_terms (met the early fit rule)",
+    ),
     "campus_life": ("student_term_enrollment.housing", "student_profiles.athlete"),
     # Graduates' first destinations, graduate school and medical school
     # (counted ids only: whether a graduate answered, never who).
@@ -839,7 +849,13 @@ ROLE_SCHOOL_AREAS: dict[str, tuple[str, ...]] = {
         a for a in SCHOOL_AREAS if a not in (INSTRUCTOR_AREA, BUDGET_AREA)
     ),
     "enrollment_analyst": ("structure", "course_sections", "registration", "entry"),
-    "student_success_analyst": ("structure", "outcomes", "holds", "advising"),
+    "student_success_analyst": (
+        "structure",
+        "outcomes",
+        "holds",
+        "advising",
+        "support_programs",
+    ),
     "registrar_analyst": (
         "structure",
         "course_sections",
@@ -849,12 +865,19 @@ ROLE_SCHOOL_AREAS: dict[str, tuple[str, ...]] = {
     ),
     "student_accounts_analyst": ("structure", "holds", "billing"),
     "financial_aid_analyst": ("structure", "registration", "aid"),
-    "advising_analyst": ("structure", "advising", "programs"),
+    "advising_analyst": (
+        "structure",
+        "advising",
+        "programs",
+        "entry",  # who is a first-year student (early major fit)
+        "support_programs",
+    ),
     "student_life_analyst": ("structure", "campus_life", "holds"),
     "academic_affairs_analyst": (
         "structure",
         "course_sections",
         "grades",
+        "entry",  # first-year course results (entry term), as totals
         INSTRUCTOR_AREA,
     ),
     "institutional_research_analyst": (

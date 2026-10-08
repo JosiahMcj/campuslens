@@ -229,6 +229,7 @@ _NOT_NAMES_TEXT = """
     being do does did doing of in on at for with by from as and or nor but if so
     well highest lowest best worst most least top bottom hardest easiest
     various different several alumni grads
+    ai
 """
 _NOT_NAMES = frozenset(_NOT_NAMES_TEXT.split())
 _STOP_INITIALS = frozenset({"What", "Which", "How", "Who", "Why", "When", "Where"})

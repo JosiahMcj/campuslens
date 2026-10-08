@@ -220,8 +220,8 @@ def test_migration_11_keeps_every_inbox_row(tmp_path: Path) -> None:
             (institution,),
         )
         conn.commit()
-        assert migrate(conn) == [11]
-        assert recorded_versions(conn)[-1] == 11
+        assert migrate(conn) == [11, 12]
+        assert recorded_versions(conn)[-1] == 12
         row = conn.execute("SELECT * FROM inbox_messages").fetchone()
         assert (row["id"], row["note"], row["source_ref"], row["read_at"]) == (
             7,

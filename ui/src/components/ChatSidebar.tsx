@@ -33,6 +33,7 @@ import {
   GearIcon,
   MailIcon,
   MoonIcon,
+  InterventionsNavIcon,
   SearchIcon,
   SidebarToggleIcon,
   SignOutIcon,
@@ -50,6 +51,7 @@ export type PanelId =
   | 'aid'
   | 'students'
   | 'data'
+  | 'interventions'
   | 'profile'
   | 'settings'
   // Department accounts, the inbox and the IT pages (docs/ROLES.md).
@@ -121,6 +123,7 @@ const PANEL_ROWS: Record<NavPanel, { label: string; icon: ReactNode }> = {
   accounts: { label: 'Accounts', icon: <AccountsNavIcon /> },
   sessions: { label: 'Sign-in activity', icon: <ActivityNavIcon /> },
   connections: { label: 'Connections', icon: <GearIcon /> },
+  interventions: { label: 'Support programs', icon: <InterventionsNavIcon /> },
 }
 
 /** The capability groups, in sidebar order. Key figures, Evidence and the
@@ -128,7 +131,7 @@ const PANEL_ROWS: Record<NavPanel, { label: string; icon: ReactNode }> = {
  * answer, the evidence opens from each number (and the Full briefing lists
  * it), and the employees are in "Data access". */
 const NAV_GROUPS: { label: string; panels: NavPanel[] }[] = [
-  { label: 'Your work', panels: ['inbox', 'overview', 'data'] },
+  { label: 'Your work', panels: ['inbox', 'overview', 'data', 'interventions'] },
   { label: 'Briefing', panels: ['briefing', 'actions', 'decision', 'students'] },
   { label: 'System', panels: ['accounts', 'sessions', 'connections'] },
   { label: 'Governance', panels: ['access', 'audit', 'aid'] },

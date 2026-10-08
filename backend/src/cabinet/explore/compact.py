@@ -33,7 +33,13 @@ import re
 from typing import Any
 
 from cabinet.explore import general
-from cabinet.explore.catalog import ANALYSES, ANALYSIS_BY_ID, Catalog, Param
+from cabinet.explore.catalog import (
+    ANALYSES,
+    ANALYSIS_BY_ID,
+    ORDER_LOW_HIGH,
+    Catalog,
+    Param,
+)
 
 # One line per analysis: what it answers, in the planner's words.
 PURPOSE: dict[str, str] = {
@@ -65,6 +71,9 @@ PURPOSE: dict[str, str] = {
     "credit_hours_by_term": "credit hours attempted and earned in each term",
     "measure_by_group": "ONE measure (below) for everyone or by up to two "
     "groupings, with filters",
+    "program_impact": "is a support program working or helping (AI tutoring, "
+    "theology funding bridge, major-fit advising)",
+    "program_reach": "students eligible for a support program, and take-up",
     "budget_vs_actual": "spending vs budget",
     "revenue_by_source": "revenue vs budget",
     "tuition_discount": "tuition, discount rate",
@@ -75,9 +84,13 @@ MEASURE_LINES: dict[str, str] = {
     "headcount": "number of students enrolled (default: the current term)",
     "avg_gpa": "average cumulative GPA",
     "avg_credits_earned": "average credits earned",
-    "dropout_rate": "share who left without a degree and did not come back",
-    "transfer_out_rate": "share who left and enrolled at another college",
+    "dropout_rate": "share who left without a degree",
+    "transfer_out_rate": "share who left for another college",
     "major_change_rate": "share who changed major",
+    "major_change_out_rate": "share who switched out of a major",
+    "major_attrition_rate": "attrition from each major",
+    "fit_flag_rate": "first-year students not a good fit for their major",
+    "first_year_major_dfw_rate": "first-year DFW rate in major courses",
     "pell_share": "share with a Pell grant",
     "first_gen_share": "share first-generation",
     "international_share": "share international",
@@ -85,18 +98,17 @@ MEASURE_LINES: dict[str, str] = {
     "on_campus_share": "share living on campus",
     "probation_rate": "share of terms on probation",
     "suspension_rate": "share of terms ending in suspension",
-    "stop_out_rate": "share who skipped the next fall or spring term",
+    "stop_out_rate": "share who skipped the next term",
     "credit_completion_rate": "credits earned over credits attempted",
     "avg_credits_attempted": "average credit load per term",
     "advising_rate": "share of terms with an advising appointment",
     "hold_rate": "share of terms with a hold",
-    "retention_rate": "first-year retention (first-time fall starters back the "
-    "next fall)",
+    "retention_rate": "first-year retention (fall starters back next fall)",
     "grad_rate_4yr": "4-year graduation rate",
     "grad_rate_6yr": "6-year graduation rate (the usual 'graduation rate')",
     "time_to_degree": "average years to graduate",
     "graduates": "number of graduates",
-    "dfw_rate": "D, F or withdrawal rate of course registrations",
+    "dfw_rate": "D, F or withdrawal rate",
     "withdrawal_rate": "course withdrawal rate",
     "past_due_balance": "$ past due",
     "past_due_students": "students past due",
@@ -136,12 +148,6 @@ EXAMPLES: tuple[tuple[str, str], ...] = (
         '"major": "History"}}]}',
     ),
     (
-        "how many sophomores were enrolled each term",
-        '{"reasoning": "Sophomore counts over time.", "steps": '
-        '[{"analysis_id": "measure_by_group", "params": {"measure": "headcount", '
-        '"class_level": "Sophomore", "group_by": "term"}}]}',
-    ),
-    (
         "which major has the most students on probation, and what is its "
         "toughest course and who teaches it",
         '{"reasoning": "Rank majors by probation, then the hardest course that '
@@ -151,12 +157,6 @@ EXAMPLES: tuple[tuple[str, str], ...] = (
         '{"major_required": {"from_step": 0, "column": "major"}}}, '
         '{"analysis_id": "course_instructors", "params": {"course": '
         '{"from_step": 1, "column": "course"}}}]}',
-    ),
-    (
-        "stop out rate for out of state women",
-        '{"reasoning": "One rate for one group: out-of-state women.", "steps": '
-        '[{"analysis_id": "measure_by_group", "params": {"measure": '
-        '"stop_out_rate", "residency": "out_of_state", "gender": "female"}}]}',
     ),
     (
         "how did calculus 2 do over the years",
@@ -230,8 +230,17 @@ _KIND_TYPES = {
 
 
 def _param_text(param: Param, catalog: Catalog) -> str:
+    # Long lists the catalog spells out once, below or in the header.
+    if param.name == "measure" and param.choices == general.MEASURE_KEYS:
+        return "measure*: an id from MEASURES"
+    if param.name == "group_by" and param.choices == general.GROUPING_KEYS:
+        return "group_by: an id from GROUPINGS"
     if param.name == "top":
         return "top: n"  # rounded up to an offered count (_round_top)
+    if param.name == "outcome":
+        return "outcome (optional)"
+    if param.name == "order" and tuple(param.choices) == ORDER_LOW_HIGH:
+        return f"order (default {param.default})" if param.default else "order"
     if param.kind == "choice":
         kind = "|".join(str(c) for c in param.choices)
     elif param.kind == "category":
@@ -271,7 +280,12 @@ def compact_catalog(catalog: Catalog) -> str:
 
 def _build(catalog: Catalog) -> str:
     v = catalog.vocab
-    lines = [INTRO, "", "ANALYSES (id: purpose. params; * = required):"]
+    lines = [
+        INTRO,
+        "",
+        "ANALYSES (id: purpose. params; * = required; order: "
+        "lowest_first|highest_first unless listed):",
+    ]
     filter_keys = set(general.GROUPING_KEYS) - {"term"}
     for analysis in ANALYSES:
         params = [

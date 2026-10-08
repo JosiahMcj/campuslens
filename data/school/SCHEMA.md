@@ -1,7 +1,7 @@
 # Demonstration University database schema
 
 `data/school/generate.py` writes one SQLite file (default `var/school/school.db`) with the
-28 tables below, then the student billing and university finance tables. The shape follows Ellucian's Ethos data model, flattened into relational
+28 tables below, then the student billing and university finance tables, and the two support-program tables. The shape follows Ellucian's Ethos data model, flattened into relational
 tables a question engine can join. Each table names the Ethos resource it stands in for.
 Where Ethos has no exact resource we say so instead of inventing one.
 
@@ -598,6 +598,46 @@ fiscal year; the same figures as the tuition rows of `revenue_lines` (checked).
 | `institutional_aid` | The university's own grants and scholarships against tuition (the discount) |
 | `net_tuition` | `gross_tuition - institutional_aid` exactly (checked) |
 | `discount_rate` | `institutional_aid / gross_tuition`, rounded to 4 decimals (0.5151 is 51.5 %) |
+
+## Support programs
+
+`data/school/interventions.py` adds these two tables after every core table is
+written, from its own seeded stream, and never changes a core row: the canonical hash
+in `check.py` leaves out the two support-program tables (so `VERIFY.md` still holds), and the
+program tables have their own `programs_sha256`. **Ethos: none** for both; they stand
+in for a student-success program's own records.
+
+### `support_programs`
+
+| Column | Meaning |
+|---|---|
+| `program_id` | `ai_tutoring`, `theology_bridge`, `fit_advising` |
+| `name`, `eligibility_rule`, `offer`, `owner_office` | Plain text the Support programs page shows |
+| `start_term` | `202510` (Fall 2024) for all three |
+| `primary_outcome`, `secondary_outcome` | Column names in `support_program_terms` |
+
+### `support_program_terms`
+
+One row per student the program's rule names in a fall or spring term, before and
+after the program started (the rules are in the module; `cabinet.interventions` applies
+the same rules as SQL and a test checks they name the same students every term).
+
+| Column | Meaning |
+|---|---|
+| `program_id`, `student_id`, `term_code` | The key |
+| `period` | `before` or `after` the start term |
+| `gpa_at_eligibility` | Cumulative GPA entering the term (tutoring, bridge) or at its end (fit advising) |
+| `offered`, `accepted` | 1 for every eligible student from the start term; `accepted` null before it |
+| `term_gpa` | Tutoring: GPA in the term |
+| `returned_next_term` | Enrolled in the next fall or spring term; null when they graduated or there is no next term |
+| `financial_hold_next_term` | Bridge: a financial hold placed in the next term, among those who returned |
+| `changed_major_next_term` | Fit advising: a different program the next term, among those who returned |
+
+For every `before` row and every eligible student who did not take part, the outcome
+columns are copied exactly from the core tables (`check.py` verifies it). Only
+participants after the start term differ, by the planted effects in the module's
+notes. These are the program's follow-up records; the core enrollment and GPA tables
+are not changed by them.
 
 ## Deliberately absent
 

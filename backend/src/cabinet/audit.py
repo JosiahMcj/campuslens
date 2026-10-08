@@ -112,6 +112,17 @@ EVENT_TYPES: tuple[str, ...] = (
     "inbox.sent",
     "inbox.read",
     "inbox.reviewed",
+    # Support-program outreach lists (cabinet.outreach). outreach.prepared:
+    # a person prepared the list a program's rule names for a term
+    # (payload: list_id, program_id, term, count). outreach.decided: an
+    # executive or admin approved or declined it (payload adds decision).
+    # outreach.viewed: a person opened its rows (payload: list_id,
+    # program_id, rows). outreach.updated: a person set one row's status
+    # (payload: list_id, row_id, status_from, status_to). Never a student id.
+    "outreach.prepared",
+    "outreach.decided",
+    "outreach.viewed",
+    "outreach.updated",
 )
 
 ENV_VAR = "CABINET_AUDIT_PATH"
