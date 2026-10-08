@@ -34,9 +34,7 @@ Open http://127.0.0.1:5200 and sign in as `president@demo.test` with the passwor
 `~/campuslens-demo-accounts.txt`. `REPLAY=1` serves recorded model answers, so no key or
 network is needed; `make stop` shuts both servers down.
 
-**Earlier build (replay mode):** https://golden-eagle-cabinet-git-demo-obis-projects-1a457e7e.vercel.app
-(fictional data, recorded answers; the current build is run locally with the steps above;
-anything done in the earlier build resets when the host recycles).
+**Live demo:** https://campuslens.azai.pro (fictional data; access code and logins above). Anything done in it is a demonstration and is reset from time to time.
 
 We built this for the Gloo AI Hackathon 2026, Track 4: Choose Your Own Adventure (Boulder, Oct 6-8, 2026), and `ROADMAP.md` is the
 plan. In one sentence, CampusLens transforms Ellucian SIS data into an
